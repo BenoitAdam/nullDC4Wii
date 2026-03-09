@@ -35,9 +35,9 @@ extern "C" {
   }
 }
 
-int g_ratio_preset = 1; // 0=Original (4/3), 1=Fullscreen
+int g_ratio_preset = 1; // 0=Original (4/3), 1=Fullscreen (defaut)
 
-// These will be used by ?? (gxRend ?)
+// These will be used by gxRend (and maybe other files)
 extern "C" {
   int get_ratio_preset() {
     return g_ratio_preset;
@@ -323,13 +323,17 @@ int displayMenuAndSelectFile()
       case 3: printf("EXTRA "); break;
     }
     // Display current ACCURACY preset (cycled with Plus)
-    printf("  (+) ACCURACY: ");
+    printf("  (HOME) ACCURACY: ");
     switch(g_accuracy_preset) {
       case 0: printf("FAST    "); break;
       case 1: printf("BALANCED"); break;
       case 2: printf("ACCURATE"); break;
     }
-    printf("  (I) SCREEN: FULLSCREEN");
+    printf("  (+) SCREEN: ");
+    switch(g_ratio_preset) {
+      case 0: printf("ORIGINAL  "); break;
+      case 1: printf("FULLSCREEN"); break;
+    }
     printf("\nSelect a game file: (GDI Works, see Github README for other format)\n\n");
     
     
@@ -375,6 +379,11 @@ int displayMenuAndSelectFile()
       g_graphism_preset = (g_graphism_preset + 1) % 4;
     }
     if (pressed & WPAD_BUTTON_PLUS)
+    {
+      // Cycle SCREEN ratio: ORIGINAL <-> FULLSCREEN
+      g_ratio_preset = (g_ratio_preset + 1) % 2;
+    }
+    if (pressed & WPAD_BUTTON_HOME)
     {
       // Cycle ACCURACY preset: FAST -> BALANCED -> ACCURATE -> FAST
       g_accuracy_preset = (g_accuracy_preset + 1) % 3;
@@ -464,7 +473,7 @@ int displayMenuAndSelectFile()
         currentPage = 0;
       }
     }
-    else if (pressed & WPAD_BUTTON_HOME)
+    else if ((WPAD_ButtonsHeld(0) & WPAD_BUTTON_PLUS) && (WPAD_ButtonsHeld(0) & WPAD_BUTTON_MINUS))
     {
       return -1; // Exit to main menu
     }
