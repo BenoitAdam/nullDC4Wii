@@ -177,6 +177,10 @@ While the emulator is still in alpha, the visual difference is limited for now.
 
 https://wiibrew.org/wiki/DevkitPPC
 
+Just tick PPC (not ARM, x86, etc).
+
+See this issue : https://github.com/BenoitAdam94/nullDC4Wii/issues/13
+
 #### 2/ Launch MSys2 terminal
 
 Devkitpro has it's own UNIX terminal, by default it's located here :  
@@ -271,6 +275,7 @@ All testers and all futur testers
 ### Special no thanks
 
 To all people not believing in this project
+
 
 
 
