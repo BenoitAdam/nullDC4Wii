@@ -120,7 +120,7 @@ vmu_save_A1.bin
 vmu_save_A2.bin
 
 
-## Status (15/02/2026)
+## Status (09/03/2026)
 
 launch on dolphin an real Wii with few FPS  
 game selector implemented  
@@ -128,10 +128,13 @@ game selector implemented
 Few games are runnable :
 - Castlevania (Demo)
 - Sega Tetris
-- Shenmue (BALANCED Preset)
+- Shenmue (Broken in a0.07)
 - Jojo
 
 Wii Dynarec has been improved & completed by AI. Compile but doesn't run (Black Screen). See /archive folder
+
+Regression on Shenmue need to be fixed before improving anything at this point https://github.com/BenoitAdam94/nullDC4Wii/issues/13
+
 
 ## Compatibility
 
@@ -268,6 +271,7 @@ All testers and all futur testers
 ### Special no thanks
 
 To all people not believing in this project
+
 
 
 
