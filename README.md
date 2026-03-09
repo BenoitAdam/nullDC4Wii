@@ -13,7 +13,6 @@ a fork from https://github.com/skmp/nullDCe
 - Clean Warning/notes during compilation I guess
 - Player 2 Gamecube/Wiimote (1rst step)
 - Player 3/4 Gamecube/Wiimote (2nd step)
-- Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
 - Fishing Rod/USB Keyboard/Lightgun/Maracas support
 - Put external config file for controllers (controls.cfg)
 - Clean Clean Clean
@@ -27,6 +26,8 @@ a fork from https://github.com/skmp/nullDCe
 - 50/60 ips for PAL/NTSC ? (should be ok)
 - both 4/3 and fullscreen support (in next version)
 - Frame Skipping
+- Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
+- Wii U Gamepad, Dualshock 3 and Wii U Pro Controller support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
 
 ### Developer (Hard)
 
@@ -119,7 +120,7 @@ vmu_save_A1.bin
 vmu_save_A2.bin
 
 
-## Status (15/02/2026)
+## Status (09/03/2026)
 
 launch on dolphin an real Wii with few FPS  
 game selector implemented  
@@ -127,10 +128,13 @@ game selector implemented
 Few games are runnable :
 - Castlevania (Demo)
 - Sega Tetris
-- Shenmue (BALANCED Preset)
+- Shenmue (Broken in a0.07)
 - Jojo
 
 Wii Dynarec has been improved & completed by AI. Compile but doesn't run (Black Screen). See /archive folder
+
+Regression on Shenmue need to be fixed before improving anything at this point https://github.com/BenoitAdam94/nullDC4Wii/issues/13
+
 
 ## Compatibility
 
@@ -172,6 +176,10 @@ While the emulator is still in alpha, the visual difference is limited for now.
 #### 1/ Install devkitpro/devkitPPC
 
 https://wiibrew.org/wiki/DevkitPPC
+
+Just tick PPC (not ARM, x86, etc).
+
+See this issue : https://github.com/BenoitAdam94/nullDC4Wii/issues/13
 
 #### 2/ Launch MSys2 terminal
 
@@ -267,6 +275,10 @@ All testers and all futur testers
 ### Special no thanks
 
 To all people not believing in this project
+
+
+
+
 
 
 
