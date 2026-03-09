@@ -1,0 +1,8 @@
+Files that may be related for fixing 4/3 ratio
+
+drkPvr
+gxrend
+pvr_if
+regs
+SPG
+ta
