@@ -38,13 +38,9 @@ extern "C" int get_graphism_preset();
 extern "C" int get_ratio_preset();
 
 // Helper macros to check current graphism mode
-#define LETTERBOX() (get_ratio_preset() == 0)
+#define ORIGINAL() (get_ratio_preset() == 0)
 #define FULLSCREEN() (get_ratio_preset() == 1)
 
-// Aspect ratio selection:
-// true  = stretch to fill the full screen (16:9)
-// false = preserve the Dreamcast's native 4:3 aspect ratio with side bars
-bool choose_fullscreen = false;
 
 // This is defined in main.cpp
 extern "C" int get_debug_loop();
@@ -1118,7 +1114,7 @@ void DoRender()
   // NDC [-1..+1] maps to this viewport, so all DC geometry (which is
   // already in 4:3 screen-space) displays with correct proportions.
   // In fullscreen mode use the whole width (stretched 16:9).
-  if (choose_fullscreen)
+  if (FULLSCREEN())
   {
     GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
   }
@@ -1426,7 +1422,7 @@ void StartRender()
     // In 4:3 mode, draw the 2D framebuffer into a centred 4:3 sub-rectangle
     // so logo screens and 2D content have the same correct framing as 3D.
     float x0_2d, x1_2d;
-    if (choose_fullscreen)
+    if (FULLSCREEN())
     {
       x0_2d = 0.f;
       x1_2d = 640.f;
