@@ -312,15 +312,15 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H"); // Clear Screen
-    printf("\nNullDC4Wii - Alpha 0.07   ");
+    printf("\nNullDC4Wii - Alpha 0.08   ");
     printf("Current directory: %s\n", currentPath);
     // Display current GRAPHISM preset (cycled with Minus)
     printf("(-) GRAPHICS: ");
     switch(g_graphism_preset) {
-      case 0: printf("LOW    "); break;
-      case 1: printf("NORMAL "); break;
-      case 2: printf("HIGH   "); break;
-      case 3: printf("EXTRA   "); break;
+      case 0: printf("LOW   "); break;
+      case 1: printf("NORMAL"); break;
+      case 2: printf("HIGH  "); break;
+      case 3: printf("EXTRA "); break;
     }
     // Display current ACCURACY preset (cycled with Plus)
     printf("  (+) ACCURACY: ");
@@ -329,7 +329,8 @@ int displayMenuAndSelectFile()
       case 1: printf("BALANCED"); break;
       case 2: printf("ACCURATE"); break;
     }
-    printf("\nSelect a game file: (GDI Works, maybe CDI/ISO/NRG/MDS/BIN/CUE/ELF)\n\n");
+    printf("  (I) SCREEN: FULLSCREEN");
+    printf("\nSelect a game file: (GDI Works, see Github README for other format)\n\n");
     
     
 
@@ -362,7 +363,7 @@ int displayMenuAndSelectFile()
     printf("Contact & bug report : xalegamingchannel@gmail.com\n");
     printf("HELP ME ON THE COMPATIBILITY LIST !!\n");
     printf("Compatibility WIKI : https://wiibrew.org/wiki/NullDC4Wii/Compatibility\n\n");
-    printf("A: Select | B: Back | 1: BIOS | 2: More Info | HOME: Exit\n");
+    printf("A: Select | B: Back | 1: BIOS | 2: More Info | (-) + (+): Exit\n");
     printf("INGAME : Press (-) and (+) simultaneously to Exit \n");
 
     WPAD_ScanPads();
@@ -483,21 +484,19 @@ int main(int argc, wchar *argv[])
   // Initialize the video system
   // (yes, right now before gxrend, otherwise no game selector)
   VIDEO_Init();
-  /* // Claude AI */
+
+  /* Audio */
   ASND_Init();
   wii_audio_init();
   // And at shutdown / exit, add:
-  //
   //   wii_audio_term();
   //   ASND_End();
-
 
 
   // This function initialises the attached controllers (devkit wii-example)
   PAD_Init();
   WPAD_Init();
 
-  /* Claude AI */
   // Obtain the preferred video mode from the system
   GXRModeObj *rmode = VIDEO_GetPreferredMode(NULL);
 
@@ -523,7 +522,6 @@ int main(int argc, wchar *argv[])
   VIDEO_WaitVSync();
   if (rmode->viTVMode & VI_NON_INTERLACE)
     VIDEO_WaitVSync();
-  /* // Claude AI */
 
   // Initialise SD Card
   if (fatInitDefault())
