@@ -35,16 +35,25 @@ extern "C" int get_graphism_preset();
 #define EXTRA() (get_graphism_preset() == 3)
 
 // This is defined in main.cpp
+extern "C" int get_ratio_preset();
+
+// Helper macros to check current graphism mode
+#define LETTERBOX() (get_ratio_preset() == 0)
+#define FULLSCREEN() (get_ratio_preset() == 1)
+
+// Aspect ratio selection:
+// true  = stretch to fill the full screen (16:9)
+// false = preserve the Dreamcast's native 4:3 aspect ratio with side bars
+bool choose_fullscreen = false;
+
+// This is defined in main.cpp
 extern "C" int get_debug_loop();
 
 // This is defined in nullDC.cpp
 extern int g_current_frameskip; // 0 = no skip, 1 = skip 1 frame, 2 = skip 2 frame
 extern int g_frame_counter;
 
-// Aspect ratio selection:
-// true  = stretch to fill the full screen (16:9)
-// false = preserve the Dreamcast's native 4:3 aspect ratio with side bars
-bool choose_fullscreen = false;
+
 
 #include "config.h"
 #include "gxRend.h"
