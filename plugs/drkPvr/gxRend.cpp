@@ -1,17 +1,6 @@
 // Wii Rendering
 
-/*
-Now with this code this has better colors :
-- Dreamcast Logo
-- Konami Logo (2D)
-- Castlevania Logo (2D)
-- The tiny ape (3D object) in Sega Tetris has the good color
 
-What still doesn't looks good :
-- Sonia Belmont in Castlevania resurrection
-- Most textures in Castlevania resurrection and Sega Tetris
-
-*/
 
 // ============================================================================
 // RUNTIME - PRESET SELECTION
@@ -368,10 +357,29 @@ void fastcall texture_TW_UNUSED(u8* p_out, u8* p_in, u32 Width, u32 Height)
 #define MAKE_1555(r, g, b, a)
 #define MAKE_4444(r, g, b, a)
 
-#define ABGR8888(x) (x)  // TEST: No conversion
-#define ABGR4444(x) (x)  // TEST: No conversion
-#define ABGR0565(x) (x)  // TEST: No conversion  
-#define ABGR1555(x) (x)  // TEST: No conversion
+// Dreamcast stores pixels as ABGR (alpha-blue-green-red from MSB).
+// Wii GX expects RGB (red-green-blue) in the same bit positions.
+// These macros swap R and B channels to correct the color output.
+
+// ABGR8888 → RGBA8888: swap R (bits 16-23) and B (bits 0-7)
+#define ABGR8888(x) ( ((x) & 0xFF00FF00u)          \
+                    | (((x) & 0x00FF0000u) >> 16)   \
+                    | (((x) & 0x000000FFu) << 16) )
+
+// ARGB4444 (DC: A4R4G4B4) → GX RGB5A3 compatible: swap R and B nibbles
+#define ABGR4444(x) ( (((x) & 0xF000u))             \
+                    | (((x) & 0x0F00u) >> 8)         \
+                    | (((x) & 0x00F0u))               \
+                    | (((x) & 0x000Fu) << 8) )
+
+// RGB565 (DC: R5G6B5) → GX RGB565: DC and GX use identical layout, no swap needed
+#define ABGR0565(x) (x)
+
+// ARGB1555 (DC: A1R5G5B5) → GX RGB5A3 compatible: swap R and B
+#define ABGR1555(x) ( (((x) & 0x8000u))             \
+                    | (((x) & 0x7C00u) >> 10)        \
+                    | (((x) & 0x03E0u))               \
+                    | (((x) & 0x001Fu) << 10) )
 
 
 #define colclamp(low, hi, val) \
