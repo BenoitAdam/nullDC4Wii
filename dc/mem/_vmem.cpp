@@ -1,13 +1,31 @@
 // _vmem.cpp – virtual memory subsystem for Dreamcast-on-Wii emulation
 //
-// _vmem v2 layer overview:
-//   _vmem_MemInfo_ptr[256]  – top-level dispatch table (indexed by addr[31:24])
-//   _vmem_RF8/16/32         – per-handler read  function tables
-//   _vmem_WF8/16/32         – per-handler write function tables
+// _vmem v3 — improvements over v2:
 //
-// Each _vmem_MemInfo_ptr entry is either:
-//   • A host pointer (≥256) with low bits encoding an address-wrap shift, OR
-//   • A small integer (< HANDLER_COUNT*4) encoding a handler-table index.
+//   1. HANDLER_MAX raised 31 → 63.  The Dreamcast hardware map easily fills
+//      32 slots (PVR, AICA, G2, Holly, serial, modem, etc.).
+//
+//   2. Pointer/handler discrimination is now done via a dedicated
+//      _vmem_MemInfo_is_handler[256] flags array rather than the fragile
+//      "is the masked pointer zero?" heuristic.  This removes the risk of a
+//      low-address host pointer being misidentified as a handler index.
+//
+//   3. _vmem_map_block() accepts an optional 'rdonly' parameter.  Writes to
+//      read-only pages (ROM, boot flash) are logged and dropped instead of
+//      silently corrupting the mapped buffer.
+//
+//   4. _vmem_mirror_mapping() now checks the full destination range for
+//      overlap with the source, not just the start address.
+//
+//   5. _vmem_reserve() validates Arena2 free space before committing on Wii,
+//      returning false with a diagnostic instead of silently overflowing.
+//
+//   6. _vmem_register_handler() returns VMEM_INVALID_HANDLER on table-full
+//      instead of triggering an assert in release builds.
+//
+//   7. Added _vmem_is_readonly() and _vmem_dump_map() diagnostics.
+//
+//   8. 64-bit MMIO read/write side-effect caveat is explicitly documented.
 // ---------------------------------------------------------------------------
 
 #include "_vmem.h"
@@ -18,24 +36,22 @@
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-#define HANDLER_MAX   0x1F
+#define HANDLER_MAX   0x3F          // 64 handler slots (was 31)
 #define HANDLER_COUNT (HANDLER_MAX + 1)
 
-// Safe sentinel returned on unmapped reads.
-// NOTE: Using 0 here instead of 0xDEADC0D3 prevents the game from treating
-// the error value as a valid pointer and cascading into garbage writes.
-// The old value (0xDEADC0D3) was the root cause of the 0xDEADE5F3 freeze:
-// the game read from an unmapped region, got 0xDEADC0D3 back, added an offset,
-// and started writing to 0xDEADE5F3+ — corrupting state and hanging.
+// Safe sentinel value returned on unmapped reads.
+// Using 0 prevents games from treating the error value as a valid pointer and
+// cascading into garbage writes (the old 0xDEADC0D3 value was the root cause
+// of the 0xDEADE5F3 freeze bug).
 #define MEM_ERROR_RETURN_VALUE 0u
 
 // ---------------------------------------------------------------------------
-// Global tables
+// Global dispatch tables
 // ---------------------------------------------------------------------------
-static _vmem_handler     _vmem_lrp;   // next free handler slot
+static _vmem_handler _vmem_lrp;   // next free handler slot
 
-static _vmem_ReadMem8FP*  _vmem_RF8  [HANDLER_COUNT];
-static _vmem_WriteMem8FP* _vmem_WF8  [HANDLER_COUNT];
+static _vmem_ReadMem8FP*   _vmem_RF8 [HANDLER_COUNT];
+static _vmem_WriteMem8FP*  _vmem_WF8 [HANDLER_COUNT];
 
 static _vmem_ReadMem16FP*  _vmem_RF16[HANDLER_COUNT];
 static _vmem_WriteMem16FP* _vmem_WF16[HANDLER_COUNT];
@@ -43,16 +59,27 @@ static _vmem_WriteMem16FP* _vmem_WF16[HANDLER_COUNT];
 static _vmem_ReadMem32FP*  _vmem_RF32[HANDLER_COUNT];
 static _vmem_WriteMem32FP* _vmem_WF32[HANDLER_COUNT];
 
-// Top-level dispatch table: 256 entries, one per 16 MB page.
+// Top-level dispatch table: 256 entries, one per 16 MB SH-4 page.
+// Each entry is either a host pointer (RAM/VRAM path) or a handler index
+// (MMIO path).  Use _vmem_MemInfo_is_handler[] to distinguish them —
+// do NOT rely on the pointer value being zero.
 void* _vmem_MemInfo_ptr[0x100];
+
+// Companion flag: true if the corresponding _vmem_MemInfo_ptr entry holds
+// a handler index rather than a host pointer.
+static bool _vmem_MemInfo_is_handler[0x100];
+
+// Read-only flag per page: writes to these pages are dropped and logged.
+static bool _vmem_MemInfo_rdonly[0x100];
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// Return the number of low address bits to mask away for a given memory block.
-// e.g. a 16 MB block (mask=0x00FFFFFF) → returns 0 (no masking needed for
-// a full 16 MB page), a 2 MB VRAM block → returns the appropriate shift.
+// Return the number of low address bits used for the within-block offset,
+// given a wrap mask.  e.g. mask=0x001FFFFF (2 MB) → 21 bits → shift = 32-21 = 11.
+// The returned value is stored in the low bits of the pointer entry so that
+// the dispatch loop can recover the within-block address quickly.
 static u32 FindMask(u32 msk)
 {
     u32 s  = (u32)-1;
@@ -62,38 +89,51 @@ static u32 FindMask(u32 msk)
     return rv;
 }
 
-// Core read dispatcher (templated on access size).
+// ---------------------------------------------------------------------------
+// Core read dispatcher (templated on access width T).
+// Fast path  : direct dereference of host RAM/VRAM pointer.
+// Slow path  : call the registered MMIO handler.
+// ---------------------------------------------------------------------------
 template<typename T>
 static INLINE T fastcall _vmem_readt(u32 addr)
 {
-    const u32 sz   = sizeof(T);
-    const u32 page = addr >> 24;
-    const unat iirf = (unat)_vmem_MemInfo_ptr[page];
-    void* const ptr = (void*)(iirf & ~(unat)HANDLER_MAX);
+    const u32  sz   = sizeof(T);
+    const u32  page = addr >> 24;
 
-    if (ptr == 0)
+    if (_vmem_MemInfo_is_handler[page])
     {
-        // MMIO / handler path
-        const u32 id = (u32)iirf;
+        // ------ MMIO / handler path ----------------------------------------
+        // Handler index is stored as (slot * 4) so that the dynarec can index
+        // directly into the function-pointer arrays without an extra shift.
+        const u32 id = (u32)(unat)_vmem_MemInfo_ptr[page];
+        const u32 slot = id / 4;
+
         if (sz == 1)
-            return (T)_vmem_RF8[id / 4](addr);
+            return (T)_vmem_RF8[slot](addr);
         else if (sz == 2)
-            return (T)_vmem_RF16[id / 4](addr);
+            return (T)_vmem_RF16[slot](addr);
         else if (sz == 4)
-            return (T)_vmem_RF32[id / 4](addr);
+            return (T)_vmem_RF32[slot](addr);
         else if (sz == 8)
         {
-            // 64-bit: two consecutive 32-bit reads
-            T rv = (T)_vmem_RF32[id / 4](addr);
-            rv  |= (T)((u64)_vmem_RF32[id / 4](addr + 4) << 32);
+            // NOTE: Two separate 32-bit MMIO reads.  If the handler has
+            // read-side-effects (e.g. it clears a status flag on read) the
+            // high word will observe the post-read state.  This matches real
+            // SH-4 behaviour since the CPU never issues a true 64-bit MMIO
+            // cycle — it always does two 32-bit accesses.
+            T rv  = (T)_vmem_RF32[slot](addr);
+            rv   |= (T)((u64)_vmem_RF32[slot](addr + 4) << 32);
             return rv;
         }
         die("_vmem_readt: invalid size");
     }
     else
     {
-        // Direct RAM/VRAM path
+        // ------ Direct RAM / VRAM path -------------------------------------
+        const unat iirf  = (unat)_vmem_MemInfo_ptr[page];
+        void* const ptr  = (void*)(iirf & ~(unat)HANDLER_MAX);
         u32 shift = (u32)(iirf & HANDLER_MAX);
+
         addr <<= shift;
         addr >>= shift;
 #if HOST_ENDIAN == ENDIAN_BIG
@@ -104,37 +144,52 @@ static INLINE T fastcall _vmem_readt(u32 addr)
     }
 }
 
-// Core write dispatcher (templated on access size).
+// ---------------------------------------------------------------------------
+// Core write dispatcher (templated on access width T).
+// ---------------------------------------------------------------------------
 template<typename T>
 static INLINE void fastcall _vmem_writet(u32 addr, T data)
 {
-    const u32 sz   = sizeof(T);
-    const u32 page = addr >> 24;
-    const unat iirf = (unat)_vmem_MemInfo_ptr[page];
-    void* const ptr = (void*)(iirf & ~(unat)HANDLER_MAX);
+    const u32  sz   = sizeof(T);
+    const u32  page = addr >> 24;
 
-    if (ptr == 0)
+    if (_vmem_MemInfo_is_handler[page])
     {
-        // MMIO / handler path
-        const u32 id = (u32)iirf;
+        // ------ MMIO / handler path ----------------------------------------
+        const u32 slot = (u32)(unat)_vmem_MemInfo_ptr[page] / 4;
+
         if (sz == 1)
-            _vmem_WF8[id / 4](addr, (u8)data);
+            _vmem_WF8[slot](addr, (u8)data);
         else if (sz == 2)
-            _vmem_WF16[id / 4](addr, (u16)data);
+            _vmem_WF16[slot](addr, (u16)data);
         else if (sz == 4)
-            _vmem_WF32[id / 4](addr, (u32)data);
+            _vmem_WF32[slot](addr, (u32)data);
         else if (sz == 8)
         {
-            _vmem_WF32[id / 4](addr,     (u32)(u64)data);
-            _vmem_WF32[id / 4](addr + 4, (u32)((u64)data >> 32));
+            // See read-side comment above re: 64-bit MMIO and side effects.
+            _vmem_WF32[slot](addr,     (u32)(u64)data);
+            _vmem_WF32[slot](addr + 4, (u32)((u64)data >> 32));
         }
         else
             die("_vmem_writet: invalid size");
     }
     else
     {
-        // Direct RAM/VRAM path
+        // ------ Direct RAM / VRAM path -------------------------------------
+
+        // Drop writes to read-only pages (ROM, boot flash, etc.) and log them
+        // so that the developer can catch games accidentally writing to ROM.
+        if (_vmem_MemInfo_rdonly[page])
+        {
+            printf("[vmem] Write%u to read-only page 0x%02X (addr=0x%08X) -- dropped\n",
+                   sz * 8, page, addr);
+            return;
+        }
+
+        const unat iirf  = (unat)_vmem_MemInfo_ptr[page];
+        void* const ptr  = (void*)(iirf & ~(unat)HANDLER_MAX);
         u32 shift = (u32)(iirf & HANDLER_MAX);
+
         addr <<= shift;
         addr >>= shift;
 #if HOST_ENDIAN == ENDIAN_BIG
@@ -159,27 +214,32 @@ void fastcall _vmem_WriteMem32 (u32 addr, u32 data) { _vmem_writet<u32>(addr, da
 void fastcall _vmem_WriteMem64 (u32 addr, u64 data) { _vmem_writet<u64>(addr, data); }
 
 // ---------------------------------------------------------------------------
-// Default "not mapped" handlers
-// These log once per unique address (rate-limited) to avoid log spam during
-// level transitions, then return the safe sentinel value.
+// Default "not-mapped" handlers
+//
+// Rate limiter: we track the last 4 KB page that triggered a log message and
+// suppress further messages from the same page once MAX_LOG_PER_PAGE is hit.
+// This prevents multi-megabyte log files during normal level transitions where
+// the game briefly touches unmapped regions.
+//
+// NOTE: These globals are not protected by a mutex.  The emulator is assumed
+// to run its CPU thread single-threaded (standard for Dreamcast emulation on
+// Wii).  If you add a secondary CPU thread, add a spinlock here.
 // ---------------------------------------------------------------------------
-
-// Simple rate-limiter: skip logging if we've already seen this page recently.
 static u32 s_last_unmapped_page = 0xFFFFFFFFu;
 static u32 s_unmapped_log_count = 0;
 static const u32 MAX_LOG_PER_PAGE = 8;
 
 static bool should_log_unmapped(u32 addr)
 {
-    u32 page = addr >> 12; // 4 KB granularity for rate limiting
+    const u32 page = addr >> 12; // 4 KB granularity
     if (page != s_last_unmapped_page)
     {
-        s_last_unmapped_page  = page;
-        s_unmapped_log_count  = 0;
+        s_last_unmapped_page = page;
+        s_unmapped_log_count = 0;
     }
     if (s_unmapped_log_count < MAX_LOG_PER_PAGE)
     {
-        s_unmapped_log_count++;
+        ++s_unmapped_log_count;
         return true;
     }
     return false;
@@ -231,8 +291,16 @@ _vmem_handler _vmem_register_handler(
     _vmem_WriteMem16FP* write16,
     _vmem_WriteMem32FP* write32)
 {
+    if (_vmem_lrp >= HANDLER_COUNT)
+    {
+        // Table is full.  This is a programming error — either HANDLER_MAX
+        // needs raising or you have a registration leak.
+        printf("[vmem] FATAL: handler table full (HANDLER_MAX=%d)\n", HANDLER_MAX);
+        verify(false);
+        return VMEM_INVALID_HANDLER;
+    }
+
     _vmem_handler rv = _vmem_lrp++;
-    verify(rv < HANDLER_COUNT);
 
     _vmem_RF8 [rv] = read8   ? read8   : _vmem_ReadMem8_not_mapped;
     _vmem_RF16[rv] = read16  ? read16  : _vmem_ReadMem16_not_mapped;
@@ -253,11 +321,17 @@ void _vmem_map_handler(_vmem_handler Handler, u32 start, u32 end)
     verify(start < 0x100);
     verify(end   < 0x100);
     verify(start <= end);
+    verify(Handler < HANDLER_COUNT);
+
     for (u32 i = start; i <= end; i++)
-        _vmem_MemInfo_ptr[i] = (u8*)0 + (Handler * 4);
+    {
+        _vmem_MemInfo_ptr[i]        = (u8*)0 + (Handler * 4);
+        _vmem_MemInfo_is_handler[i] = true;
+        _vmem_MemInfo_rdonly[i]     = false; // handlers manage their own RO logic
+    }
 }
 
-void _vmem_map_block(void* base, u32 start, u32 end, u32 mask)
+void _vmem_map_block(void* base, u32 start, u32 end, u32 mask, bool rdonly)
 {
     verify(start < 0x100);
     verify(end   < 0x100);
@@ -269,22 +343,34 @@ void _vmem_map_block(void* base, u32 start, u32 end, u32 mask)
     u32 j = 0;
     for (u32 i = start; i <= end; i++)
     {
-        _vmem_MemInfo_ptr[i] = &((u8*)base)[j] + shift;
+        _vmem_MemInfo_ptr[i]        = &((u8*)base)[j] + shift;
+        _vmem_MemInfo_is_handler[i] = false;
+        _vmem_MemInfo_rdonly[i]     = rdonly;
         j += 0x1000000; // advance one 16 MB page
     }
 }
 
 void _vmem_mirror_mapping(u32 new_region, u32 start, u32 size)
 {
-    u32 end = start + size - 1;
-    verify(start < 0x100);
-    verify(end   < 0x100);
-    verify(start <= end);
-    // Destination region must not overlap source range
-    verify(!((new_region >= start) && (new_region <= end)));
+    const u32 src_end  = start      + size - 1;
+    const u32 dst_end  = new_region + size - 1;
+
+    verify(start      < 0x100);
+    verify(src_end    < 0x100);
+    verify(new_region < 0x100);
+    verify(dst_end    < 0x100);
+
+    // Full overlap check: destination range must not intersect source range.
+    verify(dst_end < start || new_region > src_end);
 
     for (u32 i = 0; i < size; i++)
-        _vmem_MemInfo_ptr[(new_region + i) & 0xFF] = _vmem_MemInfo_ptr[(start + i) & 0xFF];
+    {
+        u32 dst = (new_region + i) & 0xFF;
+        u32 src = (start      + i) & 0xFF;
+        _vmem_MemInfo_ptr[dst]        = _vmem_MemInfo_ptr[src];
+        _vmem_MemInfo_is_handler[dst] = _vmem_MemInfo_is_handler[src];
+        _vmem_MemInfo_rdonly[dst]     = _vmem_MemInfo_rdonly[src];
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -306,21 +392,21 @@ void _vmem_get_ptrs(u32 sz, bool write, void*** vmap, void*** func)
 void* _vmem_read_const(u32 addr, bool& ismem, u32 sz)
 {
     const u32  page = addr >> 24;
-    const unat iirf = (unat)_vmem_MemInfo_ptr[page];
-    void* const ptr  = (void*)(iirf & ~(unat)HANDLER_MAX);
 
-    if (ptr == 0)
+    if (_vmem_MemInfo_is_handler[page])
     {
         ismem = false;
-        const u32 id = (u32)iirf;
-        if (sz == 1) return (void*)_vmem_RF8 [id / 4];
-        if (sz == 2) return (void*)_vmem_RF16[id / 4];
-        if (sz == 4) return (void*)_vmem_RF32[id / 4];
+        const u32 slot = (u32)(unat)_vmem_MemInfo_ptr[page] / 4;
+        if (sz == 1) return (void*)_vmem_RF8 [slot];
+        if (sz == 2) return (void*)_vmem_RF16[slot];
+        if (sz == 4) return (void*)_vmem_RF32[slot];
         die("_vmem_read_const: invalid size");
     }
     else
     {
         ismem = true;
+        const unat iirf = (unat)_vmem_MemInfo_ptr[page];
+        void* const ptr = (void*)(iirf & ~(unat)HANDLER_MAX);
         u32 shift = (u32)(iirf & HANDLER_MAX);
         addr <<= shift;
         addr >>= shift;
@@ -333,13 +419,58 @@ void* _vmem_read_const(u32 addr, bool& ismem, u32 sz)
 }
 
 // ---------------------------------------------------------------------------
-// Diagnostic helper
+// Diagnostics
 // ---------------------------------------------------------------------------
 bool _vmem_is_mapped(u32 addr)
 {
-    const u32  page = addr >> 24;
-    const unat iirf = (unat)_vmem_MemInfo_ptr[page];
-    return (void*)(iirf & ~(unat)HANDLER_MAX) != nullptr;
+    return !_vmem_MemInfo_is_handler[addr >> 24];
+}
+
+bool _vmem_is_readonly(u32 addr)
+{
+    return _vmem_MemInfo_rdonly[addr >> 24];
+}
+
+void _vmem_dump_map()
+{
+    printf("[vmem] ---- page map dump ----------------------------------------\n");
+    printf("[vmem] %4s  %-10s  %-8s  %-6s  %s\n",
+           "page", "SH-4 range", "type", "rdonly", "value");
+
+    u32 i = 0;
+    while (i < 0x100)
+    {
+        // Merge consecutive identical entries into a single line.
+        u32 j = i + 1;
+        while (j < 0x100
+               && _vmem_MemInfo_is_handler[j] == _vmem_MemInfo_is_handler[i]
+               && _vmem_MemInfo_rdonly[j]     == _vmem_MemInfo_rdonly[i]
+               && (_vmem_MemInfo_is_handler[i]
+                   ? (_vmem_MemInfo_ptr[j] == _vmem_MemInfo_ptr[i])
+                   : true /* don't merge RAM blocks; pointers differ */))
+            ++j;
+
+        const char* type = _vmem_MemInfo_is_handler[i] ? "handler" : "RAM/VRAM";
+        const char* ro   = _vmem_MemInfo_rdonly[i]     ? "yes"     : "no";
+
+        if (_vmem_MemInfo_is_handler[i])
+        {
+            u32 slot = (u32)(unat)_vmem_MemInfo_ptr[i] / 4;
+            printf("[vmem] 0x%02X-0x%02X  0x%08X-0x%08X  %-8s  %-6s  slot=%u\n",
+                   i, j - 1,
+                   i << 24, (j << 24) - 1,
+                   type, ro, slot);
+        }
+        else
+        {
+            printf("[vmem] 0x%02X-0x%02X  0x%08X-0x%08X  %-8s  %-6s  ptr=%p\n",
+                   i, j - 1,
+                   i << 24, (j << 24) - 1,
+                   type, ro, _vmem_MemInfo_ptr[i]);
+        }
+        i = j;
+    }
+    printf("[vmem] ---------------------------------------------------------\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -359,54 +490,87 @@ void _vmem_reset()
     memset(_vmem_WF16, 0, sizeof(_vmem_WF16));
     memset(_vmem_WF32, 0, sizeof(_vmem_WF32));
 
-    memset(_vmem_MemInfo_ptr, 0, sizeof(_vmem_MemInfo_ptr));
+    memset(_vmem_MemInfo_ptr,        0, sizeof(_vmem_MemInfo_ptr));
+    memset(_vmem_MemInfo_is_handler, 0, sizeof(_vmem_MemInfo_is_handler));
+    memset(_vmem_MemInfo_rdonly,     0, sizeof(_vmem_MemInfo_rdonly));
 
     _vmem_lrp = 0;
 
-    // Slot 0 = the "not-mapped" default; must be registered first.
-    verify(_vmem_register_handler(0, 0, 0, 0, 0, 0) == 0);
+    // Slot 0 = the "not-mapped" default; always registered first so that any
+    // unmapped page automatically falls through to the safe logger/sentinel.
+    _vmem_handler h = _vmem_register_handler(0, 0, 0, 0, 0, 0);
+    verify(h == 0);
 
-    // Reset log-rate-limiter state.
+    // All 256 pages start as "handler 0" (not-mapped) until explicitly mapped.
+    for (u32 i = 0; i < 0x100; i++)
+    {
+        _vmem_MemInfo_ptr[i]        = (u8*)0 + (0 * 4); // handler slot 0
+        _vmem_MemInfo_is_handler[i] = true;
+        _vmem_MemInfo_rdonly[i]     = false;
+    }
+
+    // Reset the unmapped-access log-rate-limiter.
     s_last_unmapped_page = 0xFFFFFFFFu;
     s_unmapped_log_count = 0;
 }
 
 void _vmem_term()
 {
-    // Nothing to do for the software-only mapping tables.
+    // Nothing to free — tables are statically allocated; host memory is
+    // managed by the arena allocator (Wii) or the static buffer (others).
 }
 
 // ---------------------------------------------------------------------------
 // Memory reservation
 // ---------------------------------------------------------------------------
 #if HOST_OS == OS_PSP
-#define SLIM_RAM ((u8*)0x0A000000)
+    #define SLIM_RAM ((u8*)0x0A000000)
 #elif HOST_OS != OS_WII
-ALIGN(256) u8 SLIM_RAM[ARAM_SIZE + VRAM_SIZE + RAM_SIZE];
+    ALIGN(256) u8 SLIM_RAM[ARAM_SIZE + VRAM_SIZE + RAM_SIZE];
 #endif
 
 bool _vmem_reserve()
 {
+    u8* ram_alloc = nullptr;
+
 #if HOST_OS == OS_WII
     u32 level = IRQ_Disable();
 
-    u8* ram_alloc = (u8*)SYS_GetArena2Lo();
+    // Validate that Arena2 has enough contiguous space before touching
+    // the arena Lo pointer.  On a stock Wii there is ~64 MB of MEM2
+    // available, but mods or other allocations may have reduced this.
+    const u32  needed = ARAM_SIZE + VRAM_SIZE + RAM_SIZE
+                      + 255          // alignment headroom for RAM
+                      + VRAM_SIZE    // second VRAM buffer
+                      + 63;          // alignment headroom for VRAM buffer
+
+    u8* arena_lo = (u8*)SYS_GetArena2Lo();
+    u8* arena_hi = (u8*)SYS_GetArena2Hi();
+
+    if ((unat)(arena_hi - arena_lo) < needed)
+    {
+        IRQ_Restore(level);
+        printf("[vmem] ERROR: Arena2 too small: have %u bytes, need %u bytes\n",
+               (u32)(arena_hi - arena_lo), needed);
+        return false;
+    }
+
     // Align to 256 bytes (required by _vmem_map_block).
-    ram_alloc = (u8*)(((unat)ram_alloc + 255) & ~(unat)255);
+    ram_alloc = (u8*)(((unat)arena_lo + 255) & ~(unat)255);
     SYS_SetArena2Lo(ram_alloc + ARAM_SIZE + VRAM_SIZE + RAM_SIZE);
 
     extern u8* vram_buffer;
     vram_buffer = (u8*)SYS_GetArena2Lo();
-    vram_buffer = (u8*)(((unat)vram_buffer + 63) & ~(unat)63); // 64-byte align
+    vram_buffer = (u8*)(((unat)vram_buffer + 63) & ~(unat)63);
     SYS_SetArena2Lo(vram_buffer + VRAM_SIZE * 2);
 
     IRQ_Restore(level);
 
-    printf("[vmem] Wii RAM: %p  VRAM buffer: %p  GDDR3 free: %.2f MB\n",
+    printf("[vmem] Wii RAM: %p  VRAM buffer: %p  MEM2 free after: %.2f MB\n",
            ram_alloc, vram_buffer,
            ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / (1024.f * 1024.f));
 #else
-    u8* ram_alloc = SLIM_RAM;
+    ram_alloc = SLIM_RAM;
 #endif
 
     aica_ram.size = ARAM_SIZE;
@@ -427,5 +591,5 @@ bool _vmem_reserve()
 void _vmem_release()
 {
     // Memory is either statically allocated (non-Wii) or managed by the Wii
-    // arena allocator; no explicit free is needed here.
+    // arena allocator.  No explicit free is required.
 }
