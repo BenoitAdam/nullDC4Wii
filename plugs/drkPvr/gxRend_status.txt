@@ -1,0 +1,46 @@
+/*
+Improvement made till alpha 0.08
+
+Better colors :
+- Dreamcast Logo
+- Konami Logo (2D)
+- Castlevania Logo (2D)
+- The tiny ape (3D object) in Sega Tetris has the good color
+- More framerate (see changelog)
+
+What still doesn't looks good :
+- Sonia Belmont in Castlevania resurrection
+- Most textures in Castlevania resurrection and Sega Tetris
+
+Improvement made but unstable or regressing elsewhere :
+
+- Castlevania : able to show Sonia Belmont textured, some wall and the energy/status bar is ok
+- Sega Tetris : better 
+- Regression : red letters (D R E A M C A S T) bumping in sega intro boot sequence aren't seeing. We only see it's tile background black
+
+Textures log (in setparam) for the dreamcast boot logo :
+
+[TEX 00] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=5 TexV=5 TCW=100A7800
+[TEX 01] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5800
+[TEX 02] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A7000
+[TEX 03] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5C00
+[TEX 04] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6800
+[TEX 05] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5800
+[TEX 06] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6400
+[TEX 07] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6C00
+[TEX 08] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6000
+[TEX 09] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A7400
+[TEX 10] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100AB800
+[TEX 11] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=5 TexV=5 TCW=100A7800
+[TEX 12] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5800
+[TEX 13] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A7000
+[TEX 14] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5C00
+[TEX 15] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6800
+[TEX 16] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5800
+[TEX 17] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6400
+[TEX 18] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6C00
+[TEX 19] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6000
+
+
+
+*/
