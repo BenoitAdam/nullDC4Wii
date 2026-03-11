@@ -121,16 +121,11 @@ void ApplyGraphismPreset() {
 // Wii GX expects RGB (red-green-blue) in the same bit positions.
 // These macros swap R and B channels to correct the color output.
 
-// ABGR8888 → RGBA8888: swap R (bits 16-23) and B (bits 0-7)
-#define ABGR8888(x) ( ((x) & 0xFF00FF00u)          \
-                    | (((x) & 0x00FF0000u) >> 16)   \
-                    | (((x) & 0x000000FFu) << 16) )
-
 // RGB565 (DC: R5G6B5) → GX RGB565: identical layout, no conversion needed
 #define ABGR0565(x) (x)
 
 // DC ARGB1555 bit layout matches GX RGB5A3 bit15 directly — pass through as-is
-#define ABGR1555(x) (x) // Works fine as it !
+#define ABGR1555(x) (x)
 
 // ARGB4444 (DC: A4 R4 G4 B4) → GX RGB5A3
 // ARGB4444 has 4 alpha (transparency) bit, Wii's RGB5A3 has 3 bits
@@ -139,6 +134,10 @@ void ApplyGraphismPreset() {
     | ((((x) & 0xF000u) >> 1) & 0x7000u)  /* A4 → A3 */  \
     | ((x) & 0x0FFFu) )                   /* R4 G4 B4 */
 
+// ABGR8888 → RGBA8888: swap R (bits 16-23) and B (bits 0-7)
+#define ABGR8888(x) ( ((x) & 0xFF00FF00u)          \
+                    | (((x) & 0x00FF0000u) >> 16)   \
+                    | (((x) & 0x000000FFu) << 16) )
 
 #define colclamp(low, hi, val) \
   {                            \
