@@ -134,9 +134,9 @@ void VBlank() {}
 
 // Static arrays for vertex data to avoid frequent heap allocations.
 // Limited by the Wii's MEM1/MEM2 availability.
-Vertex ALIGN16 vertices[42 * 1024]; // 42*1024 = Wii memory limit
-VertexList ALIGN16 lists[8 * 1024];
-PolyParam ALIGN16 listModes[8 * 1024];
+Vertex ALIGN16 vertices[43008]; // 42*1024 = Wii memory limit
+VertexList ALIGN16 lists[8192]; // 8*1024
+PolyParam ALIGN16 listModes[8192]; // 8*1024
 
 Vertex *curVTX = vertices;
 VertexList *curLST = lists;
@@ -268,8 +268,8 @@ void reset_vtx_state()
   curLST = lists;
   curMod = listModes;
   global_regd = false;
-  vtx_min_Z = 128 * 1024; // if someone uses more, i realy realy dont care
-  vtx_max_Z = 0;          // lower than 0 is invalid for pvr .. i wonder if SA knows that.
+  vtx_min_Z = 131072; // 128 * 1024 // if someone uses more, i realy realy dont care
+  vtx_max_Z = 0;      // lower than 0 is invalid for pvr .. i wonder if SA knows that.
 }
 
 #define VTX_TFX(x) (x)
@@ -366,20 +366,18 @@ void fastcall texture_TW_UNUSED(u8* p_out, u8* p_in, u32 Width, u32 Height)
                     | (((x) & 0x00FF0000u) >> 16)   \
                     | (((x) & 0x000000FFu) << 16) )
 
-// ARGB4444 (DC: A4R4G4B4) → GX RGB5A3 compatible: swap R and B nibbles
-#define ABGR4444(x) ( (((x) & 0xF000u))             \
-                    | (((x) & 0x0F00u) >> 8)         \
-                    | (((x) & 0x00F0u))               \
-                    | (((x) & 0x000Fu) << 8) )
-
-// RGB565 (DC: R5G6B5) → GX RGB565: DC and GX use identical layout, no swap needed
+// RGB565 (DC: R5G6B5) → GX RGB565: identical layout, no conversion needed
 #define ABGR0565(x) (x)
 
-// ARGB1555 (DC: A1R5G5B5) → GX RGB5A3 compatible: swap R and B
-#define ABGR1555(x) ( (((x) & 0x8000u))             \
-                    | (((x) & 0x7C00u) >> 10)        \
-                    | (((x) & 0x03E0u))               \
-                    | (((x) & 0x001Fu) << 10) )
+// ARGB1555 (DC: A1 R5 G5 B5) → GX RGB5A3
+// Always output as GX opaque RGB555 (bit15=1).
+#define ABGR1555(x) (0x8000u | ((x) & 0x7FFFu))
+
+// ARGB4444 (DC: A4 R4 G4 B4) → GX RGB5A3
+// Truncate A4 → A3, keep R4 G4 B4, force bit15=0 (blended mode).
+#define ABGR4444(x) ( 0x0000u                             \
+    | ((((x) & 0xF000u) >> 1) & 0x7000u)  /* A4 → A3 */  \
+    | ((x) & 0x0FFFu) )                   /* R4 G4 B4 */
 
 
 #define colclamp(low, hi, val) \
@@ -880,7 +878,7 @@ const u32 MipPoint[8] =
   if (mod->tcw.NO_PAL.VQ_Comp)                                                            \
   {                                                                                       \
     vq_codebook = (u8 *)&params.vram[tex_addr];                                           \
-    tex_addr += 256 * 4 * 2;                                                              \
+    tex_addr += 2048; /* 256 * 4 * 2 */                                                         \
     if (mod->tcw.NO_PAL.MipMapped)                                                        \
     { /*int* p=0;*p=4;*/                                                                  \
       tex_addr += MipPoint[mod->tsp.TexU];                                                  \
@@ -924,6 +922,7 @@ int TexUV(u32 flip, u32 clamp)
 
 static void SetTextureParams(PolyParam *mod)
 {
+
   GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
 
   u32 tex_addr = (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
@@ -1114,6 +1113,8 @@ static void SetTextureParams(PolyParam *mod)
 
 void DoRender()
 {
+  // printf("MEM1 free: %.2f MB\n", ((unat)SYS_GetArena1Hi() - (unat)SYS_GetArena1Lo()) / 1024.f / 1024);
+  // printf("MEM2 free: %.2f MB\n", ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / 1024.f / 1024.f);
   float dc_width = 640;
   float dc_height = 480;
 
