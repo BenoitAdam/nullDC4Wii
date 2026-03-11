@@ -94,6 +94,61 @@ void ApplyGraphismPreset() {
 
 */
 
+
+
+
+// Macros for extracting color channels from Dreamcast-specific pixel formats.
+#define ABGR4444_A(x) ((x) >> 12)
+#define ABGR4444_R(x) ((x >> 8) & 0xF)
+#define ABGR4444_G(x) ((x >> 4) & 0xF)
+#define ABGR4444_B(x) ((x) & 0xF)
+
+#define ABGR0565_R(x) ((x) >> 11)
+#define ABGR0565_G(x) ((x >> 5) & 0x3F)
+#define ABGR0565_B(x) ((x) & 0x1F)
+
+#define ABGR1555_A(x) ((x >> 15))
+#define ABGR1555_R(x) ((x >> 10) & 0x1F)
+#define ABGR1555_G(x) ((x >> 5) & 0x1F)
+#define ABGR1555_B(x) ((x) & 0x1F)
+#define MAKE_555A3
+
+#define MAKE_565(r, g, b, a)
+#define MAKE_1555(r, g, b, a)
+#define MAKE_4444(r, g, b, a)
+
+// Dreamcast stores pixels as ABGR (alpha-blue-green-red from MSB).
+// Wii GX expects RGB (red-green-blue) in the same bit positions.
+// These macros swap R and B channels to correct the color output.
+
+// ABGR8888 → RGBA8888: swap R (bits 16-23) and B (bits 0-7)
+#define ABGR8888(x) ( ((x) & 0xFF00FF00u)          \
+                    | (((x) & 0x00FF0000u) >> 16)   \
+                    | (((x) & 0x000000FFu) << 16) )
+
+// RGB565 (DC: R5G6B5) → GX RGB565: identical layout, no conversion needed
+#define ABGR0565(x) (x)
+
+// ARGB1555 (DC: A1 R5 G5 B5) → GX RGB5A3
+// Always output as GX opaque RGB555 (bit15=1).
+#define ABGR1555(x) (0x8000u | ((x) & 0x7FFFu))
+
+// ARGB4444 (DC: A4 R4 G4 B4) → GX RGB5A3
+// Truncate A4 → A3, keep R4 G4 B4, force bit15=0 (blended mode).
+#define ABGR4444(x) ( 0x0000u                             \
+    | ((((x) & 0xF000u) >> 1) & 0x7000u)  /* A4 → A3 */  \
+    | ((x) & 0x0FFFu) )                   /* R4 G4 B4 */
+
+
+#define colclamp(low, hi, val) \
+  {                            \
+    if (val < low)             \
+      val = low;               \
+    if (val > hi)              \
+      val = hi;                \
+  }
+
+
 // Vertex structure used to feed the Wii's GX pipeline.
 struct Vertex
 {
@@ -334,59 +389,6 @@ void fastcall texture_TW_UNUSED(u8* p_out, u8* p_in, u32 Width, u32 Height)
 }
 */
 
-
-
-
-// Macros for extracting color channels from Dreamcast-specific pixel formats.
-#define ABGR4444_A(x) ((x) >> 12)
-#define ABGR4444_R(x) ((x >> 8) & 0xF)
-#define ABGR4444_G(x) ((x >> 4) & 0xF)
-#define ABGR4444_B(x) ((x) & 0xF)
-
-#define ABGR0565_R(x) ((x) >> 11)
-#define ABGR0565_G(x) ((x >> 5) & 0x3F)
-#define ABGR0565_B(x) ((x) & 0x1F)
-
-#define ABGR1555_A(x) ((x >> 15))
-#define ABGR1555_R(x) ((x >> 10) & 0x1F)
-#define ABGR1555_G(x) ((x >> 5) & 0x1F)
-#define ABGR1555_B(x) ((x) & 0x1F)
-#define MAKE_555A3
-
-#define MAKE_565(r, g, b, a)
-#define MAKE_1555(r, g, b, a)
-#define MAKE_4444(r, g, b, a)
-
-// Dreamcast stores pixels as ABGR (alpha-blue-green-red from MSB).
-// Wii GX expects RGB (red-green-blue) in the same bit positions.
-// These macros swap R and B channels to correct the color output.
-
-// ABGR8888 → RGBA8888: swap R (bits 16-23) and B (bits 0-7)
-#define ABGR8888(x) ( ((x) & 0xFF00FF00u)          \
-                    | (((x) & 0x00FF0000u) >> 16)   \
-                    | (((x) & 0x000000FFu) << 16) )
-
-// RGB565 (DC: R5G6B5) → GX RGB565: identical layout, no conversion needed
-#define ABGR0565(x) (x)
-
-// ARGB1555 (DC: A1 R5 G5 B5) → GX RGB5A3
-// Always output as GX opaque RGB555 (bit15=1).
-#define ABGR1555(x) (0x8000u | ((x) & 0x7FFFu))
-
-// ARGB4444 (DC: A4 R4 G4 B4) → GX RGB5A3
-// Truncate A4 → A3, keep R4 G4 B4, force bit15=0 (blended mode).
-#define ABGR4444(x) ( 0x0000u                             \
-    | ((((x) & 0xF000u) >> 1) & 0x7000u)  /* A4 → A3 */  \
-    | ((x) & 0x0FFFu) )                   /* R4 G4 B4 */
-
-
-#define colclamp(low, hi, val) \
-  {                            \
-    if (val < low)             \
-      val = low;               \
-    if (val > hi)              \
-      val = hi;                \
-  }
 
 // Converts YUV422 data to RGB565 for Wii compatibility.
 u32 YUV422(s32 Y, s32 Yu, s32 Yv)
