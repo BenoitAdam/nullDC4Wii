@@ -1160,25 +1160,36 @@ void DoRender()
   // Background polygon handling
   u32 param_base = PARAM_BASE & 0xF00000;
   _ISP_BACKGND_D_type bg_d;
-  _ISP_BACKGND_T_type bg_t;
 
   bg_d.i = ISP_BACKGND_D & ~(0xF);
-  bg_t.full = ISP_BACKGND_T;
   (void)bg_d; // Currently unused but may be needed later
 
   bool PSVM = FPU_SHAD_SCALE & 0x100; // double parameters for volumes
 
-  // Get the strip base
-  u32 strip_base = param_base + bg_t.tag_address * 4;
-  // Calculate the vertex size
-  u32 strip_vs = 3 + bg_t.skip;
-  u32 strip_vert_num = bg_t.tag_offset;
+  // ISP_BACKGND_T bitfield layout (from DC hardware spec, LSB first):
+  //   bits [2:0]   tag_offset  (3 bits)
+  //   bits [23:3]  tag_address (21 bits)
+  //   bits [26:24] skip        (3 bits)
+  //   bit  [27]    shadow      (1 bit)
+  //   bit  [28]    cache_bypass(1 bit)
+  // The Wii is big-endian so we must extract manually instead of
+  // relying on the C bitfield struct (which packs in the wrong order).
+  u32 raw_bgt        = ISP_BACKGND_T;
+  u32 real_tag_offset  = (raw_bgt >> 0)  & 0x7;
+  u32 real_tag_address = (raw_bgt >> 3)  & 0x1FFFFF;
+  u32 real_skip        = (raw_bgt >> 24) & 0x7;
+  u32 real_shadow      = (raw_bgt >> 27) & 0x1;
 
-  if (PSVM && bg_t.shadow)
+  // Get the strip base
+  u32 strip_base = param_base + real_tag_address * 4;
+  // Calculate the vertex size
+  u32 strip_vs = (3 + real_skip) * 4;
+  u32 strip_vert_num = real_tag_offset;
+
+  if (PSVM && real_shadow)
   {
-    strip_vs += bg_t.skip; // 2x the size needed :p
+    strip_vs += real_skip * 4; // 2x the size needed for shadow volumes
   }
-  strip_vs *= 4;
   // Get vertex ptr
   u32 vertex_ptr = strip_vert_num * strip_vs + strip_base + 3 * 4;
   // now , all the info is ready :p
@@ -1187,8 +1198,17 @@ void DoRender()
 
   decode_pvr_vertex(strip_base, vertex_ptr, &BGTest);
 
+  // BGTest.col is in ARGB (Dreamcast PVR) format.
+  // GXColor expects RGBA, so swap R and B channels before passing.
+  u32 raw_col = BGTest.col;
+  GXColor bgColor = {
+    (u8)((raw_col >> 16) & 0xFF), // R (was at B position in ARGB)
+    (u8)((raw_col >>  8) & 0xFF), // G
+    (u8)((raw_col >>  0) & 0xFF), // B (was at R position in ARGB)
+    (u8)((raw_col >> 24) & 0xFF)  // A
+  };
   // Use the background vertex color as the EFB clear color.
-  GX_SetCopyClear((GXColor &)BGTest.col, 0x00000000);
+  GX_SetCopyClear(bgColor, 0x00000000);
 
   GX_SetZMode(GX_TRUE, GX_GEQUAL, GX_TRUE);
   GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
