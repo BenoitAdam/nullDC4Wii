@@ -312,7 +312,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H"); // Clear Screen
-    printf("\nNullDC4Wii - Alpha 0.08   ");
+    printf("\nNullDC4Wii - Alpha 0.09   ");
     printf("Current directory: %s\n", currentPath);
     // Display current GRAPHISM preset (cycled with Minus)
     printf("(-) GRAPHICS: ");
@@ -329,7 +329,7 @@ int displayMenuAndSelectFile()
       case 1: printf("BALANCED"); break;
       case 2: printf("ACCURATE"); break;
     }
-    printf("  (+) SCREEN: ");
+    printf("  (+) RATIO: ");
     switch(g_ratio_preset) {
       case 0: printf("ORIGINAL  "); break;
       case 1: printf("FULLSCREEN"); break;
