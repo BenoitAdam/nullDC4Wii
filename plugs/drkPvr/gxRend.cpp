@@ -1083,6 +1083,17 @@ static void SetTextureParams(PolyParam *mod)
     //			sceGuTexImage(0, w>512?512:w, h>512?512:h, w,
     //				params.vram + sa );
 
+    // Flush the converted texture data from D-cache to RAM before the GPU
+    // DMA-reads it. Without this, the GPU may see uninitialized/stale RAM
+    // and produce black/grey barcode stripes.
+    // VQ textures are halved in w/h below, but flush the full original size
+    // since the codebook palette also lives in the same buffer.
+    {
+      u32 flush_size = texVQ ? (w * h)            // VQ: 1 byte/pixel index
+                             : (w * h * 2);        // all 16-bit formats: 2 bytes/pixel
+      DCFlushRange(dst, flush_size);
+    }
+
     // Init Text Object
     bool use_mips = (mod->tcw.NO_PAL.MipMapped && get_graphism_preset() >= 2) ? GX_TRUE : GX_FALSE;
     GX_InitTexObj(&pbuff->tex, dst, w, h, FMT, TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
@@ -1420,7 +1431,9 @@ void StartRender()
     DCFlushRange(fb2d_tex, sizeof(fb2d_tex));
 
     // FB_R_CTRL.fb_depth: 1 = RGB565, others = ARGB1555 (RGB5A3 on GX)
-    GXTexObj texobj;
+    // Static + aligned so the GXTexObj struct is never in a dirty D-cache
+    // line when the GPU DMA-reads it (stack GXTexObj was causing barcode glitch).
+    static GXTexObj texobj ATTRIBUTE_ALIGN(32);
     if (FB_R_CTRL.fb_depth == 1)
       GX_InitTexObj(&texobj, fb2d_tex, 640, 480, GX_TF_RGB565,  GX_CLAMP, GX_CLAMP, GX_FALSE);
     else
