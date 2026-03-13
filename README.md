@@ -164,6 +164,11 @@ If you experience various bugs (example that may happens : weird AI controled NP
 
 While the emulator is still in alpha, the visual difference is limited for now.
 
+<img width="1844" height="1456" alt="levels" src="https://github.com/user-attachments/assets/79d5271d-0689-43d4-92c0-66674013ddce" />
+
+
+NORMAL will probably be the default setting in the next release
+
 ## For Developpers :
 
 ### Compilation Process (Makefile)
