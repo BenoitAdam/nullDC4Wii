@@ -843,6 +843,11 @@ void Plannar(u8 *praw, u32 w, u32 h)
       }
     }
   }
+  // Copy GX-block data back to praw (= params.vram[tex_addr]).
+  // texture_TW already does this same memcpy; Plannar must match it so that
+  // GX_InitTexObj can be given ptex (params.vram, valid Wii/Dolphin memory)
+  // instead of dst (vram_buffer, potentially a host-heap pointer Dolphin rejects).
+  memcpy(praw, VramWork, w * h * 2);
 }
 
 // =========================
@@ -929,19 +934,19 @@ static void SetTextureParams(PolyParam *mod)
   u32 tex_addr = (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
   u32 *ptex = (u32 *)&params.vram[tex_addr];
 
-  // vram_buffer layout (size = VRAM_SIZE*2 = 16 MB):
-  //   For each texture at VRAM offset tex_addr, we store:
-  //     dst  (converted GX pixels) at vram_buffer + tex_addr*2
-  //     pbuff (TextureCacheDesc header) immediately BEFORE dst, i.e. dst - sizeof(TextureCacheDesc)
-  //
-  // This means: pbuff = (TextureCacheDesc*)&vram_buffer[tex_addr*2] - 1
-  //
-  // Guard: if tex_addr*2 < sizeof(TextureCacheDesc), pbuff would land before
-  // vram_buffer, corrupting memory. In practice DC textures start well above
-  // offset 28 (TexAddr field >= 4 << 3 = 32), but clamp to be safe.
+  // dst (= &pbuff[1]) MUST be 32-byte aligned: GX silently ignores misaligned
+  // texture pointers and renders nothing -> black texture.
+  // tex_addr*2 = TexAddr*16, which is only 16-byte aligned when TexAddr is odd,
+  // so half of all textures were misaligned. The grey bar at the top was the
+  // few cache lines that naturally evicted to RAM during conversion (aligned
+  // by luck to a 32-byte boundary), making that slice visible while the rest
+  // stayed in CPU cache as unreachable zeros for the GX hardware.
+  // Rounding cache_offset up to 32 fixes alignment for every texture.
+  // The minimum of 64 guarantees pbuff (sizeof=~56 bytes before dst) never
+  // falls before the start of vram_buffer.
   u32 cache_offset = tex_addr * 2;
-  const u32 kMinOffset = (u32)sizeof(TextureCacheDesc);
-  if (cache_offset < kMinOffset) cache_offset = kMinOffset;
+  cache_offset = (cache_offset + 31) & ~31u;  // round up -> 32-byte aligned dst
+  if (cache_offset < 64) cache_offset = 64;   // room for TextureCacheDesc header
   TextureCacheDesc *pbuff = (TextureCacheDesc *)&vram_buffer[cache_offset] - 1;
 
   u32 FMT = GX_TF_RGB565; // Default format
@@ -1091,19 +1096,21 @@ static void SetTextureParams(PolyParam *mod)
       pbuff->has_pal = true;
     }
 
-    // Flush converted pixel data from CPU cache to physical memory.
-    // GX bypasses the L1/L2 cache and reads physical RAM directly.
-    // Without this the hardware sees stale zeroes -> black texture with a
-    // grey bar from the few cache lines that flushed incidentally.
+    // Flush converted pixel data from CPU cache to physical RAM.
+    // The Wii's GX hardware bypasses the L1/L2 cache and reads physical RAM
+    // directly. Without this flush, GX sees stale zeros and renders black.
+    // We flush ptex (params.vram), not dst (vram_buffer): params.vram is
+    // Arena2 memory, valid on both real Wii and Dolphin. vram_buffer may be
+    // a host-heap pointer that Dolphin's GX HLE rejects as invalid.
     {
-      u32 flush_sz = texVQ ? (w * h)         // GX_TF_I8: 1 byte/texel
-                           : (w * h * 2);    // 16-bit formats
-      DCFlushRange(dst, (flush_sz + 31) & ~31u);
+      u32 flush_sz = texVQ ? (w * h)      // GX_TF_I8: 1 byte/texel (w,h already halved)
+                           : (w * h * 2); // all 16-bit formats: 2 bytes/texel
+      DCFlushRange(ptex, (flush_sz + 31) & ~31u);
     }
 
-    // Init Texture Object
+    // Init Texture Object — give GX ptex (params.vram) not dst (vram_buffer).
     bool use_mips = (mod->tcw.NO_PAL.MipMapped && get_graphism_preset() >= 2) ? GX_TRUE : GX_FALSE;
-    GX_InitTexObj(&pbuff->tex, dst, w, h, FMT, TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
+    GX_InitTexObj(&pbuff->tex, ptex, w, h, FMT, TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
                   TexUV(mod->tsp.FlipV, mod->tsp.ClampV), use_mips);
 
     
