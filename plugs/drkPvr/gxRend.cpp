@@ -928,7 +928,21 @@ static void SetTextureParams(PolyParam *mod)
 
   u32 tex_addr = (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
   u32 *ptex = (u32 *)&params.vram[tex_addr];
-  TextureCacheDesc *pbuff = ((TextureCacheDesc *)&vram_buffer[tex_addr * 2]) - 1;
+
+  // vram_buffer layout (size = VRAM_SIZE*2 = 16 MB):
+  //   For each texture at VRAM offset tex_addr, we store:
+  //     dst  (converted GX pixels) at vram_buffer + tex_addr*2
+  //     pbuff (TextureCacheDesc header) immediately BEFORE dst, i.e. dst - sizeof(TextureCacheDesc)
+  //
+  // This means: pbuff = (TextureCacheDesc*)&vram_buffer[tex_addr*2] - 1
+  //
+  // Guard: if tex_addr*2 < sizeof(TextureCacheDesc), pbuff would land before
+  // vram_buffer, corrupting memory. In practice DC textures start well above
+  // offset 28 (TexAddr field >= 4 << 3 = 32), but clamp to be safe.
+  u32 cache_offset = tex_addr * 2;
+  const u32 kMinOffset = (u32)sizeof(TextureCacheDesc);
+  if (cache_offset < kMinOffset) cache_offset = kMinOffset;
+  TextureCacheDesc *pbuff = (TextureCacheDesc *)&vram_buffer[cache_offset] - 1;
 
   u32 FMT = GX_TF_RGB565; // Default format
   u32 texVQ = 0;
@@ -1068,10 +1082,8 @@ static void SetTextureParams(PolyParam *mod)
 
     if (texVQ)
     {
-      // TEST: Try RGB5A3 palette format
-      // if g_test = 1 (to be implemented)
-      // GX_InitTlutObj(&pbuff->pal, vq_codebook, GX_TF_RGB5A3, 256);
-      // printf("VQ Texture: Using palette format RGB5A3\n");
+      // Flush VQ codebook from CPU cache so GX hardware can read it.
+      DCFlushRange(vq_codebook, 2048); // 256 entries x 4 pixels x 2 bytes
       GX_InitTlutObj(&pbuff->pal, vq_codebook, FMT, 256);
       FMT = GX_TF_I8;
       w >>= 1;
@@ -1079,22 +1091,17 @@ static void SetTextureParams(PolyParam *mod)
       pbuff->has_pal = true;
     }
 
-    //			sceGuTexMode(FMT,0,0,0);
-    //			sceGuTexImage(0, w>512?512:w, h>512?512:h, w,
-    //				params.vram + sa );
-
-    // Flush the converted texture data from D-cache to RAM before the GPU
-    // DMA-reads it. Without this, the GPU may see uninitialized/stale RAM
-    // and produce black/grey barcode stripes.
-    // VQ textures are halved in w/h below, but flush the full original size
-    // since the codebook palette also lives in the same buffer.
+    // Flush converted pixel data from CPU cache to physical memory.
+    // GX bypasses the L1/L2 cache and reads physical RAM directly.
+    // Without this the hardware sees stale zeroes -> black texture with a
+    // grey bar from the few cache lines that flushed incidentally.
     {
-      u32 flush_size = texVQ ? (w * h)            // VQ: 1 byte/pixel index
-                             : (w * h * 2);        // all 16-bit formats: 2 bytes/pixel
-      DCFlushRange(dst, flush_size);
+      u32 flush_sz = texVQ ? (w * h)         // GX_TF_I8: 1 byte/texel
+                           : (w * h * 2);    // 16-bit formats
+      DCFlushRange(dst, (flush_sz + 31) & ~31u);
     }
 
-    // Init Text Object
+    // Init Texture Object
     bool use_mips = (mod->tcw.NO_PAL.MipMapped && get_graphism_preset() >= 2) ? GX_TRUE : GX_FALSE;
     GX_InitTexObj(&pbuff->tex, dst, w, h, FMT, TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
                   TexUV(mod->tsp.FlipV, mod->tsp.ClampV), use_mips);
@@ -1431,9 +1438,7 @@ void StartRender()
     DCFlushRange(fb2d_tex, sizeof(fb2d_tex));
 
     // FB_R_CTRL.fb_depth: 1 = RGB565, others = ARGB1555 (RGB5A3 on GX)
-    // Static + aligned so the GXTexObj struct is never in a dirty D-cache
-    // line when the GPU DMA-reads it (stack GXTexObj was causing barcode glitch).
-    static GXTexObj texobj ATTRIBUTE_ALIGN(32);
+    GXTexObj texobj;
     if (FB_R_CTRL.fb_depth == 1)
       GX_InitTexObj(&texobj, fb2d_tex, 640, 480, GX_TF_RGB565,  GX_CLAMP, GX_CLAMP, GX_FALSE);
     else
