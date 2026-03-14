@@ -408,23 +408,6 @@ bool _vmem_reserve()
 #else
     u8* ram_alloc = SLIM_RAM;
 
-    // On non-Wii builds (e.g. running under Dolphin on PC), vram_buffer is not
-    // assigned by the OS_WII arena path above.  Without this allocation every
-    // call to SetTextureParams() in gxRend.cpp computes pbuff/dst from an
-    // uninitialised pointer, producing garbage addresses that Dolphin's memory
-    // validator rejects with "Unknown Pointer / invalid texture address".
-    // Allocate a 32-byte-aligned block matching the Wii Arena2 allocation.
-    {
-        extern u8* vram_buffer;
-        if (vram_buffer == nullptr)
-        {
-            vram_buffer = (u8*)memalign(32, VRAM_SIZE * 2);
-            if (vram_buffer)
-                memset(vram_buffer, 0, VRAM_SIZE * 2);
-            printf("[vmem] Non-Wii vram_buffer: %p  size: %.1f MB\n",
-                   vram_buffer, (VRAM_SIZE * 2) / (1024.f * 1024.f));
-        }
-    }
 #endif
 
     aica_ram.size = ARAM_SIZE;
