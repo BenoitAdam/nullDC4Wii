@@ -581,111 +581,61 @@ pixelcvt_next(convYUV422_TW, 2, 2)
 }
 pixelcvt_end;
 
-// VQ (Vector Quantization) Palette Converters. 
-// These handle PVR's compressed texture formats by averaging or selecting colors from the codebook.
+// VQ Pixel Converters - Convert() averages 4 codebook pixels (legacy),
+// ConvertPixel() converts one pixel DC->GX for the new VQ decompressor.
 pixelcvt_startVQ(conv565_VQ, 2, 2)
 {
-  // Just use first pixel, no averaging (TEST) : no change with return data[0];
-  // return data[0]; // Delete above and keep this. ACCURACY Opportunity ?
   u32 R = ABGR0565_R(data[0]) + ABGR0565_R(data[1]) + ABGR0565_R(data[2]) + ABGR0565_R(data[3]);
   u32 G = ABGR0565_G(data[0]) + ABGR0565_G(data[1]) + ABGR0565_G(data[2]) + ABGR0565_G(data[3]);
   u32 B = ABGR0565_B(data[0]) + ABGR0565_B(data[1]) + ABGR0565_B(data[2]) + ABGR0565_B(data[3]);
-  R >>= 2;
-  G >>= 2;
-  B >>= 2;
-
+  R >>= 2; G >>= 2; B >>= 2;
   return R | (G << 5) | (B << 11);
-}
+}  // closes inner block
+}  // closes Convert
+  __forceinline static u16 ConvertPixel(u16 p) { return ABGR0565(p); }
+};  // closes struct
 
-pixelcvt_nextVQ(conv1555_VQ, 2, 2)
+pixelcvt_startVQ(conv1555_VQ, 2, 2)
 {
-  // Just use first pixel, no averaging (TEST) : no change with return data[0];
-  // return data[0]; // Delete above and keep this. ACCURACY Opportunity ?
   u32 R = ABGR1555_R(data[0]) + ABGR1555_R(data[1]) + ABGR1555_R(data[2]) + ABGR1555_R(data[3]);
   u32 G = ABGR1555_G(data[0]) + ABGR1555_G(data[1]) + ABGR1555_G(data[2]) + ABGR1555_G(data[3]);
   u32 B = ABGR1555_B(data[0]) + ABGR1555_B(data[1]) + ABGR1555_B(data[2]) + ABGR1555_B(data[3]);
   u32 A = ABGR1555_A(data[0]) + ABGR1555_A(data[1]) + ABGR1555_A(data[2]) + ABGR1555_A(data[3]);
-  R >>= 2;
-  G >>= 2;
-  B >>= 2;
-  A >>= 2;
-
+  R >>= 2; G >>= 2; B >>= 2; A >>= 2;
   return R | (G << 5) | (B << 10) | (A << 15);
+}  // closes inner block
+}  // closes Convert
+  __forceinline static u16 ConvertPixel(u16 p) { return ABGR1555(p); }
+};  // closes struct
 
-    // return ABGR1555(data[0]);
-  /*
-  //convert 4x1 1555 to 4x1 8888
-  u16* p_in=(u16*)data;
-  //0,0
-  pb_prel(pb,pbw,0,0,ABGR1555(p_in[0]));
-  //0,1
-  pb_prel(pb,pbw,0,1,ABGR1555(p_in[1]));
-  //1,0
-  pb_prel(pb,pbw,1,0,ABGR1555(p_in[2]));
-  //1,1
-  pb_prel(pb,pbw,1,1,ABGR1555(p_in[3]));
-  */
-}
-pixelcvt_nextVQ(conv4444_VQ, 2, 2)
+pixelcvt_startVQ(conv4444_VQ, 2, 2)
 {
-  // Just use first pixel, no averaging (TEST) : no change with return data[0];
-  // return data[0]; // Delete above and keep this. ACCURACY Opportunity ?
-
   u32 R = ABGR4444_R(data[0]) + ABGR4444_R(data[1]) + ABGR4444_R(data[2]) + ABGR4444_R(data[3]);
   u32 G = ABGR4444_G(data[0]) + ABGR4444_G(data[1]) + ABGR4444_G(data[2]) + ABGR4444_G(data[3]);
   u32 B = ABGR4444_B(data[0]) + ABGR4444_B(data[1]) + ABGR4444_B(data[2]) + ABGR4444_B(data[3]);
   u32 A = ABGR4444_A(data[0]) + ABGR4444_A(data[1]) + ABGR4444_A(data[2]) + ABGR4444_A(data[3]);
-  R >>= 2;
-  G >>= 2;
-  B >>= 2;
-  A >>= 2;
-
+  R >>= 2; G >>= 2; B >>= 2; A >>= 2;
   return R | (G << 4) | (B << 8) | (A << 12);
-  // return ABGR4444(data[0]);
-  /*
-  //convert 4x1 4444 to 4x1 8888
-  u16* p_in=(u16*)data;
-  //0,0
-  pb_prel(pb,pbw,0,0,ABGR4444(p_in[0]));
-  //0,1
-  pb_prel(pb,pbw,0,1,ABGR4444(p_in[1]));
-  //1,0
-  pb_prel(pb,pbw,1,0,ABGR4444(p_in[2]));
-  //1,1
-  pb_prel(pb,pbw,1,1,ABGR4444(p_in[3]));
-  */
-}
-pixelcvt_nextVQ(convYUV422_VQ, 2, 2)
+}  // closes inner block
+}  // closes Convert
+  __forceinline static u16 ConvertPixel(u16 p) { return ABGR4444(p); }
+};  // closes struct
+
+pixelcvt_startVQ(convYUV422_VQ, 2, 2)
 {
-  // convert 4x1 4444 to 4x1 8888
   u16 *p_in = (u16 *)data;
-  
-  s32 Y0 = (p_in[0] >> 8) & 255; //
-  s32 Yu = (p_in[0] >> 0) & 255; // p_in[0]
-  s32 Y1 = (p_in[2] >> 8) & 255; // p_in[3]
-  s32 Yv = (p_in[2] >> 0) & 255; // p_in[2]
-
+  s32 Y0 = (p_in[0] >> 8) & 255;
+  s32 Yu = (p_in[0] >> 0) & 255;
+  s32 Y1 = (p_in[2] >> 8) & 255;
+  s32 Yv = (p_in[2] >> 0) & 255;
   return YUV422(16 + ((Y0 - 16) + (Y1 - 16)) / 2.0f, Yu, Yv);
-  /*
-  //0,0
-  pb_prel(pb,pbw,0,0,YUV422(Y0,Yu,Yv));
-  //1,0
-  pb_prel(pb,pbw,1,0,YUV422(Y1,Yu,Yv));
-
-  //next 4 bytes
-  //p_in+=2;
-
-  Y0 = (p_in[1]>>8) &255; //
-  Yu = (p_in[1]>>0) &255; //p_in[0]
-  Y1 = (p_in[3]>>8) &255; //p_in[3]
-  Yv = (p_in[3]>>0) &255; //p_in[2]
-
-  //0,1
-  pb_prel(pb,pbw,0,1,YUV422(Y0,Yu,Yv));
-  //1,1
-  pb_prel(pb,pbw,1,1,YUV422(Y1,Yu,Yv));*/
-}
-pixelcvt_endVQ;
+}  // closes inner block
+}  // closes Convert
+  __forceinline static u16 ConvertPixel(u16 p) {
+    s32 Y = (p >> 8) & 255; s32 U = (p >> 0) & 255;
+    return YUV422(Y, U, 128);
+  }
+};  // closes struct
 
 // input : address in the yyyyyxxxxx format
 // output : address in the xyxyxyxy format
@@ -748,59 +698,30 @@ void fastcall texture_TW(u8 *p_in, u32 Width, u32 Height)
   memcpy(p_in, VramWork, Width * Height * 2);
 }
 
-// Vector Quantization texture conversion template.
+// VQ texture decompressor: expands compressed data into full RGB pixels in GX
+// 4x4-block layout. Identical output format to texture_TW — no CI8/TLUT needed.
 template <class PixelConvertor>
 void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
 {
-  // p_in+=256*4*2;
-  //		u32 p=0;
-  // VQ codebook to palette conversion
-  // Codebook: 256 entries × 4 pixels (2x2 blocks) = 1024 pixels
-  // Palette: 256 entries (one averaged/selected pixel per entry)
-
   u8 *pb = VramWork;
-  // pb->amove(0,0);
-  // Convert VQ cb to PAL8
-  u16 *pal_cb = (u16 *)vq_codebook;
-
-  // Convert codebook entries to palette - write to BEGINNING of codebook
-  // This works because we read 4 pixels (entries 0-3) to make palette[0],
-  // then read 4 pixels (entries 4-7) to make palette[1], etc.
-  // So we're always reading ahead of where we're writing
-  for (u32 palidx = 0; palidx < 256; palidx++)
-  {
-    pal_cb[palidx] = PixelConvertor::Convert(&pal_cb[palidx * 4]);
-  }
-  // Height/=PixelConvertor::ypp;
-  // Width/=PixelConvertor::xpp;
-  const u32 divider = PixelConvertor::xpp * PixelConvertor::ypp;
-    // In texture_VQ, after the for loop at line ~662:
-    // if g_debug = 1 (need implementation)
-    // printf("First 16 palette entries:\n");
-    // for (int i = 0; i < 16; i++) {
-    //   printf("  [%d] = %04X\n", i, pal_cb[i]);
-    // }
+  const u32 divider = PixelConvertor::xpp * PixelConvertor::ypp; // 4 for 2x2
 
   for (u32 y = 0; y < Height; y += PixelConvertor::ypp)
   {
     for (u32 x = 0; x < Width; x += PixelConvertor::xpp)
     {
-      u8 p = p_in[twop(x, y, Width, Height) / divider];
-      // PixelConvertor::Convert((u16*)pb,Width,&vq_codebook[p*8]);
-      //*pb=p;
-      pb[GX_TexOffs(x, y, Width)] = p;
-      // pb->rmovex(PixelConvertor::xpp);
-      // pb+=1;
+      // Fetch VQ index for this 2x2 block (twiddle-ordered)
+      u8 idx = p_in[twop(x, y, Width, Height) / divider];
+      // Codebook entry: 4 pixels × 2 bytes = 8 bytes, twiddle layout (0,0)(1,0)(0,1)(1,1)
+      u16 *src = (u16 *)&vq_codebook[idx * 8];
+      // Write all 4 pixels into GX 4x4-block layout via pb_prel
+      pb_prel((u16*)pb, Width, x + 0, y + 0, PixelConvertor::ConvertPixel(src[0]));
+      pb_prel((u16*)pb, Width, x + 1, y + 0, PixelConvertor::ConvertPixel(src[2]));
+      pb_prel((u16*)pb, Width, x + 0, y + 1, PixelConvertor::ConvertPixel(src[1]));
+      pb_prel((u16*)pb, Width, x + 1, y + 1, PixelConvertor::ConvertPixel(src[3]));
     }
-    // pb->rmovey(PixelConvertor::ypp);
-    // pb+=Width*(1-1);
   }
-  // align up to 16 bytes
-  u32 p_in_int = (u32)p_in;
-  p_in_int &= ~15;
-  p_in = (u8 *)p_in_int;
-
-  memcpy(p_in, VramWork, Width * Height / divider);
+  // Result already in VramWork/dst — GX_InitTexObj will point directly there.
 }
 
 // Planar (Linear) texture conversion.
@@ -843,11 +764,6 @@ void Plannar(u8 *praw, u32 w, u32 h)
       }
     }
   }
-  // Copy GX-block data back to praw (= params.vram[tex_addr]).
-  // texture_TW already does this same memcpy; Plannar must match it so that
-  // GX_InitTexObj can be given ptex (params.vram, valid Wii/Dolphin memory)
-  // instead of dst (vram_buffer, potentially a host-heap pointer Dolphin rejects).
-  memcpy(praw, VramWork, w * h * 2);
 }
 
 // =========================
@@ -1087,30 +1003,20 @@ static void SetTextureParams(PolyParam *mod)
 
     if (texVQ)
     {
-      // Flush VQ codebook from CPU cache so GX hardware can read it.
-      DCFlushRange(vq_codebook, 2048); // 256 entries x 4 pixels x 2 bytes
-      GX_InitTlutObj(&pbuff->pal, vq_codebook, FMT, 256);
-      FMT = GX_TF_I8;
-      w >>= 1;
-      h >>= 1;
-      pbuff->has_pal = true;
+      // texture_VQ now fully decompresses into standard 16bpp RGB pixels —
+      // same format as texture_TW. No CI8/TLUT. w,h stay full size.
+      pbuff->has_pal = false;
     }
 
-    // Flush converted pixel data from CPU cache to physical RAM.
-    // The Wii's GX hardware bypasses the L1/L2 cache and reads physical RAM
-    // directly. Without this flush, GX sees stale zeros and renders black.
-    // We flush ptex (params.vram), not dst (vram_buffer): params.vram is
-    // Arena2 memory, valid on both real Wii and Dolphin. vram_buffer may be
-    // a host-heap pointer that Dolphin's GX HLE rejects as invalid.
+    // Flush pixel data from CPU cache to physical RAM for GX.
     {
-      u32 flush_sz = texVQ ? (w * h)      // GX_TF_I8: 1 byte/texel (w,h already halved)
-                           : (w * h * 2); // all 16-bit formats: 2 bytes/texel
-      DCFlushRange(ptex, (flush_sz + 31) & ~31u);
+      u32 flush_sz = w * h * 2;
+      DCFlushRange(dst, (flush_sz + 31) & ~31u);
     }
 
-    // Init Texture Object — give GX ptex (params.vram) not dst (vram_buffer).
+    // Init Texture Object
     bool use_mips = (mod->tcw.NO_PAL.MipMapped && get_graphism_preset() >= 2) ? GX_TRUE : GX_FALSE;
-    GX_InitTexObj(&pbuff->tex, ptex, w, h, FMT, TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
+    GX_InitTexObj(&pbuff->tex, dst, w, h, FMT, TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
                   TexUV(mod->tsp.FlipV, mod->tsp.ClampV), use_mips);
 
     
@@ -1128,9 +1034,6 @@ static void SetTextureParams(PolyParam *mod)
   }
 
   GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
-
-  if (pbuff->has_pal)
-    GX_LoadTlut(&pbuff->pal, GX_TLUT0);
 }
 
 // ============================
