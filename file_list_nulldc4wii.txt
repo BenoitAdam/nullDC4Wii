@@ -2,7 +2,6 @@ nullDC4Wii\CMakeLists.txt
 nullDC4Wii\CMakeREADME.txt
 nullDC4Wii\config.h
 nullDC4Wii\controls.cfg
-nullDC4Wii\FPS_GOAL.md
 nullDC4Wii\ndce.vcproj
 nullDC4Wii\ndce.vcxproj
 nullDC4Wii\ndce.vcxproj.filters
@@ -12,12 +11,9 @@ nullDC4Wii\nullDC.cpp
 nullDC4Wii\nullDCe.cbp
 nullDC4Wii\nullDCe.sln
 nullDC4Wii\os_base.h
-nullDC4Wii\prompt
 nullDC4Wii\sh4_reg_playground.h
 nullDC4Wii\stdclass.cpp
 nullDC4Wii\stdclass.h
-nullDC4Wii\temp2
-nullDC4Wii\tmp
 nullDC4Wii\types.h
 nullDC4Wii\archive\archive.7z
 nullDC4Wii\archive\archive_readme.txt
@@ -32,10 +28,14 @@ nullDC4Wii\dc\aica\aica_if.cpp
 nullDC4Wii\dc\aica\aica_if.h
 nullDC4Wii\dc\asic\asic.cpp
 nullDC4Wii\dc\asic\asic.h
+
+# GDRom specific
 nullDC4Wii\dc\gdrom\gdromv3.cpp
 nullDC4Wii\dc\gdrom\gdromv3.h
 nullDC4Wii\dc\gdrom\gdrom_if.h
 nullDC4Wii\dc\gdrom\gdrom_response.cpp
+
+# Mapping for controllers
 nullDC4Wii\dc\maple\maple_cfg.cpp
 nullDC4Wii\dc\maple\maple_cfg.h
 nullDC4Wii\dc\maple\maple_devs.cpp
@@ -44,6 +44,8 @@ nullDC4Wii\dc\maple\maple_helper.cpp
 nullDC4Wii\dc\maple\maple_helper.h
 nullDC4Wii\dc\maple\maple_if.cpp
 nullDC4Wii\dc\maple\maple_if.h
+
+# MEM - Dreamcast memory
 nullDC4Wii\dc\mem\memutil.cpp
 nullDC4Wii\dc\mem\memutil.h
 nullDC4Wii\dc\mem\mmu.cpp
@@ -58,6 +60,8 @@ nullDC4Wii\dc\mem\sh4_mem.cpp
 nullDC4Wii\dc\mem\sh4_mem.h
 nullDC4Wii\dc\mem\_vmem.cpp
 nullDC4Wii\dc\mem\_vmem.h
+
+# PVR Dreamcast GPU
 nullDC4Wii\dc\pvr\pvrLock.cpp
 nullDC4Wii\dc\pvr\pvrLock.h
 nullDC4Wii\dc\pvr\pvr_if.cpp
@@ -67,6 +71,8 @@ nullDC4Wii\dc\pvr\PVR_IF_QUICK_REFERENCE.md
 nullDC4Wii\dc\pvr\pvr_sb_regs.cpp
 nullDC4Wii\dc\pvr\pvr_sb_regs.h
 nullDC4Wii\dc\pvr\PVR_SB_REGS_IMPROVEMENTS.md
+
+# SH4 Dreamcast CPU
 nullDC4Wii\dc\sh4\bsc.cpp
 nullDC4Wii\dc\sh4\bsc.h
 nullDC4Wii\dc\sh4\ccn.cpp
@@ -106,6 +112,8 @@ nullDC4Wii\dc\sh4\tmu.cpp
 nullDC4Wii\dc\sh4\tmu.h
 nullDC4Wii\dc\sh4\ubc.cpp
 nullDC4Wii\dc\sh4\ubc.h
+
+# Dynarec v2
 nullDC4Wii\dc\sh4\rec_v2\blockmanager.cpp
 nullDC4Wii\dc\sh4\rec_v2\blockmanager.h
 nullDC4Wii\dc\sh4\rec_v2\BLOCKMANAGER_README.md
@@ -123,6 +131,8 @@ nullDC4Wii\dc\sh4\rec_v2\rec_config.h
 nullDC4Wii\dc\sh4\rec_v2\shil.cpp
 nullDC4Wii\dc\sh4\rec_v2\shil.h
 nullDC4Wii\dc\sh4\rec_v2\shil_canonical.h
+
+# Emitter 
 nullDC4Wii\emitter\emitter.sln
 nullDC4Wii\emitter\emitter.suo
 nullDC4Wii\emitter\emitter\emitter.vcproj
@@ -139,21 +149,29 @@ nullDC4Wii\emitter\emitter\x86_matcher.h
 nullDC4Wii\emitter\emitter\x86_op_classes.h
 nullDC4Wii\emitter\emitter\x86_op_encoder.h
 nullDC4Wii\emitter\emitter\x86_op_table.h
+
+# PowerPC
 nullDC4Wii\emitter\PPCEmit\list.xml
 nullDC4Wii\emitter\PPCEmit\ppc64_info.txt
 nullDC4Wii\emitter\PPCEmit\ppc_emit.h
 nullDC4Wii\emitter\PPCEmit\ppc_emitter.h
+
+# Plugin
 nullDC4Wii\plugins\plugin_header.h
 nullDC4Wii\plugins\plugin_manager.cpp
 nullDC4Wii\plugins\plugin_manager.h
 nullDC4Wii\plugins\plugin_types.cpp
 nullDC4Wii\plugins\plugin_types.h
+
+## Device Manager
 nullDC4Wii\plugs\drkMapleDevices\drkMapleDeviceManager.cpp
 nullDC4Wii\plugs\drkMapleDevices\drkMapleDevices.cpp
 nullDC4Wii\plugs\drkMapleDevices\drkMapleFishingRod.cpp
 nullDC4Wii\plugs\drkMapleDevices\drkMapleKeyboard.cpp
 nullDC4Wii\plugs\drkMapleDevices\drkMapleLightGun.cpp
 nullDC4Wii\plugs\drkMapleDevices\drkMapleMaracas.cpp
+
+## Render
 nullDC4Wii\plugs\drkPvr\config.h
 nullDC4Wii\plugs\drkPvr\drkPvr.cpp
 nullDC4Wii\plugs\drkPvr\drkPvr.h
@@ -169,12 +187,16 @@ nullDC4Wii\plugs\drkPvr\ta.cpp
 nullDC4Wii\plugs\drkPvr\ta.h
 nullDC4Wii\plugs\drkPvr\ta_const_df.h
 nullDC4Wii\plugs\drkPvr\ta_structs.h
+
+## AICA original port (probably just a hack just to bypass verification)
 nullDC4Wii\plugs\EmptyAICA\aica_hax.cpp
 nullDC4Wii\plugs\EmptyAICA\aica_hax.h
 nullDC4Wii\plugs\EmptyAICA\aica_hle.cpp
 nullDC4Wii\plugs\EmptyAICA\aica_hle.h
 nullDC4Wii\plugs\EmptyAICA\EmptyAICA.cpp
 nullDC4Wii\plugs\EmptyAICA\EmptyAICA.h
+
+## AICA from nulldc PSP port
 nullDC4Wii\plugs\nullAICA\aica.cpp
 nullDC4Wii\plugs\nullAICA\aica.h
 nullDC4Wii\plugs\nullAICA\file_list.txt
@@ -185,6 +207,8 @@ nullDC4Wii\plugs\nullAICA\nullAICA.h
 nullDC4Wii\plugs\nullAICA\resource.h
 nullDC4Wii\plugs\nullAICA\sgc_if.cpp
 nullDC4Wii\plugs\nullAICA\sgc_if.h
+
+## Image Reader
 nullDC4Wii\plugs\ImgReader\cdi.cpp
 nullDC4Wii\plugs\ImgReader\cdi.h
 nullDC4Wii\plugs\ImgReader\common.cpp
@@ -211,7 +235,11 @@ nullDC4Wii\plugs\ImgReader\SCSIDEFS.H
 nullDC4Wii\plugs\ImgReader\ui.cpp
 nullDC4Wii\plugs\ImgReader\ui.h
 nullDC4Wii\plugs\ImgReader\UI.rc
+
+## ?? 
 nullDC4Wii\plugs\nullExtDev\nullExtDev.cpp
+
+## ARM AICA7 (from Xbox 360 port)
 nullDC4Wii\plugs\vbaARM\arm-new.h
 nullDC4Wii\plugs\vbaARM\arm7.cpp
 nullDC4Wii\plugs\vbaARM\arm7.h
@@ -224,6 +252,8 @@ nullDC4Wii\plugs\vbaARM\mem.h
 nullDC4Wii\plugs\vbaARM\resource.h
 nullDC4Wii\plugs\vbaARM\vbaARM.cpp
 nullDC4Wii\plugs\vbaARM\vbaARM.h
+
+## Wii specific files
 nullDC4Wii\wii\iso.cpp
 nullDC4Wii\wii\iso.h
 nullDC4Wii\wii\main.cpp

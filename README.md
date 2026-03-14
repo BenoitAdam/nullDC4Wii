@@ -24,7 +24,7 @@ a fork from https://github.com/skmp/nullDCe
 - Coding routine adjustement for accuracy (FAST/BALANCED/ACCURATE)
 - Coding routine adjustement for performance (LOW/NORMAL/HIGH/EXTRA)
 - 50/60 ips for PAL/NTSC ? (should be ok)
-- both 4/3 and fullscreen support (in next version)
+- both 4/3 and fullscreen support (implemented, need fix on some games)
 - Frame Skipping
 - Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
 - Wii U Gamepad, Dualshock 3 and Wii U Pro Controller support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
@@ -120,21 +120,18 @@ vmu_save_A1.bin
 vmu_save_A2.bin
 
 
-## Status (09/03/2026)
+## Status (13/03/2026)
 
-launch on dolphin an real Wii with few FPS  
+launch on dolphin an real Wii with FPS between 8 and 50 Fps  
 game selector implemented  
 1 player controler implemented  
 Few games are runnable :
 - Castlevania (Demo)
 - Sega Tetris
-- Shenmue (Broken in a0.07)
+- Shenmue
 - Jojo
 
 Wii Dynarec has been improved & completed by AI. Compile but doesn't run (Black Screen). See /archive folder
-
-Regression on Shenmue need to be fixed before improving anything at this point https://github.com/BenoitAdam94/nullDC4Wii/issues/13
-
 
 ## Compatibility
 
@@ -166,6 +163,11 @@ If you experience various bugs (example that may happens : weird AI controled NP
 | **EXTRA** | `GX_LINEAR` · `lod_bias -1.0f` *(may need to adjust to -0.75)* · `GX_ENABLE` · Anisotropic x4 | Wii U |
 
 While the emulator is still in alpha, the visual difference is limited for now.
+
+<img width="1844" height="1456" alt="levels" src="https://github.com/user-attachments/assets/79d5271d-0689-43d4-92c0-66674013ddce" />
+
+
+NORMAL will probably be the default setting in the next release
 
 ## For Developpers :
 
@@ -275,6 +277,7 @@ All testers and all futur testers
 ### Special no thanks
 
 To all people not believing in this project
+
 
 
 
