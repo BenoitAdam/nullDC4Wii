@@ -26,7 +26,7 @@ extern "C" {
   }
 }
 
-int g_graphism_preset = 0; // 0=Low (default), 1=Normal, 2=High, 3=Extra
+int g_graphism_preset = 1; // 0=Low (default), 1=Normal, 2=High, 3=Extra
 
 // These will be used by gxRend.cpp ... (put additional files here)
 extern "C" {
@@ -312,7 +312,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H"); // Clear Screen
-    printf("\nNullDC4Wii - Alpha 0.09   ");
+    printf("\nNullDC4Wii - Alpha 0.10   ");
     printf("Current directory: %s\n", currentPath);
     // Display current GRAPHISM preset (cycled with Minus)
     printf("(-) GRAPHICS: ");
