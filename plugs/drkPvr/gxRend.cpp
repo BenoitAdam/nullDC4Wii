@@ -124,8 +124,13 @@ void ApplyGraphismPreset() {
 // RGB565 (DC: R5G6B5) → GX RGB565: identical layout, no conversion needed
 #define ABGR0565(x) (x)
 
-// DC ARGB1555 bit layout matches GX RGB5A3 bit15 directly — pass through as-is
-#define ABGR1555(x) (x)
+// DC ARGB1555 bit layout matches GX RGB5A3 bit15 directly — BUT:
+// DC bit15=0 = FULLY TRANSPARENT (alpha=0, RGB ignored).
+// GX RGB5A3 bit15=0 = 3-bit partial alpha + 4-bit RGB (NOT fully transparent).
+// Passing through causes DC "transparent" pixels with non-zero RGB to render
+// as semi-transparent coloured noise — checkerboard on text/logos.
+// Fix: bit15=0 → 0x0000 (alpha=0 in GX), relies on alpha compare to discard.
+#define ABGR1555(x) ((x) & 0x8000 ? (x) : 0x0000)
 
 // ARGB4444 (DC: A4 R4 G4 B4) → GX RGB5A3
 // ARGB4444 has 4 alpha (transparency) bit, Wii's RGB5A3 has 3 bits
@@ -1234,7 +1239,14 @@ void DoRender()
 
   GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 
-  //		GX_SetAlphaCompare(GX_GREATER,0,GX_AOP,GX_ALWAYS,0);
+  // Discard pixels with alpha=0 (transparent ARGB1555 pixels mapped to 0x0000).
+  // This prevents transparent texture backgrounds from writing black to the EFB
+  // even when blending is disabled (opaque list, GX_BM_NONE).
+  // GX_GREATER with ref=0: pass if alpha > 0, discard if alpha == 0.
+  // GX_SetZCompLoc(GX_FALSE): perform alpha test BEFORE Z-compare so discarded
+  // pixels don't incorrectly update the Z buffer (punch-through correctness).
+  GX_SetAlphaCompare(GX_GREATER, 0, GX_AOP_AND, GX_ALWAYS, 0);
+  GX_SetZCompLoc(GX_FALSE);
 
   GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
@@ -1331,19 +1343,19 @@ void StartRender()
     static u16 fb2d_tex[640 * 480] ATTRIBUTE_ALIGN(32);
 
     u32 vram_addr = FB_R_SOF1 & 0x00FFFFFF;
-    u16 *src = (u16 *)&params.vram[fast_ConvOffset32toOffset64(vram_addr)];
 
-    // Tile into GX 4x4-block layout with LE->BE byte swap per pixel.
+    // Each pixel address must be individually converted 32->64 bit.
     for (int ty = 0; ty < 480; ty += 4)
       for (int tx = 0; tx < 640; tx += 4)
       {
         u16 *dst = &fb2d_tex[((ty / 4) * (640 / 4) + (tx / 4)) * 16];
         for (int row = 0; row < 4; row++)
-        {
-          u16 *srow = &src[(ty + row) * 640 + tx];
           for (int col = 0; col < 4; col++)
-            *dst++ = (srow[col] >> 8) | (srow[col] << 8);
-        }
+          {
+            u32 off64 = fast_ConvOffset32toOffset64(vram_addr + ((ty + row) * 640 + (tx + col)) * 2);
+            u16 px = *(u16*)&params.vram[off64];
+            *dst++ = (px >> 8) | (px << 8);
+          }
       }
     DCFlushRange(fb2d_tex, sizeof(fb2d_tex));
 
