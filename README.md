@@ -7,6 +7,7 @@ a fork from https://github.com/skmp/nullDCe
 ### Simple
 
 - Test current state with every game and report compatibility (see "compatibility" below)
+- Help me finding regression (NOT bugs or glitch, only regression for now please)
 
 ### Developer (Easy)
 
