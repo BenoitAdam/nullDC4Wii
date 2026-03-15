@@ -124,12 +124,7 @@ void ApplyGraphismPreset() {
 // RGB565 (DC: R5G6B5) → GX RGB565: identical layout, no conversion needed
 #define ABGR0565(x) (x)
 
-// DC ARGB1555 bit layout matches GX RGB5A3 bit15 directly — BUT:
-// DC bit15=0 = FULLY TRANSPARENT (alpha=0, RGB ignored).
-// GX RGB5A3 bit15=0 = 3-bit partial alpha + 4-bit RGB (NOT fully transparent).
-// Passing through causes DC "transparent" pixels with non-zero RGB to render
-// as semi-transparent coloured noise — checkerboard on text/logos.
-// Fix: bit15=0 → 0x0000 (alpha=0 in GX), relies on alpha compare to discard.
+// DC ARGB1555: bit15=0 = fully transparent. Fix: map to 0x0000 so alpha compare discards it.
 #define ABGR1555(x) ((x) & 0x8000 ? (x) : 0x0000)
 
 // ARGB4444 (DC: A4 R4 G4 B4) → GX RGB5A3
@@ -681,9 +676,7 @@ u8 *VramWork;
 template <class PixelConvertor>
 void fastcall texture_TW(u8 *p_in, u32 Width, u32 Height)
 {
-  //		u32 p=0;
   u8 *pb = VramWork;
-  // pb->amove(0,0);
 
   const u32 divider = PixelConvertor::xpp * PixelConvertor::ypp;
 
@@ -692,13 +685,19 @@ void fastcall texture_TW(u8 *p_in, u32 Width, u32 Height)
     for (u32 x = 0; x < Width; x += PixelConvertor::xpp)
     {
       u8 *p = &p_in[(twop(x, y, Width, Height) / divider) << 3];
-      PixelConvertor::Convert((u16 *)pb, x, y, Width, p);
 
-      // pb->rmovex(PixelConvertor::xpp);
-      // pb+=PixelConvertor::xpp*2;
+      // VRAM pixels were stored via pvr_write_area1_16 with host_ptr_xor,
+      // which swaps the byte-pair address. Reading without host_ptr_xor gives
+      // byte-swapped pixel values. Pre-read into a local buffer with correct
+      // byte order so the converter receives properly-ordered pixel data.
+      u16 buf[4];
+      buf[0] = *host_ptr_xor((u16*)&p[0]);
+      buf[1] = *host_ptr_xor((u16*)&p[2]);
+      buf[2] = *host_ptr_xor((u16*)&p[4]);
+      buf[3] = *host_ptr_xor((u16*)&p[6]);
+
+      PixelConvertor::Convert((u16*)pb, x, y, Width, (u8*)buf);
     }
-    // pb->rmovey(PixelConvertor::ypp);
-    // pb+=Width*(PixelConvertor::ypp-1)*2;
   }
   memcpy(p_in, VramWork, Width * Height * 2);
 }
@@ -715,18 +714,19 @@ void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
   {
     for (u32 x = 0; x < Width; x += PixelConvertor::xpp)
     {
-      // Fetch VQ index for this 2x2 block (twiddle-ordered)
       u8 idx = p_in[twop(x, y, Width, Height) / divider];
-      // Codebook entry: 4 pixels × 2 bytes = 8 bytes, twiddle layout (0,0)(1,0)(0,1)(1,1)
-      u16 *src = (u16 *)&vq_codebook[idx * 8];
-      // Write all 4 pixels into GX 4x4-block layout via pb_prel
-      pb_prel((u16*)pb, Width, x + 0, y + 0, PixelConvertor::ConvertPixel(src[0]));
-      pb_prel((u16*)pb, Width, x + 1, y + 0, PixelConvertor::ConvertPixel(src[2]));
-      pb_prel((u16*)pb, Width, x + 0, y + 1, PixelConvertor::ConvertPixel(src[1]));
-      pb_prel((u16*)pb, Width, x + 1, y + 1, PixelConvertor::ConvertPixel(src[3]));
+      // Read codebook pixels with host_ptr_xor for correct byte order.
+      u8 *cb = &vq_codebook[idx * 8];
+      u16 s0 = *host_ptr_xor((u16*)&cb[0]);
+      u16 s1 = *host_ptr_xor((u16*)&cb[2]);
+      u16 s2 = *host_ptr_xor((u16*)&cb[4]);
+      u16 s3 = *host_ptr_xor((u16*)&cb[6]);
+      pb_prel((u16*)pb, Width, x + 0, y + 0, PixelConvertor::ConvertPixel(s0));
+      pb_prel((u16*)pb, Width, x + 1, y + 0, PixelConvertor::ConvertPixel(s2));
+      pb_prel((u16*)pb, Width, x + 0, y + 1, PixelConvertor::ConvertPixel(s1));
+      pb_prel((u16*)pb, Width, x + 1, y + 1, PixelConvertor::ConvertPixel(s3));
     }
   }
-  // Result already in VramWork/dst — GX_InitTexObj will point directly there.
 }
 
 // Planar (Linear) texture conversion.
@@ -741,7 +741,8 @@ void Plannar(u8 *praw, u32 w, u32 h)
   {
     for (x = 0; x < w; x++)
     {
-      u32 col = *ptr++;
+      // Read with host_ptr_xor for correct byte order.
+      u32 col = *host_ptr_xor(ptr++);
       switch (type)
       {
       case 1555:
@@ -1041,6 +1042,8 @@ static void SetTextureParams(PolyParam *mod)
   GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
 }
 
+static bool s_did_3d_render = false;
+
 // ============================
 // The main rendering loop. Executes GX commands to draw the stored vertex lists.
 // ============================
@@ -1238,13 +1241,6 @@ void DoRender()
   const VertexList *const crLST = curLST; // hint to the compiler that sceGUM cant edit this value !
 
   GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
-
-  // Discard pixels with alpha=0 (transparent ARGB1555 pixels mapped to 0x0000).
-  // This prevents transparent texture backgrounds from writing black to the EFB
-  // even when blending is disabled (opaque list, GX_BM_NONE).
-  // GX_GREATER with ref=0: pass if alpha > 0, discard if alpha == 0.
-  // GX_SetZCompLoc(GX_FALSE): perform alpha test BEFORE Z-compare so discarded
-  // pixels don't incorrectly update the Z buffer (punch-through correctness).
   GX_SetAlphaCompare(GX_GREATER, 0, GX_AOP_AND, GX_ALWAYS, 0);
   GX_SetZCompLoc(GX_FALSE);
 
@@ -1313,13 +1309,13 @@ void DoRender()
 
   GX_DrawDone();
   GX_CopyDisp(frameBuffer[fb], GX_TRUE);
-
   VIDEO_SetNextFramebuffer(frameBuffer[fb]);
-
   VIDEO_Flush();
 
-  wii_audio_frame(); // Audio (Step AICA and push one frame of audio to ASND)
-  VIDEO_WaitVSync();  // Needed for O3 mode (else Dreamcast logo take 5 seconds instead of 9)
+  s_did_3d_render = true;
+
+  wii_audio_frame();
+  VIDEO_WaitVSync();
 }
 
 // ============================
@@ -1337,14 +1333,21 @@ void StartRender()
 
   if (FB_W_SOF1 & 0x1000000)
   {
-    // 2D direct framebuffer mode (logo screens).
-    // Read from FB_R_SOF1 (what the DC video hardware displays),
-    // NOT FB_W_SOF1 (write destination, may be the back buffer).
-    static u16 fb2d_tex[640 * 480] ATTRIBUTE_ALIGN(32);
+    if (s_did_3d_render)
+    {
+      s_did_3d_render = false;
+      GX_DrawDone();
+      GX_CopyDisp(frameBuffer[fb], GX_TRUE);
+      VIDEO_SetNextFramebuffer(frameBuffer[fb]);
+      VIDEO_Flush();
+      VIDEO_WaitVSync();
+      FrameCount++;
+      return;
+    }
 
+    static u16 fb2d_tex[640 * 480] ATTRIBUTE_ALIGN(32);
     u32 vram_addr = FB_R_SOF1 & 0x00FFFFFF;
 
-    // Each pixel address must be individually converted 32->64 bit.
     for (int ty = 0; ty < 480; ty += 4)
       for (int tx = 0; tx < 640; tx += 4)
       {
@@ -1353,8 +1356,7 @@ void StartRender()
           for (int col = 0; col < 4; col++)
           {
             u32 off64 = fast_ConvOffset32toOffset64(vram_addr + ((ty + row) * 640 + (tx + col)) * 2);
-            u16 px = *(u16*)&params.vram[off64];
-            *dst++ = (px >> 8) | (px << 8);
+            *dst++ = *host_ptr_xor((u16*)&params.vram[off64]);
           }
       }
     DCFlushRange(fb2d_tex, sizeof(fb2d_tex));
