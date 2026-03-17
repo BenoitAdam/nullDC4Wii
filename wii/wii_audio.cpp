@@ -11,6 +11,16 @@
 
 #include "wii_audio.h"
 
+// config.h (pulled in via types.h) deliberately poisons BIG_ENDIAN and
+// LITTLE_ENDIAN to catch accidental use. Undef them before pulling in
+// libogc/ASND headers which legitimately define them.
+#ifdef BIG_ENDIAN
+#  undef BIG_ENDIAN
+#endif
+#ifdef LITTLE_ENDIAN
+#  undef LITTLE_ENDIAN
+#endif
+
 #include <asndlib.h>
 #include <string.h>
 #include <ogc/cache.h>   // for DCFlushRange
@@ -18,9 +28,8 @@
 #include <ogc/mutex.h>
 
 // AICA sample-generation side
-extern void   libAICA_TimeStep();   // steps one AICA sample, writes mixl/mixr
-extern int    mixl;                 // from sgc_if.cpp  (SampleType == s32)
-extern int    mixr;
+#include "../plugs/nullAICA/aica.h"
+#include "../plugs/nullAICA/sgc_if.h"  // for mixl / mixr
 
 // Set to 1 by wii_audio_aica_ready() once AICA_Init() has run.
 // wii_audio_frame() is a no-op until then to avoid stepping null pointers.
