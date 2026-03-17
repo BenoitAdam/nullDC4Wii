@@ -7,6 +7,7 @@ a fork from https://github.com/skmp/nullDCe
 ### Simple
 
 - Test current state with every game and report compatibility (see "compatibility" below)
+- Help me finding regression (NOT bugs or glitch, only regression for now please)
 
 ### Developer (Easy)
 
@@ -157,8 +158,8 @@ If you experience various bugs (example that may happens : weird AI controled NP
 
 | Mode | Settings | Best platform | 
 |------|----------| ------------------------- | 
-| **LOW (default)** | `GX_NEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
-| **NORMAL** | `GX_LINEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
+| **LOW (default from a0.06 to a0.09)** | `GX_NEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
+| **NORMAL (default from a0.10)** | `GX_LINEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
 | **HIGH** | `GX_LINEAR` · `lod_bias -0.5f` · `GX_ENABLE` · Anisotropic x2 | Wii U |
 | **EXTRA** | `GX_LINEAR` · `lod_bias -1.0f` *(may need to adjust to -0.75)* · `GX_ENABLE` · Anisotropic x4 | Wii U |
 
