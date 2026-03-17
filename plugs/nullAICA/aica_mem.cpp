@@ -1,0 +1,129 @@
+#include "aica_mem.h"
+#include "dsp.h"
+#include "sgc_if.h"
+
+u8* aica_reg;
+u8* aica_ram_l;
+
+// Memory map:
+// 0x0000 - 0x1FFF  Channel registers (64 channels x 128 bytes)
+// 0x2000 - 0x27FF  Upper channel area
+// 0x2800 - 0x2817  CommonData registers
+// 0x2818 - 0x2FFF  Interrupt/timer/control registers
+// 0x3000 - 0x7FFF  DSP data
+
+template<u32 sz>
+u32 ReadReg(u32 addr)
+{
+    if (addr < 0x2800)
+    {
+        ReadMemArrRet(aica_reg, addr, sz);
+    }
+    if (addr < 0x2818)
+    {
+        if (sz == 1)
+        {
+            ReadCommonReg(addr, true);
+            ReadMemArrRet(aica_reg, addr, 1);
+        }
+        else
+        {
+            ReadCommonReg(addr, false);
+            ReadMemArrRet(aica_reg, addr, 2);
+        }
+    }
+    ReadMemArrRet(aica_reg, addr, sz);
+}
+
+template<u32 sz>
+void WriteReg(u32 addr, u32 data)
+{
+    if (addr < 0x2000)
+    {
+        // Channel data: 64 channels, 128 bytes each
+        u32 chan = addr >> 7;
+        u32 reg  = addr & 0x7F;
+        if (sz == 1)
+        {
+            WriteMemArr(aica_reg, addr, data, 1);
+            WriteChannelReg8(chan, reg);
+        }
+        else
+        {
+            WriteMemArr(aica_reg, addr, data, 2);
+            WriteChannelReg8(chan, reg);
+            WriteChannelReg8(chan, reg + 1);
+        }
+        return;
+    }
+
+    if (addr < 0x2800)
+    {
+        WriteMemArr(aica_reg, addr, data, sz);
+        return;
+    }
+
+    if (addr < 0x2818)
+    {
+        if (sz == 1)
+        {
+            WriteCommonReg8(addr, data);
+        }
+        else
+        {
+            WriteCommonReg8(addr,     data & 0xFF);
+            WriteCommonReg8(addr + 1, data >> 8);
+        }
+        return;
+    }
+
+    if (addr >= 0x3000)
+    {
+        if (sz == 1)
+        {
+            WriteMemArr(aica_reg, addr, data, 1);
+            dsp_writenmem(addr);
+        }
+        else
+        {
+            WriteMemArr(aica_reg, addr, data, 2);
+            dsp_writenmem(addr);
+            dsp_writenmem(addr + 1);
+        }
+    }
+
+    if (sz == 1)
+        WriteAicaReg<1>(addr, data);
+    else
+        WriteAicaReg<2>(addr, data);
+}
+
+u32 FASTCALL aica_ReadMem_reg(u32 addr, u32 size)
+{
+    if (size == 1)
+        return ReadReg<1>(addr & 0x7FFF);
+    else
+        return ReadReg<2>(addr & 0x7FFF);
+    return 0;
+}
+
+void FASTCALL aica_WriteMem_reg(u32 addr, u32 data, u32 size)
+{
+    if (size == 1)
+        WriteReg<1>(addr & 0x7FFF, data);
+    else
+        WriteReg<2>(addr & 0x7FFF, data);
+}
+
+void init_mem()
+{
+    aica_ram_l = aica_params.aica_ram;
+    aica_reg   = (u8*)malloc(0x8000);
+    memset(aica_ram_l, 0, AICA_RAM_SIZE);
+    memset(aica_reg,   0, 0x8000);
+}
+
+void term_mem()
+{
+    free(aica_reg);
+}
