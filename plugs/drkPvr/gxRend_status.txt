@@ -11,36 +11,61 @@ Better colors :
 What still doesn't looks good :
 - Sonia Belmont in Castlevania resurrection
 - Most textures in Castlevania resurrection and Sega Tetris
+*/
 
 Improvement made but unstable or regressing elsewhere :
 
 - Castlevania : able to show Sonia Belmont textured, some wall and the energy/status bar is ok
 - Sega Tetris : better 
-- Regression : red letters (D R E A M C A S T) bumping in sega intro boot sequence aren't seeing. We only see it's tile background black
-
-Textures log (in setparam) for the dreamcast boot logo :
-
-[TEX 00] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=5 TexV=5 TCW=100A7800
-[TEX 01] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5800
-[TEX 02] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A7000
-[TEX 03] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5C00
-[TEX 04] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6800
-[TEX 05] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5800
-[TEX 06] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6400
-[TEX 07] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6C00
-[TEX 08] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6000
-[TEX 09] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A7400
-[TEX 10] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100AB800
-[TEX 11] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=5 TexV=5 TCW=100A7800
-[TEX 12] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5800
-[TEX 13] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A7000
-[TEX 14] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5C00
-[TEX 15] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6800
-[TEX 16] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A5800
-[TEX 17] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6400
-[TEX 18] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6C00
-[TEX 19] ListType=2 PixelFmt=2 ScanOrder=0 VQ=0 UseAlpha=1 IgnoreTexA=0 MipMapped=0 TexU=3 TexV=3 TCW=100A6000
-
 
 
 */
+
+| DC format |Alpha| Best WiiGX format | Why                       | Example texture using it |
+| --------- | --- | ----------------- | ------------------------- | ------------------------ |
+| RGB565    | 0   | RGB565            | identical format          | ? |
+| ARGB1555  | 1   | RGB5A3            | closest 16-bit equivalent | Shenmue Menu & Tree + SEGA logo in Sega Tetris |
+| ARGB4444  | 4   | RGB5A3 or RGBA8   | RGB5A3 loses precision    | DC letters - Castlevania : Sonia / HUD / Big wall  |
+| ARGB8888  | 8   | RGBA8             | perfect match             | Guilty Gear X2, Capcom vs SNK 2, jojo ? |
+| YUV422    | 0   | CMPR or RGA8      | CMPR or RGA8              | Code Veronica FMV |
+| 4BPP      | Var | CI4               | identical format          | Small icons, font glyphs. |
+| 8BPP      | Var | CI8               | identical format          | Environment textures, 2D sprites. |
+| VQ*       | Var | CMPR              | Best compression low VRAM | Skyboxes, ground textures |
+
+
+* VQ (Vector Quantified) is a compression format :
+
+| DC VQ Format | A | Best WiiGX Format | Why                   | Example texture using it           |                                                                |
+| ------------ | - | ----------------- | --------------------- | ---------------------------------- |
+| VQ-RGB565    | 0 | CMPR              | Best 4:1 compression  | Sega Tetris "Created By" red logo  |
+| VQ-ARGB1555  | 1 | CMPR              | Best 4:1 compression  | ? |
+| VQ-ARGB4444  | 4 | RGB5A3            | 16-bit Lossy          | ? | 
+| VQ-YUV422    | 0 | CMPR              | Best 4:1 compression  | ? |
+
+* Scan is a pixel order. Twiddle keeps visually adjacent pixels physically close in memory
+
+| Scan Mode | Type                   | Description                     | Best Use Case                                         |
+| --------- | -----------------------| ------------------------------- | ----------------------------------------------------- |
+| scan=0    | Twiddle (Non-Scanline) | Pixels rearranged (Z or Morton) | Default for most 3D textures                          |
+| scan=1    | Scanline (Linear)      | Pixels standard order           | Non-power-of-two textures (ex 320x240) or UI elements |
+
+
+fmt=0 or fmt=7 → ARGB1555
+fmt=1 → RGB565
+fmt=2 → ARGB4444
+fmt=3 → YUV422
+fmt=4 → Bump Map
+fmt=5 → 4BPP palette
+fmt=6 → 8BPP palette
+
+Sega Teris Red Logo (Created By...) (texture + white backgrond)
+[RAWBYTES] addr=5B0080 fmt=1 vq=1 scan=0 raw[0..7]=0000 0000 0000 0000 
+[DSTBYTES] addr=5B0880 dst[0..7]=FFFF FFFF FFFF FFFF
+
+
+Flycast documentation :
+https://deepwiki.com/flyinghead/flycast/4.4-texture-management-and-caching
+
+VQ :
+
+Converting Dreamcast VQ (Vector Quantization) to Wii CMPR (DXT1/BC1) is the trickiest part of a port because they represent two fundamentally different ways of lying to the GPU to save space.The Technical Clash: VQ vs. CMPRDreamcast VQ (Vector Quantization):How it works: It uses a "Codebook." Think of it like a mosaic kit. The codebook contains 256 small $2 \times 2$ pixel tiles. The actual texture data is just a list of indices pointing to those tiles.Compression Ratio: It’s massive—roughly 8:1 or better.The Problem: Because it relies on a global codebook for the whole image, colors are shared across the entire texture.Wii CMPR (S3TC/DXT1):How it works: It divides the image into $4 \times 4$ pixel blocks. Each block has its own local 2-color palette, and the 16 pixels interpolate between those two colors.Compression Ratio: Always 6.4:1 (4 bits per pixel).The Conversion StrategySince you can't natively run a VQ codebook on the Wii's Hollywood GPU, you have two main paths:Option A: The "Safe" Route (VQ → RGB565/RGBA8)If you have enough MEM1/MEM2 space on the Wii, decompress the VQ texture entirely into a raw 16-bit or 32-bit format.Pros: Zero quality loss from the original DC asset.Cons: Uses significantly more VRAM than the original DC file.Option B: The "Efficient" Route (VQ → CMPR)This is what most professional "remasters" or homebrew ports do. You decompress the VQ to a raw bitmap in memory, then re-encode it using a Wii-specific CMPR encoder.The Trap: You are performing "Lossy to Lossy" conversion. The VQ already lost some detail; re-compressing to CMPR will introduce "blocky" artifacts, especially in gradients.Tip: If the original DC texture used 1-bit alpha (Punch-through), CMPR handles this perfectly. If it used 4-bit alpha (ARGB4444), CMPR will destroy the transparency quality, and you should use RGB5A3 instead.
