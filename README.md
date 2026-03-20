@@ -263,7 +263,9 @@ Homebrew tutorials : https://wiibrew.org/wiki/Main_Page
 - skmp (original NullDC creator)
 - NullDC contributors
 - Joseph Jordan - libiso  
-- Xale00 (also know as Benoit Adam) - 2026 recompilation  
+- Xale00 (also know as Benoit Adam) - 2026 recompilation
+- gligli (Xbox 360 port)
+- Xeihro (Xiro28 PSP Port)
 - Flyinghead/Flycast Team  
 - AI because this project would have never existed otherwise lol
 - Probably Reicast Team also who knows
@@ -284,7 +286,7 @@ To all people not believing in this project
 
 
 
-
+ 
 
 
 
