@@ -167,8 +167,8 @@ While the emulator is still in alpha, the visual difference is limited for now.
 
 <img width="1844" height="1456" alt="levels" src="https://github.com/user-attachments/assets/79d5271d-0689-43d4-92c0-66674013ddce" />
 
-
-NORMAL will probably be the default setting in the next release
+- Use LOW for 2D and heavy 3D games
+- Use NORMAL for other games
 
 ## For Developpers :
 
