@@ -125,7 +125,7 @@ void ApplyGraphismPreset() {
 #define ABGR0565(x) (x)
 
 // DC ARGB1555: bit15=0 = fully transparent. Fix: map to 0x0000 so alpha compare discards it.
-#define ABGR1555(x) ((x) & 0x8000 ? (x) : 0x0000)
+#define ABGR1555(x) ((x) & 0x8000 ? (x) : 0x0000) // Works together with the coding routing introduced in alpha 0.13 (alpha_fmt stuff)
 
 // ARGB4444 (DC: A4 R4 G4 B4) → GX RGB5A3
 // ARGB4444 has 4 alpha (transparency) bit, Wii's RGB5A3 has 3 bits
