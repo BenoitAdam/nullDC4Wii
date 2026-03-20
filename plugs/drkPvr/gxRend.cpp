@@ -1241,8 +1241,8 @@ void DoRender()
   const VertexList *const crLST = curLST; // hint to the compiler that sceGUM cant edit this value !
 
   GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
-  GX_SetAlphaCompare(GX_GREATER, 0, GX_AOP_AND, GX_ALWAYS, 0);
-  GX_SetZCompLoc(GX_FALSE);
+  // GX_SetAlphaCompare(GX_GREATER, 0, GX_AOP_AND, GX_ALWAYS, 0);
+  // GX_SetZCompLoc(GX_FALSE);
 
   GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
