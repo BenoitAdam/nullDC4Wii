@@ -10,6 +10,7 @@
 #include "config/config.h"
 #include "plugins/plugin_manager.h"
 #include "cl/cl.h"
+#include "plugs/ImgReader/elf_loader.h"   // ELF boot support
 
 // Frameskipping (preparation : working on it)
 int g_current_frameskip = 0; // 0 = no skip, 1 = skip 1 frame, 2 = skip 2 frame
@@ -17,6 +18,34 @@ int g_frame_counter = 0;
 
 
 __settings settings;
+
+// ---------------------------------------------------------------------------
+// ELF boot state
+// Set by main___() if the selected file is a .elf.
+// Consumed by RunDC() after Reset() so the entry point wins over the BIOS vector.
+// ---------------------------------------------------------------------------
+static bool  g_elf_pending = false;
+static u32   g_elf_entry   = 0;
+
+// ---------------------------------------------------------------------------
+// Helper: case-insensitive check for a file extension
+// ---------------------------------------------------------------------------
+static bool HasExtension(const char* path, const char* ext)
+{
+    if (!path || !ext) return false;
+    size_t plen = strlen(path);
+    size_t elen = strlen(ext);
+    if (plen < elen) return false;
+    const char* tail = path + plen - elen;
+    // Compare ignoring case
+    for (size_t i = 0; i < elen; i++)
+    {
+        char a = tail[i] >= 'A' && tail[i] <= 'Z' ? tail[i] + 32 : tail[i];
+        char b = ext[i]  >= 'A' && ext[i]  <= 'Z' ? ext[i]  + 32 : ext[i];
+        if (a != b) return false;
+    }
+    return true;
+}
 
 //mainloop
 int RunDC()
@@ -33,6 +62,27 @@ int RunDC()
 		printf("Using Interpreter\n");
 	}
 
+	// -----------------------------------------------------------------------
+	// ELF boot: patch SH4 context AFTER the CPU back-end is chosen but
+	// BEFORE Start_DC() begins executing instructions.
+	//
+	// Start_DC() calls sh4_cpu.Reset() internally which sets nextpc to the
+	// BIOS reset vector (0xA0000000).  We need to override that after Reset
+	// but before the first instruction fetch.
+	//
+	// The hook we use: elf_apply_entry() is called from inside dc_run_hook()
+	// which is a weak/callback called by dc.cpp right after Reset() and
+	// before the main execution loop starts.  If your dc.cpp does not have
+	// that hook yet, see the comment block below for the alternative.
+	// -----------------------------------------------------------------------
+	if (g_elf_pending)
+	{
+		// dc.cpp must call dc_elf_pre_run_hook() between Reset() and Run().
+		// We register our intent here; the actual register write happens in
+		// the hook (see dc_elf_pre_run_hook() below).
+		printf("[ELF] Boot mode active – entry will be applied after CPU reset\n");
+	}
+
 	Start_DC();	//this call is blocking ...
 	
 
@@ -42,9 +92,30 @@ int RunDC()
 	return 0;
 }
 
+// ---------------------------------------------------------------------------
+// dc_elf_pre_run_hook  – called by dc.cpp after sh4_cpu.Reset() and before
+//                        the execution loop starts.
+//
+// ADD ONE LINE to your dc.cpp Start_DC() function, right after sh4_cpu.Reset()
+// is called:
+//
+//   extern void dc_elf_pre_run_hook();
+//   dc_elf_pre_run_hook();
+//
+// That's the only change needed in dc.cpp.
+// ---------------------------------------------------------------------------
+extern "C" void dc_elf_pre_run_hook()
+{
+	if (g_elf_pending)
+	{
+		elf_apply_entry(g_elf_entry);
+		g_elf_pending = false;
+	}
+}
+
 //////////////////////////////////////
 
-//command lineparsing & init
+//command line parsing & init
 int main___(int argc,char* argv[])
 {
 	if(ParseCommandLine(argc,argv))
@@ -95,6 +166,35 @@ int main___(int argc,char* argv[])
 			msgboxf("Unable to load plugins -- exiting\n",MBX_ICONERROR);
 			rv = -2;
 			goto cleanup;
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// ELF detection: if the selected file is a .elf, load its segments into
+	// emulated RAM now (memory is reserved, plugins are loaded).
+	// The actual PC override happens later in dc_elf_pre_run_hook(), after
+	// the CPU back-end has been reset.
+	// -----------------------------------------------------------------------
+	{
+		char elfPath[512] = "";
+		// os_GetFile is defined in main.cpp and returns the path chosen by the user
+		os_GetFile(elfPath, NULL, 0);
+
+		if (HasExtension(elfPath, ".elf"))
+		{
+			printf("[ELF] Detected ELF file: %s\n", elfPath);
+			u32 entry = 0;
+			if (elf_load(elfPath, &entry))
+			{
+				g_elf_entry   = entry;
+				g_elf_pending = true;
+				printf("[ELF] Segments loaded, will boot to 0x%08X\n", entry);
+			}
+			else
+			{
+				printf("[ELF] Failed to load ELF – falling back to BIOS\n");
+				// g_elf_pending stays false → normal BIOS boot
+			}
 		}
 	}
 
