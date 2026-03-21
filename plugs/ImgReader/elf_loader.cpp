@@ -22,7 +22,6 @@
 // ---------------------------------------------------------------------------
 // Minimal ELF32 definitions (we don't want a full libelf dependency)
 // ---------------------------------------------------------------------------
-#define ELF_MAGIC_LE  0x464C457Fu   // "\x7FELF" in little-endian u32
 #define EM_SH         42u           // SH (SuperH) architecture
 #define PT_LOAD       1u            // Loadable segment type
 #define ET_EXEC       2u            // Executable file type
@@ -114,10 +113,12 @@ bool elf_load(const char* path, u32* out_entry)
         fclose(f); return false;
     }
 
-    // Magic
-    if (*reinterpret_cast<const u32*>(ehdr.e_ident) != ELF_MAGIC_LE)
+    // Magic – byte-by-byte to avoid big-endian Wii PPC u32 cast issues
+    if (ehdr.e_ident[0] != 0x7F || ehdr.e_ident[1] != 'E' ||
+        ehdr.e_ident[2] != 'L'  || ehdr.e_ident[3] != 'F')
     {
-        printf("[ELF] Bad magic (not an ELF file?)\n");
+        printf("[ELF] Bad magic: %02X %02X %02X %02X\n",
+               ehdr.e_ident[0], ehdr.e_ident[1], ehdr.e_ident[2], ehdr.e_ident[3]);
         fclose(f); return false;
     }
 

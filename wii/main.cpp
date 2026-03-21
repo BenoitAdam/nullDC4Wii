@@ -618,10 +618,16 @@ int os_GetFile(char *szFileName, char *szParse, u32 flags)
 {
   if (strlen(selectedFilePath) > 0)
   {
+    // ELF files are loaded directly into RAM — don't pass to disc plugin
+    size_t len = strlen(selectedFilePath);
+    if (len > 4 && (strcmp(selectedFilePath + len - 4, ".elf") == 0 ||
+                    strcmp(selectedFilePath + len - 4, ".ELF") == 0))
+      return false;
+
     strcpy(szFileName, selectedFilePath);
     return true;
   }
-  return false; // No file (boot BIOS)
+  return false;
 }
 
 double os_GetSeconds()
