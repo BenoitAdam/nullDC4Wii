@@ -21,6 +21,45 @@
 #include <string.h>
 #include <stdlib.h>
 
+// bswap32 helper for ELF loading.
+//
+// The Wii _vmem_readt<u16> applies addr ^= 2 on big-endian, meaning
+// a u16 at DC address A is fetched from physical offset (A^2).
+// For file bytes [a,b,c,d] (two LE opcodes: op0=b<<8|a, op1=d<<8|c):
+//   op0 at DC addr+0 reads from mem_b[2..3] -> need mem_b[2]=b, mem_b[3]=a (BE u16)
+//   op1 at DC addr+2 reads from mem_b[0..1] -> need mem_b[0]=d, mem_b[1]=c (BE u16)
+//   So mem_b must contain [d,c,b,a] = full bswap32 of file bytes read as BE u32.
+//
+// On Wii PPC (big-endian host): *(u32*)[a,b,c,d] = 0xABCD_xxxx (natural BE read)
+// __builtin_bswap32(0xABCDxxxx) = [d,c,b,a] stored -> CORRECT.
+//
+// Verified against actual ELF bytes and mem_b dump from hardware log.
+static inline u32 elf_wordswap32(u32 v) { return __builtin_bswap32(v); }
+
+
+// ---------------------------------------------------------------------------
+// elf_copy_to_ram: copy 'size' bytes from 'src' (file buffer) into mem_b at
+// physical DC RAM offset 'dst_phys', applying bswap32 per 32-bit word.
+// This matches the byte layout expected by _vmem_readt<u16> (addr ^= 2).
+// No _vmem calls — direct write to avoid side effects during load time.
+// ---------------------------------------------------------------------------
+static void elf_copy_to_ram(u32 dst_phys, const u8* src, u32 size)
+{
+    u32* dst32 = (u32*)(mem_b.data + dst_phys);
+    const u32* src32 = (const u32*)src;
+    u32 words = size >> 2;
+
+    for (u32 w = 0; w < words; w++)
+        dst32[w] = elf_wordswap32(src32[w]);
+
+    // Handle trailing 1-3 bytes (pad to 32 bits, bswap, write)
+    u32 rem = size & 3;
+    if (rem) {
+        u32 last = 0;
+        memcpy(&last, src + (size & ~3u), rem);
+        dst32[words] = elf_wordswap32(last);
+    }
+}
 // ---------------------------------------------------------------------------
 // elf_load  – parse ELF, copy PT_LOAD / SHT_PROGBITS sections into mem_b
 // ---------------------------------------------------------------------------
@@ -153,11 +192,7 @@ bool elf_load(const char* path, u32* out_entry)
             printf("[ELF] Section %u: 0x%08X <- file+0x%X  (%u bytes)\n",
                    i, sh_addr, sh_offset, sh_size);
 
-            // Copy byte-by-byte exactly as the original Elf.cpp does.
-            // mem_b is a raw byte array; _vmem read functions handle endian
-            // correction when the SH4 CPU reads instructions/data back.
-            for (u32 x = 0; x < sh_size; x++)
-                mem_b.data[dst + x] = buf[sh_offset + x];
+            elf_copy_to_ram(dst & RAM_MASK, buf + sh_offset, sh_size);
 
             loaded++;
         }
@@ -195,13 +230,10 @@ bool elf_load(const char* path, u32* out_entry)
             printf("[ELF] Seg %u: 0x%08X  file=0x%X  mem=0x%X\n",
                    i, p_vaddr, p_filesz, p_memsz);
 
-            // Copy file data
-            for (u32 x = 0; x < p_filesz; x++)
-                mem_b.data[dst + x] = buf[p_offset + x];
-
-            // Zero BSS
+            elf_copy_to_ram(dst & RAM_MASK, buf + p_offset, p_filesz);
+            // Zero BSS — no swap needed, all zeros
             if (p_memsz > p_filesz)
-                memset(mem_b.data + dst + p_filesz, 0, p_memsz - p_filesz);
+                memset(mem_b.data + (dst & RAM_MASK) + p_filesz, 0, p_memsz - p_filesz);
 
             loaded++;
         }
@@ -220,6 +252,21 @@ bool elf_load(const char* path, u32* out_entry)
 
     *out_entry = e_entry;
     printf("[ELF] Load complete (%d section(s))  entry=0x%08X\n", loaded, e_entry);
+
+    // Diagnostic: dump first 16 bytes at entry point as stored in mem_b
+    // This lets us verify the transform by comparing with what the dynarec sees
+    {
+        u32 entry_phys = e_entry & RAM_MASK;
+        u8* p = mem_b.data + entry_phys;
+        printf("[ELF] mem_b bytes at entry: %02X %02X %02X %02X  %02X %02X %02X %02X  %02X %02X %02X %02X  %02X %02X %02X %02X\n",
+               p[0],p[1],p[2],p[3], p[4],p[5],p[6],p[7],
+               p[8],p[9],p[10],p[11], p[12],p[13],p[14],p[15]);
+        // Also show what _vmem_ReadMem16 would return for the first 4 opcodes
+        // addr^=2 means: u16 at addr A reads from A^2
+        printf("[ELF] Opcodes via addr^2: [0]=%04X [2]=%04X [4]=%04X [6]=%04X\n",
+               *(u16*)(p+2), *(u16*)(p+0), *(u16*)(p+6), *(u16*)(p+4));
+    }
+
     return true;
 }
 

@@ -176,9 +176,10 @@ int main___(int argc,char* argv[])
 	// the CPU back-end has been reset.
 	// -----------------------------------------------------------------------
 	{
-		char elfPath[512] = "";
-		// os_GetFile is defined in main.cpp and returns the path chosen by the user
-		os_GetFile(elfPath, NULL, 0);
+		// Read the selected path directly – we cannot use os_GetFile() here because
+		// we already patched it to return false for .elf files (to block the disc plugin).
+		extern char selectedFilePath[512];
+		const char* elfPath = selectedFilePath;
 
 		if (HasExtension(elfPath, ".elf"))
 		{

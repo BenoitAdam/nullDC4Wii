@@ -25,6 +25,10 @@
 extern void FASTCALL armTerm ();
 extern void FASTCALL armReset(bool Manual);
 
+// ELF boot hook – defined in nullDC.cpp, called after every CPU reset
+// so the ELF entry point overrides the BIOS reset vector.
+extern "C" void dc_elf_pre_run_hook();
+
 static inline void arm_Term()             { armTerm(); }
 static inline void arm_Reset(bool manual) { armReset(manual); }
 
@@ -213,6 +217,11 @@ static void ResetDC(bool manual)
 	// On a non-manual (auto) reset aica_Reset clears aica_ram, so the ARM
 	// must be reset afterwards to avoid running stale code.
 	arm_Reset(manual);
+
+	// ELF boot hook: if an ELF was loaded, override the BIOS reset vector
+	// with the ELF entry point.  Must be called AFTER sh4_cpu.Reset() so
+	// our PC value wins over the reset vector (0xA0000000).
+	dc_elf_pre_run_hook();
 }
 
 /**
