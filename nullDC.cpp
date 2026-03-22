@@ -110,6 +110,16 @@ extern "C" void dc_elf_pre_run_hook()
 	{
 		elf_apply_entry(g_elf_entry);
 		g_elf_pending = false;
+
+		// Flush the dynarec block cache AND the PPC code cache.
+		// ngen_ResetBlocks() is empty in wii_driver.cpp, so bm_Reset() alone
+		// only clears the hash table — the compiled PPC code stays in memory
+		// and can still be jumped to via direct pointers held by BIOS blocks.
+		// sh4_cpu.ResetCache() flushes the actual PPC emit buffer, making
+		// those stale addresses unreachable.
+		extern void bm_Reset();
+		bm_Reset();
+		sh4_cpu.ResetCache();
 	}
 }
 
