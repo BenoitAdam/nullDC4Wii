@@ -1,7 +1,5 @@
 // Wii Rendering
 
-
-
 // ============================================================================
 // RUNTIME - PRESET SELECTION
 // ============================================================================
@@ -30,11 +28,13 @@ extern "C" int get_ratio_preset();
 #define ORIGINAL() (get_ratio_preset() == 0)
 #define FULLSCREEN() (get_ratio_preset() == 1)
 
-
 // This is defined in main.cpp
+extern "C" int get_debug_message();
+#define DEBUG_MESSAGE() (get_debug_message() == 1)
+
 extern "C" int get_debug_loop();
 
-// This is defined in nullDC.cpp
+// For future improvement. This would be defined in nullDC.cpp or main.cpp
 extern int g_current_frameskip; // 0 = no skip, 1 = skip 1 frame, 2 = skip 2 frame
 extern int g_frame_counter;
 
@@ -128,7 +128,7 @@ void ApplyGraphismPreset() {
 #define ABGR1555(x) ((x) & 0x8000 ? (x) : 0x0000) // Works together with the coding routing introduced in alpha 0.13 (alpha_fmt stuff)
 
 // ARGB4444 (DC: A4 R4 G4 B4) → GX RGB5A3
-// ARGB4444 has 4 alpha (transparency) bit, Wii's RGB5A3 has 3 bits
+// ARGB4444 has 4 alpha (transparency) bits, Wii's RGB5A3 has 3 bits.
 // Truncate A4 → A3, keep R4 G4 B4, force bit15=0 (blended mode).
 #define ABGR4444(x) ( 0x0000u                             \
     | ((((x) & 0xF000u) >> 1) & 0x7000u)  /* A4 → A3 */  \
@@ -376,19 +376,6 @@ u32 GX_TexOffs(u32 x, u32 y, u32 w)
   return (y * w + x) * 16 + (ys * 4 + xs);
 }
 
-// converts Dreamcast "twiddled" textures to Wii GX block format.
-// NOTE: This simple version is NOT USED - see texture_TW<class> template at line ~665
-// which properly handles color conversion through pixel converter classes.
-// Kept here for reference only.
-/*
-template<int pixel_format>
-void fastcall texture_TW_UNUSED(u8* p_out, u8* p_in, u32 Width, u32 Height)
-{
-  ... removed to avoid compilation errors ...
-}
-*/
-
-
 // Converts YUV422 data to RGB565 for Wii compatibility.
 u32 YUV422(s32 Y, s32 Yu, s32 Yv)
 {
@@ -446,40 +433,28 @@ pixelcvt_start(conv565_PL, 4, 1)
 {
   // convert 4x1 565 to 4x1 8888
   u16 *p_in = (u16 *)data;
-  // 0,0
-  pb_prel(pb, pbw, x + 0, y, ABGR0565(p_in[0]));
-  // 1,0
-  pb_prel(pb, pbw, x + 1, y, ABGR0565(p_in[1]));
-  // 2,0
-  pb_prel(pb, pbw, x + 2, y, ABGR0565(p_in[2]));
-  // 3,0
-  pb_prel(pb, pbw, x + 3, y, ABGR0565(p_in[3]));
+  pb_prel(pb, pbw, x + 0, y, ABGR0565(p_in[0])); // 0,0
+  pb_prel(pb, pbw, x + 1, y, ABGR0565(p_in[1])); // 1,0
+  pb_prel(pb, pbw, x + 2, y, ABGR0565(p_in[2])); // 2,0
+  pb_prel(pb, pbw, x + 3, y, ABGR0565(p_in[3])); // 3,0
 }
 pixelcvt_next(conv1555_PL, 4, 1)
 {
   // convert 4x1 1555 to 4x1 8888
   u16 *p_in = (u16 *)data;
-  // 0,0
-  pb_prel(pb, pbw, x + 0, y, ABGR1555(p_in[0]));
-  // 1,0
-  pb_prel(pb, pbw, x + 1, y, ABGR1555(p_in[1]));
-  // 2,0
-  pb_prel(pb, pbw, x + 2, y, ABGR1555(p_in[2]));
-  // 3,0
-  pb_prel(pb, pbw, x + 3, y, ABGR1555(p_in[3]));
+  pb_prel(pb, pbw, x + 0, y, ABGR1555(p_in[0])); // 0,0
+  pb_prel(pb, pbw, x + 1, y, ABGR1555(p_in[1])); // 1,0
+  pb_prel(pb, pbw, x + 2, y, ABGR1555(p_in[2])); // 2,0
+  pb_prel(pb, pbw, x + 3, y, ABGR1555(p_in[3])); // 3,0
 }
 pixelcvt_next(conv4444_PL, 4, 1)
 {
   // convert 4x1 4444 to 4x1 8888
   u16 *p_in = (u16 *)data;
-  // 0,0
-  pb_prel(pb, pbw, x + 0, y, ABGR4444(p_in[0]));
-  // 1,0
-  pb_prel(pb, pbw, x + 1, y, ABGR4444(p_in[1]));
-  // 2,0
-  pb_prel(pb, pbw, x + 2, y, ABGR4444(p_in[2]));
-  // 3,0
-  pb_prel(pb, pbw, x + 3, y, ABGR4444(p_in[3]));
+  pb_prel(pb, pbw, x + 0, y, ABGR4444(p_in[0])); // 0,0
+  pb_prel(pb, pbw, x + 1, y, ABGR4444(p_in[1])); // 1,0
+  pb_prel(pb, pbw, x + 2, y, ABGR4444(p_in[2])); // 2,0
+  pb_prel(pb, pbw, x + 3, y, ABGR4444(p_in[3])); // 3,0
 }
 pixelcvt_next(convYUV_PL, 4, 1)
 {
@@ -491,10 +466,9 @@ pixelcvt_next(convYUV_PL, 4, 1)
   s32 Y1 = (p_in[0] >> 24) & 255; // p_in[3]
   s32 Yv = (p_in[0] >> 16) & 255; // p_in[2]
 
-  // 0,0
-  pb_prel(pb, pbw, x + 0, y, YUV422(Y0, Yu, Yv));
-  // 1,0
-  pb_prel(pb, pbw, x + 1, y, YUV422(Y1, Yu, Yv));
+  
+  pb_prel(pb, pbw, x + 0, y, YUV422(Y0, Yu, Yv)); // 0,0  
+  pb_prel(pb, pbw, x + 1, y, YUV422(Y1, Yu, Yv)); // 1,0
 
    // next 4 bytes
   p_in += 1;
@@ -514,42 +488,30 @@ pixelcvt_end;
 // Pixel Converters for Twiddled textures.
 pixelcvt_start(conv565_TW, 2, 2)
 {
-    // convert 4x1 565 to 4x1 8888
+  // convert 4x1 565 to 4x1 8888
   u16 *p_in = (u16 *)data;
-  // 0,0
-  pb_prel(pb, pbw, x + 0, y + 0, ABGR0565(p_in[0]));
-  // 0,1
-  pb_prel(pb, pbw, x + 0, y + 1, ABGR0565(p_in[1]));
-  // 1,0
-  pb_prel(pb, pbw, x + 1, y + 0, ABGR0565(p_in[2]));
-  // 1,1
-  pb_prel(pb, pbw, x + 1, y + 1, ABGR0565(p_in[3]));
+  pb_prel(pb, pbw, x + 0, y + 0, ABGR0565(p_in[0])); // 0,0
+  pb_prel(pb, pbw, x + 0, y + 1, ABGR0565(p_in[1])); // 0,1
+  pb_prel(pb, pbw, x + 1, y + 0, ABGR0565(p_in[2])); // 1,0
+  pb_prel(pb, pbw, x + 1, y + 1, ABGR0565(p_in[3])); // 1,1
 }
 pixelcvt_next(conv1555_TW, 2, 2)
 {
   // convert 4x1 1555 to 4x1 8888
   u16 *p_in = (u16 *)data;
-  // 0,0
-  pb_prel(pb, pbw, x + 0, y + 0, ABGR1555(p_in[0]));
-  // 0,1
-  pb_prel(pb, pbw, x + 0, y + 1, ABGR1555(p_in[1]));
-  // 1,0
-  pb_prel(pb, pbw, x + 1, y + 0, ABGR1555(p_in[2]));
-  // 1,1
-  pb_prel(pb, pbw, x + 1, y + 1, ABGR1555(p_in[3]));
+  pb_prel(pb, pbw, x + 0, y + 0, ABGR1555(p_in[0])); // 0,0
+  pb_prel(pb, pbw, x + 0, y + 1, ABGR1555(p_in[1])); // 0,1
+  pb_prel(pb, pbw, x + 1, y + 0, ABGR1555(p_in[2])); // 1,0
+  pb_prel(pb, pbw, x + 1, y + 1, ABGR1555(p_in[3])); // 1,1
 }
 pixelcvt_next(conv4444_TW, 2, 2)
 {
   // convert 4x1 4444 to 4x1 8888
   u16 *p_in = (u16 *)data;
-  // 0,0
-  pb_prel(pb, pbw, x + 0, y + 0, ABGR4444(p_in[0]));
-  // 0,1
-  pb_prel(pb, pbw, x + 0, y + 1, ABGR4444(p_in[1]));
-  // 1,0
-  pb_prel(pb, pbw, x + 1, y + 0, ABGR4444(p_in[2]));
-  // 1,1
-  pb_prel(pb, pbw, x + 1, y + 1, ABGR4444(p_in[3]));
+  pb_prel(pb, pbw, x + 0, y + 0, ABGR4444(p_in[0])); // 0,0
+  pb_prel(pb, pbw, x + 0, y + 1, ABGR4444(p_in[1])); // 0,1
+  pb_prel(pb, pbw, x + 1, y + 0, ABGR4444(p_in[2])); // 1,0
+  pb_prel(pb, pbw, x + 1, y + 1, ABGR4444(p_in[3])); // 1,1
 }
 pixelcvt_next(convYUV422_TW, 2, 2)
 {
@@ -561,10 +523,8 @@ pixelcvt_next(convYUV422_TW, 2, 2)
   s32 Y1 = (p_in[2] >> 8) & 255; // p_in[3]
   s32 Yv = (p_in[2] >> 0) & 255; // p_in[2]
 
-  // 0,0
-  pb_prel(pb, pbw, x + 0, y + 0, YUV422(Y0, Yu, Yv));
-  // 1,0
-  pb_prel(pb, pbw, x + 1, y + 0, YUV422(Y1, Yu, Yv));
+  pb_prel(pb, pbw, x + 0, y + 0, YUV422(Y0, Yu, Yv)); // 0,0
+  pb_prel(pb, pbw, x + 1, y + 0, YUV422(Y1, Yu, Yv)); // 1,0
 
   // next 4 bytes
   // p_in+=2;
@@ -574,10 +534,8 @@ pixelcvt_next(convYUV422_TW, 2, 2)
   Y1 = (p_in[3] >> 8) & 255; // p_in[3]
   Yv = (p_in[3] >> 0) & 255; // p_in[2]
 
- // 0,1
-  pb_prel(pb, pbw, x + 0, y + 1, YUV422(Y0, Yu, Yv));
-  // 1,1
-  pb_prel(pb, pbw, x + 1, y + 1, YUV422(Y1, Yu, Yv));
+  pb_prel(pb, pbw, x + 0, y + 1, YUV422(Y0, Yu, Yv)); // 0,1
+  pb_prel(pb, pbw, x + 1, y + 1, YUV422(Y1, Yu, Yv)); // 1,1
 }
 pixelcvt_end;
 
@@ -811,6 +769,7 @@ const u32 MipPoint[8] =
     { /*int* p=0;*p=4;*/                                                                  \
       tex_addr += MipPoint[mod->tsp.TexU];                                                  \
     }                                                                                     \
+    if(DEBUG_MESSAGE()) { printf("[VQ] codebook=..."); }                                  \
     texture_VQ<conv##format##_VQ> /**/ ((u8 *)&params.vram[tex_addr], w, h, vq_codebook); \
     texVQ = 1;                                                                            \
   }                                                                                       \
@@ -844,9 +803,11 @@ int TexUV(u32 flip, u32 clamp)
     return GX_REPEAT;
 }
 
-// ========================
+// =================================
+// Dreamcast Texture => Wii textures
+// =================================
 // Processes the Dreamcast's TCW (Texture Control Word) to initialize Wii TexObjects.
-// ========================
+// 4 steps
 
 static void SetTextureParams(PolyParam *mod)
 {
@@ -855,6 +816,8 @@ static void SetTextureParams(PolyParam *mod)
 
   u32 tex_addr = (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
   u32 *ptex = (u32 *)&params.vram[tex_addr];
+
+  //// 1. Memory Management & Alignment Fix ////
 
   // dst (= &pbuff[1]) MUST be 32-byte aligned: GX silently ignores misaligned
   // texture pointers and renders nothing -> black texture.
@@ -877,30 +840,7 @@ static void SetTextureParams(PolyParam *mod)
   u32 w = 8 << mod->tsp.TexU;
   u32 h = 8 << mod->tsp.TexV;
 
-  // ======================================
-  // OLD CODE (Use later for FAST preset ?)
-  // ======================================
-
-  #if 0 // old code
-		if (*ptex!=0xDEADBEEF || pbuff->addr!=tex_addr)
-		{
-			u32* dst=(u32*)&pbuff[1];
-			u32 sz=(8<<mod->tsp.TexU) * (8<<mod->tsp.TexV)*2;
-
-			if (mod->tcw.NO_PAL.ScanOrder)
-				memcpy(dst,ptex,sz);
-			else
-				texture_TW((u8*)dst,(u8*)ptex,8<<mod->tsp.TexU,8<<mod->tsp.TexV);
-        // texture_TW<1555>((u8*)dst, (u8*)ptex, 8<<mod->tsp.TexU, 8<<mod->tsp.TexV); // AI Claude suggestion
-
-			//setup ..
-
-			printf("Texture:%d %d %dx%d %08X --> %08X\n",mod->tcw.NO_PAL.PixelFmt,mod->tcw.NO_PAL.ScanOrder,8<<mod->tsp.TexU,8<<mod->tsp.TexV,tex_addr,dst);
-			pbuff->addr=tex_addr;
-			*ptex=0xDEADBEEF;
-		}
-  #endif
-
+  //// 2. The "Smart" Cache Check ////
 
   // Only re-process texture if it has changed (marked by DEADBEEF sentinel).
   if (*ptex != 0xDEADBEEF || pbuff->addr != tex_addr || (mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder))
@@ -909,6 +849,26 @@ static void SetTextureParams(PolyParam *mod)
     VramWork = (u8 *)dst;
     pbuff->has_pal = false;
     pbuff->addr = tex_addr;
+
+    // [RAWBYTES] debug: log fmt/vq/scan/dims and first 8 raw bytes for every texture load
+    if(DEBUG_MESSAGE()) {
+      u8 *raw = (u8 *)ptex;
+      printf("[RAWBYTES] addr=%06X fmt=%d vq=%d scan=%d mip=%d IgnTexA=%d TexU=%d TexV=%d w=%d h=%d tsp=%08X raw[0..7]=%02X%02X %02X%02X %02X%02X %02X%02X\n",
+        tex_addr,
+        (int)mod->tcw.NO_PAL.PixelFmt,
+        (int)mod->tcw.NO_PAL.VQ_Comp,
+        (int)mod->tcw.NO_PAL.ScanOrder,
+        (int)mod->tcw.NO_PAL.MipMapped,
+        (int)mod->tsp.IgnoreTexA,
+        (int)mod->tsp.TexU,
+        (int)mod->tsp.TexV,
+        w, h,
+        mod->tsp.full,
+        raw[0], raw[1], raw[2], raw[3],
+        raw[4], raw[5], raw[6], raw[7]);
+    }
+
+    //// 3. Format Conversion ////
 
     switch (mod->tcw.NO_PAL.PixelFmt)
     {
@@ -947,7 +907,6 @@ static void SetTextureParams(PolyParam *mod)
       FMT = GX_TF_RGB565;
       break;
 
-      
     case 2:
       // 4444 Format: 4 bits; RGB values: 4 bits each
       if (mod->tcw.NO_PAL.ScanOrder)
@@ -1014,6 +973,8 @@ static void SetTextureParams(PolyParam *mod)
       pbuff->has_pal = false;
     }
 
+    //// 4. Hardware Handover ////
+
     // Flush pixel data from CPU cache to physical RAM for GX.
     {
       u32 flush_sz = w * h * 2;
@@ -1034,7 +995,7 @@ static void SetTextureParams(PolyParam *mod)
                   
     *ptex = 0xDEADBEEF;
 
-    if(get_debug_loop() == 1){
+    if(DEBUG_MESSAGE()){
       printf("Texture:%d %d %dx%d %08X --> %08X\n", mod->tcw.NO_PAL.PixelFmt, mod->tcw.NO_PAL.ScanOrder, 8 << mod->tsp.TexU, 8 << mod->tsp.TexV, tex_addr, (u32)dst);
     }
   }
@@ -1255,7 +1216,7 @@ void DoRender()
     {
       // enable blending & blending mode
       GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
-
+      
       // setup alpha compare
     }
 
@@ -1856,11 +1817,11 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
   }
   __forceinline static void ListInit()
   {
-    // reset_vtx_state();
+  // reset_vtx_state();
   }
   __forceinline static void SoftReset()
   {
-    // reset_vtx_state();
+  // reset_vtx_state();
   }
 };
 // Setup related
