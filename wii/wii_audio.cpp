@@ -9,11 +9,12 @@
 //     we swap fill/play buffers there.
 //   - ASND voice is started once; it keeps looping via the callback.
 
-#include "wii_audio.h"
-
-// config.h (pulled in via types.h) deliberately poisons BIG_ENDIAN and
-// LITTLE_ENDIAN to catch accidental use. Undef them before pulling in
-// libogc/ASND headers which legitimately define them.
+// config.h (pulled in transitively via types.h → nullAICA headers) deliberately
+// poisons BIG_ENDIAN and LITTLE_ENDIAN to catch accidental use.  We must undef
+// those poison macros BEFORE any libogc/ASND header is included, because those
+// headers legitimately define the same names via machine/endian.h.  The undefs
+// must therefore precede every #include, including our own wii_audio.h which
+// transitively drags in ogc/lwp_watchdog.h → machine/endian.h.
 #ifdef BIG_ENDIAN
 #  undef BIG_ENDIAN
 #endif
@@ -21,15 +22,26 @@
 #  undef LITTLE_ENDIAN
 #endif
 
-#include <asndlib.h>
-#include <string.h>
-#include <ogc/cache.h>   // for DCFlushRange
-#include <ogc/lwp_watchdog.h>  // for LWP_MutexInit etc.
-#include <ogc/mutex.h>
-
-// AICA sample-generation side
+// AICA sample-generation side (pulls in config.h poison; must come after undefs
+// above so the poison definitions never collide with machine/endian.h)
 #include "../plugs/nullAICA/aica.h"
 #include "../plugs/nullAICA/sgc_if.h"  // for mixl / mixr
+
+// Undef again in case aica.h re-included config.h and re-poisoned them before
+// the ogc headers below get a chance to define the real values.
+#ifdef BIG_ENDIAN
+#  undef BIG_ENDIAN
+#endif
+#ifdef LITTLE_ENDIAN
+#  undef LITTLE_ENDIAN
+#endif
+
+#include "wii_audio.h"
+#include <asndlib.h>
+#include <string.h>
+#include <ogc/cache.h>        // DCFlushRange
+#include <ogc/lwp_watchdog.h>
+#include <ogc/mutex.h>
 
 // Set to 1 by wii_audio_aica_ready() once AICA_Init() has run.
 // wii_audio_frame() is a no-op until then to avoid stepping null pointers.
