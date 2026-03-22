@@ -105,10 +105,8 @@ bool parse_mds(wchar *mds_filename,bool verbose)
 	}
 
     // get some data from header
-    int mds_header_size = 0x70;
     int mds_datablock_size = 0x50;
     int mds_extrablock_size = 0x08;
-    int mds_footer_size = 0x16;
     int mds_version = read_binary(char, mds_content, 0x0010);
     int mds_revision = read_binary(char, mds_content, 0x0011);
     int mds_sessions = read_binary(unsigned char, mds_content, 0x0014);
@@ -164,19 +162,12 @@ bool parse_mds(wchar *mds_filename,bool verbose)
 			int extrablock_offset = sessions[mds_current_session].extrablocks_offset+mds_extrablock_size*datablock;
 
 			int mode = read_binary(unsigned char, mds_content, datablock_offset+0x0000);
-			int smth1 = read_binary(unsigned char, mds_content, datablock_offset+0x0001);
 			int flags = read_binary(unsigned short, mds_content, datablock_offset+0x0002);
 			int track = read_binary(unsigned char, mds_content, datablock_offset+0x0004);
-			int smth2 = read_binary(int, mds_content, datablock_offset+0x0005);
 			int pmin = read_binary(unsigned char, mds_content, datablock_offset+0x0009);
 			int psec = read_binary(unsigned char, mds_content, datablock_offset+0x000a);
 			int pfrm = read_binary(unsigned char, mds_content, datablock_offset+0x000b);
-			int smth3 = read_binary(int, mds_content, datablock_offset+0x000c);
 			int sectorsize = read_binary(unsigned short, mds_content, datablock_offset+0x0010);
-			int smth4 = read_binary(int, mds_content, datablock_offset+0x0014);
-			int smth5 = read_binary(int, mds_content, datablock_offset+0x0018);
-			int smth6 = read_binary(int, mds_content, datablock_offset+0x001c);
-			int smth7 = read_binary(int, mds_content, datablock_offset+0x0020);
 			int sector = read_binary(int, mds_content, datablock_offset+0x0024);
 			s64 offset = read_binary(s64, mds_content, datablock_offset+0x0028);
 			int pregap = read_binary(int, mds_content, extrablock_offset+0x0000);
@@ -310,7 +301,7 @@ bool parse_nrg(char*nrg_filename,bool verbose)
 				byteswap(&size,4);
 				block[block_num].infos[block[block_num].found].offset=offs;
 				block[block_num].infos[block[block_num].found].size=size;
-                if(verbose) printf("%s [0x%x:0x%x]\n",block_id, offs, size);
+                if(verbose) printf("%s [0x%llx:0x%x]\n",block_id, (long long)offs, size);
                 offs += size+8;
 				block[block_num].found++;
 				found=true;
@@ -487,8 +478,8 @@ bool parse_nrg(char*nrg_filename,bool verbose)
 
 				if(verbose)
 				{
-					printf("[%3i] track: %3i, next track: %3i, start sector: %8i, end sector: %8i\n      sector size: %i, mode: %i, start: 0x%08x, end: 0x%08x.\n",
-							entry, track, nexttrack, start_sector, end_sector, sector_size, mode, start_offset, end_offset);
+					printf("[%3i] track: %3i, next track: %3i, start sector: %8i, end sector: %8i\n      sector size: %i, mode: %i, start: 0x%08llx, end: 0x%08llx.\n",
+							entry, track, nexttrack, start_sector, end_sector, sector_size, mode, (long long)start_offset, (long long)end_offset);
 					printf("      tracktype: 0x%x, addr_ctrl: 0x%x, isrc: %s.\n",tracktype, addr_ctrl, isrc);
 				}
 	            
@@ -538,7 +529,7 @@ bool parse_nrg(char*nrg_filename,bool verbose)
 					byteswap(&sector,4);
 				}
 				if(verbose)
-					printf("[%3i] offset: 0x%08I64x, size: 0x%08I64x, sector: %i, mode: %x\n",entry+1, offset, size, sector, mode);
+				printf("[%3i] offset: 0x%08llx, size: 0x%08llx, sector: %i, mode: %x\n",entry+1, (long long)offset, (long long)size, sector, mode);
 
 				sessions[sess].tracks[entry].mode=nrg_mode(mode);
 				sessions[sess].tracks[entry].track=entry+1;

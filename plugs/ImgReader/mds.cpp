@@ -187,7 +187,7 @@ bool mds_init(char* file)
 		}
 		if (!found)
 		{
-			if (os_GetFile(fn,"mds images (*.mds) \0*.mdf\0\0")==1)
+			if (os_GetFile(fn,(char*)"mds images (*.mds) \0*.mdf\0\0")==1)
 			{
 				fp_mdf=fopen(fn,"rb");
 				found=true;
