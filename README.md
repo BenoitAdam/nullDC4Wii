@@ -167,8 +167,8 @@ While the emulator is still in alpha, the visual difference is limited for now.
 
 <img width="1844" height="1456" alt="levels" src="https://github.com/user-attachments/assets/79d5271d-0689-43d4-92c0-66674013ddce" />
 
-
-NORMAL will probably be the default setting in the next release
+- Use LOW for 2D and heavy 3D games
+- Use NORMAL for other games
 
 ## For Developpers :
 
@@ -263,7 +263,9 @@ Homebrew tutorials : https://wiibrew.org/wiki/Main_Page
 - skmp (original NullDC creator)
 - NullDC contributors
 - Joseph Jordan - libiso  
-- Xale00 (also know as Benoit Adam) - 2026 recompilation  
+- Xale00 (also know as Benoit Adam) - 2026 recompilation
+- gligli (Xbox 360 port)
+- Xeihro (Xiro28 PSP Port)
 - Flyinghead/Flycast Team  
 - AI because this project would have never existed otherwise lol
 - Probably Reicast Team also who knows
@@ -284,7 +286,7 @@ To all people not believing in this project
 
 
 
-
+ 
 
 
 
