@@ -85,7 +85,7 @@ int setconfig(char** arg,int cl)
 		}
 
 		if (value==0)
-			value="";
+			value=const_cast<char*>("");
 		printf("Virtual cfg %s:%s=%s\n",sect,key,value);
 
 		cfgSetVitual(sect,key,value);
