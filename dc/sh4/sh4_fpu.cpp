@@ -643,7 +643,6 @@ sh4op(i1111_nnnn_0110_1101)
   }
   else
   {
-    u32 n = GetN(op) >> 1;
     setDRn(op, fixNaN64(sqrt(getDRn(op))));
   }
 }

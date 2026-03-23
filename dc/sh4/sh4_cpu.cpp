@@ -427,8 +427,7 @@ sh4op(i0011_nnnn_mmmm_0100)
 	const u32 m = GetM(op);
 	
 	const u32 old_Q = sr.Q;
-	const u32 tmp0 = r[n];
-	
+
 	r[n] = (r[n] << 1) | sr.T;
 	
 	u32 tmp1;

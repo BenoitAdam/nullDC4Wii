@@ -43,7 +43,7 @@ static u64 dec_Fill(DecMode mode,DecParam d,DecParam s,shilop op,u32 extra=0)
 {
 	return (((u64)extra)<<32)|(mode<<24)|(d<<16)|(s<<8)|op;
 }
-static u64 dec_Un_rNrN(shilop op)
+[[maybe_unused]] static u64 dec_Un_rNrN(shilop op)
 {
 	return dec_Fill(DM_UnaryOp,PRM_RN,PRM_RN,op);
 }
@@ -55,7 +55,7 @@ static u64 dec_Un_frNfrN(shilop op)
 {
 	return dec_Fill(DM_UnaryOp,PRM_FRN,PRM_FRN,op);
 }
-static u64 dec_Un_frNfrM(shilop op)
+[[maybe_unused]] static u64 dec_Un_frNfrM(shilop op)
 {
 	return dec_Fill(DM_UnaryOp,PRM_FRN,PRM_FRM,op);
 }
@@ -110,7 +110,7 @@ static u64 dec_MRd(DecParam d,DecParam s,u32 sz) { return dec_Fill(DM_ReadM,d,s,
 static u64 dec_MWt(DecParam d,DecParam s,u32 sz) { return dec_Fill(DM_WriteM,d,s,shop_writem,sz); }
 
 //use this to disable opcodes :p
-static u64 dec_rz(...) { return 0; }
+[[maybe_unused]] static u64 dec_rz(...) { return 0; }
 
 sh4_opcodelistentry missing_opcode = {0,iNotImplemented,0,0,ReadWritePC,"missing",0,0,CO,fix_none };
 
@@ -134,7 +134,8 @@ sh4_opcodelistentry opcodes[]=
 	{0							,i0000_0000_0001_1000	,Mask_none	,0x0018	,Normal				,"sett"									,1,1,MT,fix_none	,dec_Fill(DM_UnaryOp,PRM_SR_T,PRM_ONE,shop_mov32)},	//sett
 	{0							,i0000_0000_0001_1001	,Mask_none	,0x0019	,Normal				,"div0u"								,1,1,EX,fix_none	,dec_Fill(DM_DIV0,PRM_RN,PRM_RM,shop_or,1)},//div0u
 	{0							,i0000_nnnn_0010_1001	,Mask_n		,0x0029	,Normal				,"movt <REG_N>"							,1,1,EX,fix_none	,dec_Fill(DM_UnaryOp,PRM_RN,PRM_SR_T,shop_mov32)},	//movt <REG_N>
-	{dec_i0000_0000_0000_1001	,i0000_0000_0000_1001	,Mask_none	,0x0009	,Normal				,"nop"									,1,0,MT,fix_none}	,//nop
+	{dec_i0000_0000_0000_1001	,i0000_0000_0000_1001	,Mask_none	,0x0009	,Normal				,"nop"									,1,0,MT,fix_none}	,//nop
+
 	{dec_i0000_0000_0000_1001	,i0000_0000_0000_1001	,Mask_none	,0x0000	,Normal				,"nop0"									,1,0,MT,fix_none}	,//nop0
 
 
@@ -441,7 +442,7 @@ void BuildOpcodeTables()
 			default:
 				die("error");
 		}
-		for (int i=0;i<count;i++)
+		for (u32 i=0;i<count;i++)
 		{
 			u32 idx=((i<<shft)&mask)+base;
 

@@ -116,16 +116,20 @@ u32 FASTCALL GetRamPageFromAddress(u32 RamAddress);
 // return, so they must be the last statement in their enclosing scope.
 // ---------------------------------------------------------------------------
 
+#ifndef ReadMemArrRet
 #define ReadMemArrRet(arr, addr, sz)                                     \
 	do {                                                                 \
 		if      ((sz) == 1) return (arr)[addr];                          \
 		else if ((sz) == 2) return HOST_TO_LE16(*(u16*)&(arr)[addr]);    \
 		else if ((sz) == 4) return HOST_TO_LE32(*(u32*)&(arr)[addr]);    \
 	} while (0)
+#endif
 
+#ifndef WriteMemArrRet
 #define WriteMemArrRet(arr, addr, data, sz)                              \
 	do {                                                                 \
 		if ((sz) == 1)      { (arr)[addr] = (u8)(data);                return; } \
 		else if ((sz) == 2) { *(u16*)&(arr)[addr] = HOST_TO_LE16((u16)(data)); return; } \
 		else if ((sz) == 4) { *(u32*)&(arr)[addr] = HOST_TO_LE32((u32)(data)); return; } \
 	} while (0)
+#endif
