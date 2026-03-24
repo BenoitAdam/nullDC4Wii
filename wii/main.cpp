@@ -11,6 +11,8 @@
 #include <time.h>
 #include <gccore.h> // needed, or VScode will show errors
 #include <asndlib.h>
+#include <mp3player.h> // MP3 File
+#include "sample_mp3.h" // MP3 File (generated header)
 #include "wii/wii_audio.h"
 
 // ============================================================================
@@ -94,6 +96,12 @@ char selectedFilePath[512] = "";
 char currentPath[512] = "sd:/discs/";
 const int ITEMS_PER_PAGE = 10; // 10 for now is ok
 int currentPage = 0;
+int mp3mainmenu = 0; // 1 for playing MP3 in main menu
+
+// Double-buffer globals (set up in main, used by menu loop)
+static void *xfb[2];
+static GXRModeObj *rmode = NULL;
+static int fb = 0;
 
 // Function to check if file is a GDI / CDI / ISO / BIN / CUE / NRG / MDS / ELF / CHD
 // Currently supported: GDI (fully), maybe CDI/ISO/NRG/MDS/BIN/CUE/ELF (experimental)
@@ -298,8 +306,11 @@ void displayAccuracyMenu()
       return;
     }
     
-    usleep(20000);
+    VIDEO_SetNextFramebuffer(xfb[fb]);
+    VIDEO_Flush();
     VIDEO_WaitVSync();
+    fb ^= 1;
+    console_init(xfb[fb], 20, 20, rmode->fbWidth, rmode->xfbHeight, rmode->fbWidth * VI_DISPLAY_PIX_SZ);
   }
 }
 
@@ -312,7 +323,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H"); // Clear Screen
-    printf("\nNullDC4Wii - Alpha 0.13   ");
+    printf("\nNullDC4Wii - Alpha 0.14   ");
     printf("Current directory: %s\n", currentPath);
     // Display current GRAPHISM preset (cycled with Minus)
     printf("(-) GRAPHICS: ");
@@ -478,8 +489,13 @@ int displayMenuAndSelectFile()
       return -1; // Exit to main menu
     }
 
-    usleep(20000);     // Wait a bit so GPU isn't overloaded (16667 = 1 frame @ 60 FPS)
-    VIDEO_WaitVSync(); // Synchronization to avoid flickering (Wait for the next frame)
+    // Double-buffer swap: point hardware at the buffer we just wrote, then flip
+    VIDEO_SetNextFramebuffer(xfb[fb]);
+    VIDEO_Flush();
+    VIDEO_WaitVSync();
+    fb ^= 1; // toggle between 0 and 1
+    // Re-init console to the new back buffer so next printf goes there
+    console_init(xfb[fb], 20, 20, rmode->fbWidth, rmode->xfbHeight, rmode->fbWidth * VI_DISPLAY_PIX_SZ);
   }
 
   return selectedIndex;
@@ -489,14 +505,15 @@ void SetApplicationPath(wchar *path);
 
 int main(int argc, wchar *argv[])
 {
-  /* Claude AI */
   // Initialize the video system
-  // (yes, right now before gxrend, otherwise no game selector)
   VIDEO_Init();
 
   /* Audio */
   ASND_Init();
   wii_audio_init();
+  if(mp3mainmenu) {
+    MP3Player_Init(); // MP3 init
+  }
   // And at shutdown / exit, add:
   //   wii_audio_term();
   //   ASND_End();
@@ -507,19 +524,21 @@ int main(int argc, wchar *argv[])
   WPAD_Init();
 
   // Obtain the preferred video mode from the system
-  GXRModeObj *rmode = VIDEO_GetPreferredMode(NULL);
+  rmode = VIDEO_GetPreferredMode(NULL);
 
-  // Allocate memory for the display in the uncached region
-  void *xfb = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
+  // Allocate TWO framebuffers for double-buffering (prevents flicker)
+  xfb[0] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
+  xfb[1] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
+  fb = 0; // current back buffer index
 
-  // ** ADD THIS LINE TO INITIALIZE THE CONSOLE **
-  console_init(xfb, 20, 20, rmode->fbWidth, rmode->xfbHeight, rmode->fbWidth * VI_DISPLAY_PIX_SZ);
+  // Initialise the console on the first buffer
+  console_init(xfb[0], 20, 20, rmode->fbWidth, rmode->xfbHeight, rmode->fbWidth * VI_DISPLAY_PIX_SZ);
 
   // Set up the video registers with the chosen mode
   VIDEO_Configure(rmode);
 
   // Tell the video hardware where our display memory is
-  VIDEO_SetNextFramebuffer(xfb);
+  VIDEO_SetNextFramebuffer(xfb[fb]);
 
   // Make the display visible
   VIDEO_SetBlack(false);
@@ -531,6 +550,12 @@ int main(int argc, wchar *argv[])
   VIDEO_WaitVSync();
   if (rmode->viTVMode & VI_NON_INTERLACE)
     VIDEO_WaitVSync();
+
+  // Playing MP3 file
+  if(mp3mainmenu) {
+    MP3Player_PlayBuffer(sample_mp3, sample_mp3_size, NULL);
+  }
+
 
   // Initialise SD Card
   if (fatInitDefault())
@@ -606,6 +631,11 @@ int main(int argc, wchar *argv[])
     printf("No valid disc files found in sd:/discs/. Booting to BIOS...\n");
     usleep(2000000); // Wait time (2 sec) to let user see message before booting to BIOS
     printf("Booting to BIOS...\n");
+  }
+
+  // Stop menu music before handing audio to the emulator
+  if(mp3mainmenu) {
+    MP3Player_Stop();
   }
 
   int rv = EmuMain(argc, argv); // Launching the Emulator (nullDC.cpp)

@@ -14,11 +14,12 @@ include $(DEVKITPPC)/wii_rules
 # BUILD is the directory where object files & intermediate files will be placed
 # SOURCES is a list of directories containing source code
 # INCLUDES is a list of directories containing extra header files
+# DATA is for the MP3 file
 #---------------------------------------------------------------------------------
 TARGET      := boot
 BUILD       := build
 INCLUDES    := ../
-DATA        := 
+DATA        := data
 
 #--- Core Sources ---
 SOURCES     := ../
@@ -108,7 +109,7 @@ LDFLAGS  := -g $(MACHDEP) -Wl,-Map,$(TARGET).map
 #---------------------------------------------------------------------------------
 # Libraries
 #---------------------------------------------------------------------------------
-LIBS    := -lwiiuse -lbte -lfat -lasnd -logc -lm
+LIBS    := -lwiiuse -lbte -lfat -lmad -lasnd -logc -lm
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
@@ -189,6 +190,14 @@ DEPENDS := $(OFILES:.o=.d)
 #---------------------------------------------------------------------------------
 $(OUTPUT).dol: $(OUTPUT).elf
 $(OUTPUT).elf: $(OFILES)
+
+#---------------------------------------------------------------------------------
+# This rule links in binary data with the .mp3 extension
+#---------------------------------------------------------------------------------
+%.mp3.o	%_mp3.h :	%.mp3
+#---------------------------------------------------------------------------------
+	@echo $(notdir $<)
+	$(bin2o)
 
 -include $(DEPENDS)
 
