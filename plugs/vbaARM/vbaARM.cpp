@@ -107,12 +107,14 @@ EXPORT void EXPORT_CALL armGetInterface(plugin_interface* info)
 int armcfgGetInt(char* key,int def)
 {
 	char t[512];
-	strncpy(t,key,512);
+	strncpy(t,key,511);
+	t[511] = '\0';
 	return arm_eminf.ConfigLoadInt("nullAica",t,def);
 }
 void armcfgSetInt(char* key,int def)
 {
 	char t[512];
-	strncpy(t,key,512);
+	strncpy(t,key,511);
+	t[511] = '\0';
 	arm_eminf.ConfigSaveInt("nullAica",t,def);
 }
