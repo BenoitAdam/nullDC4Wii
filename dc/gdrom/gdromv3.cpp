@@ -659,6 +659,7 @@ void gd_process_spi_cmd()
 		if (get_debug_gdrom()) {
 			printf("[GDR] SPI_REQ_SES: ses=%u status=0x%02X disc_fmt=%u cnt=%u resp=[%02X %02X %02X %02X %02X %02X]\n",
 			       (unsigned int)packet_cmd.data_8[2], (unsigned int)SecNumber.Status, (unsigned int)SecNumber.DiscFormat,
+			       (unsigned int)ses_inf[3],
 			       (unsigned int)ses_inf[0],(unsigned int)ses_inf[1],(unsigned int)ses_inf[2],
 			       (unsigned int)ses_inf[3],(unsigned int)ses_inf[4],(unsigned int)ses_inf[5]);
 		}
