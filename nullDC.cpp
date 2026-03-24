@@ -54,12 +54,12 @@ int RunDC()
 	if(settings.dynarec.Enable)
 	{
 		Get_Sh4Recompiler(&sh4_cpu);
-		printf("Using Recompiler\n");
+		printf("[nullDC.cpp] Using Recompiler (Dynarec Enable)\n");
 	}
 	else
 	{
 		Get_Sh4Interpreter(&sh4_cpu);
-		printf("Using Interpreter\n");
+		printf("[nullDC.cpp] Using Interpreter\n");
 	}
 
 	// -----------------------------------------------------------------------
@@ -80,15 +80,11 @@ int RunDC()
 		// dc.cpp must call dc_elf_pre_run_hook() between Reset() and Run().
 		// We register our intent here; the actual register write happens in
 		// the hook (see dc_elf_pre_run_hook() below).
-		printf("[ELF] Boot mode active – entry will be applied after CPU reset\n");
+		printf("[nullDC.cpp] [ELF] Boot mode active – entry will be applied after CPU reset\n");
 	}
 
 	Start_DC();	//this call is blocking ...
 	
-
-#ifndef _ANDROID
-	Term_DC();
-#endif
 	return 0;
 }
 
@@ -130,13 +126,13 @@ int main___(int argc,char* argv[])
 {
 	if(ParseCommandLine(argc,argv))
 	{
-		printf("\n\n(Exiting due to command line, without starting nullDC)\n");
+		printf("\n\n[nullDC.cpp] (Exiting due to command line, without starting nullDC)\n");
 		return 69;
 	}
 
 	if(!cfgOpen())
 	{
-		msgboxf(_T("Unable to open config file"),MBX_ICONERROR);
+		msgboxf(_T("[nullDC.cpp] Unable to open config file"),MBX_ICONERROR);
 		return -4;
 	}
 	LoadSettings();
@@ -168,7 +164,7 @@ int main___(int argc,char* argv[])
 
 	fclose(fr);
 
-	printf("Loading plugins!\n");
+	printf("[nullDC.cpp] Loading plugins!\n");
 	while (!plugins_Load())
 	{
 		//if (!plugins_Select())
@@ -242,7 +238,7 @@ int EmuMain(int argc, char* argv[])
 
 void LoadSettings()
 {
-	printf("Loading settings\n");
+	printf("[nullDC.cpp] Loading settings\n");
 	settings.dynarec.Enable=1|cfgLoadInt("nullDC","Dynarec.Enabled",1)!=0;
 	settings.dynarec.CPpass=cfgLoadInt("nullDC","Dynarec.DoConstantPropagation",1)!=0;
 	settings.dynarec.UnderclockFpu=cfgLoadInt("nullDC","Dynarec.UnderclockFpu",0)!=0;
@@ -252,7 +248,7 @@ void LoadSettings()
 
 	settings.emulator.AutoStart=cfgLoadInt("nullDC","Emulator.AutoStart",0)!=0;
 	settings.emulator.NoConsole=cfgLoadInt("nullDC","Emulator.NoConsole",0)!=0;
-	printf("Loaded settings\n");
+	printf("[nullDC.cpp] Loaded settings\n");
 }
 void SaveSettings()
 {
