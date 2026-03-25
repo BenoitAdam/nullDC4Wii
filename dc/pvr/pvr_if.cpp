@@ -152,8 +152,8 @@ INLINE void YUV_ConvertMacroBlock()
         u8 yuyv[4]; // Temporary buffer for 2 pixels
         
         // Convert 16x16 block
-        for (int y = 0; y < YUV_MACROBLOCK_SIZE; y++) {
-            for (int x = 0; x < YUV_MACROBLOCK_SIZE; x += 2) {
+        for (u32 y = 0; y < YUV_MACROBLOCK_SIZE; y++) {
+            for (u32 x = 0; x < YUV_MACROBLOCK_SIZE; x += 2) {
                 // Pack YUYV format: Y0 U Y1 V
                 yuyv[1] = GetY420(x, y, Y);      // Y0
                 yuyv[0] = GetUV420(x, y, U);     // U (shared)
