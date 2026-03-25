@@ -271,7 +271,8 @@ static char *dirname(char *path) {
             return result;
         }
     }
-    return "";
+    static char empty[] = "";
+    return empty;
 }
 
 static char *basename(char *path) {
