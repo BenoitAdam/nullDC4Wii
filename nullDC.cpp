@@ -239,7 +239,7 @@ int EmuMain(int argc, char* argv[])
 void LoadSettings()
 {
 	printf("[nullDC.cpp] Loading settings\n");
-	settings.dynarec.Enable=1|cfgLoadInt("nullDC","Dynarec.Enabled",1)!=0;
+	settings.dynarec.Enable = 1 | (cfgLoadInt("nullDC", "Dynarec.Enabled", 1) != 0);
 	settings.dynarec.CPpass=cfgLoadInt("nullDC","Dynarec.DoConstantPropagation",1)!=0;
 	settings.dynarec.UnderclockFpu=cfgLoadInt("nullDC","Dynarec.UnderclockFpu",0)!=0;
 
