@@ -475,7 +475,7 @@ struct maple_sega_vmu: maple_base
 
 					case MFID_2_LCD:
 					{
-						u32 wat=r32();
+						r32(); // skip unused word
 						rptr(lcd_data,192);
 						
 						u8 white=0xff,black=0x00;
