@@ -78,6 +78,29 @@ extern "C" {
   }
 }
 
+// ============================================================================
+// FPS BOOST : FASTER FPS Improvements
+// ============================================================================
+
+/* 
+From version alpha 0.14 I'm introducing this global variable
+as Dreamcast Intro and some menu already hit 57FPS, it could be difficult to see regression
+
+From version alpha 0.14, every FPS Boost should be in a "if" or "if/else" statement
+
+FPS Boost should be to 1 when compiling for release
+I will also in the future add an option to switch between ON and OFF (Debug) in case it's forgotten when compiling
+
+*/
+
+int g_fps_boost = 0; // 0= debug 1=Normal
+
+extern "C" {
+  int get_fps_boost() {
+    return g_fps_boost;
+  }
+}
+
 
 
 // ============================================================================
