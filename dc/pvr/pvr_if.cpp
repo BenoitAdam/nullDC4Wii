@@ -316,20 +316,14 @@ void FASTCALL TAWrite(u32 address, u32* data, u32 count)
     u32 address_masked = address & 0x1FFFFFF;
     
     if (address_masked < 0x800000) {
-        // TA polygon data range.
-        // Also mirror to vram.data for addresses >= 0x200000 (texture space).
-        // The polygon object list lives at low addresses (< 0x200000) and must
-        // not be corrupted. VQ textures uploaded via TA DMA land at addresses
-        // like 0x5B0080 which are above the threshold and need to be in vram.data
-        // so the renderer can read the codebook/indices at tex_addr.
-        if (address_masked >= 0x200000)
-            memcpy(&vram.data[address_masked], data, count * 32);
+        // TA polygon data (0-8MB range)
         libPvr_TaDMA(data, count);
     } else if (address_masked < 0x1000000) {
         // YUV converter (8-16MB range)
         YUV_data(data, count);
     } else {
         // Direct VRAM write (16MB+ range)
+        // Note: This works on real hardware, respects lock modes
         memcpy(&vram.data[address & VRAM_MASK], data, count * 32);
     }
 }
@@ -343,12 +337,13 @@ void FASTCALL TAWriteSQ(u32 address, u32* data)
     u32 address_masked = address & 0x1FFFFFF;
     
     if (address_masked < 0x800000) {
-        if (address_masked >= 0x200000)
-            memcpy(&vram.data[address_masked], data, 32);
+        // TA polygon data
         libPvr_TaSQ(data);
     } else if (address_masked < 0x1000000) {
+        // YUV converter
         YUV_data(data, 1);
     } else {
+        // Direct VRAM write
         memcpy(&vram.data[address & VRAM_MASK], data, 32);
     }
 }

@@ -842,12 +842,8 @@ static void SetTextureParams(PolyParam *mod)
 
   //// 2. The "Smart" Cache Check ////
 
-  // Re-convert only when tex_addr changes for this cache slot, or stride forces refresh.
-  // We no longer use *ptex (VRAM sentinel) because TAWrite DMA can overwrite VRAM at
-  // tex_addr (e.g. a nearby VQ codebook upload), falsely triggering reconversion and
-  // showing the wrong texture on geometry (e.g. ghost texture appearing on a wall).
-  // pbuff->addr lives in vram_buffer (our own memory) and is never touched by DMA.
-  if (pbuff->addr != tex_addr || (mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder))
+  // Only re-process texture if it has changed (marked by DEADBEEF sentinel).
+  if (*ptex != 0xDEADBEEF || pbuff->addr != tex_addr || (mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder))
   {
     u32 *dst = (u32 *)&pbuff[1];
     VramWork = (u8 *)dst;
@@ -995,8 +991,9 @@ static void SetTextureParams(PolyParam *mod)
     GX_InitTexObjLOD(&pbuff->tex, min_filt, mag_filt,
                   0.0f, 10.0f, lod_bias,
                   bias_clamp, edge_lod, aniso);
-
-    // pbuff->addr was already set above when entering the conversion block.
+    
+                  
+    *ptex = 0xDEADBEEF;
 
     if(DEBUG_MESSAGE()){
       printf("Texture:%d %d %dx%d %08X --> %08X\n", mod->tcw.NO_PAL.PixelFmt, mod->tcw.NO_PAL.ScanOrder, 8 << mod->tsp.TexU, 8 << mod->tsp.TexV, tex_addr, (u32)dst);
@@ -1954,11 +1951,6 @@ void ResetRenderer(bool Manual)
   TileAccel.Reset(Manual);
   VertexCount = 0;
   FrameCount = 0;
-  // Clear the texture cache so all entries are invalidated on next render.
-  // Without this, textures converted on a previous session stay cached and
-  // won't be reconverted with any updated conversion code.
-  if (vram_buffer)
-    memset(vram_buffer, 0, VRAM_SIZE * 2);
 }
 
 // Thread Start
