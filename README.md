@@ -128,11 +128,15 @@ game selector implemented
 1 player controler implemented  
 Few games are runnable :
 - Castlevania (Demo)
+- Crazy Taxi
 - Sega Tetris
 - Shenmue
 - Jojo
 
+
 Wii Dynarec has been improved & completed by AI. Compile but doesn't run (Black Screen). See /archive folder
+
+https://www.youtube.com/watch?v=Ug8V2XXO52Q
 
 ## Compatibility
 
