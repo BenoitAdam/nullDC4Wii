@@ -46,6 +46,24 @@ extern "C" {
   }
 }
 
+int g_advanced_alpha_preset = 0; // 0=no advanced alpha (Default), 1=Advanced Alpha (defaut)
+
+// These will be used by gxRend
+extern "C" {
+  int get_advanced_alpha_preset() {
+    return g_advanced_alpha_preset;
+  }
+}
+
+int g_frameskip_preset = 0; // 0=No frame skip (defaut for now), 1=1 frame skip, 2=2 frame skip, 3=Auto frame skip
+
+// These will be used by gxRend
+extern "C" {
+  int get_frameskip_preset() {
+    return g_frameskip_preset;
+  }
+}
+
 // ============================================================================
 // DEBUG MODE
 // ============================================================================
