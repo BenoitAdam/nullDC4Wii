@@ -355,6 +355,160 @@ void displayAccuracyMenu()
   }
 }
 
+// ============================================================================
+// OPTIONS MENU (shown after file selection, before launch)
+// ============================================================================
+// Row indices in the options menu
+#define OPT_LAUNCH      0
+// row 1 is blank (skip)
+#define OPT_GRAPHICS    2
+#define OPT_ACCURACY    3
+#define OPT_RATIO       4
+#define OPT_ADV_ALPHA   5
+#define OPT_FRAMESKIP   6
+#define OPT_FPS_BOOST   7
+#define OPT_ROW_COUNT   8  // total rows including blank
+
+// Returns true if the user chose "Launch game", false if they pressed B to go back.
+bool displayOptionsMenu()
+{
+  int selectedRow = OPT_LAUNCH; // start on "Launch game"
+
+  while (true)
+  {
+    printf("\033[2J\033[H"); // Clear screen
+
+    printf("NullDC4Wii - Alpha 0.14   OPTIONS\n");
+    printf("===================================\n\n");
+
+    // --- Launch game ---
+    printf("%s LAUNCH GAME\n", (selectedRow == OPT_LAUNCH) ? ">" : " ");
+
+    // --- Blank separator ---
+    printf("\n");
+
+    // --- Graphics ---
+    printf("%s GRAPHICS      : ", (selectedRow == OPT_GRAPHICS) ? ">" : " ");
+    switch (g_graphism_preset) {
+      case 0: printf("[< LOW        >]"); break;
+      case 1: printf("[< NORMAL     >]"); break;
+      case 2: printf("[< HIGH       >]"); break;
+      case 3: printf("[< EXTRA      >]"); break;
+    }
+    printf(" (Tip : 2D Games should use LOW)");
+    printf("\n");
+
+    // --- Accuracy ---
+    printf("%s ACCURACY      : ", (selectedRow == OPT_ACCURACY) ? ">" : " ");
+    switch (g_accuracy_preset) {
+      case 0: printf("[< FAST       >]"); break;
+      case 1: printf("[< BALANCED   >]"); break;
+      case 2: printf("[< ACCURATE   >]"); break;
+    }
+    printf("\n");
+
+    // --- Ratio ---
+    printf("%s RATIO         : ", (selectedRow == OPT_RATIO) ? ">" : " ");
+    switch (g_ratio_preset) {
+      case 0: printf("[< ORIGINAL   >]"); break;
+      case 1: printf("[< FULLSCREEN >]"); break;
+    }
+    printf("\n\n");
+
+    // --- Advanced Alpha ---
+    printf("%s ADVANCED ALPHA: ", (selectedRow == OPT_ADV_ALPHA) ? ">" : " ");
+    switch (g_advanced_alpha_preset) {
+      case 0: printf("[< NO  (DEFAULT) >]"); break;
+      case 1: printf("[< YES (DEBUG)   >]"); break;
+    }
+    printf("\n");
+
+    // --- Frameskipping ---
+    printf("%s FRAMESKIPPING : ", (selectedRow == OPT_FRAMESKIP) ? ">" : " ");
+    switch (g_frameskip_preset) {
+      case 0: printf("[< 0 (DEFAULT)   >]"); break;
+      case 1: printf("[< 1             >]"); break;
+      case 2: printf("[< 2             >]"); break;
+      case 3: printf("[< AUTO          >]"); break;
+    }
+    printf("\n");
+
+    // --- FPS Boost ---
+    printf("%s FPS BOOST     : ", (selectedRow == OPT_FPS_BOOST) ? ">" : " ");
+    switch (g_fps_boost) {
+      case 0: printf("[< NO (DEBUG)    >]"); break;
+      case 1: printf("[< YES (DEFAULT) >]"); break;
+    }
+    printf("\n");
+
+    printf("\n");
+    printf("UP/DOWN: Navigate | LEFT/RIGHT: Change value\n");
+    printf("A: Launch | LEFT/RIGHT: Change value | B: Back to file list\n");
+
+    WPAD_ScanPads();
+    u32 pressed = WPAD_ButtonsDown(0);
+
+    // --- Navigation: UP ---
+    if (pressed & WPAD_BUTTON_UP)
+    {
+      do {
+        selectedRow = (selectedRow > 0) ? selectedRow - 1 : OPT_ROW_COUNT - 1;
+      } while (selectedRow == 1); // skip blank row
+    }
+    // --- Navigation: DOWN ---
+    else if (pressed & WPAD_BUTTON_DOWN)
+    {
+      do {
+        selectedRow = (selectedRow < OPT_ROW_COUNT - 1) ? selectedRow + 1 : 0;
+      } while (selectedRow == 1); // skip blank row
+    }
+    // --- Value change: LEFT (cycle backwards) ---
+    else if (pressed & WPAD_BUTTON_LEFT)
+    {
+      switch (selectedRow) {
+        case OPT_GRAPHICS:   g_graphism_preset       = (g_graphism_preset       + 3) % 4; break;
+        case OPT_ACCURACY:   g_accuracy_preset        = (g_accuracy_preset        + 2) % 3; break;
+        case OPT_RATIO:      g_ratio_preset           = (g_ratio_preset           + 1) % 2; break;
+        case OPT_ADV_ALPHA:  g_advanced_alpha_preset  = (g_advanced_alpha_preset  + 1) % 2; break;
+        case OPT_FRAMESKIP:  g_frameskip_preset       = (g_frameskip_preset       + 3) % 4; break;
+        case OPT_FPS_BOOST:  g_fps_boost              = (g_fps_boost              + 1) % 2; break;
+        default: break;
+      }
+    }
+    // --- Value change: RIGHT (cycle forwards) ---
+    else if (pressed & WPAD_BUTTON_RIGHT)
+    {
+      switch (selectedRow) {
+        case OPT_GRAPHICS:   g_graphism_preset       = (g_graphism_preset       + 1) % 4; break;
+        case OPT_ACCURACY:   g_accuracy_preset        = (g_accuracy_preset        + 1) % 3; break;
+        case OPT_RATIO:      g_ratio_preset           = (g_ratio_preset           + 1) % 2; break;
+        case OPT_ADV_ALPHA:  g_advanced_alpha_preset  = (g_advanced_alpha_preset  + 1) % 2; break;
+        case OPT_FRAMESKIP:  g_frameskip_preset       = (g_frameskip_preset       + 1) % 4; break;
+        case OPT_FPS_BOOST:  g_fps_boost              = (g_fps_boost              + 1) % 2; break;
+        default: break;
+      }
+    }
+    // --- A: launch only (use LEFT/RIGHT to change values) ---
+    else if (pressed & WPAD_BUTTON_A)
+    {
+      if (selectedRow == OPT_LAUNCH)
+        return true; // proceed to launch
+    }
+    // --- B: go back to file list ---
+    else if (pressed & WPAD_BUTTON_B)
+    {
+      return false;
+    }
+
+    // Double-buffer swap
+    VIDEO_SetNextFramebuffer(xfb[fb]);
+    VIDEO_Flush();
+    VIDEO_WaitVSync();
+    fb ^= 1;
+    console_init(xfb[fb], 20, 20, rmode->fbWidth, rmode->xfbHeight, rmode->fbWidth * VI_DISPLAY_PIX_SZ);
+  }
+}
+
 // Function to display menu and allow selection with Wiimote
 int displayMenuAndSelectFile()
 {
@@ -544,6 +698,17 @@ int displayMenuAndSelectFile()
 
 void SetApplicationPath(wchar *path);
 
+// ============================================================================
+// BIOS BOOT HELPER
+// ============================================================================
+// Called when no disc is selected (button 1 in file browser, or no disc files found).
+// Sets selectedFilePath to empty and shows the options menu.
+// Returns true if the user confirmed launch, false if they pressed B to go back.
+void handleBIOSBoot()
+{
+  strcpy(selectedFilePath, ""); // No disc — launch straight to BIOS
+}
+
 int main(int argc, wchar *argv[])
 {
   // Initialize the video system
@@ -631,47 +796,75 @@ int main(int argc, wchar *argv[])
   // If there is file (there always will be with the option "No Disc boot to BIOS")
   if (fileCount > 0)
   {
-    int selectedIndex = displayMenuAndSelectFile();
+    bool launchGame = false;
 
-    if (selectedIndex == -2)
+    while (!launchGame)
     {
-      // Boot to BIOS (button 1 pressed)
-      printf("\x1b[2J\x1b[H"); // Clear Screen
-      printf("Booting to BIOS (no disc)...\n");
-      printf("FPU Accuracy: ");
-      switch(g_accuracy_preset) {
-        case 0: printf("FAST\n"); break;
-        case 1: printf("BALANCED\n"); break;
-        case 2: printf("ACCURATE\n"); break;
+      int selectedIndex = displayMenuAndSelectFile();
+
+      if (selectedIndex == -1)
+      {
+        // HOME pressed: exit
+        printf("Exiting...\n");
+        return 0;
       }
-      strcpy(selectedFilePath, ""); // No File
-    }
-    else if (selectedIndex >= 0)
-    {
-      // A file has been selected
-      strcpy(selectedFilePath, fileList[selectedIndex].fullPath);
-      printf("\x1b[2J\x1b[H"); // Clear Screen
-      printf("Selected file: %s\n", selectedFilePath);
-      printf("FPU Accuracy: ");
-      switch(g_accuracy_preset) {
-        case 0: printf("FAST\n"); break;
-        case 1: printf("BALANCED\n"); break;
-        case 2: printf("ACCURATE\n"); break;
+      else if (selectedIndex == -2)
+      {
+        // Boot to BIOS (button 1 pressed): launch immediately, no options screen
+        handleBIOSBoot();
+        launchGame = true;
+      }
+      else if (selectedIndex >= 0)
+      {
+        // A file has been selected: show options before launching
+        strcpy(selectedFilePath, fileList[selectedIndex].fullPath);
+        launchGame = displayOptionsMenu();
+        if (!launchGame)
+          continue; // B pressed in options: return to file list
       }
     }
+
+    // Print launch summary
+    printf("\x1b[2J\x1b[H"); // Clear Screen
+    if (strlen(selectedFilePath) > 0)
+      printf("Selected file  : %s\n", selectedFilePath);
     else
-    {
-      // HOME pressed
-      printf("Exiting...\n");
-      return 0;
+      printf("Booting to BIOS (no disc)...\n");
+
+    printf("Graphics       : ");
+    switch(g_graphism_preset) {
+      case 0: printf("LOW\n");    break;
+      case 1: printf("NORMAL\n"); break;
+      case 2: printf("HIGH\n");   break;
+      case 3: printf("EXTRA\n");  break;
     }
+    printf("Accuracy       : ");
+    switch(g_accuracy_preset) {
+      case 0: printf("FAST\n");     break;
+      case 1: printf("BALANCED\n"); break;
+      case 2: printf("ACCURATE\n"); break;
+    }
+    printf("Ratio          : ");
+    switch(g_ratio_preset) {
+      case 0: printf("ORIGINAL\n");   break;
+      case 1: printf("FULLSCREEN\n"); break;
+    }
+    printf("Advanced Alpha : %s\n", g_advanced_alpha_preset ? "YES (DEBUG)" : "NO");
+    printf("Frameskipping  : ");
+    switch(g_frameskip_preset) {
+      case 0: printf("0\n");    break;
+      case 1: printf("1\n");    break;
+      case 2: printf("2\n");    break;
+      case 3: printf("AUTO\n"); break;
+    }
+    printf("FPS Boost      : %s\n", g_fps_boost ? "YES" : "NO (DEBUG)");
   }
   else
   {
-    // If no valid disc file found
+    // If no valid disc file found: boot to BIOS directly
     printf("No valid disc files found in sd:/discs/. Booting to BIOS...\n");
-    usleep(2000000); // Wait time (2 sec) to let user see message before booting to BIOS
-    printf("Booting to BIOS...\n");
+    usleep(2000000);
+    handleBIOSBoot();
   }
 
   // Stop menu music before handing audio to the emulator
