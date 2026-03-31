@@ -34,9 +34,16 @@ extern "C" int get_debug_message();
 
 extern "C" int get_debug_loop();
 
-// For future improvement. This would be defined in nullDC.cpp or main.cpp
-extern int g_current_frameskip; // 0 = no skip, 1 = skip 1 frame, 2 = skip 2 frame
-extern int g_frame_counter;
+// Frame skipping
+extern "C" int get_frameskip_preset();
+
+#define NO_FRAMESKIP() (get_frameskip_preset() == 0) // no frameskip
+#define FRAMESKIP_1() (get_frameskip_preset() == 1) // frameskip = 1 frame
+#define FRAMESKIP_2() (get_frameskip_preset() == 2) // frameskip = 2 frames
+#define FRAMESKIP_AUTO() (get_frameskip_preset() == 3) // frameskip = AUTO
+
+int current_frameskip;
+int frame_counter;
 
 
 
