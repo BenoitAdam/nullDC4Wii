@@ -1242,7 +1242,8 @@ void DoRender()
           {(2.f / dc_width), 0, +(640.f / dc_width), 0},
           {0, -(2.f / dc_height), -(480.f / dc_height), 0},
           {0, 0, p5, p6},
-          {0, 0, -1, 0}};
+          {0, 0, -1, 0}
+        };
 
   // load the matrix to GX
   GX_LoadProjectionMtx(mtx, GX_PERSPECTIVE);
