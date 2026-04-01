@@ -377,7 +377,7 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H"); // Clear screen
 
-    printf("NullDC4Wii - Alpha 0.14   OPTIONS\n");
+    printf("NullDC4Wii - Alpha 0.15   OPTIONS\n");
     printf("===================================\n\n");
 
     // --- Launch game ---
@@ -525,7 +525,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H"); // Clear Screen
-    printf("\nNullDC4Wii - Alpha 0.14   ");
+    printf("\nNullDC4Wii - Alpha 0.15   ");
     printf("Current directory: %s\n", currentPath);
     // Display current GRAPHISM preset (cycled with Minus)
     printf("(-) GRAPHICS: ");
@@ -577,7 +577,7 @@ int displayMenuAndSelectFile()
     printf("\n--- Page %02d/%02d ---\n\n", currentPage + 1, totalPages);
     printf("HELP ME BUILD THIS PROJECT !! ANY HELP IS WELCOME !!\n");
     printf("https://github.com/BenoitAdam94/nullDC4Wii\n");
-    printf("Contact & bug report : xalegamingchannel@gmail.com\n");
+    printf("Contact : xalegamingchannel@gmail.com\n");
     printf("HELP ME ON THE COMPATIBILITY LIST !!\n");
     printf("Compatibility WIKI : https://wiibrew.org/wiki/NullDC4Wii/Compatibility\n\n");
     printf("A: Select | B: Back | 1: BIOS | 2: More Info | (-) + (+): Exit\n");
