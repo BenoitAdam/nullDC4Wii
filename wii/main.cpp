@@ -107,7 +107,6 @@ as Dreamcast Intro and some menu already hit 57FPS, it could be difficult to see
 From version alpha 0.14, every FPS Boost should be in a "if" or "if/else" statement
 
 FPS Boost should be to 1 when compiling for release
-I will also in the future add an option to switch between ON and OFF (Debug) in case it's forgotten when compiling
 
 */
 
@@ -383,6 +382,14 @@ bool displayOptionsMenu()
 
     // --- Launch game ---
     printf("%s LAUNCH GAME\n", (selectedRow == OPT_LAUNCH) ? ">" : " ");
+
+    // --- Game name (max 60 characters) ---
+    {
+      // Extract filename from full path
+      const char *gameName = strrchr(selectedFilePath, '/');
+      gameName = (gameName != NULL) ? gameName + 1 : selectedFilePath;
+      printf("    %.60s\n", gameName);
+    }
 
     // --- Blank separator ---
     printf("\n");
