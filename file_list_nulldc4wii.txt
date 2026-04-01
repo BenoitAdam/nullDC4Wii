@@ -213,6 +213,10 @@ nullDC4Wii\plugs\ImgReader\cdi.cpp
 nullDC4Wii\plugs\ImgReader\cdi.h
 nullDC4Wii\plugs\ImgReader\common.cpp
 nullDC4Wii\plugs\ImgReader\common.h
+nullDC4Wii\plugs\ImgReader\elf_loader.cpp
+nullDC4Wii\plugs\ImgReader\elf_loader.h
+nullDC4Wii\plugs\ImgReader\Elf.cpp
+nullDC4Wii\plugs\ImgReader\Elf.h
 nullDC4Wii\plugs\ImgReader\gd_driver.h
 nullDC4Wii\plugs\ImgReader\ImgReader.cpp
 nullDC4Wii\plugs\ImgReader\ImgReader.h
