@@ -114,12 +114,11 @@ To exit : R + L + Z
 
 ### VMU (Memory card)
 
-I don't know if it's supported now.  
+It seems to be supported, but 1rst you'll need to format the VMU in the bios
 
-Files appears at root :  
-vmu_save_A1.bin  
-vmu_save_A2.bin
-
+Files appears at root of /data/ :  
+- vmu_save_A1.bin
+- vmu_save_A2.bin
 
 ## Status (13/03/2026)
 
