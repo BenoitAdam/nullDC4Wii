@@ -28,6 +28,10 @@ extern "C" int get_ratio_preset();
 #define ORIGINAL() (get_ratio_preset() == 0)
 #define FULLSCREEN() (get_ratio_preset() == 1)
 
+// Advanced alpha (DEBUG - test)
+extern "C" int get_advanced_alpha_preset();
+#define ADVANCED_ALPHA() (get_advanced_alpha_preset() == 1)
+
 // This is defined in main.cpp
 extern "C" int get_debug_message();
 #define DEBUG_MESSAGE() (get_debug_message() == 1)
@@ -37,10 +41,10 @@ extern "C" int get_debug_loop();
 // Frame skipping
 extern "C" int get_frameskip_preset();
 
-#define NO_FRAMESKIP() (get_frameskip_preset() == 0) // no frameskip
-#define FRAMESKIP_1() (get_frameskip_preset() == 1) // frameskip = 1 frame
-#define FRAMESKIP_2() (get_frameskip_preset() == 2) // frameskip = 2 frames
-#define FRAMESKIP_AUTO() (get_frameskip_preset() == 3) // frameskip = AUTO
+#define NO_FRAMESKIP() (get_frameskip_preset() == 0)
+#define FRAMESKIP_1() (get_frameskip_preset() == 1)
+#define FRAMESKIP_2() (get_frameskip_preset() == 2)
+#define FRAMESKIP_AUTO() (get_frameskip_preset() == 3)
 
 int current_frameskip;
 int frame_counter;
@@ -1297,7 +1301,8 @@ void DoRender()
       {
         SetTextureParams(drawMod);
 
-        if (HIGH() || EXTRA())
+        // Test - Claude say this is more accurate for alpha ?
+        if (ADVANCED_ALPHA())
         {
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
           int alpha_fmt = (fmt == 0 || fmt == 7) ? 1 : 0;
