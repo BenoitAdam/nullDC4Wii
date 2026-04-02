@@ -446,19 +446,6 @@ inline void ci8_prel(u8 *dst, u32 x, u32 y, u32 w, u8 idx)
   dst[byte_off] = idx;
 }
 
-// Write one 4-bit index into a GX CI4 block-layout buffer.
-// GX CI4 tile: 8 pixels wide x 8 pixels tall = 32 bytes per tile.
-// High nibble = even x within tile, low nibble = odd x.
-inline void ci4_prel(u8 *dst, u32 x, u32 y, u32 w, u8 idx)
-{
-  u32 tile     = (y / 8) * (w / 8) + (x / 8);
-  u32 nibble   = tile * 64 + (y % 8) * 8 + (x % 8);
-  u32 byte_off = nibble >> 1;
-  if (nibble & 1)
-    dst[byte_off] = (dst[byte_off] & 0xF0) | (idx & 0x0F); // low nibble
-  else
-    dst[byte_off] = (dst[byte_off] & 0x0F) | ((idx & 0x0F) << 4); // high nibble
-}
 
 // ===============
 // Pixel Converters for Non-Twiddled (Planar) textures.
@@ -874,6 +861,11 @@ static void SetTextureParams(PolyParam *mod)
   u32 w = 8 << mod->tsp.TexU;
   u32 h = 8 << mod->tsp.TexV;
 
+  // =================================================================
+  // Additionnal code introduced with CI8 Implementation in alpha 0.16
+  // =================================================================
+
+
   // ── Palette TLUT setup (fmt 5 = CI4, fmt 6 = CI8) ──────────────────────────
   // Rebuilt and re-uploaded every call so palette changes are visible immediately
   // without needing VRAM dirty detection. The loop is cheap (<=256 iterations)
@@ -923,6 +915,9 @@ static void SetTextureParams(PolyParam *mod)
     GX_InitTlutObj(&tlut_obj, s_tlut_buf, gx_tlut_fmt, (u16)n_entries);
     GX_LoadTlut(&tlut_obj, GX_TLUT0);
   }
+
+  // === End of Palette TLUT setup ===
+  
 
   //// 2. The "Smart" Cache Check ////
 
@@ -1025,46 +1020,52 @@ static void SetTextureParams(PolyParam *mod)
       // 4	Bump Map	16 bits/pixel; S value: 8 bits; R value: 8 bits
     case 5:
     {
-      // 4BPP palette -> GX_TF_CI4
-      // Untwiddle index nibbles into GX CI4 block layout.
-      // TLUT already loaded above — only index data written here.
+      // 5 = 4BPP Palette: 4 bits per pixel, 16-entry palette.
+      // Fully decode each indexed pixel into a GX 16bpp pixel so GX_TF_RGB565
+      // or GX_TF_RGB5A3 can be used directly — no CI4/TLUT needed.
       verify(mod->tcw.PAL.VQ_Comp == 0);
       if (mod->tcw.NO_PAL.MipMapped)
         tex_addr += MipPoint[mod->tsp.TexU] << 1;
 
       {
-        u8 *src  = (u8 *)&params.vram[tex_addr];
-        u8 *idst = (u8 *)VramWork;
-        memset(idst, 0, w * h / 2); // clear required: nibbles are OR'd in
+        u32  pal_fmt  = PAL_RAM_CTRL & 3;            // 0=ARGB1555 1=RGB565 2=ARGB4444 3=ARGB8888
+        u32  pal_base = mod->tcw.PAL.PalSelect & ~15u; // 16-entry aligned block index
+        u32 *pal      = PALETTE_RAM + pal_base;
 
-        if (mod->tcw.NO_PAL.ScanOrder)
+        FMT = (pal_fmt == 1) ? GX_TF_RGB565 : GX_TF_RGB5A3;
+
+        u8  *src = (u8 *)&params.vram[tex_addr];
+        u16 *dst = (u16 *)VramWork;
+
+        // Pixels are twiddled (Morton order). 2 pixels per byte; high nibble = even pixel.
+        for (u32 y = 0; y < h; y++)
         {
-          // Scanline (linear): row-major, 2 pixels per byte, high nibble = even x
-          for (u32 y = 0; y < h; y++)
-            for (u32 x = 0; x < w; x += 2)
+          for (u32 x = 0; x < w; x++)
+          {
+            u32 tw_nibble = twop(x, y, w, h);   // nibble index in twiddled stream
+            u32 tw_byte   = tw_nibble >> 1;
+            // byte-swap within each 16-bit pair to undo host_ptr_xor write ordering
+            u8  raw       = src[tw_byte ^ 1];
+            u8  idx       = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
+
+            u32 pe = pal[idx];
+            u16 px;
+            switch (pal_fmt)
             {
-              u32 lin = y * (w / 2) + x / 2;
-              u8  raw = src[lin ^ 1]; // byte-swap within 16-bit pair
-              ci4_prel(idst, x + 0, y, w, raw >> 4);
-              ci4_prel(idst, x + 1, y, w, raw & 0xF);
+              case 1:  px = (u16)(pe & 0xFFFF); break;                    // RGB565  → RGB565
+              case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;          // ARGB4444→ RGB5A3
+              case 3:                                                      // ARGB8888→ RGB5A3
+              {
+                u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+                px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+                break;
+              }
+              default: px = ABGR1555((u16)(pe & 0xFFFF)); break;          // ARGB1555→ RGB5A3
             }
-        }
-        else
-        {
-          // Twiddled (Morton order)
-          for (u32 y = 0; y < h; y++)
-            for (u32 x = 0; x < w; x++)
-            {
-              u32 tw_nibble = twop(x, y, w, h);
-              u8  raw       = src[(tw_nibble >> 1) ^ 1]; // byte-swap
-              u8  idx       = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
-              ci4_prel(idst, x, y, w, idx);
-            }
+            dst[GX_TexOffs(x, y, w)] = px;
+          }
         }
       }
-
-      FMT = GX_TF_CI4;
-      pbuff->has_pal = true;
       break;
     }
     case 6:
@@ -1124,8 +1125,8 @@ static void SetTextureParams(PolyParam *mod)
     // CI4 = w*h/2 bytes, CI8 = w*h bytes, 16bpp = w*h*2 bytes.
     {
       u32 flush_sz;
-      if      (FMT == GX_TF_CI4) flush_sz = w * h / 2;
-      else if (FMT == GX_TF_CI8) flush_sz = w * h;
+      if (FMT == GX_TF_CI8) flush_sz = w * h;
+      // else if      (FMT == GX_TF_CI4) flush_sz = w * h / 2; // If CI4 is correctly implemented one day
       else                        flush_sz = w * h * 2;
       DCFlushRange(dst, (flush_sz + 31) & ~31u);
     }
