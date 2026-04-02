@@ -951,27 +951,102 @@ static void SetTextureParams(PolyParam *mod)
       break;
       // 4	Bump Map	16 bits/pixel; S value: 8 bits; R value: 8 bits
     case 5:
-      // 5	4 BPP Palette	Palette texture with 4 bits/pixel
+    {
+      // 5 = 4BPP Palette: 4 bits per pixel, 16-entry palette.
+      // Fully decode each indexed pixel into a GX 16bpp pixel so GX_TF_RGB565
+      // or GX_TF_RGB5A3 can be used directly — no CI4/TLUT needed.
       verify(mod->tcw.PAL.VQ_Comp == 0);
       if (mod->tcw.NO_PAL.MipMapped)
         tex_addr += MipPoint[mod->tsp.TexU] << 1;
 
-      SetupPaletteForTexture(mod->tcw.PAL.PalSelect << 4, 16);
-
-      FMT = GX_TF_I4; // wha? the ?
-      break;
-    case 6:
       {
-      // 6	8 BPP Palette	Palette texture with 8 bits/pixel
+        u32  pal_fmt  = PAL_RAM_CTRL & 3;            // 0=ARGB1555 1=RGB565 2=ARGB4444 3=ARGB8888
+        u32  pal_base = mod->tcw.PAL.PalSelect & ~15u; // 16-entry aligned block index
+        u32 *pal      = PALETTE_RAM + pal_base;
+
+        FMT = (pal_fmt == 1) ? GX_TF_RGB565 : GX_TF_RGB5A3;
+
+        u8  *src = (u8 *)&params.vram[tex_addr];
+        u16 *dst = (u16 *)VramWork;
+
+        // Pixels are twiddled (Morton order). 2 pixels per byte; high nibble = even pixel.
+        for (u32 y = 0; y < h; y++)
+        {
+          for (u32 x = 0; x < w; x++)
+          {
+            u32 tw_nibble = twop(x, y, w, h);   // nibble index in twiddled stream
+            u32 tw_byte   = tw_nibble >> 1;
+            // byte-swap within each 16-bit pair to undo host_ptr_xor write ordering
+            u8  raw       = src[tw_byte ^ 1];
+            u8  idx       = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
+
+            u32 pe = pal[idx];
+            u16 px;
+            switch (pal_fmt)
+            {
+              case 1:  px = (u16)(pe & 0xFFFF); break;                    // RGB565  → RGB565
+              case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;          // ARGB4444→ RGB5A3
+              case 3:                                                      // ARGB8888→ RGB5A3
+              {
+                u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+                px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+                break;
+              }
+              default: px = ABGR1555((u16)(pe & 0xFFFF)); break;          // ARGB1555→ RGB5A3
+            }
+            dst[GX_TexOffs(x, y, w)] = px;
+          }
+        }
+      }
+      break;
+    }
+    case 6:
+    {
+      // 6 = 8BPP Palette: 8 bits per pixel, 256-entry palette.
+      // Fully decode each indexed pixel into a GX 16bpp pixel.
       verify(mod->tcw.PAL.VQ_Comp == 0);
       if (mod->tcw.NO_PAL.MipMapped)
         tex_addr += MipPoint[mod->tsp.TexU] << 2;
 
-      SetupPaletteForTexture(mod->tcw.PAL.PalSelect << 4, 256);
+      {
+        u32  pal_fmt  = PAL_RAM_CTRL & 3;
+        // PalSelect[5:4] selects the 256-entry bank (each bank = 256 u32 entries)
+        u32  pal_base = (mod->tcw.PAL.PalSelect >> 4) << 8;
+        u32 *pal      = PALETTE_RAM + pal_base;
 
-      FMT = GX_TF_I8; // wha? the ? FUCK!
-    }
+        FMT = (pal_fmt == 1) ? GX_TF_RGB565 : GX_TF_RGB5A3;
+
+        u8  *src = (u8 *)&params.vram[tex_addr];
+        u16 *dst = (u16 *)VramWork;
+
+        // 8BPP twiddled: 1 byte = 1 pixel in Morton order.
+        for (u32 y = 0; y < h; y++)
+        {
+          for (u32 x = 0; x < w; x++)
+          {
+            u32 tw  = twop(x, y, w, h);
+            u8  idx = src[tw ^ 1];  // byte-swap within 16-bit pair
+
+            u32 pe = pal[idx];
+            u16 px;
+            switch (pal_fmt)
+            {
+              case 1:  px = (u16)(pe & 0xFFFF); break;                    // RGB565  → RGB565
+              case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;          // ARGB4444→ RGB5A3
+              case 3:                                                      // ARGB8888→ RGB5A3
+              {
+                u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+                px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+                break;
+              }
+              default: px = ABGR1555((u16)(pe & 0xFFFF)); break;          // ARGB1555→ RGB5A3
+            }
+            dst[GX_TexOffs(x, y, w)] = px;
+          }
+        }
+      }
       break;
+    }
     default:
       printf("Unhandled texture\n");
       // memset(temp_tex_buffer,0xFFEFCFAF,w*h*4);
