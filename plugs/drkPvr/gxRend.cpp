@@ -656,19 +656,28 @@ template <class PixelConvertor>
 void fastcall texture_TW(u8 *p_in, u32 Width, u32 Height)
 {
   u8 *pb = VramWork;
-
   const u32 divider = PixelConvertor::xpp * PixelConvertor::ypp;
+
+  // Max DC texture size is 1024. Using fixed-size tables is safe and fast.
+  u32 table_x[1024];
+  u32 table_y[1024];
+
+  // Precompute twiddle divided by divider outside the main loops
+  for (u32 x = 0; x < Width; x += PixelConvertor::xpp) {
+    table_x[x] = twop(x, 0, Width, Height) / divider;
+  }
+  for (u32 y = 0; y < Height; y += PixelConvertor::ypp) {
+    table_y[y] = twop(0, y, Width, Height) / divider;
+  }
 
   for (u32 y = 0; y < Height; y += PixelConvertor::ypp)
   {
+    u32 offset_y = table_y[y];
     for (u32 x = 0; x < Width; x += PixelConvertor::xpp)
     {
-      u8 *p = &p_in[(twop(x, y, Width, Height) / divider) << 3];
+      // Use the precomputed tables just like in texture_VQ!
+      u8 *p = &p_in[(offset_y | table_x[x]) << 3];
 
-      // VRAM pixels were stored via pvr_write_area1_16 with host_ptr_xor,
-      // which swaps the byte-pair address. Reading without host_ptr_xor gives
-      // byte-swapped pixel values. Pre-read into a local buffer with correct
-      // byte order so the converter receives properly-ordered pixel data.
       u16 buf[4];
       buf[0] = *host_ptr_xor((u16*)&p[0]);
       buf[1] = *host_ptr_xor((u16*)&p[2]);
@@ -689,11 +698,9 @@ void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
   u8 *pb = VramWork;
   const u32 divider = PixelConvertor::xpp * PixelConvertor::ypp; // 4 for 2x2
 
-  // Max DC texture size is 1024. Using fixed-size tables is safe and fast.
   u32 table_x[1024];
   u32 table_y[1024];
 
-  // Precompute twiddle divided by 4 outside the main loops
   for (u32 x = 0; x < Width; x += PixelConvertor::xpp) {
     table_x[x] = twop(x, 0, Width, Height) / divider;
   }
@@ -701,13 +708,14 @@ void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
     table_y[y] = twop(0, y, Width, Height) / divider;
   }
 
+  u16 *dst = (u16*)pb;
+
   for (u32 y = 0; y < Height; y += PixelConvertor::ypp)
   {
     u32 offset_y = table_y[y];
     
     for (u32 x = 0; x < Width; x += PixelConvertor::xpp)
     {
-      // Fast bitwise OR instead of calculating twiddle and dividing!
       u8 idx = p_in[(offset_y | table_x[x]) ^ 3]; 
 
       u8 *cb = &vq_codebook[idx * 8];
@@ -715,10 +723,16 @@ void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
       u16 s1 = *host_ptr_xor((u16*)&cb[2]);
       u16 s2 = *host_ptr_xor((u16*)&cb[4]);
       u16 s3 = *host_ptr_xor((u16*)&cb[6]);
-      pb_prel((u16*)pb, Width, x + 0, y + 0, PixelConvertor::ConvertPixel(s0));
-      pb_prel((u16*)pb, Width, x + 1, y + 0, PixelConvertor::ConvertPixel(s2));
-      pb_prel((u16*)pb, Width, x + 0, y + 1, PixelConvertor::ConvertPixel(s1));
-      pb_prel((u16*)pb, Width, x + 1, y + 1, PixelConvertor::ConvertPixel(s3));
+
+      // Calculate the tile base address ONCE for the 2x2 block!
+      // This eliminates 4 calls to pb_prel (and GX_TexOffs) per iteration.
+      u32 tile_offset = ((y >> 2) * (Width >> 2) + (x >> 2)) * 16;
+      u32 base = tile_offset + (y & 3) * 4 + (x & 3);
+
+      dst[base]     = PixelConvertor::ConvertPixel(s0); // (x+0, y+0)
+      dst[base + 1] = PixelConvertor::ConvertPixel(s2); // (x+1, y+0)
+      dst[base + 4] = PixelConvertor::ConvertPixel(s1); // (x+0, y+1)
+      dst[base + 5] = PixelConvertor::ConvertPixel(s3); // (x+1, y+1)
     }
   }
 }
