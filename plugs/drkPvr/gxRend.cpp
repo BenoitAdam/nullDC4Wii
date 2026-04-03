@@ -689,12 +689,27 @@ void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
   u8 *pb = VramWork;
   const u32 divider = PixelConvertor::xpp * PixelConvertor::ypp; // 4 for 2x2
 
+  // Max DC texture size is 1024. Using fixed-size tables is safe and fast.
+  u32 table_x[1024];
+  u32 table_y[1024];
+
+  // Precompute twiddle divided by 4 outside the main loops
+  for (u32 x = 0; x < Width; x += PixelConvertor::xpp) {
+    table_x[x] = twop(x, 0, Width, Height) / divider;
+  }
+  for (u32 y = 0; y < Height; y += PixelConvertor::ypp) {
+    table_y[y] = twop(0, y, Width, Height) / divider;
+  }
+
   for (u32 y = 0; y < Height; y += PixelConvertor::ypp)
   {
+    u32 offset_y = table_y[y];
+    
     for (u32 x = 0; x < Width; x += PixelConvertor::xpp)
     {
-      u8 idx = p_in[twop(x, y, Width, Height) / divider];
-      // Read codebook pixels with host_ptr_xor for correct byte order.
+      // Fast bitwise OR instead of calculating twiddle and dividing!
+      u8 idx = p_in[(offset_y | table_x[x]) ^ 3]; 
+
       u8 *cb = &vq_codebook[idx * 8];
       u16 s0 = *host_ptr_xor((u16*)&cb[0]);
       u16 s1 = *host_ptr_xor((u16*)&cb[2]);
@@ -1144,7 +1159,8 @@ static void SetTextureParams(PolyParam *mod)
     }
     else
     {
-      bool use_mips = (mod->tcw.NO_PAL.MipMapped && get_graphism_preset() >= 2) ? GX_TRUE : GX_FALSE;
+      bool use_mips = (!texVQ && mod->tcw.NO_PAL.MipMapped && get_graphism_preset() >= 2)
+                ? GX_TRUE : GX_FALSE;
       GX_InitTexObj(&pbuff->tex, dst, w, h, FMT, TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
                     TexUV(mod->tsp.FlipV, mod->tsp.ClampV), use_mips);
     }
