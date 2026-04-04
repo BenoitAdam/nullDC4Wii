@@ -385,7 +385,9 @@ void displayAccuracyMenu()
 #define OPT_ADV_ALPHA   5
 #define OPT_FRAMESKIP   6
 #define OPT_FPS_BOOST   7
-#define OPT_ROW_COUNT   8  // total rows including blank
+#define OPT_4BPP        8
+#define OPT_8BPP        9
+#define OPT_ROW_COUNT   10  // total rows including blank
 
 // Returns true if the user chose "Launch game", false if they pressed B to go back.
 bool displayOptionsMenu()
@@ -396,7 +398,7 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H"); // Clear screen
 
-    printf("NullDC4Wii - Alpha 0.16   OPTIONS\n");
+    printf("NullDC4Wii - Alpha 0.17   OPTIONS\n");
     printf("===================================\n\n");
 
     // --- Launch game ---
@@ -467,6 +469,24 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
+    // --- 4BPP ---
+    printf("%s 4BPP MODE     : ", (selectedRow == OPT_4BPP) ? ">" : " ");
+    switch (g_4bpp_preset) {
+      case 0: printf("[< I4 STUB (FAST)     >]"); break;
+      case 1: printf("[< CI4 (OK BUT FUZZY) >]"); break;
+      case 2: printf("[< RGB565 (ACCURATE)  >]"); break;
+    }
+    printf("\n");
+
+    // --- 8BPP ---
+    printf("%s 8BPP MODE     : ", (selectedRow == OPT_8BPP) ? ">" : " ");
+    switch (g_8bpp_preset) {
+      case 0: printf("[< I8 STUB (FAST)     >]"); break;
+      case 1: printf("[< CI8 (OK BUT FUZZY) >]"); break;
+      case 2: printf("[< RGB565 (ACCURATE)  >]"); break;
+    }
+    printf("\n");
+
     printf("\n");
     printf("UP/DOWN: Navigate | LEFT/RIGHT: Change value\n");
     printf("A: Launch | LEFT/RIGHT: Change value | B: Back to file list\n");
@@ -498,6 +518,8 @@ bool displayOptionsMenu()
         case OPT_ADV_ALPHA:  g_advanced_alpha_preset  = (g_advanced_alpha_preset  + 1) % 2; break;
         case OPT_FRAMESKIP:  g_frameskip_preset       = (g_frameskip_preset       + 3) % 4; break;
         case OPT_FPS_BOOST:  g_fps_boost              = (g_fps_boost              + 1) % 2; break;
+        case OPT_4BPP:       g_4bpp_preset            = (g_4bpp_preset            + 2) % 3; break;
+        case OPT_8BPP:       g_8bpp_preset            = (g_8bpp_preset            + 2) % 3; break;
         default: break;
       }
     }
@@ -511,6 +533,8 @@ bool displayOptionsMenu()
         case OPT_ADV_ALPHA:  g_advanced_alpha_preset  = (g_advanced_alpha_preset  + 1) % 2; break;
         case OPT_FRAMESKIP:  g_frameskip_preset       = (g_frameskip_preset       + 1) % 4; break;
         case OPT_FPS_BOOST:  g_fps_boost              = (g_fps_boost              + 1) % 2; break;
+        case OPT_4BPP:       g_4bpp_preset            = (g_4bpp_preset            + 1) % 3; break;
+        case OPT_8BPP:       g_8bpp_preset            = (g_8bpp_preset            + 1) % 3; break;
         default: break;
       }
     }
@@ -544,7 +568,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H"); // Clear Screen
-    printf("\nNullDC4Wii - Alpha 0.16   ");
+    printf("\nNullDC4Wii - Alpha 0.17   ");
     printf("Current directory: %s\n", currentPath);
     // Display current GRAPHISM preset (cycled with Minus)
     printf("(-) GRAPHICS: ");
@@ -884,6 +908,18 @@ int main(int argc, wchar *argv[])
       case 3: printf("AUTO\n"); break;
     }
     printf("FPS Boost      : %s\n", g_fps_boost ? "YES" : "NO (DEBUG)");
+    printf("4BPP Mode      : ");
+    switch(g_4bpp_preset) {
+      case 0: printf("I4 STUB\n"); break;
+      case 1: printf("CI4\n");     break;
+      case 2: printf("RGB565\n");  break;
+    }
+    printf("8BPP Mode      : ");
+    switch(g_8bpp_preset) {
+      case 0: printf("I8 STUB\n"); break;
+      case 1: printf("CI8\n");     break;
+      case 2: printf("RGB565\n");  break;
+    }
   }
   else
   {
