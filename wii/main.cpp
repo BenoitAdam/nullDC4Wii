@@ -64,6 +64,25 @@ extern "C" {
   }
 }
 
+int g_4bpp_preset = 2; // 0 = I4 Stub, 1 = CI4, 2 = RGB565
+
+// These will be used by gxRend
+extern "C" {
+  int get_4bpp_preset() {
+    return g_4bpp_preset;
+  }
+}
+
+int g_8bpp_preset = 2; // 0 = I8 Stub, 1 = CI8, 2 = RGB565
+
+// These will be used by gxRend
+extern "C" {
+  int get_8bpp_preset() {
+    return g_8bpp_preset;
+  }
+}
+
+
 // ============================================================================
 // DEBUG MODE
 // ============================================================================
