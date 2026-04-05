@@ -173,7 +173,7 @@ While the emulator is still in alpha, the visual difference is limited for now.
 
 ## For Developpers :
 
-### Compilation Process (Makefile)
+### Compilation Process (Windows)
 
 #### 0/ Download/clone source code
 
@@ -226,6 +226,14 @@ Correct errors if they are some errors
 dollz3 is a compress tool for *.dol files, and it is in the original "vs_make.bat" file, but it seems not to work
 
 ~~https://wiibrew.org/wiki/Dollz~~
+
+### Compilation Process (Linux & Mac)
+
+It should work for Linux & Mac with similar process
+
+Leaving this link for now :
+
+https://wiibrew.org/wiki/DevkitPPC
 
 ## Ressources
 
