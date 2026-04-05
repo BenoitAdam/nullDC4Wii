@@ -7,7 +7,8 @@
 // - Trigger support from GameCube controller
 // - More robust input handling
 // - Cleaner button mapping logic
-// - Fixed inverted Y-axis for GameCube controller
+// - Removed Y-axis inversion (was breaking Zombie Revenge; most DC games expect positive Y = up)
+// - Removed analog stick -> D-pad mapping (was triggering D-pad actions in Daytona USA)
 // - Added GameCube D-Pad support
 // - Added Wii Nunchuck analog stick support
 // - Added Wii Nunchuck Z button as Dreamcast L trigger
@@ -156,22 +157,14 @@ static void MapAnalogStick(u32 port, s32 stickX, s32 stickY, s32 nunchuckX, s32 
     
     // Apply dead zone and clamp values
     joyx[port] = ClampAnalogValue(finalX, ANALOG_DEADZONE);
-    // Invert Y-axis to match Dreamcast controller orientation
+    // Y-axis is inverted to match Dreamcast controller orientation
+    // (GameCube stick positive Y = up, Dreamcast expects positive Y = down)
     joyy[port] = ClampAnalogValue(-finalY, ANALOG_DEADZONE);
     
-    // Also map stick to D-pad if beyond threshold (for analog stick as D-pad)
-    // Using corrected Y-axis orientation
-    if (finalY < -ANALOG_DEADZONE)  // Stick pushed up (was inverted)
-        kcode[port] &= ~key_CONT_DPAD_UP;
-    
-    if (finalY > ANALOG_DEADZONE)   // Stick pushed down (was inverted)
-        kcode[port] &= ~key_CONT_DPAD_DOWN;
-    
-    if (finalX < -ANALOG_DEADZONE)  // Stick pushed left
-        kcode[port] &= ~key_CONT_DPAD_LEFT;
-    
-    if (finalX > ANALOG_DEADZONE)   // Stick pushed right
-        kcode[port] &= ~key_CONT_DPAD_RIGHT;
+    // NOTE: Analog stick -> D-pad mapping intentionally removed.
+    // It caused analog axes to trigger D-pad inputs in games like Daytona USA
+    // (e.g. stick up/down changing camera view instead of accelerating/braking).
+    // The physical D-pad remains fully functional via MapButtons().
 }
 
 /**
