@@ -35,7 +35,9 @@ a fork from https://github.com/skmp/nullDCe
 - Table convertion between SH4 Opcodes of SH4 and the WiiPPC ?
 - Use LLVM to port code for PowerPC ?
 - Full Dynarec implementation (AI seems to know about this)
-- Sound implementation
+- Sound implementation step 1 : NullAICA
+- Sound implementation step 2 : AICA ARM7
+
 
 ## Installation
 
