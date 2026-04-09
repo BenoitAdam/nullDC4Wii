@@ -35,7 +35,10 @@ u32 GetL(u32 witch)
 // ArmInterruptChange is provided by the vbaARM plugin.
 // The ARM plugin registers this callback via its plugin_interface.
 // We call it through the dc/aica interface layer.
-extern void FASTCALL ArmInterruptChange(u32 bits, u32 L);
+/*
+extern "C" {
+    void FASTCALL ArmInterruptChange(u32 bits, u32 L);
+}
 
 void update_arm_interrupts()
 {
@@ -57,7 +60,7 @@ void update_arm_interrupts()
     }
 
     ArmInterruptChange(p_ints, Lval);
-}
+}*/
 
 void UpdateSh4Ints()
 {
@@ -158,7 +161,7 @@ void FASTCALL UpdateAICA(u32 Samples)
             timers[i].StepTimer();
     }
 
-    update_arm_interrupts();
+    // update_arm_interrupts();
     UpdateSh4Ints();
 }
 
@@ -174,7 +177,7 @@ void WriteAicaReg(u32 reg, u32 data)
         if (data & (1 << 5))
         {
             SCIPD->SCPU = 1;
-            update_arm_interrupts();
+            // update_arm_interrupts();
         }
         return; // read-only
 
@@ -182,7 +185,7 @@ void WriteAicaReg(u32 reg, u32 data)
         verify(sz != 1);
         SCIPD->full &= ~data;
         data = 0;
-        update_arm_interrupts();
+        // update_arm_interrupts();
         break;
 
     case MCIPD_addr:
@@ -228,27 +231,37 @@ template void WriteAicaReg<2>(u32 reg, u32 data);
 
 void AICA_Init()
 {
+    printf("[AICA] AICA_Init: start\n");
+    printf("[AICA] AICA_Init: sizeof(CommonData)=%d (need 0x508=%d)\n", (int)sizeof(*CommonData), 0x508);
+    printf("[AICA] AICA_Init: sizeof(DSPData)=%d (need 0x15C8=%d)\n",   (int)sizeof(*DSPData),    0x15C8);
+
     verify(sizeof(*CommonData) == 0x508);
     verify(sizeof(*DSPData)    == 0x15C8);
+    printf("[AICA] AICA_Init: struct sizes OK\n");
 
+    printf("[AICA] AICA_Init: aica_reg ptr = %p\n", (void*)aica_reg);
     CommonData = (CommonData_struct*)&aica_reg[0x2800];
     DSPData    = (DSPData_struct*)   &aica_reg[0x3000];
-
     SCIEB = (InterruptInfo*)&aica_reg[0x289C];
     SCIPD = (InterruptInfo*)&aica_reg[0x289C + 4];
     SCIRE = (InterruptInfo*)&aica_reg[0x289C + 8];
-
     MCIEB = (InterruptInfo*)&aica_reg[0x28B4];
     MCIPD = (InterruptInfo*)&aica_reg[0x28B4 + 4];
     MCIRE = (InterruptInfo*)&aica_reg[0x28B4 + 8];
+    printf("[AICA] AICA_Init: pointers set\n");
 
+    printf("[AICA] AICA_Init: sgc_Init()...\n");
     sgc_Init();
+    printf("[AICA] AICA_Init: sgc_Init() done\n");
+
+    printf("[AICA] AICA_Init: timers init...\n");
     for (int i = 0; i < 3; i++)
         timers[i].Init(aica_reg, i);
+    printf("[AICA] AICA_Init: timers done\n");
 
-    // Signal the audio backend that AICA is fully initialized.
-    // wii_audio_frame() will be a no-op until this is called.
+    printf("[AICA] AICA_Init: wii_audio_aica_ready()...\n");
     wii_audio_aica_ready();
+    printf("[AICA] AICA_Init: done\n");
 }
 
 void AICA_Term()
@@ -266,6 +279,6 @@ void libAICA_TimeStep()
     for (int i = 0; i < 3; i++)
         timers[i].StepTimer();
 
-    update_arm_interrupts();
+    // update_arm_interrupts();
     UpdateSh4Ints();
 }
