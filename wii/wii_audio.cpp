@@ -49,6 +49,7 @@ static volatile int aica_ready = 0;
 
 void wii_audio_aica_ready()
 {
+    printf("[WiiAudio] wii_audio_aica_ready: AICA ready, frame stepping enabled\n");
     aica_ready = 1;
 }
 
@@ -111,6 +112,7 @@ static void audio_callback(s32 voice)
 
 void wii_audio_init()
 {
+    printf("[WiiAudio] wii_audio_init: start\n");
     // Clear both buffers to silence
     memset(audio_buf[0], 0, BUF_BYTES);
     memset(audio_buf[1], 0, BUF_BYTES);
@@ -119,6 +121,8 @@ void wii_audio_init()
     play_buf  = 1;
     buf_ready = 0;
 
+    printf("[WiiAudio] wii_audio_init: ASND_SetVoice slot=%d rate=%d bytes=%d\n",
+           VOICE_SLOT, SAMPLE_RATE, BUF_BYTES);
     // Set up a stereo s16 voice with our callback
     ASND_SetVoice(VOICE_SLOT,
                   VOICE_STEREO_16BIT,   // format
@@ -129,10 +133,12 @@ void wii_audio_init()
                   255,                  // left  volume (0–255)
                   255,                  // right volume (0–255)
                   audio_callback);
+    printf("[WiiAudio] wii_audio_init: done\n");
 }
 
 void wii_audio_term()
 {
+    printf("[WiiAudio] wii_audio_term\n");
     ASND_StopVoice(VOICE_SLOT);
 }
 
@@ -141,6 +147,13 @@ void wii_audio_frame()
     // Don't step AICA until it's been fully initialized
     if (!aica_ready)
         return;
+
+    static int first_frame = 1;
+    if (first_frame)
+    {
+        printf("[WiiAudio] wii_audio_frame: first frame called\n");
+        first_frame = 0;
+    }
 
     s16 *dst = audio_buf[fill_buf];
 

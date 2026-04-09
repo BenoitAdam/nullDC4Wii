@@ -11,18 +11,34 @@ aica_init_params aica_params;
 // aica_init_params provides: RaiseInterrupt, aica_ram, SB_ISTEXT, CancelInterrupt
 s32 FASTCALL InitAica(aica_init_params* initp)
 {
+    printf("[NullAICA] InitAica: start\n");
+    printf("[NullAICA] InitAica: aica_ram ptr = %p\n", (void*)initp->aica_ram);
+
     memcpy(&aica_params, initp, sizeof(aica_params));
 
+    printf("[NullAICA] InitAica: LoadSettingsAica()...\n");
     LoadSettingsAica();
-    init_mem();
-    AICA_Init();
-    wii_InitAudio();
+    printf("[NullAICA] InitAica: LoadSettingsAica() done\n");
 
+    printf("[NullAICA] InitAica: init_mem()...\n");
+    init_mem();
+    printf("[NullAICA] InitAica: init_mem() done\n");
+
+    printf("[NullAICA] InitAica: AICA_Init()...\n");
+    AICA_Init();
+    printf("[NullAICA] InitAica: AICA_Init() done\n");
+
+    printf("[NullAICA] InitAica: wii_InitAudio()...\n");
+    wii_InitAudio();
+    printf("[NullAICA] InitAica: wii_InitAudio() done\n");
+
+    printf("[NullAICA] InitAica: complete OK\n");
     return rv_ok;
 }
 
 void FASTCALL TermAica()
 {
+    printf("[NullAICA] TermAica\n");
     wii_TermAudio();
     AICA_Term();
     term_mem();
@@ -30,6 +46,7 @@ void FASTCALL TermAica()
 
 void FASTCALL ResetAica(bool Manual)
 {
+    printf("[NullAICA] ResetAica manual=%d\n", Manual);
     // nothing needed for now
 }
 
