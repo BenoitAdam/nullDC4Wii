@@ -135,12 +135,14 @@ int main___(int argc,char* argv[])
 		msgboxf(_T("[nullDC.cpp] Unable to open config file"),MBX_ICONERROR);
 		return -4;
 	}
+	printf("[nullDC] cfgOpen OK\n");
 	LoadSettings();
+	printf("[nullDC] LoadSettings done\n");
 
 	int rv= 0;
 
 	char* temp_path=GetEmuPath(_T("data/dc_boot.bin"));
-
+	printf("[nullDC] checking BIOS: %s\n", temp_path);
 	FILE* fr=fopen(temp_path,"r");
 	if (!fr)
 	{
@@ -148,23 +150,24 @@ int main___(int argc,char* argv[])
 		rv=-3;
 		goto cleanup;
 	}
+	fclose(fr);
+	printf("[nullDC] BIOS found OK\n");
 	free(temp_path);
 
 	temp_path=GetEmuPath(_T("data/dc_flash.bin"));
-
-	fr=fopen (temp_path,"r");
+	printf("[nullDC] checking flash: %s\n", temp_path);
+	fr=fopen(temp_path,"r");
 	if (!fr)
 	{
 		msgboxf(_T("Unable to find flash -- exiting\n%s"),MBX_ICONERROR,temp_path);
 		rv=-6;
 		goto cleanup;
 	}
-
+	fclose(fr);
+	printf("[nullDC] flash found OK\n");
 	free(temp_path);
 
-	fclose(fr);
-
-	printf("[nullDC.cpp] Loading plugins!\n");
+	printf("[nullDC] Loading plugins!\n");
 	while (!plugins_Load())
 	{
 		//if (!plugins_Select())
@@ -174,6 +177,7 @@ int main___(int argc,char* argv[])
 			goto cleanup;
 		}
 	}
+	printf("[nullDC] plugins_Load OK\n");
 
 	// -----------------------------------------------------------------------
 	// ELF detection: if the selected file is a .elf, load its segments into
@@ -205,7 +209,9 @@ int main___(int argc,char* argv[])
 		}
 	}
 
+	printf("[nullDC] calling RunDC()...\n");
 	rv = RunDC();
+	printf("[nullDC] RunDC() returned rv=%d\n", rv);
 
 cleanup:
 
@@ -218,15 +224,20 @@ cleanup:
 //entry point, platform specific main() calls this when done with init/stuff
 int EmuMain(int argc, char* argv[])
 {
-	printf(VER_FULLNAME " starting up ..");
+	printf("[nullDC] EmuMain: start\n");
+	printf(VER_FULLNAME " starting up ..\n");
 
+	printf("[nullDC] EmuMain: _vmem_reserve()...\n");
 	if (!_vmem_reserve())
 	{
 		msgboxf("Unable to reserve nullDC memory ...",MBX_OK | MBX_ICONERROR);
 		return -5;
 	}
+	printf("[nullDC] EmuMain: _vmem_reserve OK\n");
 
+	printf("[nullDC] EmuMain: calling main___()...\n");
 	int rv=main___(argc,argv);
+	printf("[nullDC] EmuMain: main___() returned rv=%d\n", rv);
 
 #ifndef _ANDROID
 	_vmem_release();
