@@ -1682,7 +1682,7 @@ void DoRender()
   s_did_3d_render = true;
 
   wii_audio_frame();
-  VIDEO_WaitVSync();
+  VIDEO_WaitVSync();  
 }
 
 // ============================
@@ -1716,7 +1716,8 @@ void StartRender()
       GX_CopyDisp(frameBuffer[fb], GX_TRUE);
       VIDEO_SetNextFramebuffer(frameBuffer[fb]);
       VIDEO_Flush();
-      VIDEO_WaitVSync();
+      wii_audio_frame();
+      // VIDEO_WaitVSync() // Not necessary here (don't block the SH4 thread)
       FrameCount++;
       return;
     }
@@ -1795,7 +1796,8 @@ void StartRender()
     GX_CopyDisp(frameBuffer[fb], GX_TRUE);
     VIDEO_SetNextFramebuffer(frameBuffer[fb]);
     VIDEO_Flush();
-    VIDEO_WaitVSync();
+    wii_audio_frame();
+    // VIDEO_WaitVSync() // Not necessary here (don't block the SH4 thread)
     FrameCount++;
     return;
   }
