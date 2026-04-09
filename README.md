@@ -35,7 +35,9 @@ a fork from https://github.com/skmp/nullDCe
 - Table convertion between SH4 Opcodes of SH4 and the WiiPPC ?
 - Use LLVM to port code for PowerPC ?
 - Full Dynarec implementation (AI seems to know about this)
-- Sound implementation
+- Sound implementation step 1 : NullAICA
+- Sound implementation step 2 : AICA ARM7
+
 
 ## Installation
 
@@ -173,7 +175,7 @@ While the emulator is still in alpha, the visual difference is limited for now.
 
 ## For Developpers :
 
-### Compilation Process (Makefile)
+### Compilation Process (Windows)
 
 #### 0/ Download/clone source code
 
@@ -226,6 +228,14 @@ Correct errors if they are some errors
 dollz3 is a compress tool for *.dol files, and it is in the original "vs_make.bat" file, but it seems not to work
 
 ~~https://wiibrew.org/wiki/Dollz~~
+
+### Compilation Process (Linux & Mac)
+
+It should work for Linux & Mac with similar process
+
+Leaving this link for now :
+
+https://wiibrew.org/wiki/DevkitPPC
 
 ## Ressources
 
