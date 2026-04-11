@@ -1668,8 +1668,10 @@ void DoRender()
     {
       // enable blending & blending mode
       GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
-      
-      // setup alpha compare
+
+      // TODO: per-polygon ISP state (isp.ZWriteDis, isp.CullMode, isp.DepthMode)
+      // is not yet emulated. Translucent polys may incorrectly stamp the Z-buffer.
+      // Tryed with ClaudeAI, hurts Performance 
     }
 
     s32 count = drawLST->count;
