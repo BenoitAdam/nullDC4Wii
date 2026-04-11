@@ -1894,6 +1894,8 @@ struct VertexDecoder
   {
     if (ListType == ListType_Translucent)
       TransLST = curLST;
+    // TODO: Punch-Through list (ListType_Punch_Through) needs alpha test
+    // (GX_SetAlphaCompare > PT_ALPHA_REF) but costs perf with no visible gain currently.
   }
   __forceinline static void EndList(u32 ListType) {}
 
