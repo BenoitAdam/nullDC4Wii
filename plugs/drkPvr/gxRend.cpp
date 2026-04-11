@@ -1132,14 +1132,21 @@ static void SetTextureParams(PolyParam *mod)
           }
           else
           {
-            // Twiddled (Morton order): tw_nibble is the twiddle (nibble) index.
-            // byte address in VRAM = (tw_nibble >> 1) ^ 3.
-            // Even tw_nibble → low nibble, odd → high nibble.
+            // Twiddled (Morton order) for 4BPP:
+            // The DC hardware twiddles 4BPP textures as if they were 16bpp textures
+            // of HALF the width. So a 64x64 4BPP texture uses the same twiddle
+            // pattern as a 32x64 16bpp texture.
+            // twop(x/2, y, w/2, h) gives the 16bpp word index; multiply by 2
+            // to get the first nibble index of that word-pair, then add (x & 1)
+            // to select the correct nibble within the pair.
+            // Each VRAM byte holds 2 nibbles: even nibble → low bits (& 0xF),
+            // odd nibble → high bits (>> 4). Byte address = nibble_index >> 1, ^3 for BE.
             for (u32 y = 0; y < h; y++)
               for (u32 x = 0; x < w; x++)
               {
-                u32 tw_nibble = twop(x, y, w, h);
-                u8  raw       = src[(tw_nibble >> 1) ^ 3]; // ^3: 32-bit BE correction
+                u32 tw_word   = twop(x >> 1, y, w >> 1, h); // word index in twiddle
+                u32 tw_nibble = tw_word * 2 + (x & 1);      // nibble index
+                u8  raw       = src[(tw_nibble >> 1) ^ 3];  // ^3: 32-bit BE correction
                 u8  idx       = (tw_nibble & 1) ? (raw >> 4) : (raw & 0xF);
                 ci4_prel(idst, x, y, w, idx);
               }
@@ -1202,16 +1209,15 @@ static void SetTextureParams(PolyParam *mod)
           }
           else
           {
-            // Twiddled (Morton order): tw_nibble is the twiddle (nibble) index.
-            // byte address in VRAM = (tw_nibble >> 1) ^ 3.
-            // Even tw_nibble → low nibble, odd → high nibble.
+            // Twiddled (Morton order) for 4BPP:
+            // Same half-width twiddle convention as the CI4 path above.
             for (u32 y = 0; y < h; y++)
             {
               for (u32 x = 0; x < w; x++)
               {
-                u32 tw_nibble = twop(x, y, w, h);
-                u32 tw_byte   = tw_nibble >> 1;
-                u8  raw       = src[tw_byte ^ 3];    // ^3: 32-bit BE VRAM correction
+                u32 tw_word   = twop(x >> 1, y, w >> 1, h);
+                u32 tw_nibble = tw_word * 2 + (x & 1);
+                u8  raw       = src[(tw_nibble >> 1) ^ 3];
                 u8  idx       = (tw_nibble & 1) ? (raw >> 4) : (raw & 0xF);
 
                 u32 pe = pal[idx];
@@ -1894,8 +1900,6 @@ struct VertexDecoder
   {
     if (ListType == ListType_Translucent)
       TransLST = curLST;
-    // TODO: Punch-Through list (ListType_Punch_Through) needs alpha test
-    // (GX_SetAlphaCompare > PT_ALPHA_REF) but costs perf with no visible gain currently.
   }
   __forceinline static void EndList(u32 ListType) {}
 
