@@ -947,8 +947,11 @@ static void SetTextureParams(PolyParam *mod)
 
     u32 n_entries, pal_base;
     if (pixel_fmt == 5) { // 4BPP: 16-entry palette
+      // PalSelect[5:0] selects one of 64 possible 16-entry groups.
+      // Absolute PALETTE_RAM entry index = PalSelect * 16 = PalSelect << 4.
+      // (Old code `& ~15u` zeroed bits[3:0], discarding sub-bank selection.)
       n_entries = 16;
-      pal_base  = mod->tcw.PAL.PalSelect & ~15u;
+      pal_base  = mod->tcw.PAL.PalSelect << 4;
     } else {              // 8BPP: 256-entry palette
       n_entries = 256;
       pal_base  = (mod->tcw.PAL.PalSelect >> 4) << 8;
@@ -1096,6 +1099,15 @@ static void SetTextureParams(PolyParam *mod)
       else if (TEXTURE_4BPP_CI4()) { // 4BPP palette -> GX_TF_CI4
         // Untwiddle index nibbles into GX CI4 block layout.
         // TLUT already loaded above — only index data written here.
+        //
+        // DC nibble convention (from hardware manual):
+        //   Even-indexed pixel → bits 3:0 (LOW nibble)
+        //   Odd-indexed pixel  → bits 7:4 (HIGH nibble)
+        //
+        // VRAM byte addressing: DC stores data in 32-bit little-endian words,
+        // but the Wii's big-endian SH4 emulator stores them with full 32-bit
+        // reversal (DC byte B lives at vram[B ^ 3]).  This is the same
+        // convention the VQ path uses for its index byte reads (^ 3).
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += MipPoint[mod->tsp.TexU] << 1;
@@ -1107,25 +1119,28 @@ static void SetTextureParams(PolyParam *mod)
 
           if (mod->tcw.NO_PAL.ScanOrder)
           {
-            // Scanline (linear): row-major, 2 pixels per byte, high nibble = even x
+            // Scanline (linear): row-major, 2 pixels per byte.
+            // Even pixel (x+0) is in the LOW nibble, odd pixel (x+1) in the HIGH nibble.
             for (u32 y = 0; y < h; y++)
               for (u32 x = 0; x < w; x += 2)
               {
                 u32 lin = y * (w / 2) + x / 2;
-                u8  raw = src[lin ^ 1]; // byte-swap within 16-bit pair
-                ci4_prel(idst, x + 0, y, w, raw >> 4);
-                ci4_prel(idst, x + 1, y, w, raw & 0xF);
+                u8  raw = src[lin ^ 3]; // ^3: correct for 32-bit BE VRAM layout
+                ci4_prel(idst, x + 0, y, w, raw & 0xF); // even → low nibble
+                ci4_prel(idst, x + 1, y, w, raw >> 4);  // odd  → high nibble
               }
           }
           else
           {
-            // Twiddled (Morton order)
+            // Twiddled (Morton order): tw_nibble is the twiddle (nibble) index.
+            // byte address in VRAM = (tw_nibble >> 1) ^ 3.
+            // Even tw_nibble → low nibble, odd → high nibble.
             for (u32 y = 0; y < h; y++)
               for (u32 x = 0; x < w; x++)
               {
                 u32 tw_nibble = twop(x, y, w, h);
-                u8  raw       = src[(tw_nibble >> 1) ^ 1]; // byte-swap
-                u8  idx       = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
+                u8  raw       = src[(tw_nibble >> 1) ^ 3]; // ^3: 32-bit BE correction
+                u8  idx       = (tw_nibble & 1) ? (raw >> 4) : (raw & 0xF);
                 ci4_prel(idst, x, y, w, idx);
               }
           }
@@ -1143,8 +1158,9 @@ static void SetTextureParams(PolyParam *mod)
           tex_addr += MipPoint[mod->tsp.TexU] << 1;
 
         {
-          u32  pal_fmt  = PAL_RAM_CTRL & 3;            // 0=ARGB1555 1=RGB565 2=ARGB4444 3=ARGB8888
-          u32  pal_base = mod->tcw.PAL.PalSelect & ~15u; // 16-entry aligned block index
+          u32  pal_fmt  = PAL_RAM_CTRL & 3;             // 0=ARGB1555 1=RGB565 2=ARGB4444 3=ARGB8888
+          // PalSelect[5:0] * 16 = absolute palette entry index (see TLUT setup above)
+          u32  pal_base = mod->tcw.PAL.PalSelect << 4;
           u32 *pal      = PALETTE_RAM + pal_base;
 
           FMT = (pal_fmt == 1) ? GX_TF_RGB565 : GX_TF_RGB5A3;
@@ -1152,32 +1168,68 @@ static void SetTextureParams(PolyParam *mod)
           u8  *src = (u8 *)&params.vram[tex_addr];
           u16 *dst = (u16 *)VramWork;
 
-          // Pixels are twiddled (Morton order). 2 pixels per byte; high nibble = even pixel.
-          for (u32 y = 0; y < h; y++)
+          if (mod->tcw.NO_PAL.ScanOrder)
           {
-            for (u32 x = 0; x < w; x++)
-            {
-              u32 tw_nibble = twop(x, y, w, h);   // nibble index in twiddled stream
-              u32 tw_byte   = tw_nibble >> 1;
-              // byte-swap within each 16-bit pair to undo host_ptr_xor write ordering
-              u8  raw       = src[tw_byte ^ 1];
-              u8  idx       = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
-
-              u32 pe = pal[idx];
-              u16 px;
-              switch (pal_fmt)
+            // Scanline (linear): row-major, 2 pixels per byte.
+            // Even pixel (x+0) in LOW nibble, odd pixel (x+1) in HIGH nibble.
+            for (u32 y = 0; y < h; y++)
+              for (u32 x = 0; x < w; x += 2)
               {
-                case 1:  px = (u16)(pe & 0xFFFF); break;                    // RGB565  → RGB565
-                case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;          // ARGB4444→ RGB5A3
-                case 3:                                                      // ARGB8888→ RGB5A3
+                u32 lin = y * (w / 2) + x / 2;
+                u8  raw = src[lin ^ 3];     // ^3: 32-bit BE VRAM correction
+                u8  idx0 = raw & 0xF;       // even pixel → low nibble
+                u8  idx1 = raw >> 4;        // odd  pixel → high nibble
+
+                for (int k = 0; k < 2; k++)
                 {
-                  u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-                  px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-                  break;
+                  u8  idx = (k == 0) ? idx0 : idx1;
+                  u32 pe = pal[idx];
+                  u16 px;
+                  switch (pal_fmt)
+                  {
+                    case 1:  px = (u16)(pe & 0xFFFF); break;
+                    case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;
+                    case 3:  {
+                      u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+                      px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+                      break;
+                    }
+                    default: px = ABGR1555((u16)(pe & 0xFFFF)); break;
+                  }
+                  dst[GX_TexOffs(x + k, y, w)] = px;
                 }
-                default: px = ABGR1555((u16)(pe & 0xFFFF)); break;          // ARGB1555→ RGB5A3
               }
-              dst[GX_TexOffs(x, y, w)] = px;
+          }
+          else
+          {
+            // Twiddled (Morton order): tw_nibble is the twiddle (nibble) index.
+            // byte address in VRAM = (tw_nibble >> 1) ^ 3.
+            // Even tw_nibble → low nibble, odd → high nibble.
+            for (u32 y = 0; y < h; y++)
+            {
+              for (u32 x = 0; x < w; x++)
+              {
+                u32 tw_nibble = twop(x, y, w, h);
+                u32 tw_byte   = tw_nibble >> 1;
+                u8  raw       = src[tw_byte ^ 3];    // ^3: 32-bit BE VRAM correction
+                u8  idx       = (tw_nibble & 1) ? (raw >> 4) : (raw & 0xF);
+
+                u32 pe = pal[idx];
+                u16 px;
+                switch (pal_fmt)
+                {
+                  case 1:  px = (u16)(pe & 0xFFFF); break;                    // RGB565  → RGB565
+                  case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;          // ARGB4444→ RGB5A3
+                  case 3:                                                      // ARGB8888→ RGB5A3
+                  {
+                    u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+                    px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+                    break;
+                  }
+                  default: px = ABGR1555((u16)(pe & 0xFFFF)); break;          // ARGB1555→ RGB5A3
+                }
+                dst[GX_TexOffs(x, y, w)] = px;
+              }
             }
           }
         }
@@ -1201,6 +1253,9 @@ static void SetTextureParams(PolyParam *mod)
         // 8BPP palette -> GX_TF_CI8
         // Untwiddle index bytes into GX CI8 block layout.
         // TLUT already loaded above — only index data written here.
+        //
+        // VRAM byte addressing: DC byte B lives at vram[B ^ 3] on the Wii
+        // (same 32-bit big-endian word-reversal convention as the VQ path).
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += MipPoint[mod->tsp.TexU] << 2;
@@ -1216,16 +1271,16 @@ static void SetTextureParams(PolyParam *mod)
               for (u32 x = 0; x < w; x++)
               {
                 u32 lin = y * w + x;
-                ci8_prel(idst, x, y, w, src[lin ^ 1]); // byte-swap
+                ci8_prel(idst, x, y, w, src[lin ^ 3]); // ^3: 32-bit BE correction
               }
           }
           else
           {
-            // Twiddled (Morton order)
+            // Twiddled (Morton order): twiddle index = byte index for 8BPP.
             for (u32 y = 0; y < h; y++)
               for (u32 x = 0; x < w; x++)
               {
-                u8 idx = src[twop(x, y, w, h) ^ 1]; // byte-swap
+                u8 idx = src[twop(x, y, w, h) ^ 3]; // ^3: 32-bit BE correction
                 ci8_prel(idst, x, y, w, idx);
               }
           }
@@ -1236,6 +1291,7 @@ static void SetTextureParams(PolyParam *mod)
       }
       else if (TEXTURE_8BPP_RGB565()){
         // Fully decode each indexed pixel into a GX 16bpp pixel.
+        // Supports both twiddled and linear (ScanOrder) textures.
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += MipPoint[mod->tsp.TexU] << 2;
@@ -1251,30 +1307,42 @@ static void SetTextureParams(PolyParam *mod)
           u8  *src = (u8 *)&params.vram[tex_addr];
           u16 *dst = (u16 *)VramWork;
 
-          // 8BPP twiddled: 1 byte = 1 pixel in Morton order.
-          for (u32 y = 0; y < h; y++)
-          {
-            for (u32 x = 0; x < w; x++)
+          auto decode_entry = [&](u8 idx) -> u16 {
+            u32 pe = pal[idx];
+            switch (pal_fmt)
             {
-              u32 tw  = twop(x, y, w, h);
-              u8  idx = src[tw ^ 1];  // byte-swap within 16-bit pair
-
-              u32 pe = pal[idx];
-              u16 px;
-              switch (pal_fmt)
-              {
-                case 1:  px = (u16)(pe & 0xFFFF); break;                    // RGB565  → RGB565
-                case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;          // ARGB4444→ RGB5A3
-                case 3:                                                      // ARGB8888→ RGB5A3
-                {
-                  u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-                  px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-                  break;
-                }
-                default: px = ABGR1555((u16)(pe & 0xFFFF)); break;          // ARGB1555→ RGB5A3
+              case 1:  return (u16)(pe & 0xFFFF);
+              case 2:  return ABGR4444((u16)(pe & 0xFFFF));
+              case 3:  {
+                u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+                return (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
               }
-              dst[GX_TexOffs(x, y, w)] = px;
+              default: return ABGR1555((u16)(pe & 0xFFFF));
             }
+          };
+
+          if (mod->tcw.NO_PAL.ScanOrder)
+          {
+            // Scanline (linear): row-major, 1 byte per pixel.
+            for (u32 y = 0; y < h; y++)
+              for (u32 x = 0; x < w; x++)
+              {
+                u32 lin = y * w + x;
+                u8  idx = src[lin ^ 3]; // ^3: 32-bit BE VRAM correction
+                dst[GX_TexOffs(x, y, w)] = decode_entry(idx);
+              }
+          }
+          else
+          {
+            // 8BPP twiddled: 1 byte = 1 pixel in Morton order.
+            // twiddle index = byte index; apply ^3 for 32-bit BE correction.
+            for (u32 y = 0; y < h; y++)
+              for (u32 x = 0; x < w; x++)
+              {
+                u32 tw  = twop(x, y, w, h);
+                u8  idx = src[tw ^ 3]; // ^3: 32-bit BE VRAM correction
+                dst[GX_TexOffs(x, y, w)] = decode_entry(idx);
+              }
           }
         }
       }
@@ -1298,8 +1366,8 @@ static void SetTextureParams(PolyParam *mod)
     // CI4 = w*h/2 bytes, CI8 = w*h bytes, 16bpp = w*h*2 bytes.
     {
       u32 flush_sz;
-      if (FMT == GX_TF_CI8) flush_sz = w * h;
-      // else if      (FMT == GX_TF_CI4) flush_sz = w * h / 2; // If CI4 is correctly implemented one day
+      if      (FMT == GX_TF_CI4) flush_sz = w * h / 2;
+      else if (FMT == GX_TF_CI8) flush_sz = w * h;
       else                        flush_sz = w * h * 2;
       DCFlushRange(dst, (flush_sz + 31) & ~31u);
     }
