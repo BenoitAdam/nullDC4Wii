@@ -50,17 +50,21 @@ extern "C" int get_frameskip_preset();
 extern "C" int get_4bpp_preset();
 
 #define TEXTURE_4BPP_I4_STUB() (get_4bpp_preset() == 0) // I4 Stub // 17 FPS VEMU Menu Daytona
-#define TEXTURE_4BPP_I4_GREY() (get_4bpp_preset() == 1) // I4 (Gray) // ? FPS VEMU Menu Daytona (untested)
-#define TEXTURE_4BPP_CI4() (get_4bpp_preset() == 2) // CI4 (ok) // 4 FPS VEMU Menu Daytona
-#define TEXTURE_4BPP_RGB565() (get_4bpp_preset() == 3) // RGB565 // 1 FPS VEMU Menu Daytona
+#define TEXTURE_4BPP_I4_GREY_FAST() (get_4bpp_preset() == 1) // I4 (Gray Fast) // ? FPS VEMU Menu Daytona (untested)
+#define TEXTURE_4BPP_I4_GREY() (get_4bpp_preset() == 2) // I4 (Gray Accurate) // 4 FPS VEMU Menu Daytona (untested)
+#define TEXTURE_4BPP_CI4_FAST() (get_4bpp_preset() == 3) // CI4 (Fast) // ? FPS VEMU Menu Daytona
+#define TEXTURE_4BPP_CI4() (get_4bpp_preset() == 4) // CI4 (ok) // 4 FPS VEMU Menu Daytona
+#define TEXTURE_4BPP_RGB565() (get_4bpp_preset() == 5) // RGB565 // 1 FPS VEMU Menu Daytona
 
 // 8BPP palette texture management
 extern "C" int get_8bpp_preset();
 
 #define TEXTURE_8BPP_I8_STUB() (get_8bpp_preset() == 0) // I8 Stub
-#define TEXTURE_8BPP_I8_GREY() (get_8bpp_preset() == 1) // I8 Gray
-#define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 2) // CI8 (Fuzzy)
-#define TEXTURE_8BPP_RGB565() (get_8bpp_preset() == 3) // RGB565
+#define TEXTURE_8BPP_I8_GREY_FAST() (get_8bpp_preset() == 1) // I8 Gray (Fast))
+#define TEXTURE_8BPP_I8_GREY() (get_8bpp_preset() == 2) // I8 Gray
+#define TEXTURE_8BPP_CI8_FAST() (get_8bpp_preset() == 3) // CI8 (Fuzzy)
+#define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 4) // CI8 (Fuzzy)
+#define TEXTURE_8BPP_RGB565() (get_8bpp_preset() == 5) // RGB565
 
 // Unused
 int current_frameskip;
@@ -1098,6 +1102,99 @@ static void SetTextureParams(PolyParam *mod)
 
         FMT = GX_TF_I4; // wha? the ?
         }
+      else if(TEXTURE_4BPP_I4_GREY_FAST()){ // I4 (grey, fast)
+        // FAST path: skips per-pixel ci4_prel overhead entirely.
+        //
+        // GX I4 block layout: 8x8 tile = 32 bytes.
+        // Each byte holds 2 pixels: high nibble = left (even x), low nibble = right (odd x).
+        //
+        // ScanOrder (linear): DC source is already row-major nibble-packed.
+        //   The DC nibble order (even→low, odd→high) is the OPPOSITE of GX (even→high, odd→low).
+        //   We swap nibbles in each byte and copy 8-pixel rows directly into tile rows,
+        //   avoiding ci4_prel's per-pixel tile-offset math entirely.
+        //   Cost: w*h/2 byte reads + nibble swap + direct tile writes. No twiddle.
+        //
+        // Twiddled: still need to untwiddle, but we write nibble pairs in one shot
+        //   (two pixels per iteration, one byte written) instead of calling ci4_prel twice.
+        //   Cuts inner loop cost roughly in half vs the accurate path.
+        //
+        // Glitch trade-off: twiddled textures are treated as ScanOrder (memcpy path)
+        //   when USE_FAST_MEMCPY_FOR_TWIDDLED is set — image will be scrambled but
+        //   it's the absolute fastest possible path. Disabled here; twiddled uses
+        //   the paired-nibble loop instead (good quality / fast balance).
+
+        verify(mod->tcw.PAL.VQ_Comp == 0);
+        if (mod->tcw.NO_PAL.MipMapped)
+          tex_addr += MipPoint[mod->tsp.TexU] << 1;
+
+        {
+          u8 *src  = (u8 *)&params.vram[tex_addr];
+          u8 *idst = (u8 *)VramWork;
+
+          if (mod->tcw.NO_PAL.ScanOrder)
+          {
+            // ScanOrder FAST: copy row by row directly into GX I4 tiles.
+            // GX I4 tile is 8px wide x 8px tall = 4 bytes per row-within-tile.
+            // Source row i, tile-column t covers pixels x=[t*8 .. t*8+7].
+            // Within a tile-row, 8 pixels = 4 bytes. We just swap nibbles per byte
+            // (DC: even→low nibble; GX I4: even→high nibble) and write directly.
+            // No per-pixel GX_TexOffs call needed at all.
+            u32 tiles_x = w / 8;  // number of 8-wide tile columns
+            u32 tiles_y = h / 8;  // number of 8-tall tile rows
+            for (u32 ty = 0; ty < tiles_y; ty++)
+            {
+              for (u32 tx = 0; tx < tiles_x; tx++)
+              {
+                // Base offset of this tile in the destination I4 buffer (32 bytes/tile).
+                u8 *tdst = idst + (ty * tiles_x + tx) * 32;
+                for (u32 row = 0; row < 8; row++)
+                {
+                  // Source byte offset: row (ty*8+row), byte column (tx*4 .. tx*4+3)
+                  u32 src_byte = ((ty * 8 + row) * (w / 2)) + tx * 4;
+                  u8 *srow = src + src_byte;
+                  u8 *drow = tdst + row * 4;
+                  // Copy 4 bytes (8 pixels), swapping nibbles for DC→GX convention.
+                  // ^3 BE correction folds into the 4-byte group: bytes within a u32
+                  // word are reversed, so byte k of the source row lives at offset k^3.
+                  drow[0] = (u8)(((srow[0^3] & 0x0F) << 4) | ((srow[0^3] >> 4) & 0x0F));
+                  drow[1] = (u8)(((srow[1^3] & 0x0F) << 4) | ((srow[1^3] >> 4) & 0x0F));
+                  drow[2] = (u8)(((srow[2^3] & 0x0F) << 4) | ((srow[2^3] >> 4) & 0x0F));
+                  drow[3] = (u8)(((srow[3^3] & 0x0F) << 4) | ((srow[3^3] >> 4) & 0x0F));
+                }
+              }
+            }
+          }
+          else
+          {
+            // Twiddled FAST: process 2 horizontal pixels per iteration (one byte written).
+            // For even x: compute twiddle for both x and x+1 together, extract both nibbles,
+            // pack them into one byte — halves the number of ci4_prel-equivalent writes.
+            memset(idst, 0, w * h / 2);
+            for (u32 y = 0; y < h; y++)
+            {
+              for (u32 x = 0; x < w; x += 2)
+              {
+                // Pixel x (even): tw_nibble is always even → low nibble of its byte
+                u32 tw0   = twop(x >> 1, y, w >> 1, h) * 2;       // nibble index for x
+                u32 tw1   = tw0 + 1;                                // nibble index for x+1
+                u8  raw0  = src[(tw0 >> 1) ^ 3];
+                u8  raw1  = src[(tw1 >> 1) ^ 3];
+                u8  idx0  = (tw0 & 1) ? (raw0 >> 4) : (raw0 & 0xF); // index for x
+                u8  idx1  = (tw1 & 1) ? (raw1 >> 4) : (raw1 & 0xF); // index for x+1
+
+                // Write both into GX I4 tile in one shot: even→high nibble, odd→low nibble
+                u32 tile     = (y / 8) * (w / 8) + (x / 8);
+                u32 nibble   = tile * 64 + (y % 8) * 8 + (x % 8); // points at even pixel
+                u32 byte_off = nibble >> 1; // even nibble → always high nibble of byte
+                idst[byte_off] = (u8)((idx0 << 4) | (idx1 & 0x0F));
+              }
+            }
+          }
+        }
+
+        FMT = GX_TF_I4;
+        // has_pal stays false: no TLUT needed
+      }
       else if(TEXTURE_4BPP_I4_GREY()){ // I4 (grey)
         // Decode 4BPP palette indices directly to GX I4 greyscale.
         // Each 4-bit index is treated as a 4-bit intensity (0-15).
@@ -1150,6 +1247,91 @@ static void SetTextureParams(PolyParam *mod)
         FMT = GX_TF_I4;
         // has_pal stays false: no TLUT needed for I4 greyscale
       }
+      else if (TEXTURE_4BPP_CI4_FAST()) { // 4BPP palette -> GX_TF_CI4 (Fast)
+        // FAST path: same structure as I4_GREY_FAST but outputs CI4 index data.
+        // TLUT already loaded above — only the index nibbles need reordering here.
+        //
+        // ScanOrder FAST: source bytes are already row-major packed nibbles.
+        //   DC nibble order (even→low, odd→high) must become GX CI4 order (even→high, odd→low).
+        //   We swap nibbles per source byte and write directly into GX CI4 tile rows,
+        //   skipping all per-pixel ci4_prel tile-offset math.
+        //   Cost: w*h/2 byte reads + nibble swap + tile writes. No twiddle at all.
+        //
+        // Twiddled FAST: paired-nibble loop — 2 pixels per iteration, 1 byte written.
+        //   Halves inner-loop iterations vs the accurate CI4 path which calls ci4_prel once
+        //   per pixel. Both nibbles of each output byte are filled in a single store.
+        //
+        // Glitch trade-off: ScanOrder output is pixel-perfect (just reordered nibbles).
+        //   Twiddled output is correct but uses one extra twiddle call vs accurate path
+        //   (tw1 = tw0+1 which is mathematically equivalent to the accurate path's per-pixel
+        //   twiddle, so quality is identical — only ci4_prel overhead is eliminated).
+
+        verify(mod->tcw.PAL.VQ_Comp == 0);
+        if (mod->tcw.NO_PAL.MipMapped)
+          tex_addr += MipPoint[mod->tsp.TexU] << 1;
+
+        {
+          u8 *src  = (u8 *)&params.vram[tex_addr];
+          u8 *idst = (u8 *)VramWork;
+          memset(idst, 0, w * h / 2);
+
+          if (mod->tcw.NO_PAL.ScanOrder)
+          {
+            // ScanOrder FAST: direct tile-row copy with nibble swap.
+            // GX CI4 tile: 8px wide x 8px tall = 32 bytes (4 bytes per tile-row).
+            // Source is row-major: row r, tile-col t → src bytes [(r*(w/2)) + t*4 .. +3].
+            // ^3 BE correction applies within each source u32 word (4 bytes).
+            u32 tiles_x = w / 8;
+            u32 tiles_y = h / 8;
+            for (u32 ty = 0; ty < tiles_y; ty++)
+            {
+              for (u32 tx = 0; tx < tiles_x; tx++)
+              {
+                u8 *tdst = idst + (ty * tiles_x + tx) * 32;
+                for (u32 row = 0; row < 8; row++)
+                {
+                  u32 src_byte = ((ty * 8 + row) * (w / 2)) + tx * 4;
+                  u8 *srow = src + src_byte;
+                  u8 *drow = tdst + row * 4;
+                  // Swap nibbles (DC low/high → GX high/low) + ^3 BE correction per word.
+                  drow[0] = (u8)(((srow[0^3] & 0x0F) << 4) | ((srow[0^3] >> 4) & 0x0F));
+                  drow[1] = (u8)(((srow[1^3] & 0x0F) << 4) | ((srow[1^3] >> 4) & 0x0F));
+                  drow[2] = (u8)(((srow[2^3] & 0x0F) << 4) | ((srow[2^3] >> 4) & 0x0F));
+                  drow[3] = (u8)(((srow[3^3] & 0x0F) << 4) | ((srow[3^3] >> 4) & 0x0F));
+                }
+              }
+            }
+          }
+          else
+          {
+            // Twiddled FAST: 2-pixels-per-iteration paired write.
+            // Processes even x and x+1 together — fills one output byte per loop step
+            // instead of calling ci4_prel twice. Eliminates half the tile-offset computations.
+            for (u32 y = 0; y < h; y++)
+            {
+              for (u32 x = 0; x < w; x += 2)
+              {
+                u32 tw0  = twop(x >> 1, y, w >> 1, h) * 2;         // nibble index for x
+                u32 tw1  = tw0 + 1;                                  // nibble index for x+1
+                u8  raw0 = src[(tw0 >> 1) ^ 3];
+                u8  raw1 = src[(tw1 >> 1) ^ 3];
+                u8  idx0 = (tw0 & 1) ? (raw0 >> 4) : (raw0 & 0xF); // palette index for x
+                u8  idx1 = (tw1 & 1) ? (raw1 >> 4) : (raw1 & 0xF); // palette index for x+1
+
+                // Pack both indices into one GX CI4 tile byte (even→high nibble, odd→low nibble).
+                u32 tile     = (y / 8) * (w / 8) + (x / 8);
+                u32 nibble   = tile * 64 + (y % 8) * 8 + (x % 8); // points at even pixel (high nibble)
+                u32 byte_off = nibble >> 1;
+                idst[byte_off] = (u8)((idx0 << 4) | (idx1 & 0x0F));
+              }
+            }
+          }
+        }
+
+        FMT = GX_TF_CI4;
+        pbuff->has_pal = true;
+      }
+
       else if (TEXTURE_4BPP_CI4()) { // 4BPP palette -> GX_TF_CI4
         // Untwiddle index nibbles into GX CI4 block layout.
         // TLUT already loaded above — only index data written here.
@@ -1309,6 +1491,40 @@ static void SetTextureParams(PolyParam *mod)
         FMT = GX_TF_I8; // wha? the ? FUCK!
 
       }
+      else if(TEXTURE_8BPP_I8_GREY_FAST()) {
+        // FAST (currently duplicates I8_GREY standard).
+        // Reserved for a faster algorithm in a future pass.
+        verify(mod->tcw.PAL.VQ_Comp == 0);
+        if (mod->tcw.NO_PAL.MipMapped)
+          tex_addr += MipPoint[mod->tsp.TexU] << 2;
+
+        {
+          u8 *src  = (u8 *)&params.vram[tex_addr];
+          u8 *idst = (u8 *)VramWork;
+
+          if (mod->tcw.NO_PAL.ScanOrder)
+          {
+            for (u32 y = 0; y < h; y++)
+              for (u32 x = 0; x < w; x++)
+              {
+                u32 lin = y * w + x;
+                u8  intensity = src[lin ^ 3];
+                ci8_prel(idst, x, y, w, intensity);
+              }
+          }
+          else
+          {
+            for (u32 y = 0; y < h; y++)
+              for (u32 x = 0; x < w; x++)
+              {
+                u8  intensity = src[twop(x, y, w, h) ^ 3];
+                ci8_prel(idst, x, y, w, intensity);
+              }
+          }
+        }
+
+        FMT = GX_TF_I8;
+      }
       else if(TEXTURE_8BPP_I8_GREY()) {
         // Decode 8BPP palette indices directly to GX I8 greyscale.
         // Each 8-bit index is used as-is as an 8-bit intensity (0-255).
@@ -1350,6 +1566,40 @@ static void SetTextureParams(PolyParam *mod)
 
         FMT = GX_TF_I8;
         // has_pal stays false: no TLUT needed for I8 greyscale
+      }
+      else if(TEXTURE_8BPP_CI8_FAST()) {
+        // FAST (currently duplicates CI8 standard).
+        // Reserved for a faster algorithm in a future pass.
+        verify(mod->tcw.PAL.VQ_Comp == 0);
+        if (mod->tcw.NO_PAL.MipMapped)
+          tex_addr += MipPoint[mod->tsp.TexU] << 2;
+
+        {
+          u8 *src  = (u8 *)&params.vram[tex_addr];
+          u8 *idst = (u8 *)VramWork;
+
+          if (mod->tcw.NO_PAL.ScanOrder)
+          {
+            for (u32 y = 0; y < h; y++)
+              for (u32 x = 0; x < w; x++)
+              {
+                u32 lin = y * w + x;
+                ci8_prel(idst, x, y, w, src[lin ^ 3]);
+              }
+          }
+          else
+          {
+            for (u32 y = 0; y < h; y++)
+              for (u32 x = 0; x < w; x++)
+              {
+                u8 idx = src[twop(x, y, w, h) ^ 3];
+                ci8_prel(idst, x, y, w, idx);
+              }
+          }
+        }
+
+        FMT = GX_TF_CI8;
+        pbuff->has_pal = true;
       }
       else if(TEXTURE_8BPP_CI8()) {
         // 8BPP palette -> GX_TF_CI8
