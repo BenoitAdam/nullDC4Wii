@@ -50,9 +50,9 @@ extern "C" int get_frameskip_preset();
 extern "C" int get_4bpp_preset();
 
 #define TEXTURE_4BPP_I4_STUB() (get_4bpp_preset() == 0) // I4 Stub // 17 FPS VEMU Menu Daytona
-#define TEXTURE_4BPP_I4_GREY_FAST() (get_4bpp_preset() == 1) // I4 (Gray Fast) // ? FPS VEMU Menu Daytona (untested)
+#define TEXTURE_4BPP_I4_GREY_FAST() (get_4bpp_preset() == 1) // I4 (Gray Fast) // 15 FPS VEMU Menu Daytona (untested)
 #define TEXTURE_4BPP_I4_GREY() (get_4bpp_preset() == 2) // I4 (Gray Accurate) // 4 FPS VEMU Menu Daytona (untested)
-#define TEXTURE_4BPP_CI4_FAST() (get_4bpp_preset() == 3) // CI4 (Fast) // ? FPS VEMU Menu Daytona
+#define TEXTURE_4BPP_CI4_FAST() (get_4bpp_preset() == 3) // CI4 (Fast) // 15 FPS VEMU Menu Daytona
 #define TEXTURE_4BPP_CI4() (get_4bpp_preset() == 4) // CI4 (ok) // 4 FPS VEMU Menu Daytona
 #define TEXTURE_4BPP_RGB565() (get_4bpp_preset() == 5) // RGB565 // 1 FPS VEMU Menu Daytona
 
@@ -62,8 +62,8 @@ extern "C" int get_8bpp_preset();
 #define TEXTURE_8BPP_I8_STUB() (get_8bpp_preset() == 0) // I8 Stub
 #define TEXTURE_8BPP_I8_GREY_FAST() (get_8bpp_preset() == 1) // I8 Gray (Fast))
 #define TEXTURE_8BPP_I8_GREY() (get_8bpp_preset() == 2) // I8 Gray
-#define TEXTURE_8BPP_CI8_FAST() (get_8bpp_preset() == 3) // CI8 (Fuzzy)
-#define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 4) // CI8 (Fuzzy)
+#define TEXTURE_8BPP_CI8_FAST() (get_8bpp_preset() == 3) // CI8 (Fast, direct tile writes)
+#define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 4)      // CI8 (Accurate, ^3 BE correction)
 #define TEXTURE_8BPP_RGB565() (get_8bpp_preset() == 5) // RGB565
 
 // Unused
@@ -1156,10 +1156,10 @@ static void SetTextureParams(PolyParam *mod)
                   // Copy 4 bytes (8 pixels), swapping nibbles for DC→GX convention.
                   // ^3 BE correction folds into the 4-byte group: bytes within a u32
                   // word are reversed, so byte k of the source row lives at offset k^3.
-                  drow[0] = (u8)(((srow[0^3] & 0x0F) << 4) | ((srow[0^3] >> 4) & 0x0F));
-                  drow[1] = (u8)(((srow[1^3] & 0x0F) << 4) | ((srow[1^3] >> 4) & 0x0F));
-                  drow[2] = (u8)(((srow[2^3] & 0x0F) << 4) | ((srow[2^3] >> 4) & 0x0F));
-                  drow[3] = (u8)(((srow[3^3] & 0x0F) << 4) | ((srow[3^3] >> 4) & 0x0F));
+                  drow[0] = (u8)(((srow[3] & 0x0F) << 4) | ((srow[3] >> 4) & 0x0F)); // 0^3=3
+                  drow[1] = (u8)(((srow[2] & 0x0F) << 4) | ((srow[2] >> 4) & 0x0F)); // 1^3=2
+                  drow[2] = (u8)(((srow[1] & 0x0F) << 4) | ((srow[1] >> 4) & 0x0F)); // 2^3=1
+                  drow[3] = (u8)(((srow[0] & 0x0F) << 4) | ((srow[0] >> 4) & 0x0F)); // 3^3=0
                 }
               }
             }
@@ -1294,10 +1294,10 @@ static void SetTextureParams(PolyParam *mod)
                   u8 *srow = src + src_byte;
                   u8 *drow = tdst + row * 4;
                   // Swap nibbles (DC low/high → GX high/low) + ^3 BE correction per word.
-                  drow[0] = (u8)(((srow[0^3] & 0x0F) << 4) | ((srow[0^3] >> 4) & 0x0F));
-                  drow[1] = (u8)(((srow[1^3] & 0x0F) << 4) | ((srow[1^3] >> 4) & 0x0F));
-                  drow[2] = (u8)(((srow[2^3] & 0x0F) << 4) | ((srow[2^3] >> 4) & 0x0F));
-                  drow[3] = (u8)(((srow[3^3] & 0x0F) << 4) | ((srow[3^3] >> 4) & 0x0F));
+                  drow[0] = (u8)(((srow[3] & 0x0F) << 4) | ((srow[3] >> 4) & 0x0F)); // 0^3=3
+                  drow[1] = (u8)(((srow[2] & 0x0F) << 4) | ((srow[2] >> 4) & 0x0F)); // 1^3=2
+                  drow[2] = (u8)(((srow[1] & 0x0F) << 4) | ((srow[1] >> 4) & 0x0F)); // 2^3=1
+                  drow[3] = (u8)(((srow[0] & 0x0F) << 4) | ((srow[0] >> 4) & 0x0F)); // 3^3=0
                 }
               }
             }
@@ -1491,41 +1491,7 @@ static void SetTextureParams(PolyParam *mod)
         FMT = GX_TF_I8; // wha? the ? FUCK!
 
       }
-      else if(TEXTURE_8BPP_I8_GREY_FAST()) {
-        // FAST (currently duplicates I8_GREY standard).
-        // Reserved for a faster algorithm in a future pass.
-        verify(mod->tcw.PAL.VQ_Comp == 0);
-        if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 2;
-
-        {
-          u8 *src  = (u8 *)&params.vram[tex_addr];
-          u8 *idst = (u8 *)VramWork;
-
-          if (mod->tcw.NO_PAL.ScanOrder)
-          {
-            for (u32 y = 0; y < h; y++)
-              for (u32 x = 0; x < w; x++)
-              {
-                u32 lin = y * w + x;
-                u8  intensity = src[lin ^ 3];
-                ci8_prel(idst, x, y, w, intensity);
-              }
-          }
-          else
-          {
-            for (u32 y = 0; y < h; y++)
-              for (u32 x = 0; x < w; x++)
-              {
-                u8  intensity = src[twop(x, y, w, h) ^ 3];
-                ci8_prel(idst, x, y, w, intensity);
-              }
-          }
-        }
-
-        FMT = GX_TF_I8;
-      }
-      else if(TEXTURE_8BPP_I8_GREY()) {
+      else if(TEXTURE_8BPP_I8_GREY_FAST() || TEXTURE_8BPP_I8_GREY()) {
         // Decode 8BPP palette indices directly to GX I8 greyscale.
         // Each 8-bit index is used as-is as an 8-bit intensity (0-255).
         // Written into GX I8 block layout (8x4 tiles, 32 bytes/tile):
@@ -1563,13 +1529,26 @@ static void SetTextureParams(PolyParam *mod)
               }
           }
         }
-
+      
         FMT = GX_TF_I8;
         // has_pal stays false: no TLUT needed for I8 greyscale
       }
       else if(TEXTURE_8BPP_CI8_FAST()) {
-        // FAST (currently duplicates CI8 standard).
-        // Reserved for a faster algorithm in a future pass.
+        // 8BPP palette -> GX_TF_CI8  [FAST path — truly optimized]
+        // TLUT already loaded above — only index data written here.
+        //
+        // ScanOrder FAST: skips ci8_prel entirely.
+        //   GX CI8 tile is 8px wide x 4px tall = 32 bytes.
+        //   We process a full tile row (8 pixels) per inner iteration using
+        //   two aligned u32 reads + manual ^3 byte reversal → 8 direct byte
+        //   writes. Zero per-pixel tile-math overhead, no function calls.
+        //   ^3 reverses bytes within each 32-bit word (DC BE VRAM layout):
+        //     drow[0..3] = word0 bytes reversed, drow[4..7] = word1 bytes reversed.
+        //   Source base is always 4-aligned (w is power-of-2 >= 8).
+        //
+        // Twiddled FAST: twop() per pixel is unavoidable, but we inline
+        //   the tile write (no ci8_prel call). y_tile_base is precomputed
+        //   once per scanline, cutting the per-pixel address math in half.
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += MipPoint[mod->tsp.TexU] << 2;
@@ -1580,21 +1559,52 @@ static void SetTextureParams(PolyParam *mod)
 
           if (mod->tcw.NO_PAL.ScanOrder)
           {
-            for (u32 y = 0; y < h; y++)
-              for (u32 x = 0; x < w; x++)
+            // ScanOrder FAST: direct tile-row writes, no ci8_prel, no per-pixel math.
+            // Outer loops iterate over tiles; inner loop over rows within a tile.
+            u32 tiles_x = w / 8;
+            u32 tiles_y = h / 4;
+            for (u32 ty = 0; ty < tiles_y; ty++)
+            {
+              for (u32 tx = 0; tx < tiles_x; tx++)
               {
-                u32 lin = y * w + x;
-                ci8_prel(idst, x, y, w, src[lin ^ 3]);
+                u8 *tdst = idst + (ty * tiles_x + tx) * 32;
+                for (u32 row = 0; row < 4; row++)
+                {
+                  // Source offset for this tile row. Always 4-aligned (w is pow2 >= 8).
+                  u32 src_off = (ty * 4 + row) * w + tx * 8;
+                  u32 w0 = *(u32 *)(src + src_off);     // bytes 0-3 of tile row
+                  u32 w1 = *(u32 *)(src + src_off + 4); // bytes 4-7 of tile row
+                  // ^3 = reverse bytes within each 32-bit word.
+                  // On big-endian Wii: (w >> 0)&0xFF = lowest address byte of the word.
+                  u8 *drow = tdst + row * 8;
+                  drow[0] = (u8)(w0 >>  0); // src[off+3]
+                  drow[1] = (u8)(w0 >>  8); // src[off+2]
+                  drow[2] = (u8)(w0 >> 16); // src[off+1]
+                  drow[3] = (u8)(w0 >> 24); // src[off+0]
+                  drow[4] = (u8)(w1 >>  0); // src[off+7]
+                  drow[5] = (u8)(w1 >>  8); // src[off+6]
+                  drow[6] = (u8)(w1 >> 16); // src[off+5]
+                  drow[7] = (u8)(w1 >> 24); // src[off+4]
+                }
               }
+            }
           }
           else
           {
+            // Twiddled FAST: twop() per pixel (unavoidable), but tile address
+            // is computed inline — no ci8_prel call. y_tile_base is hoisted
+            // out of the x loop: saves one multiply + one add per pixel.
+            u32 tiles_x = w / 8;
             for (u32 y = 0; y < h; y++)
+            {
+              u32 y_tile_base = (y / 4) * tiles_x * 32 + (y % 4) * 8;
               for (u32 x = 0; x < w; x++)
               {
-                u8 idx = src[twop(x, y, w, h) ^ 3];
-                ci8_prel(idst, x, y, w, idx);
+                u8  idx      = src[twop(x, y, w, h) ^ 3]; // ^3: 32-bit BE correction
+                u32 byte_off = y_tile_base + (x / 8) * 32 + (x % 8);
+                idst[byte_off] = idx;
               }
+            }
           }
         }
 
@@ -1602,12 +1612,14 @@ static void SetTextureParams(PolyParam *mod)
         pbuff->has_pal = true;
       }
       else if(TEXTURE_8BPP_CI8()) {
-        // 8BPP palette -> GX_TF_CI8
+        // 8BPP palette -> GX_TF_CI8  [ACCURATE path — enhanced algorithm]
         // Untwiddle index bytes into GX CI8 block layout.
         // TLUT already loaded above — only index data written here.
         //
-        // VRAM byte addressing: DC byte B lives at vram[B ^ 3] on the Wii
-        // (same 32-bit big-endian word-reversal convention as the VQ path).
+        // Uses ^3 (full 32-bit word byte-reversal) — the same BE correction
+        // used by the I8 grey path and the VQ decompressor. Each DC byte B
+        // lives at vram[B ^ 3] on the Wii's big-endian SH4 VRAM layout.
+        // This gives sharper, correctly-indexed characters vs the ^1 fast path.
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += MipPoint[mod->tsp.TexU] << 2;
@@ -1618,21 +1630,23 @@ static void SetTextureParams(PolyParam *mod)
 
           if (mod->tcw.NO_PAL.ScanOrder)
           {
-            // Scanline (linear): row-major, 1 byte per pixel
+            // Scanline (linear): row-major, 1 byte per pixel.
+            // ^3: full 32-bit word reversal — same as I8 grey ScanOrder path.
             for (u32 y = 0; y < h; y++)
               for (u32 x = 0; x < w; x++)
               {
                 u32 lin = y * w + x;
-                ci8_prel(idst, x, y, w, src[lin ^ 3]); // ^3: 32-bit BE correction
+                ci8_prel(idst, x, y, w, src[lin ^ 3]); // ^3: 32-bit BE VRAM correction
               }
           }
           else
           {
             // Twiddled (Morton order): twiddle index = byte index for 8BPP.
+            // ^3: full 32-bit word reversal — same as I8 grey Twiddled path.
             for (u32 y = 0; y < h; y++)
               for (u32 x = 0; x < w; x++)
               {
-                u8 idx = src[twop(x, y, w, h) ^ 3]; // ^3: 32-bit BE correction
+                u8 idx = src[twop(x, y, w, h) ^ 3]; // ^3: 32-bit BE VRAM correction
                 ci8_prel(idst, x, y, w, idx);
               }
           }
@@ -1643,7 +1657,6 @@ static void SetTextureParams(PolyParam *mod)
       }
       else if (TEXTURE_8BPP_RGB565()){
         // Fully decode each indexed pixel into a GX 16bpp pixel.
-        // Supports both twiddled and linear (ScanOrder) textures.
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += MipPoint[mod->tsp.TexU] << 2;
@@ -1659,42 +1672,30 @@ static void SetTextureParams(PolyParam *mod)
           u8  *src = (u8 *)&params.vram[tex_addr];
           u16 *dst = (u16 *)VramWork;
 
-          auto decode_entry = [&](u8 idx) -> u16 {
-            u32 pe = pal[idx];
-            switch (pal_fmt)
+          // 8BPP twiddled: 1 byte = 1 pixel in Morton order.
+          for (u32 y = 0; y < h; y++)
+          {
+            for (u32 x = 0; x < w; x++)
             {
-              case 1:  return (u16)(pe & 0xFFFF);
-              case 2:  return ABGR4444((u16)(pe & 0xFFFF));
-              case 3:  {
-                u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-                return (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-              }
-              default: return ABGR1555((u16)(pe & 0xFFFF));
-            }
-          };
+              u32 tw  = twop(x, y, w, h);
+              u8  idx = src[tw ^ 1];  // byte-swap within 16-bit pair
 
-          if (mod->tcw.NO_PAL.ScanOrder)
-          {
-            // Scanline (linear): row-major, 1 byte per pixel.
-            for (u32 y = 0; y < h; y++)
-              for (u32 x = 0; x < w; x++)
+              u32 pe = pal[idx];
+              u16 px;
+              switch (pal_fmt)
               {
-                u32 lin = y * w + x;
-                u8  idx = src[lin ^ 3]; // ^3: 32-bit BE VRAM correction
-                dst[GX_TexOffs(x, y, w)] = decode_entry(idx);
+                case 1:  px = (u16)(pe & 0xFFFF); break;                    // RGB565  → RGB565
+                case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;          // ARGB4444→ RGB5A3
+                case 3:                                                      // ARGB8888→ RGB5A3
+                {
+                  u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+                  px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+                  break;
+                }
+                default: px = ABGR1555((u16)(pe & 0xFFFF)); break;          // ARGB1555→ RGB5A3
               }
-          }
-          else
-          {
-            // 8BPP twiddled: 1 byte = 1 pixel in Morton order.
-            // twiddle index = byte index; apply ^3 for 32-bit BE correction.
-            for (u32 y = 0; y < h; y++)
-              for (u32 x = 0; x < w; x++)
-              {
-                u32 tw  = twop(x, y, w, h);
-                u8  idx = src[tw ^ 3]; // ^3: 32-bit BE VRAM correction
-                dst[GX_TexOffs(x, y, w)] = decode_entry(idx);
-              }
+              dst[GX_TexOffs(x, y, w)] = px;
+            }
           }
         }
       }

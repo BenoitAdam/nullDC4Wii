@@ -64,10 +64,10 @@ extern "C" {
   }
 }
 
-int g_4bpp_preset = 4;
+int g_4bpp_preset = 3;
 // 0 = I4 Stub
-// 1 = I4 (gray fast)
-// 2 = I4 (gray normal)
+// 1 = I4 (grey fast)
+// 2 = I4 (grey normal)
 // 3 = CI4 (CI4 fast)
 // 4 = CI4 (CI4 normal)
 // 5 = RGB565
@@ -81,8 +81,7 @@ extern "C" {
 
 int g_8bpp_preset = 5;
 // 0 = I8 Stub
-// 1 = I8 (gray fast)
-// 2 = I8 (gray normal)
+// 1/2 = I8 (grey)
 // 3 = CI8 (CI8 fast)
 // 4 = CI8 (CI8 normal)
 // 5 = RGB565
@@ -485,8 +484,8 @@ bool displayOptionsMenu()
     printf("%s 4BPP MODE     : ", (selectedRow == OPT_4BPP) ? ">" : " ");
     switch (g_4bpp_preset) {
       case 0: printf("[< I4 STUB              >]"); break;
-      case 1: printf("[< I4 GRAY (FAST)       >]"); break;
-      case 2: printf("[< I4 GRAY (NORMAL)     >]"); break;
+      case 1: printf("[< I4 GREY (FAST)       >]"); break;
+      case 2: printf("[< I4 GREY (NORMAL)     >]"); break;
       case 3: printf("[< CI4 (FAST)           >]"); break;
       case 4: printf("[< CI4 (NORMAL)         >]"); break;
       case 5: printf("[< RGB565 (ACCURATE)    >]"); break;
@@ -497,8 +496,8 @@ bool displayOptionsMenu()
     printf("%s 8BPP MODE     : ", (selectedRow == OPT_8BPP) ? ">" : " ");
     switch (g_8bpp_preset) {
       case 0: printf("[< I8 STUB              >]"); break;
-      case 1: printf("[< I8 GRAY (FAST)       >]"); break;
-      case 2: printf("[< I8 GRAY (NORMAL)     >]"); break;
+      case 1: printf("[< I8 GREY (NORMAL1)    >]"); break;
+      case 2: printf("[< I8 GREY (NORMAL2)    >]"); break;
       case 3: printf("[< CI8 (FAST)           >]"); break;
       case 4: printf("[< CI8 (NORMAL)         >]"); break;
       case 5: printf("[< RGB565 (ACCURATE)    >]"); break;
@@ -929,20 +928,20 @@ int main(int argc, wchar *argv[])
     printf("4BPP Mode      : ");
     switch(g_4bpp_preset) {
       case 0: printf("I4 STUB\n");          break;
-      case 1: printf("I4 GRAY (FAST)\n");   break;
-      case 2: printf("I4 GRAY (NORMAL)\n"); break;
+      case 1: printf("I4 GREY (FAST)\n");   break;
+      case 2: printf("I4 GREY (NORMAL)\n"); break;
       case 3: printf("CI4 (FAST)\n");       break;
       case 4: printf("CI4 (NORMAL)\n");     break;
       case 5: printf("RGB565\n");           break;
     }
     printf("8BPP Mode      : ");
     switch(g_8bpp_preset) {
-      case 0: printf("I8 STUB\n");          break;
-      case 1: printf("I8 GRAY (FAST)\n");   break;
-      case 2: printf("I8 GRAY (NORMAL)\n"); break;
-      case 3: printf("CI8 (FAST)\n");       break;
-      case 4: printf("CI8 (NORMAL)\n");     break;
-      case 5: printf("RGB565\n");           break;
+      case 0: printf("I8 STUB\n");           break;
+      case 1: printf("I8 GREY (NORMAL1)\n"); break;
+      case 2: printf("I8 GREY (NORMAL2)\n"); break;
+      case 3: printf("CI8 (FAST)\n");        break;
+      case 4: printf("CI8 (NORMAL)\n");      break;
+      case 5: printf("RGB565\n");            break;
     }
   }
   else
