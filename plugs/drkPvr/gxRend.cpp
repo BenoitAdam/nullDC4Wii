@@ -1624,7 +1624,7 @@ static void SetTextureParams(PolyParam *mod)
             for (u32 x = 0; x < w; x++)
             {
               u32 tw  = twop(x, y, w, h);
-              u8  idx = src[tw ^ 1];  // byte-swap within 16-bit pair
+              u8  idx = src[tw ^ 3];  // ^3: full 32-bit BE word correction (matches CI8/I8 paths)
 
               u32 pe = pal[idx];
               u16 px;
