@@ -32,6 +32,7 @@ a fork from https://github.com/skmp/nullDCe
 
 - Improve gxRend.cpp = main file about specific rendering for Wii
 - Splitting gxRend.cpp in multiple files ? (beware this is more tricky than it look)
+- Fix alpha/transparent stuff (may be costly in term of performances)
 - Table convertion between SH4 Opcodes of SH4 and the WiiPPC ?
 - Use LLVM to port code for PowerPC ?
 - Full Dynarec implementation (AI seems to know about this)
