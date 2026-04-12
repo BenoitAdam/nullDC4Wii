@@ -51,20 +51,18 @@ extern "C" int get_4bpp_preset();
 
 #define TEXTURE_4BPP_I4_STUB() (get_4bpp_preset() == 0) // I4 Stub // 17 FPS VEMU Menu Daytona
 #define TEXTURE_4BPP_I4_GREY_FAST() (get_4bpp_preset() == 1) // I4 (Gray Fast) // 15 FPS VEMU Menu Daytona (untested)
-#define TEXTURE_4BPP_I4_GREY() (get_4bpp_preset() == 2) // I4 (Gray Accurate) // 4 FPS VEMU Menu Daytona (untested)
-#define TEXTURE_4BPP_CI4_FAST() (get_4bpp_preset() == 3) // CI4 (Fast) // 15 FPS VEMU Menu Daytona
-#define TEXTURE_4BPP_CI4() (get_4bpp_preset() == 4) // CI4 (ok) // 4 FPS VEMU Menu Daytona
-#define TEXTURE_4BPP_RGB565() (get_4bpp_preset() == 5) // RGB565 // 1 FPS VEMU Menu Daytona
+#define TEXTURE_4BPP_CI4_FAST() (get_4bpp_preset() == 2) // CI4 (Fast) // 15 FPS VEMU Menu Daytona
+#define TEXTURE_4BPP_CI4() (get_4bpp_preset() == 3) // CI4 (ok) // 4 FPS VEMU Menu Daytona
+#define TEXTURE_4BPP_RGB565() (get_4bpp_preset() == 4) // RGB565 // 1 FPS VEMU Menu Daytona
 
 // 8BPP palette texture management
 extern "C" int get_8bpp_preset();
 
 #define TEXTURE_8BPP_I8_STUB() (get_8bpp_preset() == 0) // I8 Stub
 #define TEXTURE_8BPP_I8_GREY_FAST() (get_8bpp_preset() == 1) // I8 Gray (Fast))
-#define TEXTURE_8BPP_I8_GREY() (get_8bpp_preset() == 2) // I8 Gray
-#define TEXTURE_8BPP_CI8_FAST() (get_8bpp_preset() == 3) // CI8 (Fast, direct tile writes)
-#define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 4)      // CI8 (Accurate, ^3 BE correction)
-#define TEXTURE_8BPP_RGB565() (get_8bpp_preset() == 5) // RGB565
+#define TEXTURE_8BPP_CI8_FAST() (get_8bpp_preset() == 2) // CI8 (Fast, direct tile writes)
+#define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 3)      // CI8 (Accurate, ^3 BE correction)
+#define TEXTURE_8BPP_RGB565() (get_8bpp_preset() == 4) // RGB565
 
 // Unused
 int current_frameskip;
@@ -1195,58 +1193,6 @@ static void SetTextureParams(PolyParam *mod)
         FMT = GX_TF_I4;
         // has_pal stays false: no TLUT needed
       }
-      else if(TEXTURE_4BPP_I4_GREY()){ // I4 (grey)
-        // Decode 4BPP palette indices directly to GX I4 greyscale.
-        // Each 4-bit index is treated as a 4-bit intensity (0-15).
-        // Two pixels are packed per byte in GX I4 block layout (8x8 tiles, 32 bytes/tile):
-        //   high nibble = even pixel (x+0), low nibble = odd pixel (x+1).
-        // No palette lookup, no TLUT upload — extremely fast.
-        verify(mod->tcw.PAL.VQ_Comp == 0);
-        if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 1;
-
-        {
-          u8 *src  = (u8 *)&params.vram[tex_addr];
-          u8 *idst = (u8 *)VramWork;
-          memset(idst, 0, w * h / 2); // required: nibbles are OR'd in
-
-          // GX I4 tile: 8 pixels wide x 8 pixels tall = 32 bytes per tile.
-          // Each byte holds two 4-bit intensities: high nibble = left pixel, low nibble = right pixel.
-          // We reuse the ci4_prel helper which already implements this exact layout.
-          if (mod->tcw.NO_PAL.ScanOrder)
-          {
-            // Scanline (linear): row-major, 2 pixels per byte.
-            // Even pixel (x+0) in LOW nibble, odd pixel (x+1) in HIGH nibble (DC convention).
-            for (u32 y = 0; y < h; y++)
-              for (u32 x = 0; x < w; x += 2)
-              {
-                u32 lin = y * (w / 2) + x / 2;
-                u8  raw = src[lin ^ 3];          // ^3: 32-bit BE VRAM correction
-                u8  i0  = raw & 0xF;             // even pixel index -> intensity
-                u8  i1  = raw >> 4;              // odd  pixel index -> intensity
-                ci4_prel(idst, x + 0, y, w, i0);
-                ci4_prel(idst, x + 1, y, w, i1);
-              }
-          }
-          else
-          {
-            // Twiddled (Morton order): same half-width convention as CI4 path.
-            // DC twiddles 4BPP as if it were 16BPP at half width.
-            for (u32 y = 0; y < h; y++)
-              for (u32 x = 0; x < w; x++)
-              {
-                u32 tw_word   = twop(x >> 1, y, w >> 1, h);
-                u32 tw_nibble = tw_word * 2 + (x & 1);
-                u8  raw       = src[(tw_nibble >> 1) ^ 3]; // ^3: 32-bit BE correction
-                u8  idx       = (tw_nibble & 1) ? (raw >> 4) : (raw & 0xF);
-                ci4_prel(idst, x, y, w, idx);
-              }
-          }
-        }
-
-        FMT = GX_TF_I4;
-        // has_pal stays false: no TLUT needed for I4 greyscale
-      }
       else if (TEXTURE_4BPP_CI4_FAST()) { // 4BPP palette -> GX_TF_CI4 (Fast)
         // FAST path: same structure as I4_GREY_FAST but outputs CI4 index data.
         // TLUT already loaded above — only the index nibbles need reordering here.
@@ -1491,7 +1437,7 @@ static void SetTextureParams(PolyParam *mod)
         FMT = GX_TF_I8; // wha? the ? FUCK!
 
       }
-      else if(TEXTURE_8BPP_I8_GREY_FAST() || TEXTURE_8BPP_I8_GREY()) {
+      else if(TEXTURE_8BPP_I8_GREY_FAST()) {
         // Decode 8BPP palette indices directly to GX I8 greyscale.
         // Each 8-bit index is used as-is as an 8-bit intensity (0-255).
         // Written into GX I8 block layout (8x4 tiles, 32 bytes/tile):
