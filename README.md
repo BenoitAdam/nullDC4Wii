@@ -11,14 +11,13 @@ a fork from https://github.com/skmp/nullDCe
 
 ### Developer (Easy)
 
-- Clean Warning/notes during compilation I guess
 - Player 2 Gamecube/Wiimote (1rst step)
 - Player 3/4 Gamecube/Wiimote (2nd step)
 - Fishing Rod/USB Keyboard/Lightgun/Maracas support
 - Put external config file for controllers (controls.cfg)
 - Clean Clean Clean
 - Optimize Optimize Optimize
-- Translate French baguette comments to English
+- Comment / Guides / Documentation
 
 ### Developer (Normal)
 
