@@ -173,6 +173,16 @@ While the emulator is still in alpha, the visual difference is limited for now.
 - Use LOW for 2D and heavy 3D games
 - Use NORMAL for other games
 
+| Mode (4BPP/8BPP) | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **I4_STUB/I8_STUB** | Dummy algorythm  | Some element doesn't display at all, for max FPS |
+| **I4 (FAST)/I8 (FAST)** | Basic algorythm  | Display in grey Scale (Use for debug) |
+| **CI4 (FAST)/CI8 (FAST)** | Basic algirythm | Display mostly correctly (consume a bit of FPS) |
+| **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Should display better |
+| **RGB565** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
+
+See Compatiblity guide for hints depending of the games
+
 ## For Developpers :
 
 ### Compilation Process (Windows)
