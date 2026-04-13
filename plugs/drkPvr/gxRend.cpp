@@ -1165,20 +1165,21 @@ static void SetTextureParams(PolyParam *mod)
           else
           {
             // Twiddled FAST: process 2 horizontal pixels per iteration (one byte written).
-            // For even x: compute twiddle for both x and x+1 together, extract both nibbles,
-            // pack them into one byte — halves the number of ci4_prel-equivalent writes.
+            // Full-width twiddle: twop(x, y, w, h) treats each nibble as its own pixel
+            // (correct for DC 4BPP twiddled format). ^3 = full 32-bit BE word reversal.
+            // Nibble convention (DC hw manual): even pixel → LOW nibble (& 0xF),
+            //                                  odd  pixel → HIGH nibble (>> 4).
             memset(idst, 0, w * h / 2);
             for (u32 y = 0; y < h; y++)
             {
               for (u32 x = 0; x < w; x += 2)
               {
-                // Pixel x (even): tw_nibble is always even → low nibble of its byte
-                u32 tw0   = twop(x >> 1, y, w >> 1, h) * 2;       // nibble index for x
-                u32 tw1   = tw0 + 1;                                // nibble index for x+1
-                u8  raw0  = src[(tw0 >> 1) ^ 3];
+                u32 tw0   = twop(x,     y, w, h);            // nibble index for pixel x
+                u32 tw1   = twop(x + 1, y, w, h);            // nibble index for pixel x+1
+                u8  raw0  = src[(tw0 >> 1) ^ 3];             // ^3: full 32-bit BE correction
                 u8  raw1  = src[(tw1 >> 1) ^ 3];
-                u8  idx0  = (tw0 & 1) ? (raw0 >> 4) : (raw0 & 0xF); // index for x
-                u8  idx1  = (tw1 & 1) ? (raw1 >> 4) : (raw1 & 0xF); // index for x+1
+                u8  idx0  = (tw0 & 1) ? (raw0 >> 4) : (raw0 & 0xF); // odd→high, even→low
+                u8  idx1  = (tw1 & 1) ? (raw1 >> 4) : (raw1 & 0xF);
 
                 // Write both into GX I4 tile in one shot: even→high nibble, odd→low nibble
                 u32 tile     = (y / 8) * (w / 8) + (x / 8);
@@ -1251,18 +1252,18 @@ static void SetTextureParams(PolyParam *mod)
           else
           {
             // Twiddled FAST: 2-pixels-per-iteration paired write.
-            // Processes even x and x+1 together — fills one output byte per loop step
-            // instead of calling ci4_prel twice. Eliminates half the tile-offset computations.
+            // Full-width twiddle: twop(x, y, w, h) — each nibble is its own pixel.
+            // ^3 = full 32-bit BE word reversal. Nibble convention: even→low (& 0xF), odd→high (>> 4).
             for (u32 y = 0; y < h; y++)
             {
               for (u32 x = 0; x < w; x += 2)
               {
-                u32 tw0  = twop(x >> 1, y, w >> 1, h) * 2;         // nibble index for x
-                u32 tw1  = tw0 + 1;                                  // nibble index for x+1
-                u8  raw0 = src[(tw0 >> 1) ^ 3];
+                u32 tw0  = twop(x,     y, w, h);                     // nibble index for x
+                u32 tw1  = twop(x + 1, y, w, h);                     // nibble index for x+1
+                u8  raw0 = src[(tw0 >> 1) ^ 3];                      // ^3: full 32-bit BE correction
                 u8  raw1 = src[(tw1 >> 1) ^ 3];
-                u8  idx0 = (tw0 & 1) ? (raw0 >> 4) : (raw0 & 0xF); // palette index for x
-                u8  idx1 = (tw1 & 1) ? (raw1 >> 4) : (raw1 & 0xF); // palette index for x+1
+                u8  idx0 = (tw0 & 1) ? (raw0 >> 4) : (raw0 & 0xF);  // palette index for x
+                u8  idx1 = (tw1 & 1) ? (raw1 >> 4) : (raw1 & 0xF);  // palette index for x+1
 
                 // Pack both indices into one GX CI4 tile byte (even→high nibble, odd→low nibble).
                 u32 tile     = (y / 8) * (w / 8) + (x / 8);
@@ -1315,20 +1316,14 @@ static void SetTextureParams(PolyParam *mod)
           else
           {
             // Twiddled (Morton order) for 4BPP:
-            // The DC hardware twiddles 4BPP textures as if they were 16bpp textures
-            // of HALF the width. So a 64x64 4BPP texture uses the same twiddle
-            // pattern as a 32x64 16bpp texture.
-            // twop(x/2, y, w/2, h) gives the 16bpp word index; multiply by 2
-            // to get the first nibble index of that word-pair, then add (x & 1)
-            // to select the correct nibble within the pair.
-            // Each VRAM byte holds 2 nibbles: even nibble → low bits (& 0xF),
-            // odd nibble → high bits (>> 4). Byte address = nibble_index >> 1, ^3 for BE.
+            // Full-width twiddle: twop(x, y, w, h) — each nibble is its own addressable pixel.
+            // ^3 = full 32-bit BE word reversal.
+            // Nibble convention: even pixel → LOW nibble (& 0xF), odd pixel → HIGH nibble (>> 4).
             for (u32 y = 0; y < h; y++)
               for (u32 x = 0; x < w; x++)
               {
-                u32 tw_word   = twop(x >> 1, y, w >> 1, h); // word index in twiddle
-                u32 tw_nibble = tw_word * 2 + (x & 1);      // nibble index
-                u8  raw       = src[(tw_nibble >> 1) ^ 3];  // ^3: 32-bit BE correction
+                u32 tw_nibble = twop(x, y, w, h);                         // nibble index
+                u8  raw       = src[(tw_nibble >> 1) ^ 3];                // ^3: 32-bit BE correction
                 u8  idx       = (tw_nibble & 1) ? (raw >> 4) : (raw & 0xF);
                 ci4_prel(idst, x, y, w, idx);
               }
@@ -1392,14 +1387,14 @@ static void SetTextureParams(PolyParam *mod)
           else
           {
             // Twiddled (Morton order) for 4BPP:
-            // Same half-width twiddle convention as the CI4 path above.
+            // Full-width twiddle: twop(x, y, w, h) — each nibble is its own pixel.
+            // ^3 = full 32-bit BE word reversal. Nibble: even→low (& 0xF), odd→high (>> 4).
             for (u32 y = 0; y < h; y++)
             {
               for (u32 x = 0; x < w; x++)
               {
-                u32 tw_word   = twop(x >> 1, y, w >> 1, h);
-                u32 tw_nibble = tw_word * 2 + (x & 1);
-                u8  raw       = src[(tw_nibble >> 1) ^ 3];
+                u32 tw_nibble = twop(x, y, w, h);                          // nibble index
+                u8  raw       = src[(tw_nibble >> 1) ^ 3];                 // ^3: full 32-bit BE correction
                 u8  idx       = (tw_nibble & 1) ? (raw >> 4) : (raw & 0xF);
 
                 u32 pe = pal[idx];
