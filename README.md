@@ -21,6 +21,7 @@ a fork from https://github.com/skmp/nullDCe
 
 ### Developer (Normal)
 
+- USB Key support
 - Coding routine adjustement for accuracy (FAST/BALANCED/ACCURATE)
 - Coding routine adjustement for performance (LOW/NORMAL/HIGH/EXTRA)
 - both 4/3 and fullscreen support (implemented, need fix on some games)
