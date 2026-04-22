@@ -117,15 +117,11 @@ void ApplyGraphismPreset() {
   Texture Format Conversion Notes:
   FMT: 1555 DTP    -> RGB5A3 DP
      4444 DTP    -> RGB5A3 DP
-
      8888 P      -> 8888 P
      565  DTP    -> 565 DP
      YUV  DT     -> ? 565 is possibe but LQ ...
 
 */
-
-
-
 
 // Macros for extracting color channels from Dreamcast-specific pixel formats.
 #define ABGR4444_A(x) ((x) >> 12)
@@ -218,9 +214,9 @@ void VBlank() {}
 
 // Static arrays for vertex data to avoid frequent heap allocations.
 // Limited by the Wii's MEM1/MEM2 availability.
-Vertex ALIGN16 vertices[43008]; // 42*1024 = Wii memory limit
-VertexList ALIGN16 lists[8192]; // 8*1024
-PolyParam ALIGN16 listModes[8192]; // 8*1024
+Vertex ALIGN16 vertices[42*1024]; // Wii memory limit
+VertexList ALIGN16 lists[8*1024];
+PolyParam ALIGN16 listModes[8*1024];
 
 Vertex *curVTX = vertices;
 VertexList *curLST = lists;
@@ -524,23 +520,19 @@ pixelcvt_next(convYUV_PL, 4, 1)
   s32 Yu = (p_in[0] >> 0) & 255;  // p_in[0]
   s32 Y1 = (p_in[0] >> 24) & 255; // p_in[3]
   s32 Yv = (p_in[0] >> 16) & 255; // p_in[2]
-
   
   pb_prel(pb, pbw, x + 0, y, YUV422(Y0, Yu, Yv)); // 0,0  
   pb_prel(pb, pbw, x + 1, y, YUV422(Y1, Yu, Yv)); // 1,0
 
-   // next 4 bytes
-  p_in += 1;
+  p_in += 1; // next 4 bytes
 
   Y0 = (p_in[0] >> 8) & 255;  //
   Yu = (p_in[0] >> 0) & 255;  // p_in[0]
   Y1 = (p_in[0] >> 24) & 255; // p_in[3]
   Yv = (p_in[0] >> 16) & 255; // p_in[2]
 
-  // 0,0
-  pb_prel(pb, pbw, x + 2, y, YUV422(Y0, Yu, Yv));
-  // 1,0
-  pb_prel(pb, pbw, x + 3, y, YUV422(Y1, Yu, Yv));
+    pb_prel(pb, pbw, x + 2, y, YUV422(Y0, Yu, Yv)); // 0,0
+  pb_prel(pb, pbw, x + 3, y, YUV422(Y1, Yu, Yv)); // 1,0
 }
 pixelcvt_end;
 
@@ -577,7 +569,7 @@ pixelcvt_next(convYUV422_TW, 2, 2)
   // convert 4x1 4444 to 4x1 8888
   u16 *p_in = (u16 *)data;
 
- s32 Y0 = (p_in[0] >> 8) & 255; //
+  s32 Y0 = (p_in[0] >> 8) & 255; //
   s32 Yu = (p_in[0] >> 0) & 255; // p_in[0]
   s32 Y1 = (p_in[2] >> 8) & 255; // p_in[3]
   s32 Yv = (p_in[2] >> 0) & 255; // p_in[2]
@@ -654,9 +646,6 @@ pixelcvt_startVQ(convYUV422_VQ, 2, 2)
   }
 };  // closes struct
 
-// input : address in the yyyyyxxxxx format
-// output : address in the xyxyxyxy format
-// U : x resolution , V : y resolution
 // Redefinition of twiddle for local use. (64b words)
 u32 fastcall twiddle_razi(u32 x, u32 y, u32 x_sz, u32 y_sz)
 {
@@ -928,19 +917,8 @@ static void SetTextureParams(PolyParam *mod)
   u32 w = 8 << mod->tsp.TexU;
   u32 h = 8 << mod->tsp.TexV;
 
-  // =================================================================
-  // Additionnal code introduced with CI8 Implementation in alpha 0.16
-  // =================================================================
-
-
   // ── Palette TLUT setup (fmt 5 = CI4, fmt 6 = CI8) ──────────────────────────
-  // Rebuilt and re-uploaded every call so palette changes are visible immediately
-  // without needing VRAM dirty detection. The loop is cheap (<=256 iterations)
-  // and GX_LoadTlut is just a small DMA.
-  //
-  // libogc uses plain u8/u32 for all GX format parameters — no named enum types.
-  // s_tlut_buf is static and shared; GX_LoadTlut copies into TMEM so the buffer
-  // only needs to stay valid for the duration of this function call.
+
   static u16 ATTRIBUTE_ALIGN(32) s_tlut_buf[256];
 
   u32 pixel_fmt = mod->tcw.NO_PAL.PixelFmt;
@@ -1714,36 +1692,27 @@ static bool s_did_3d_render = false;
 static double s_render_start_time = 0.0;
 static double s_last_render_time  = 0.0;   // seconds taken by the previous rendered frame
 
-// One NTSC frame budget in seconds.  If the previous render exceeded this
-// we skip the next frame in AUTO mode.
-#define VBLANK_BUDGET_SEC  (1.0 / 60.0)
+#define VBLANK_BUDGET_SEC  (1.0 / 60.0) // AUTO Mode (NTSC)
 
-// Returns true when the current frame should be dropped (geometry discarded,
-// no GX draw calls issued).  The Dreamcast game still gets its render-done
-// interrupt so its timing loop is not disturbed.
-static bool ShouldSkipFrame()
+
+static bool ShouldSkipFrame() // Returns true when the current frame should be dropped
 {
     if (NO_FRAMESKIP())
         return false;
 
     if (FRAMESKIP_1())
     {
-        // Render every other frame: 0,skip,0,skip,...
         frame_counter = (frame_counter + 1) & 1;
         return frame_counter != 0;
     }
-
     if (FRAMESKIP_2())
     {
-        // Render one in three: 0,skip,skip, 0,skip,skip,...
         frame_counter = (frame_counter + 1) % 3;
         return frame_counter != 0;
     }
-
     if (FRAMESKIP_AUTO())
     {
-        // Skip next frame only when the previous render took longer than the
-        // vblank budget.  This recovers automatically once the load drops.
+
         return s_last_render_time > VBLANK_BUDGET_SEC;
     }
 
@@ -1756,8 +1725,10 @@ static bool ShouldSkipFrame()
 
 void DoRender()
 {
-  // printf("MEM1 free: %.2f MB\n", ((unat)SYS_GetArena1Hi() - (unat)SYS_GetArena1Lo()) / 1024.f / 1024);
-  // printf("MEM2 free: %.2f MB\n", ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / 1024.f / 1024.f);
+  if(get_debug_loop() == 1) {
+    printf("MEM1 free: %.2f MB\n", ((unat)SYS_GetArena1Hi() - (unat)SYS_GetArena1Lo()) / 1024.f / 1024);
+    printf("MEM2 free: %.2f MB\n", ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / 1024.f / 1024.f);
+  }
   float dc_width = 640;
   float dc_height = 480;
 
@@ -1858,6 +1829,10 @@ void DoRender()
 
 
   /*
+  // This algorithm performs 4x4 matrix vertex transformation followed by W-buffer depth normalization.
+  // keep in mind that the Wii's Paired Singles (floating point unit) is very fast at these $4 \times 4$ multiplications!
+  // Still needed ? we have "Mtx44 mtx" code, it that the same stuff ?
+  
   x'=x*xx + y*xy + z* xz + xw
   y'=x*yx + y*yy + z* yz + yw
   z'=x*zx + y*zy + z* zz + zw
