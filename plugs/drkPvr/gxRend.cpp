@@ -1311,17 +1311,13 @@ static void SetTextureParams(PolyParam *mod)
         FMT = GX_TF_CI4;
         pbuff->has_pal = true;
       }
-      else if (TEXTURE_4BPP_RGB565()) { // RGB565
-        // 5 = 4BPP Palette: 4 bits per pixel, 16-entry palette.
-        // Fully decode each indexed pixel into a GX 16bpp pixel so GX_TF_RGB565
-        // or GX_TF_RGB5A3 can be used directly — no CI4/TLUT needed.
-        verify(mod->tcw.PAL.VQ_Comp == 0);
-        if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 1;
+      else if (TEXTURE_4BPP_RGB565()) {
+          verify(mod->tcw.PAL.VQ_Comp == 0);
+          if (mod->tcw.NO_PAL.MipMapped)
+              tex_addr += MipPoint[mod->tsp.TexU] << 1;
 
-        {
-          u32  pal_fmt  = PAL_RAM_CTRL & 3;            // 0=ARGB1555 1=RGB565 2=ARGB4444 3=ARGB8888
-          u32  pal_base = mod->tcw.PAL.PalSelect & ~15u; // legacy 16-entry aligned block index
+          u32  pal_fmt  = PAL_RAM_CTRL & 3;
+          u32  pal_base = mod->tcw.PAL.PalSelect & ~15u;
           u32 *pal      = PALETTE_RAM + pal_base;
 
           FMT = (pal_fmt == 1) ? GX_TF_RGB565 : GX_TF_RGB5A3;
@@ -1329,35 +1325,57 @@ static void SetTextureParams(PolyParam *mod)
           u8  *src = (u8 *)&params.vram[tex_addr];
           u16 *dst = (u16 *)VramWork;
 
-          // Legacy alpha 0.17 behavior:
-          // Health bar in jojo displays + Fare in crazy taxi in neat (instead of messy bu readable)
-          for (u32 y = 0; y < h; y++)
-          {
-            for (u32 x = 0; x < w; x++)
-            {
-              u32 tw_nibble = twop(x, y, w, h);
-              u32 tw_byte   = tw_nibble >> 1;
-              u8  raw       = src[tw_byte ^ 1];
-              u8  idx       = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
-
-              u32 pe = pal[idx];
-              u16 px;
-              switch (pal_fmt)
-              {
-                case 1:  px = (u16)(pe & 0xFFFF); break;
-                case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;
-                case 3:
-                {
-                  u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-                  px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+          // We pull the switch OUTSIDE the loops. 
+          // The compiler can now optimize each loop specifically for the format.
+          switch (pal_fmt) {
+              case 1: // RGB565
+                  for (u32 y = 0; y < h; y++) {
+                      for (u32 x = 0; x < w; x++) {
+                          u32 tw_nibble = twop(x, y, w, h);
+                          u8  raw = src[(tw_nibble >> 1) ^ 1];
+                          u8  idx = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
+                          dst[GX_TexOffs(x, y, w)] = (u16)(pal[idx] & 0xFFFF);
+                      }
+                  }
                   break;
-                }
-                default: px = ABGR1555((u16)(pe & 0xFFFF)); break;
-              }
-              dst[GX_TexOffs(x, y, w)] = px;
-            }
+
+              case 2: // ARGB4444
+                  for (u32 y = 0; y < h; y++) {
+                      for (u32 x = 0; x < w; x++) {
+                          u32 tw_nibble = twop(x, y, w, h);
+                          u8  raw = src[(tw_nibble >> 1) ^ 1];
+                          u8  idx = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
+                          dst[GX_TexOffs(x, y, w)] = ABGR4444((u16)(pal[idx] & 0xFFFF));
+                      }
+                  }
+                  break;
+
+              case 3: // ARGB8888 -> RGB5A3
+                  for (u32 y = 0; y < h; y++) {
+                      for (u32 x = 0; x < w; x++) {
+                          u32 tw_nibble = twop(x, y, w, h);
+                          u8  raw = src[(tw_nibble >> 1) ^ 1];
+                          u8  idx = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
+                          u32 pe  = pal[idx];
+                          u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+                          dst[GX_TexOffs(x, y, w)] = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+                      }
+                  }
+                  break;
+
+              default: // ARGB1555
+                  for (u32 y = 0; y < h; y++) {
+                      for (u32 x = 0; x < w; x++) {
+                          u32 tw_nibble = twop(x, y, w, h);
+                          u8  raw = src[(tw_nibble >> 1) ^ 1];
+                          u8  idx = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
+                          dst[GX_TexOffs(x, y, w)] = ABGR1555((u16)(pal[idx] & 0xFFFF));
+                      }
+                  }
+                  break;
           }
-        }
+
+          pbuff->has_pal = false; // We baked the palette in, so the GPU doesn't need it.
       }
       break;
     }
