@@ -476,7 +476,7 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H"); // Clear screen
 
-    printf("NullDC4Wii - Alpha 0.19   OPTIONS\n");
+    printf("NullDC4Wii - Alpha 0.20   OPTIONS\n");
     printf("===================================\n\n");
 
     // --- Launch game ---
@@ -660,7 +660,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H"); // Clear Screen
-    printf("\nNullDC4Wii - Alpha 0.19   ");
+    printf("\nNullDC4Wii - Alpha 0.20   ");
     printf("Current directory: %s\n", currentPath);
     // Display current GRAPHISM preset (cycled with Minus)
     printf("(-) GRAPHICS: ");
