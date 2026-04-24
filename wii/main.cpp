@@ -14,6 +14,8 @@
 #include <mp3player.h> // MP3 File
 #include "sample_mp3.h" // MP3 File (generated header)
 #include "wii/wii_audio.h"
+#include <sdcard/wiisd_io.h>  // SD card I/O ops
+#include <ogc/usbstorage.h>   // USB mass storage support
 
 // ============================================================================
 // GLOBAL EMULATOR PRESET
@@ -159,6 +161,17 @@ struct FileEntry
   bool isDirectory;
 };
 
+// ============================================================================
+// STORAGE SOURCE (SD / USB)
+// ============================================================================
+typedef enum {
+  STORAGE_SD  = 0,
+  STORAGE_USB = 1
+} StorageSource;
+
+StorageSource g_storage_source = STORAGE_SD; // Boot on SD by default
+bool g_usb_mounted = false;                  // Track whether USB was successfully mounted
+
 FileEntry fileList[256];
 int fileCount = 0;
 char selectedFilePath[512] = "";
@@ -200,6 +213,46 @@ bool hasValidExtension(const char *filename)
           strcmp(extLower, ".mds") == 0 ||
           strcmp(extLower, ".elf") == 0 ||
           strcmp(extLower, ".chd") == 0);
+}
+
+// ============================================================================
+// STORAGE SWITCHING (SD <-> USB)
+// ============================================================================
+// Attempt to mount USB and switch currentPath to usb:/discs/.
+// Returns true on success, false if USB could not be mounted.
+bool switchToUSB()
+{
+  if (!g_usb_mounted)
+  {
+    // Initialize the USB mass storage subsystem
+    if (USBStorage_Initialize() == 0)
+    {
+      // Give the USB device up to 3 seconds to enumerate
+      for (int retry = 0; retry < 30; retry++)
+      {
+        if (fatMountSimple("usb", &__io_usbstorage))
+        {
+          g_usb_mounted = true;
+          break;
+        }
+        usleep(100000);
+      }
+    }
+  }
+  if (g_usb_mounted)
+  {
+    g_storage_source = STORAGE_USB;
+    strcpy(currentPath, "usb:/dreamcast/");
+    return true;
+  }
+  return false;
+}
+
+// Switch back to SD card
+void switchToSD()
+{
+  g_storage_source = STORAGE_SD;
+  strcpy(currentPath, "sd:/discs/");
 }
 
 // Function to list files and directories in a folder
@@ -289,12 +342,26 @@ void listFilesInDirectory(const char *dirPath)
         }
       }
     }
+
+    // If directory opened but no valid files found, add a placeholder entry
+    if (fileCount == 0)
+    {
+      strncpy(fileList[0].name, "<<NO COMPATIBLE FILE FOUND>>", sizeof(fileList[0].name) - 1);
+      fileList[0].name[sizeof(fileList[0].name) - 1] = '\0';
+      strcpy(fileList[0].fullPath, "");
+      fileList[0].isDirectory = false;
+      fileCount = 1;
+    }
   }
   else
   {
-    // Error
-    perror("Could not open directory");
+    // Directory could not be opened (e.g. no SD/USB, or folder not created yet)
     printf("Could not open directory: %s\n", dirPath);
+    strncpy(fileList[0].name, "<<NO COMPATIBLE FILE FOUND>>", sizeof(fileList[0].name) - 1);
+    fileList[0].name[sizeof(fileList[0].name) - 1] = '\0';
+    strcpy(fileList[0].fullPath, "");
+    fileList[0].isDirectory = false;
+    fileCount = 1;
   }
 }
 
@@ -397,7 +464,8 @@ void displayAccuracyMenu()
 #define OPT_FPS_BOOST   7
 #define OPT_4BPP        8
 #define OPT_8BPP        9
-#define OPT_ROW_COUNT   10  // total rows including blank
+#define OPT_MORE_INFO   10  // "More Info" screen (was button 2 in file browser)
+#define OPT_ROW_COUNT   11  // total rows including blank
 
 // Returns true if the user chose "Launch game", false if they pressed B to go back.
 bool displayOptionsMenu()
@@ -502,8 +570,13 @@ bool displayOptionsMenu()
     printf("\n");
 
     printf("\n");
+
+    // --- More Info ---
+    printf("%s MORE INFO      (press A to open)\n", (selectedRow == OPT_MORE_INFO) ? ">" : " ");
+
+    printf("\n");
     printf("UP/DOWN: Navigate | LEFT/RIGHT: Change value\n");
-    printf("A: Launch | LEFT/RIGHT: Change value | B: Back to file list\n");
+    printf("A: Launch / Open | B: Back to file list\n");
 
     WPAD_ScanPads();
     u32 pressed = WPAD_ButtonsDown(0);
@@ -552,11 +625,16 @@ bool displayOptionsMenu()
         default: break;
       }
     }
-    // --- A: launch only (use LEFT/RIGHT to change values) ---
+    // --- A: launch or open sub-screen ---
     else if (pressed & WPAD_BUTTON_A)
     {
       if (selectedRow == OPT_LAUNCH)
         return true; // proceed to launch
+      else if (selectedRow == OPT_MORE_INFO)
+      {
+        displayAccuracyMenu(); // reuse the existing info/accuracy screen
+        // After returning, stay in the options menu
+      }
     }
     // --- B: go back to file list ---
     else if (pressed & WPAD_BUTTON_B)
@@ -637,7 +715,11 @@ int displayMenuAndSelectFile()
     printf("Contact : xalegamingchannel@gmail.com\n");
     printf("HELP ME ON THE COMPATIBILITY LIST !!\n");
     printf("Compatibility WIKI : https://wiibrew.org/wiki/NullDC4Wii/Compatibility\n\n");
-    printf("A: Select | B: Back | 1: BIOS | 2: More Info | (-) + (+): Exit\n");
+    // Show which storage is active
+    printf("Storage: %s", (g_storage_source == STORAGE_SD) ? "[SD CARD]  (2: Switch to USB)"
+                                                            : "[USB]      (2: Switch to SD)");
+    printf("\n");
+    printf("A: Select | B: Back | 1: BIOS | (-) + (+): Exit\n");
     printf("INGAME : Press (-) and (+) simultaneously to Exit \n");
 
     WPAD_ScanPads();
@@ -664,9 +746,40 @@ int displayMenuAndSelectFile()
     }
     if (pressed & WPAD_BUTTON_2)
     {
-      // Open FPU accuracy menu
-      displayAccuracyMenu();
-      // After returning, continue showing file menu
+      // Toggle between SD and USB storage
+      if (g_storage_source == STORAGE_SD)
+      {
+        // Try to mount and switch to USB
+        printf("\033[2J\033[H");
+        printf("Switching to USB...\n");
+        VIDEO_SetNextFramebuffer(xfb[fb]);
+        VIDEO_Flush();
+        VIDEO_WaitVSync();
+        fb ^= 1;
+        console_init(xfb[fb], 20, 20, rmode->fbWidth, rmode->xfbHeight, rmode->fbWidth * VI_DISPLAY_PIX_SZ);
+
+        if (switchToUSB())
+        {
+          printf("USB mounted! Loading usb:/dreamcast/ ...\n");
+        }
+        else
+        {
+          printf("ERROR: Could not mount USB device.\n");
+          printf("Make sure a USB drive is connected.\n");
+          usleep(2000000);
+          // Stay on SD
+        }
+      }
+      else
+      {
+        // Switch back to SD
+        switchToSD();
+        printf("Switched back to SD card.\n");
+        usleep(500000);
+      }
+      listFilesInDirectory(currentPath);
+      selectedIndex = 0;
+      currentPage = 0;
       continue;
     }
     if (pressed & WPAD_BUTTON_UP)
@@ -713,8 +826,13 @@ int displayMenuAndSelectFile()
     }
     else if (pressed & WPAD_BUTTON_A)
     {
+      // Ignore the placeholder "no files" entry
+      if (strlen(fileList[selectedIndex].fullPath) == 0 && !fileList[selectedIndex].isDirectory)
+      {
+        // Nothing to do — placeholder row
+      }
       // Check if it's a directory
-      if (fileList[selectedIndex].isDirectory)
+      else if (fileList[selectedIndex].isDirectory)
       {
         // Enter directory
         strcpy(currentPath, fileList[selectedIndex].fullPath);
@@ -731,7 +849,8 @@ int displayMenuAndSelectFile()
     else if (pressed & WPAD_BUTTON_B)
     {
       // Go back to parent directory
-      if (strcmp(currentPath, "sd:/discs/") != 0 && strcmp(currentPath, "sd:/discs") != 0)
+      const char *rootPath = (g_storage_source == STORAGE_SD) ? "sd:/discs/" : "usb:/dreamcast/";
+      if (strcmp(currentPath, rootPath) != 0)
       {
         char *lastSlash = strrchr(currentPath, '/');
         if (lastSlash != NULL && lastSlash != currentPath)
@@ -827,7 +946,7 @@ int main(int argc, wchar *argv[])
   }
 
 
-  // Initialise SD Card
+  // Initialise SD Card (primary storage, USB is secondary)
   if (fatInitDefault())
   {
     printf("SD card mounted!\n");
@@ -839,26 +958,18 @@ int main(int argc, wchar *argv[])
   }
   else
   {
-    // If no SD card :
-    printf("ERROR: Failed to mount SD card!\n");
-    printf("Press HOME to exit.\n");
-    while (1)
-    {
-      WPAD_ScanPads();
-      if (WPAD_ButtonsDown(0) & WPAD_BUTTON_HOME)
-        exit(0);
-      usleep(100000); // Wait time to save GPU
-      VIDEO_WaitVSync();
-    }
+    // SD not available: warn user but don't block — they may want to use USB
+    printf("WARNING: Could not mount SD card.\n");
+    printf("You can press 2 in the file browser to switch to USB.\n");
+    usleep(2000000);
   }
 
   void SetApplicationPath(const wchar *path);
 
-  // List files in initial directory
+  // List files in initial directory (always returns at least a placeholder row)
   listFilesInDirectory(currentPath);
 
-  // If there is file (there always will be with the option "No Disc boot to BIOS")
-  if (fileCount > 0)
+  // Main menu loop
   {
     bool launchGame = false;
 
@@ -938,14 +1049,7 @@ int main(int argc, wchar *argv[])
       case 3: printf("CI8 (NORMAL)\n");      break;
       case 4: printf("RGB565\n");            break;
     }
-  }
-  else
-  {
-    // If no valid disc file found: boot to BIOS directly
-    printf("No valid disc files found in sd:/discs/. Booting to BIOS...\n");
-    usleep(2000000);
-    handleBIOSBoot();
-  }
+  } // end main menu loop
 
   // Stop menu music before handing audio to the emulator
   if(mp3mainmenu) {
