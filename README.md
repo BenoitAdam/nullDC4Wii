@@ -8,6 +8,7 @@ a fork from https://github.com/skmp/nullDCe
 
 - Test current state with every game and report compatibility (see "compatibility" below)
 - Help me finding regression (NOT bugs or glitch, only regression for now please)
+- Test USB Key support (games in usb:/dreamcast/) and report to me
 
 ### Developer (Easy)
 
@@ -21,15 +22,15 @@ a fork from https://github.com/skmp/nullDCe
 
 ### Developer (Normal)
 
-- USB Key support
 - Coding routine adjustement for accuracy (FAST/BALANCED/ACCURATE)
 - Coding routine adjustement for performance (LOW/NORMAL/HIGH/EXTRA)
-- both 4/3 and fullscreen support (implemented, need fix on some games)
+- 4/3 support (implemented, need fix on some games like Shenmue)
 - Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
 - Wii U Gamepad, Dualshock 3 and Wii U Pro Controller support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
 
 ### Developer (Hard)
 
+- Texture Cache management (see) #22
 - Improve gxRend.cpp = main file about specific rendering for Wii
 - Splitting gxRend.cpp in multiple files ? (beware this is more tricky than it look)
 - Fix alpha/transparent stuff (may be costly in term of performances)
