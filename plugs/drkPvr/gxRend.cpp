@@ -204,11 +204,90 @@ struct PolyParam
 
 struct TextureCacheDesc
 {
-  GXTexObj tex;
+  GXTexObj  tex;
   GXTlutObj pal;
-  u32 addr;
+  u32  addr;            // orig_tex_addr this slot holds (0 = empty)
   bool has_pal;
+  u32  vq_codebook_w0;  // VQ fingerprint (cb_w0 ^ idx_w0)
+  u32  slot_size;       // total bytes (header + pixel data, 32B-aligned) for scan
 };
+
+// ── Per-frame texture bump allocator ─────────────────────────────────────────
+// vram_buffer (16 MB) is a linear arena, reset once per frame in reset_vtx_state.
+// Each SetTextureParams call either:
+//   a) Finds the texture already decoded this frame (linear scan by addr) → cache hit
+//   b) Allocates a fresh slot (header + exact pixel size) → decode + cache
+//
+// DEADBEEF sentinel in params.vram[orig_tex_addr] is the cross-frame change
+// detector. If the game uploads new texture data to the same address it clears
+// the sentinel → next frame is a cache miss → fresh decode.
+//
+// Why bump instead of LRU slots:
+//   - No fixed slot size → works for any texture up to 14 MB total per frame
+//   - No eviction flashing → a texture decoded once this frame is valid all frame
+//   - Simple and cache-friendly (allocations are sequential)
+//   - 14 MB budget: heavy scenes use ~2-4 MB, leaving ample margin
+static u32 s_bump_offset = 0;
+static const u32 BUMP_TOTAL = 14u * 1024u * 1024u; // 14 MB of vram_buffer (leave 2 MB margin)
+
+static void tex_cache_init()
+{
+  s_bump_offset = 0;
+  // params.vram sentinels are managed per-texture; nothing to clear here.
+}
+
+// tex_frame_reset: call once per frame before new geometry is processed.
+// Invalidates all this-frame cached decoded textures.
+// DEADBEEF sentinels in params.vram are NOT cleared — they survive across
+// frames to avoid re-decoding static textures unnecessarily.
+static void tex_frame_reset()
+{
+  s_bump_offset = 0;
+}
+
+// find_decoded_this_frame: linear scan of bump arena for a matching addr.
+// Returns desc + pixel pointer if found, nullptr on miss.
+static TextureCacheDesc* find_decoded_this_frame(u32 orig_tex_addr, u32 **pixel_out)
+{
+  u32 desc_size = (sizeof(TextureCacheDesc) + 31) & ~31u;
+  u32 off = 0;
+  while (off + desc_size <= s_bump_offset)
+  {
+    TextureCacheDesc *d = (TextureCacheDesc*)&vram_buffer[off];
+    if (d->slot_size == 0) break; // corrupted, stop
+    if (d->addr == orig_tex_addr)
+    {
+      *pixel_out = (u32*)&vram_buffer[off + desc_size];
+      return d;
+    }
+    off += d->slot_size;
+  }
+  return nullptr;
+}
+
+// alloc_tex_slot: carve desc + pixel_bytes from the bump arena.
+static TextureCacheDesc* alloc_tex_slot(u32 pixel_bytes, u32 **pixel_out)
+{
+  u32 desc_size  = (sizeof(TextureCacheDesc) + 31) & ~31u;
+  u32 pixel_size = (pixel_bytes + 31) & ~31u;
+  u32 total      = desc_size + pixel_size;
+
+  if (s_bump_offset + total > BUMP_TOTAL)
+  {
+    // Arena full — wrap. Oldest decoded textures are overwritten.
+    // Their DEADBEEF sentinels in params.vram remain, so they'll re-decode
+    // if seen again this frame (which is fine; they re-get fresh slots).
+    s_bump_offset = 0;
+  }
+
+  TextureCacheDesc *d = (TextureCacheDesc*)&vram_buffer[s_bump_offset];
+  *pixel_out           = (u32*)&vram_buffer[s_bump_offset + desc_size];
+  memset(d, 0, desc_size); // zero header fields
+  d->slot_size         = total;
+  s_bump_offset       += total;
+  return d;
+}
+
 
 void VBlank() {}
 
@@ -348,8 +427,9 @@ void reset_vtx_state()
   curLST = lists;
   curMod = listModes;
   global_regd = false;
-  vtx_min_Z = 131072; // 128 * 1024 // if someone uses more, i realy realy dont care
-  vtx_max_Z = 0;      // lower than 0 is invalid for pvr .. i wonder if SA knows that.
+  vtx_min_Z = 131072;
+  vtx_max_Z = 0;
+  tex_frame_reset(); // reset per-frame texture bump arena
 }
 
 #define VTX_TFX(x) (x)
@@ -714,7 +794,10 @@ void fastcall texture_TW(u8 *p_in, u32 Width, u32 Height)
       PixelConvertor::Convert((u16*)pb, x, y, Width, (u8*)buf);
     }
   }
-  memcpy(p_in, VramWork, Width * Height * 2);
+  // NOTE: do NOT memcpy back to p_in (params.vram). Decoded pixels live in
+  // VramWork (vram_buffer slot). Writing back would overwrite the raw DC
+  // texture data, corrupting it for future scenes and making DEADBEEF
+  // sentinel detection unreliable.
 }
 
 // VQ texture decompressor: expands compressed data into full RGB pixels in GX
@@ -892,30 +975,37 @@ static void SetTextureParams(PolyParam *mod)
   GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
 
   u32 tex_addr = (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
-  u32 *ptex = (u32 *)&params.vram[tex_addr];
+  const u32 orig_tex_addr = tex_addr;
 
-  //// 1. Memory Management & Alignment Fix ////
-
-  // dst (= &pbuff[1]) MUST be 32-byte aligned: GX silently ignores misaligned
-  // texture pointers and renders nothing -> black texture.
-  // tex_addr*2 = TexAddr*16, which is only 16-byte aligned when TexAddr is odd,
-  // so half of all textures were misaligned. The grey bar at the top was the
-  // few cache lines that naturally evicted to RAM during conversion (aligned
-  // by luck to a 32-byte boundary), making that slice visible while the rest
-  // stayed in CPU cache as unreachable zeros for the GX hardware.
-  // Rounding cache_offset up to 32 fixes alignment for every texture.
-  // The minimum of 64 guarantees pbuff (sizeof=~56 bytes before dst) never
-  // falls before the start of vram_buffer.
-  u32 cache_offset = tex_addr * 2;
-  cache_offset = (cache_offset + 31) & ~31u;  // round up -> 32-byte aligned dst
-  if (cache_offset < 64) cache_offset = 64;   // room for TextureCacheDesc header
-  TextureCacheDesc *pbuff = (TextureCacheDesc *)&vram_buffer[cache_offset] - 1;
-
-  u32 FMT = GX_TF_RGB565; // Default format
-  u32 texVQ = 0;
+  // Declare all variables needed by section 1 upfront.
+  bool is_vq = mod->tcw.NO_PAL.VQ_Comp;
+  u32 FMT    = GX_TF_RGB565;
+  u32 texVQ  = 0;
   u8 *vq_codebook;
   u32 w = 8 << mod->tsp.TexU;
   u32 h = 8 << mod->tsp.TexV;
+
+  //// 1. Memory Management ////
+
+  // Look up this texture in the current frame's bump arena.
+  // If found → cache hit, reuse GXTexObj.
+  // If not found → allocate a fresh slot sized exactly for this texture.
+  u32 decode_bytes; // pixel buffer size needed
+  {
+    // For CI4/I4: w*h/2 bytes. For CI8/I8: w*h bytes. For 16bpp: w*h*2 bytes.
+    // We don't know FMT yet, so conservatively use w*h*2 (16bpp worst case).
+    // The actual flush uses the correct size later.
+    decode_bytes = (u32)w * h * 2;
+  }
+
+  u32 *pixel_buf = nullptr;
+  TextureCacheDesc *pbuff = find_decoded_this_frame(orig_tex_addr, &pixel_buf);
+  bool already_decoded_this_frame = (pbuff != nullptr);
+
+  if (!already_decoded_this_frame)
+    pbuff = alloc_tex_slot(decode_bytes, &pixel_buf);
+
+  u32 *dst_base = pixel_buf;
 
   // ── Palette TLUT setup (fmt 5 = CI4, fmt 6 = CI8) ──────────────────────────
 
@@ -967,32 +1057,65 @@ static void SetTextureParams(PolyParam *mod)
   // === End of Palette TLUT setup ===
   
 
-  //// 2. The "Smart" Cache Check ////
+  //// 2. Cache Check ////
 
-  // Only re-process texture if it has changed (marked by DEADBEEF sentinel).
-  if (*ptex != 0xDEADBEEF || pbuff->addr != tex_addr || (mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder))
+  // Two-level cache:
+  //   Level 1 (within frame): find_decoded_this_frame() above — instant hit.
+  //   Level 2 (cross frame):  DEADBEEF sentinel in params.vram for non-VQ,
+  //                           fingerprint in pbuff for VQ.
+  // If already_decoded_this_frame → load GXTexObj and return immediately.
+  // Otherwise check cross-frame validity.
+
+  if (already_decoded_this_frame)
   {
-    u32 *dst = (u32 *)&pbuff[1];
-    VramWork = (u8 *)dst;
-    pbuff->has_pal = false;
-    pbuff->addr = tex_addr;
+    GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
+    return;
+  }
 
-    // [RAWBYTES] debug: log fmt/vq/scan/dims and first 8 raw bytes for every texture load
+  // Cross-frame check.
+  bool cache_valid;
+  if (is_vq)
+  {
+    u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
+    if (mod->tcw.NO_PAL.MipMapped)
+      idx_addr = (idx_addr + MipPoint[mod->tsp.TexU]) & VRAM_MASK;
+
+    u32 cb_w0  = *(u32 *)&params.vram[orig_tex_addr];
+    u32 idx_w0 = *(u32 *)&params.vram[idx_addr];
+
+    u32 fingerprint = cb_w0 ^ idx_w0;
+    cache_valid = (pbuff->addr          == orig_tex_addr)
+               && (pbuff->vq_codebook_w0 == fingerprint);
+  }
+  else
+  {
+    u32 *ptex = (u32 *)&params.vram[orig_tex_addr];
+    cache_valid = (*ptex       == 0xDEADBEEF)
+               && (pbuff->addr == orig_tex_addr)
+               && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
+  }
+
+  if (!cache_valid)
+  {
+    u32 *dst = dst_base;
+    VramWork  = (u8 *)dst;
+    pbuff->has_pal = false;
+    pbuff->addr    = orig_tex_addr;
+
+    if (is_vq)
+    {
+      u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
+      if (mod->tcw.NO_PAL.MipMapped)
+        idx_addr = (idx_addr + MipPoint[mod->tsp.TexU]) & VRAM_MASK;
+      u32 cb_w0  = *(u32 *)&params.vram[orig_tex_addr];
+      u32 idx_w0 = *(u32 *)&params.vram[idx_addr];
+      pbuff->vq_codebook_w0 = cb_w0 ^ idx_w0;
+    }
+
     if(DEBUG_MESSAGE()) {
-      u8 *raw = (u8 *)ptex;
-      printf("[RAWBYTES] addr=%06X fmt=%d vq=%d scan=%d mip=%d IgnTexA=%d TexU=%d TexV=%d w=%d h=%d tsp=%08X raw[0..7]=%02X%02X %02X%02X %02X%02X %02X%02X\n",
-        tex_addr,
-        (int)mod->tcw.NO_PAL.PixelFmt,
-        (int)mod->tcw.NO_PAL.VQ_Comp,
-        (int)mod->tcw.NO_PAL.ScanOrder,
-        (int)mod->tcw.NO_PAL.MipMapped,
-        (int)mod->tsp.IgnoreTexA,
-        (int)mod->tsp.TexU,
-        (int)mod->tsp.TexV,
-        w, h,
-        mod->tsp.full,
-        raw[0], raw[1], raw[2], raw[3],
-        raw[4], raw[5], raw[6], raw[7]);
+      printf("[TEX] addr=%06X fmt=%d vq=%d scan=%d mip=%d w=%d h=%d\n",
+        orig_tex_addr, (int)mod->tcw.NO_PAL.PixelFmt, (int)mod->tcw.NO_PAL.VQ_Comp,
+        (int)mod->tcw.NO_PAL.ScanOrder, (int)mod->tcw.NO_PAL.MipMapped, w, h);
     }
 
     //// 3. Format Conversion ////
@@ -1616,23 +1739,23 @@ static void SetTextureParams(PolyParam *mod)
 
     //// 4. Hardware Handover ////
 
-    // Flush index/pixel data from CPU cache to RAM for GX.
-    // CI4/I4 = w*h/2 bytes, CI8/I8 = w*h bytes, 16bpp = w*h*2 bytes.
+    // All decoded pixels are in dst (vram_buffer bump slot).
+    // texture_TW no longer memcpys back to params.vram, so decoded data
+    // lives exclusively here — no aliasing, no corruption of raw DC data.
+    void *gx_pixels = (void*)dst;
+
+    // Flush pixel data from CPU cache to RAM for GX.
     {
       u32 flush_sz;
       if      (FMT == GX_TF_CI4 || FMT == GX_TF_I4) flush_sz = w * h / 2;
       else if (FMT == GX_TF_CI8 || FMT == GX_TF_I8) flush_sz = w * h;
       else                                            flush_sz = w * h * 2;
-      DCFlushRange(dst, (flush_sz + 31) & ~31u);
+      DCFlushRange(gx_pixels, (flush_sz + 31) & ~31u);
     }
 
-    // Init Texture Object.
-    // CI formats use GX_InitTexObjCI (references GX_TLUT0 loaded above).
-    // All libogc GX format parameters are plain u8/u32 — no named enum types.
-    // Mipmaps are not supported for CI textures on GX.
     if (pbuff->has_pal)
     {
-      GX_InitTexObjCI(&pbuff->tex, dst, (u16)w, (u16)h, (u8)FMT,
+      GX_InitTexObjCI(&pbuff->tex, gx_pixels, (u16)w, (u16)h, (u8)FMT,
                       (u8)TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
                       (u8)TexUV(mod->tsp.FlipV, mod->tsp.ClampV),
                       GX_FALSE, GX_TLUT0);
@@ -1641,21 +1764,28 @@ static void SetTextureParams(PolyParam *mod)
     {
       bool use_mips = (!texVQ && mod->tcw.NO_PAL.MipMapped && get_graphism_preset() >= 2)
                 ? GX_TRUE : GX_FALSE;
-      GX_InitTexObj(&pbuff->tex, dst, w, h, FMT, TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
+      GX_InitTexObj(&pbuff->tex, gx_pixels, w, h, FMT,
+                    TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
                     TexUV(mod->tsp.FlipV, mod->tsp.ClampV), use_mips);
     }
 
-    
-    // Values from Apply Graphism Preset (LOW/NORMAL/HIGH/EXTRA)
     GX_InitTexObjLOD(&pbuff->tex, min_filt, mag_filt,
                   0.0f, 10.0f, lod_bias,
                   bias_clamp, edge_lod, aniso);
-    
-                  
-    *ptex = 0xDEADBEEF;
+
+    // Write DEADBEEF sentinel for non-VQ so we detect cross-frame changes.
+    // VQ uses fingerprint; no VRAM write needed.
+    if (!is_vq)
+    {
+      u32 *ptex = (u32 *)&params.vram[orig_tex_addr];
+      *ptex = 0xDEADBEEF;
+    }
 
     if(DEBUG_MESSAGE()){
-      printf("Texture:%d %d %dx%d %08X --> %08X\n", mod->tcw.NO_PAL.PixelFmt, mod->tcw.NO_PAL.ScanOrder, 8 << mod->tsp.TexU, 8 << mod->tsp.TexV, tex_addr, (u32)dst);
+      printf("Texture:%d %d %dx%d %08X --> %08X\n",
+        mod->tcw.NO_PAL.PixelFmt, mod->tcw.NO_PAL.ScanOrder,
+        8 << mod->tsp.TexU, 8 << mod->tsp.TexV,
+        orig_tex_addr, (u32)gx_pixels);
     }
   }
 
@@ -2032,6 +2162,8 @@ void StartRender()
   {
     if (s_did_3d_render)
     {
+      if(DEBUG_MESSAGE()) printf("[PATH] 2D-after-3D: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
+        FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
       s_did_3d_render = false;
       GX_DrawDone();
       GX_CopyDisp(frameBuffer[fb], GX_TRUE);
@@ -2042,6 +2174,9 @@ void StartRender()
       FrameCount++;
       return;
     }
+
+    if(DEBUG_MESSAGE()) printf("[PATH] 2D-blit: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
+      FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
 
     static u16 fb2d_tex[640 * 480] ATTRIBUTE_ALIGN(32);
     u32 vram_addr = FB_R_SOF1 & 0x00FFFFFF;
@@ -2122,6 +2257,9 @@ void StartRender()
     FrameCount++;
     return;
   }
+
+  if(DEBUG_MESSAGE()) printf("[PATH] 3D: FB_W_SOF1=%08X FB_R_SOF1=%08X VtxCnt=%d lists=%d\n",
+    FB_W_SOF1, FB_R_SOF1, VtxCnt, (int)(curLST - lists));
 
   s_render_start_time = os_GetSeconds();
   DoRender();
@@ -2649,12 +2787,10 @@ bool InitRenderer()
   printf("sizeof GXTexObj: %d\n", sizeof(GXTexObj));
   printf("sizeof GXTlutObj: %d\n", sizeof(GXTlutObj));
 
+  tex_cache_init(); // must be after vram_buffer is allocated by _vmem_reserve()
+
   return TileAccel.Init();
 }
-
-// ============================
-// TERM RENDERER
-// ============================
 
 void TermRenderer()
 {
@@ -2668,6 +2804,7 @@ void TermRenderer()
 void ResetRenderer(bool Manual)
 {
   TileAccel.Reset(Manual);
+  tex_cache_init(); // clear texture cache on reset
   VertexCount = 0;
   FrameCount = 0;
 }
