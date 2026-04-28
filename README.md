@@ -62,6 +62,8 @@ vmu_default.bin
 
 #### Game file in SD:/discs/
 
+**Test with castlevania Resurrection and Sega Tetris to begin**
+
 Put your folders with GDI in this directory
 
 CDI doesn't work now
@@ -111,7 +113,6 @@ DC - Gamecube
 
 
 To exit : R + L + Z  
-
 
 
 ### VMU (Memory card)
