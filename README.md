@@ -184,6 +184,15 @@ While the emulator is still in alpha, the visual difference is limited for now.
 | **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Should display better |
 | **RGB565** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
 
+Cache setting (starting alpha 0.21)
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **CACHE_VERY_FAST** | skmp original algorythm. very fast but buggy  | Max FPS |
+| **CACHE_FAST** | Fast and more accurate cache. Buggy in some games  | Good FPS |
+| **CACHE_NORMAL** | Best accuracy. Display mostly correctly | Mid FPS |
+| **CACHE_QUALITY** | Redraw every frame. Accurate. Only for Debug | Low FPS |
+
 See Compatiblity guide for hints depending of the games
 
 ## For Developpers :
