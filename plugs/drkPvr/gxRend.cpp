@@ -64,6 +64,35 @@ extern "C" int get_8bpp_preset();
 #define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 3)      // CI8 (Accurate, ^3 BE correction)
 #define TEXTURE_8BPP_RGB565() (get_8bpp_preset() == 4) // RGB565
 
+// ── Texture cache mode ────────────────────────────────────────────────────────
+//
+//   CACHE_VERY_FAST (0):   Original nullDC4Wii algorithm (by the original author).
+//                          Slot = vram_buffer[tex_addr * 2] — zero lookup overhead.
+//                          Known flaws: VQ codebook corruption, sentinel at wrong
+//                          location for mipped textures, overlapping slots for
+//                          closely-packed textures (e.g. Crazy Taxi logo).
+//                          Fastest possible, but glitchy on some games.
+//
+//   CACHE_FAST (1):        Per-frame bump allocator + O(1) persistent hash table.
+//                          Cross-frame: reuses last frame's pixel buffer if still
+//                          valid. Best FPS for texture-heavy 3D scenes with good
+//                          compatibility.
+//
+//   CACHE_NORMAL (2):      Per-frame bump allocator (recommended default).
+//                          Within-frame dedup. Cross-frame DEADBEEF/VQ fingerprint.
+//                          No eviction, no flashing. Good compatibility and performance.
+//
+//   CACHE_QUALITY (3):     No cross-frame caching. Re-decode every texture every
+//                          frame. Slowest, but guaranteed correct for any game.
+//                          Use for debugging glitches.
+//
+// Will be driven by a menu option (get_texture_cache_preset()).
+int g_texture_cache_mode = 3; // 0=VERY_FAST  1=FAST  2=NORMAL  3=QUALITY
+#define CACHE_VERY_FAST()   (g_texture_cache_mode == 0)
+#define CACHE_FAST()        (g_texture_cache_mode == 1)
+#define CACHE_NORMAL()      (g_texture_cache_mode == 2)
+#define CACHE_QUALITY()     (g_texture_cache_mode == 3)
+
 // Unused
 int current_frameskip;
 int frame_counter;
@@ -209,83 +238,146 @@ struct TextureCacheDesc
   u32  addr;            // orig_tex_addr this slot holds (0 = empty)
   bool has_pal;
   u32  vq_codebook_w0;  // VQ fingerprint (cb_w0 ^ idx_w0)
-  u32  slot_size;       // total bytes (header + pixel data, 32B-aligned) for scan
+  u32  slot_size;       // bump allocator: total bytes of this allocation
 };
 
-// ── Per-frame texture bump allocator ─────────────────────────────────────────
-// vram_buffer (16 MB) is a linear arena, reset once per frame in reset_vtx_state.
-// Each SetTextureParams call either:
-//   a) Finds the texture already decoded this frame (linear scan by addr) → cache hit
-//   b) Allocates a fresh slot (header + exact pixel size) → decode + cache
-//
-// DEADBEEF sentinel in params.vram[orig_tex_addr] is the cross-frame change
-// detector. If the game uploads new texture data to the same address it clears
-// the sentinel → next frame is a cache miss → fresh decode.
-//
-// Why bump instead of LRU slots:
-//   - No fixed slot size → works for any texture up to 14 MB total per frame
-//   - No eviction flashing → a texture decoded once this frame is valid all frame
-//   - Simple and cache-friendly (allocations are sequential)
-//   - 14 MB budget: heavy scenes use ~2-4 MB, leaving ample margin
+// ── CACHE_VERY_FAST: original nullDC4Wii algorithm ────────────────────────────────
+// Slot position = vram_buffer[tex_addr * 2] — O(1), no lookup.
+// Reproduced verbatim from the original author's code.
+// Known flaws preserved intentionally (see mode comment at top of file).
+static INLINE TextureCacheDesc* skimp_slot(u32 tex_addr)
+{
+  u32 cache_offset = tex_addr * 2;
+  cache_offset = (cache_offset + 31) & ~31u;
+  if (cache_offset < 64) cache_offset = 64;
+  return (TextureCacheDesc*)&vram_buffer[cache_offset] - 1;
+}
+
+// ── CACHE_QUALITY / CACHE_NORMAL: per-frame bump allocator ───────────────────
+// vram_buffer [0 .. BUMP_TOTAL) is a linear arena, reset each frame.
+// QUALITY: always re-decodes (no cross-frame check).
+// NORMAL:  cross-frame DEADBEEF/VQ-fingerprint check skips re-decode for
+//          unchanged static textures; within-frame dedup via bump_find().
+static const u32 BUMP_TOTAL = 14u * 1024u * 1024u; // 14 MB bump arena
+
 static u32 s_bump_offset = 0;
-static const u32 BUMP_TOTAL = 14u * 1024u * 1024u; // 14 MB of vram_buffer (leave 2 MB margin)
+static void bump_reset() { s_bump_offset = 0; }
 
-static void tex_cache_init()
+static TextureCacheDesc* bump_find(u32 orig_tex_addr, u32 **pixel_out)
 {
-  s_bump_offset = 0;
-  // params.vram sentinels are managed per-texture; nothing to clear here.
-}
-
-// tex_frame_reset: call once per frame before new geometry is processed.
-// Invalidates all this-frame cached decoded textures.
-// DEADBEEF sentinels in params.vram are NOT cleared — they survive across
-// frames to avoid re-decoding static textures unnecessarily.
-static void tex_frame_reset()
-{
-  s_bump_offset = 0;
-}
-
-// find_decoded_this_frame: linear scan of bump arena for a matching addr.
-// Returns desc + pixel pointer if found, nullptr on miss.
-static TextureCacheDesc* find_decoded_this_frame(u32 orig_tex_addr, u32 **pixel_out)
-{
-  u32 desc_size = (sizeof(TextureCacheDesc) + 31) & ~31u;
+  u32 desc_sz = (sizeof(TextureCacheDesc) + 31) & ~31u;
   u32 off = 0;
-  while (off + desc_size <= s_bump_offset)
+  while (off + desc_sz <= s_bump_offset)
   {
     TextureCacheDesc *d = (TextureCacheDesc*)&vram_buffer[off];
-    if (d->slot_size == 0) break; // corrupted, stop
-    if (d->addr == orig_tex_addr)
-    {
-      *pixel_out = (u32*)&vram_buffer[off + desc_size];
-      return d;
-    }
+    if (d->slot_size == 0) break;
+    if (d->addr == orig_tex_addr) { *pixel_out = (u32*)&vram_buffer[off + desc_sz]; return d; }
     off += d->slot_size;
   }
   return nullptr;
 }
 
-// alloc_tex_slot: carve desc + pixel_bytes from the bump arena.
-static TextureCacheDesc* alloc_tex_slot(u32 pixel_bytes, u32 **pixel_out)
+static TextureCacheDesc* bump_alloc(u32 pixel_bytes, u32 **pixel_out)
 {
-  u32 desc_size  = (sizeof(TextureCacheDesc) + 31) & ~31u;
-  u32 pixel_size = (pixel_bytes + 31) & ~31u;
-  u32 total      = desc_size + pixel_size;
-
-  if (s_bump_offset + total > BUMP_TOTAL)
-  {
-    // Arena full — wrap. Oldest decoded textures are overwritten.
-    // Their DEADBEEF sentinels in params.vram remain, so they'll re-decode
-    // if seen again this frame (which is fine; they re-get fresh slots).
-    s_bump_offset = 0;
-  }
-
+  u32 desc_sz   = (sizeof(TextureCacheDesc) + 31) & ~31u;
+  u32 pixel_sz  = (pixel_bytes + 31) & ~31u;
+  u32 total     = desc_sz + pixel_sz;
+  if (s_bump_offset + total > BUMP_TOTAL) s_bump_offset = 0;
   TextureCacheDesc *d = (TextureCacheDesc*)&vram_buffer[s_bump_offset];
-  *pixel_out           = (u32*)&vram_buffer[s_bump_offset + desc_size];
-  memset(d, 0, desc_size); // zero header fields
+  *pixel_out           = (u32*)&vram_buffer[s_bump_offset + desc_sz];
+  memset(d, 0, desc_sz);
   d->slot_size         = total;
   s_bump_offset       += total;
   return d;
+}
+
+// ── CACHE_FAST: bump + persistent hash table ──────────────────────────
+// Same bump arena for pixel data (reset each frame).
+// Persistent hash table maps orig_tex_addr → bump offset from LAST frame.
+// On frame reset: bump resets BUT the hash table retains the last slot offset.
+// Cache hit: sentinel/fingerprint still valid AND last-frame pixel buffer
+//            is still in vram_buffer (only possible if offset < s_bump_hwm,
+//            the high-water mark from the previous frame).
+//
+// This gives O(1) lookup with no linear scan, and correctly handles the case
+// where the game changes texture content (sentinel clears → re-decode).
+//
+// Hash table: 512 buckets, open addressing with linear probe.
+// Each entry: {addr, bump_offset, vq_fingerprint, has_pal}.
+// Pixel data lives at vram_buffer[bump_offset + desc_sz].
+// On frame start: s_bump_hwm = s_bump_offset (save previous frame's extent).
+// Hash table entries whose offset >= s_bump_hwm are stale (arena wrapped).
+
+static const u32 PERF_HASH_SIZE = 512u; // must be power of 2
+
+struct PerfHashEntry
+{
+  u32  addr;           // orig_tex_addr (0 = empty)
+  u32  bump_off;       // offset into vram_buffer where this slot lives
+  u32  vq_fingerprint; // VQ cache key
+  bool has_pal;
+};
+
+static PerfHashEntry s_perf_hash[PERF_HASH_SIZE];
+static u32           s_bump_hwm = 0; // high-water mark from previous frame
+
+static void perf_hash_init()
+{
+  memset(s_perf_hash, 0, sizeof(s_perf_hash));
+  s_bump_hwm = 0;
+}
+
+static INLINE u32 perf_hash(u32 addr)
+{
+  // Knuth multiplicative hash, fold to table size
+  return ((addr * 2654435761u) >> 23) & (PERF_HASH_SIZE - 1);
+}
+
+// perf_hash_find: O(1) average lookup.
+static PerfHashEntry* perf_hash_find(u32 orig_tex_addr)
+{
+  u32 h = perf_hash(orig_tex_addr);
+  for (u32 i = 0; i < PERF_HASH_SIZE; ++i)
+  {
+    u32 idx = (h + i) & (PERF_HASH_SIZE - 1);
+    if (s_perf_hash[idx].addr == 0)         return nullptr; // empty slot = not found
+    if (s_perf_hash[idx].addr == orig_tex_addr) return &s_perf_hash[idx];
+  }
+  return nullptr;
+}
+
+// perf_hash_insert: insert or update entry.
+static PerfHashEntry* perf_hash_insert(u32 orig_tex_addr)
+{
+  u32 h = perf_hash(orig_tex_addr);
+  for (u32 i = 0; i < PERF_HASH_SIZE; ++i)
+  {
+    u32 idx = (h + i) & (PERF_HASH_SIZE - 1);
+    if (s_perf_hash[idx].addr == 0 || s_perf_hash[idx].addr == orig_tex_addr)
+    {
+      s_perf_hash[idx].addr = orig_tex_addr;
+      return &s_perf_hash[idx];
+    }
+  }
+  // Table full — evict the probe-start slot (rare)
+  s_perf_hash[h] = {};
+  s_perf_hash[h].addr = orig_tex_addr;
+  return &s_perf_hash[h];
+}
+
+// ── Unified cache interface ───────────────────────────────────────────────────
+static void tex_cache_init()
+{
+  s_bump_offset = 0;
+  perf_hash_init();
+}
+
+static void tex_frame_reset()
+{
+  if (CACHE_FAST())
+    s_bump_hwm = s_bump_offset; // save extent of last frame's allocations
+  bump_reset();                 // reset arena for new frame
+  // Hash table and params.vram sentinels survive across frames.
 }
 
 
@@ -987,23 +1079,43 @@ static void SetTextureParams(PolyParam *mod)
 
   //// 1. Memory Management ////
 
-  // Look up this texture in the current frame's bump arena.
-  // If found → cache hit, reuse GXTexObj.
-  // If not found → allocate a fresh slot sized exactly for this texture.
-  u32 decode_bytes; // pixel buffer size needed
+  u32 decode_bytes = (u32)w * h * 2; // 16bpp worst-case
+  u32 *pixel_buf   = nullptr;
+  TextureCacheDesc *pbuff = nullptr;
+  bool already_decoded_this_frame = false;
+
+  if (CACHE_VERY_FAST())
   {
-    // For CI4/I4: w*h/2 bytes. For CI8/I8: w*h bytes. For 16bpp: w*h*2 bytes.
-    // We don't know FMT yet, so conservatively use w*h*2 (16bpp worst case).
-    // The actual flush uses the correct size later.
-    decode_bytes = (u32)w * h * 2;
+    // Original algorithm: slot derived directly from tex_addr. O(1), no scan.
+    pbuff     = skimp_slot(tex_addr); // uses tex_addr (not orig) — matches original
+    pixel_buf = (u32*)&pbuff[1];
   }
-
-  u32 *pixel_buf = nullptr;
-  TextureCacheDesc *pbuff = find_decoded_this_frame(orig_tex_addr, &pixel_buf);
-  bool already_decoded_this_frame = (pbuff != nullptr);
-
-  if (!already_decoded_this_frame)
-    pbuff = alloc_tex_slot(decode_bytes, &pixel_buf);
+  else if (CACHE_FAST())
+  {
+    // Check within-frame bump first (fastest path for repeated polys).
+    pbuff = bump_find(orig_tex_addr, &pixel_buf);
+    if (pbuff)
+    {
+      already_decoded_this_frame = true;
+    }
+    else
+    {
+      // Allocate new bump slot; record in hash table after decode.
+      pbuff = bump_alloc(decode_bytes, &pixel_buf);
+    }
+  }
+  else
+  {
+    // QUALITY and NORMAL: pure bump allocator.
+    // NORMAL: check within-frame dedup first.
+    if (CACHE_NORMAL())
+    {
+      pbuff = bump_find(orig_tex_addr, &pixel_buf);
+      if (pbuff) already_decoded_this_frame = true;
+    }
+    if (!pbuff)
+      pbuff = bump_alloc(decode_bytes, &pixel_buf);
+  }
 
   u32 *dst_base = pixel_buf;
 
@@ -1059,56 +1171,128 @@ static void SetTextureParams(PolyParam *mod)
 
   //// 2. Cache Check ////
 
-  // Two-level cache:
-  //   Level 1 (within frame): find_decoded_this_frame() above — instant hit.
-  //   Level 2 (cross frame):  DEADBEEF sentinel in params.vram for non-VQ,
-  //                           fingerprint in pbuff for VQ.
-  // If already_decoded_this_frame → load GXTexObj and return immediately.
-  // Otherwise check cross-frame validity.
-
   if (already_decoded_this_frame)
   {
     GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
     return;
   }
 
-  // Cross-frame check.
-  bool cache_valid;
-  if (is_vq)
+  bool cache_valid = false;
+
+  if (CACHE_VERY_FAST())
   {
-    u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
-    if (mod->tcw.NO_PAL.MipMapped)
-      idx_addr = (idx_addr + MipPoint[mod->tsp.TexU]) & VRAM_MASK;
-
-    u32 cb_w0  = *(u32 *)&params.vram[orig_tex_addr];
-    u32 idx_w0 = *(u32 *)&params.vram[idx_addr];
-
-    u32 fingerprint = cb_w0 ^ idx_w0;
-    cache_valid = (pbuff->addr          == orig_tex_addr)
-               && (pbuff->vq_codebook_w0 == fingerprint);
+    // Original algorithm: sentinel at params.vram[tex_addr], addr check.
+    // Uses tex_addr (not orig_tex_addr) — matches original behaviour exactly.
+    u32 *ptex_skimp = (u32*)&params.vram[tex_addr];
+    cache_valid = (*ptex_skimp == 0xDEADBEEF) && (pbuff->addr == tex_addr);
   }
-  else
+  else if (!CACHE_QUALITY())
   {
-    u32 *ptex = (u32 *)&params.vram[orig_tex_addr];
-    cache_valid = (*ptex       == 0xDEADBEEF)
-               && (pbuff->addr == orig_tex_addr)
-               && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
-  }
-
-  if (!cache_valid)
-  {
-    u32 *dst = dst_base;
-    VramWork  = (u8 *)dst;
-    pbuff->has_pal = false;
-    pbuff->addr    = orig_tex_addr;
-
+    // NORMAL and FAST: corrected sentinel at orig_tex_addr.
     if (is_vq)
     {
       u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
       if (mod->tcw.NO_PAL.MipMapped)
         idx_addr = (idx_addr + MipPoint[mod->tsp.TexU]) & VRAM_MASK;
-      u32 cb_w0  = *(u32 *)&params.vram[orig_tex_addr];
-      u32 idx_w0 = *(u32 *)&params.vram[idx_addr];
+      u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
+      u32 idx_w0 = *(u32*)&params.vram[idx_addr];
+      u32 fp = cb_w0 ^ idx_w0;
+
+      if (CACHE_FAST())
+      {
+        // Check persistent hash table for cross-frame hit.
+        PerfHashEntry *he = perf_hash_find(orig_tex_addr);
+        if (he && he->vq_fingerprint == fp && he->bump_off < s_bump_hwm)
+        {
+          // Pixel data from last frame is still in vram_buffer (not yet overwritten).
+          u32 desc_sz = (sizeof(TextureCacheDesc) + 31) & ~31u;
+          u32 *last_pixels = (u32*)&vram_buffer[he->bump_off + desc_sz];
+          // Re-init GXTexObj pointing to last frame's pixel buffer.
+          bool use_mips = (!texVQ && mod->tcw.NO_PAL.MipMapped && get_graphism_preset() >= 2)
+                      ? GX_TRUE : GX_FALSE;
+          if (he->has_pal)
+            GX_InitTexObjCI(&pbuff->tex, last_pixels, (u16)w, (u16)h, (u8)FMT,
+                            (u8)TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
+                            (u8)TexUV(mod->tsp.FlipV, mod->tsp.ClampV),
+                            GX_FALSE, GX_TLUT0);
+          else
+            GX_InitTexObj(&pbuff->tex, last_pixels, w, h, FMT,
+                          TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
+                          TexUV(mod->tsp.FlipV, mod->tsp.ClampV), use_mips);
+          GX_InitTexObjLOD(&pbuff->tex, min_filt, mag_filt, 0.0f, 10.0f, lod_bias,
+                            bias_clamp, edge_lod, aniso);
+          pbuff->addr          = orig_tex_addr;
+          pbuff->vq_codebook_w0 = fp;
+          pbuff->has_pal        = he->has_pal;
+          GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
+          return;
+        }
+        cache_valid = false; // must re-decode
+      }
+      else
+      {
+        cache_valid = (pbuff->addr == orig_tex_addr) && (pbuff->vq_codebook_w0 == fp);
+      }
+    }
+    else
+    {
+      if (CACHE_FAST())
+      {
+        // Check persistent hash table for cross-frame non-VQ hit.
+        u32 *ptex = (u32*)&params.vram[orig_tex_addr];
+        if (*ptex == 0xDEADBEEF)
+        {
+          PerfHashEntry *he = perf_hash_find(orig_tex_addr);
+          if (he && he->bump_off < s_bump_hwm)
+          {
+            u32 desc_sz = (sizeof(TextureCacheDesc) + 31) & ~31u;
+            u32 *last_pixels = (u32*)&vram_buffer[he->bump_off + desc_sz];
+            bool use_mips = (!texVQ && mod->tcw.NO_PAL.MipMapped && get_graphism_preset() >= 2)
+                        ? GX_TRUE : GX_FALSE;
+            if (he->has_pal)
+              GX_InitTexObjCI(&pbuff->tex, last_pixels, (u16)w, (u16)h, (u8)FMT,
+                              (u8)TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
+                              (u8)TexUV(mod->tsp.FlipV, mod->tsp.ClampV),
+                              GX_FALSE, GX_TLUT0);
+            else
+              GX_InitTexObj(&pbuff->tex, last_pixels, w, h, FMT,
+                            TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
+                            TexUV(mod->tsp.FlipV, mod->tsp.ClampV), use_mips);
+            GX_InitTexObjLOD(&pbuff->tex, min_filt, mag_filt, 0.0f, 10.0f, lod_bias,
+                              bias_clamp, edge_lod, aniso);
+            pbuff->addr    = orig_tex_addr;
+            pbuff->has_pal = he->has_pal;
+            GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
+            return;
+          }
+        }
+        cache_valid = false; // must re-decode
+      }
+      else
+      {
+        u32 *ptex = (u32*)&params.vram[orig_tex_addr];
+        cache_valid = (*ptex == 0xDEADBEEF)
+                   && (pbuff->addr == orig_tex_addr)
+                   && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
+      }
+    }
+  }
+  // CACHE_QUALITY: cache_valid stays false, always re-decode.
+
+  if (!cache_valid)
+  {
+    u32 *dst = dst_base;
+    VramWork  = (u8*)dst;
+    pbuff->has_pal = false;
+    pbuff->addr    = CACHE_VERY_FAST() ? tex_addr : orig_tex_addr;
+
+    if (is_vq && !CACHE_VERY_FAST())
+    {
+      u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
+      if (mod->tcw.NO_PAL.MipMapped)
+        idx_addr = (idx_addr + MipPoint[mod->tsp.TexU]) & VRAM_MASK;
+      u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
+      u32 idx_w0 = *(u32*)&params.vram[idx_addr];
       pbuff->vq_codebook_w0 = cb_w0 ^ idx_w0;
     }
 
@@ -1739,9 +1923,6 @@ static void SetTextureParams(PolyParam *mod)
 
     //// 4. Hardware Handover ////
 
-    // All decoded pixels are in dst (vram_buffer bump slot).
-    // texture_TW no longer memcpys back to params.vram, so decoded data
-    // lives exclusively here — no aliasing, no corruption of raw DC data.
     void *gx_pixels = (void*)dst;
 
     // Flush pixel data from CPU cache to RAM for GX.
@@ -1773,12 +1954,36 @@ static void SetTextureParams(PolyParam *mod)
                   0.0f, 10.0f, lod_bias,
                   bias_clamp, edge_lod, aniso);
 
-    // Write DEADBEEF sentinel for non-VQ so we detect cross-frame changes.
-    // VQ uses fingerprint; no VRAM write needed.
-    if (!is_vq)
+    // Write sentinel / update hash table.
+    if (CACHE_VERY_FAST())
     {
-      u32 *ptex = (u32 *)&params.vram[orig_tex_addr];
-      *ptex = 0xDEADBEEF;
+      // Original algorithm: sentinel at params.vram[tex_addr] (modified address).
+      u32 *ptex_skimp = (u32*)&params.vram[tex_addr];
+      *ptex_skimp = 0xDEADBEEF;
+    }
+    else
+    {
+      // Corrected sentinel at orig_tex_addr for non-VQ.
+      if (!is_vq)
+      {
+        u32 *ptex = (u32*)&params.vram[orig_tex_addr];
+        *ptex = 0xDEADBEEF;
+      }
+
+      // CACHE_FAST: record this allocation in the hash table so next frame
+      // can find the pixel buffer without re-decoding.
+      if (CACHE_FAST())
+      {
+        u32 desc_sz = (sizeof(TextureCacheDesc) + 31) & ~31u;
+        u32 this_bump_off = (u32)((u8*)dst - desc_sz - vram_buffer);
+        PerfHashEntry *he = perf_hash_insert(orig_tex_addr);
+        if (he)
+        {
+          he->bump_off       = this_bump_off;
+          he->vq_fingerprint = pbuff->vq_codebook_w0;
+          he->has_pal        = pbuff->has_pal;
+        }
+      }
     }
 
     if(DEBUG_MESSAGE()){
