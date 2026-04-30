@@ -44,13 +44,13 @@ colour conversion during decompression.
 
 | DC format |Alpha| Best WiiGX format | More info                 | Works ? | Example texture using it |
 | --------- | --- | ----------------- | ------------------------- | ------- | --------------- |
-| RGB565    | 0   | RGB565            | identical format          | ?       |
+| RGB565    | 0   | RGB565            | identical format          | yes ?   |
 | ARGB1555  | 1   | RGB5A3            | closest 16-bit equivalent | yes     | Shenmue Menu & Tree + SEGA logo in Sega Tetris |
 | ARGB4444  | 4   | RGB5A3 or RGBA8   | RGB5A3 loses precision    | yes     | DC letters - Castlevania : Sonia / HUD / Big wall  |
 | ARGB8888  | 8   | RGBA8             | perfect match             | no ?    | Guilty Gear X2, Capcom vs SNK 2, jojo ? |
 | YUV422    | 0   | CMPR or RGA8      | CMPR or RGA8              | ?       | Code Veronica FMV |
-| 4BPP      | Var | CI4 or RGB565     | CI4 doesn't work for now  | yes     | Jojo's health bar, SEGA above Tetris |
-| 8BPP      | Var | CI8 or RGB565     | CI8 doesn't work for now  | yes     | Crazy Taxi : "Total Earned" |
+| 4BPP      | Var | CI4 or RGB565     | CI4 partially work        | yes     | Jojo's health bar, SEGA above Tetris |
+| 8BPP      | Var | CI8 or RGB565     | CI8 partially work        | yes     | Crazy Taxi : "Total Earned" |
 | VQ*       | Var | CMPR              | Best compression low VRAM | ?       | Skyboxes, ground textures |
 
 
@@ -58,7 +58,7 @@ colour conversion during decompression.
 
 | DC VQ Format | A | Best WiiGX Format | Why                   | Works ? | Example texture using it           |                                                                |
 | ------------ | - | ----------------- | --------------------- | ------- | ---------------------------------- |
-| VQ-RGB565    | 0 | CMPR              | Best 4:1 compression  | Fuzzy   | Sega Tetris "Created By" red logo  |
+| VQ-RGB565    | 0 | CMPR              | Best 4:1 compression  | Yes     | Sega Tetris "Created By" red logo  |
 | VQ-ARGB1555  | 1 | CMPR              | Best 4:1 compression  | ?       | ?      |
 | VQ-ARGB4444  | 4 | RGB5A3            | 16-bit Lossy          | ?       | ?      |
 | VQ-YUV422    | 0 | CMPR              | Best 4:1 compression  | ?       | ?      |
