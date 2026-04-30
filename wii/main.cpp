@@ -21,9 +21,10 @@
 // GLOBAL EMULATOR PRESET
 // ============================================================================
 // Global variable to store user's calculations (CPU, FPU, GPU...) accuracy choice
+
 int g_accuracy_preset = 2; // 0=Fast, 1=Balanced, 2=Accurate (default)
 
-// These will be used by sh4_fpu.cpp ... (put additional files here)
+// Used by sh4_fpu.cpp ... (put additional files here)
 extern "C" {
   int get_accuracy_preset() {
     return g_accuracy_preset;
@@ -32,7 +33,7 @@ extern "C" {
 
 int g_graphism_preset = 1; // 0=Low (default), 1=Normal, 2=High, 3=Extra
 
-// These will be used by gxRend.cpp ... (put additional files here)
+// Used by gxRend
 extern "C" {
   int get_graphism_preset() {
     return g_graphism_preset;
@@ -41,7 +42,7 @@ extern "C" {
 
 int g_ratio_preset = 1; // 0=Original (4/3), 1=Fullscreen (defaut)
 
-// These will be used by gxRend (and maybe other files)
+// Used by gxRend
 extern "C" {
   int get_ratio_preset() {
     return g_ratio_preset;
@@ -50,7 +51,7 @@ extern "C" {
 
 int g_advanced_alpha_preset = 0; // 0=no advanced alpha (Default), 1=Advanced Alpha (defaut)
 
-// These will be used by gxRend
+// Used by gxRend
 extern "C" {
   int get_advanced_alpha_preset() {
     return g_advanced_alpha_preset;
@@ -59,7 +60,7 @@ extern "C" {
 
 int g_frameskip_preset = 0; // 0=No frame skip (defaut for now), 1=1 frame skip, 2=2 frame skip, 3=Auto frame skip
 
-// These will be used by gxRend
+// Used by gxRend
 extern "C" {
   int get_frameskip_preset() {
     return g_frameskip_preset;
@@ -73,7 +74,7 @@ int g_4bpp_preset = 2;
 // 3 = CI4 (CI4 normal)
 // 4 = RGB565
 
-// These will be used by gxRend
+// Used by gxRend
 extern "C" {
   int get_4bpp_preset() {
     return g_4bpp_preset;
@@ -87,10 +88,23 @@ int g_8bpp_preset = 2;
 // 3 = CI8 (CI8 normal)
 // 4 = RGB565
 
-// These will be used by gxRend
+// Used by gxRend
 extern "C" {
   int get_8bpp_preset() {
     return g_8bpp_preset;
+  }
+}
+
+int g_texture_cache_preset = 0;
+// 0 = CACHE_VERY_FAST
+// 1 = CACHE_FAST
+// 2 = CACHE_NORMAL
+// 3 = CACHE_QUALITY
+
+// Used by gxRend
+extern "C" {
+  int get_texture_cache_preset() {
+    return g_texture_cache_preset;
   }
 }
 
@@ -126,30 +140,6 @@ extern "C" {
     return g_debug_gdrom;
   }
 }
-
-// ============================================================================
-// FPS BOOST : FASTER FPS Improvements
-// ============================================================================
-
-/* 
-From version alpha 0.14 I'm introducing this global variable
-as Dreamcast Intro and some menu already hit 57FPS, it could be difficult to see regression
-
-From version alpha 0.14, every FPS Boost should be in a "if" or "if/else" statement
-
-FPS Boost should be to 1 when compiling for release
-
-*/
-
-int g_fps_boost = 0; // 0= debug 1=Normal
-
-extern "C" {
-  int get_fps_boost() {
-    return g_fps_boost;
-  }
-}
-
-
 
 // ============================================================================
 
@@ -461,7 +451,7 @@ void displayAccuracyMenu()
 #define OPT_RATIO       4
 #define OPT_ADV_ALPHA   5
 #define OPT_FRAMESKIP   6
-#define OPT_FPS_BOOST   7
+#define OPT_TEX_CACHE   7
 #define OPT_4BPP        8
 #define OPT_8BPP        9
 #define OPT_MORE_INFO   10  // "More Info" screen (was button 2 in file browser)
@@ -476,7 +466,7 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H"); // Clear screen
 
-    printf("NullDC4Wii - Alpha 0.20   OPTIONS\n");
+    printf("NullDC4Wii - Alpha 0.21   OPTIONS\n");
     printf("===================================\n\n");
 
     // --- Launch game ---
@@ -539,11 +529,13 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- FPS Boost ---
-    printf("%s FPS BOOST     : ", (selectedRow == OPT_FPS_BOOST) ? ">" : " ");
-    switch (g_fps_boost) {
-      case 0: printf("[< NO (DEBUG)    >]"); break;
-      case 1: printf("[< YES (DEFAULT) >]"); break;
+    // --- Texture Cache ---
+    printf("%s TEXTURE CACHE : ", (selectedRow == OPT_TEX_CACHE) ? ">" : " ");
+    switch (g_texture_cache_preset) {
+      case 0: printf("[< VERY FAST     >]"); break;
+      case 1: printf("[< FAST          >]"); break;
+      case 2: printf("[< NORMAL        >]"); break;
+      case 3: printf("[< QUALITY       >]"); break;
     }
     printf("\n");
 
@@ -604,7 +596,7 @@ bool displayOptionsMenu()
         case OPT_RATIO:      g_ratio_preset           = (g_ratio_preset           + 1) % 2; break;
         case OPT_ADV_ALPHA:  g_advanced_alpha_preset  = (g_advanced_alpha_preset  + 1) % 2; break;
         case OPT_FRAMESKIP:  g_frameskip_preset       = (g_frameskip_preset       + 3) % 4; break;
-        case OPT_FPS_BOOST:  g_fps_boost              = (g_fps_boost              + 1) % 2; break;
+        case OPT_TEX_CACHE:  g_texture_cache_preset   = (g_texture_cache_preset   + 3) % 4; break;
         case OPT_4BPP:       g_4bpp_preset            = (g_4bpp_preset            + 4) % 5; break;
         case OPT_8BPP:       g_8bpp_preset            = (g_8bpp_preset            + 4) % 5; break;
         default: break;
@@ -619,7 +611,7 @@ bool displayOptionsMenu()
         case OPT_RATIO:      g_ratio_preset           = (g_ratio_preset           + 1) % 2; break;
         case OPT_ADV_ALPHA:  g_advanced_alpha_preset  = (g_advanced_alpha_preset  + 1) % 2; break;
         case OPT_FRAMESKIP:  g_frameskip_preset       = (g_frameskip_preset       + 1) % 4; break;
-        case OPT_FPS_BOOST:  g_fps_boost              = (g_fps_boost              + 1) % 2; break;
+        case OPT_TEX_CACHE:  g_texture_cache_preset   = (g_texture_cache_preset   + 1) % 4; break;
         case OPT_4BPP:       g_4bpp_preset            = (g_4bpp_preset            + 1) % 5; break;
         case OPT_8BPP:       g_8bpp_preset            = (g_8bpp_preset            + 1) % 5; break;
         default: break;
@@ -660,7 +652,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H"); // Clear Screen
-    printf("\nNullDC4Wii - Alpha 0.20   ");
+    printf("\nNullDC4Wii - Alpha 0.21   ");
     printf("Current directory: %s\n", currentPath);
     // Display current GRAPHISM preset (cycled with Minus)
     printf("(-) GRAPHICS: ");
@@ -1032,7 +1024,13 @@ int main(int argc, wchar *argv[])
       case 2: printf("2\n");    break;
       case 3: printf("AUTO\n"); break;
     }
-    printf("FPS Boost      : %s\n", g_fps_boost ? "YES" : "NO (DEBUG)");
+    printf("Texture Cache      : ");
+    switch(g_texture_cache_preset) {
+      case 0: printf("VERY FAST\n"); break;
+      case 1: printf("FAST\n");      break;
+      case 2: printf("NORMAL\n");    break;
+      case 3: printf("QUALITY\n");   break;
+    }
     printf("4BPP Mode      : ");
     switch(g_4bpp_preset) {
       case 0: printf("I4 STUB\n");          break;
