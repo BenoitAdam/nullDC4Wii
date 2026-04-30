@@ -65,10 +65,12 @@ extern "C" int get_8bpp_preset();
 // Texture cache management
 extern "C" int get_texture_cache_preset();
 
-#define CACHE_VERY_FAST()   (get_texture_cache_preset == 0) // Original nullDC4Wii/SKMP algorithm.
-#define CACHE_FAST()        (get_texture_cache_preset == 1) // Still buggy
-#define CACHE_NORMAL()      (get_texture_cache_preset == 2) // Perfect Result (to the cost of FPS)
-#define CACHE_QUALITY()     (get_texture_cache_preset == 3) // For Debug only
+#define CACHE_VERY_FAST()   (get_texture_cache_preset() == 0) // Original nullDC4Wii/SKMP algorithm.
+#define CACHE_FAST()        (get_texture_cache_preset() == 1) // Still buggy
+#define CACHE_NORMAL()      (get_texture_cache_preset() == 2) // Perfect Result (to the cost of FPS)
+#define CACHE_QUALITY()     (get_texture_cache_preset() == 3) // For Debug only
+
+int frame_counter;
 
 #include "config.h"
 #include "gxRend.h"
