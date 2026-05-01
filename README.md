@@ -308,7 +308,8 @@ All together, let's Cast the Dream.
 
 ### Special thanks
 
-All testers and all futur testers
+- All testers and all futur testers
+- People actually helping me on the wiibrew wiki
 
 ### Special no thanks
 
