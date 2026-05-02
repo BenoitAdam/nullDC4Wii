@@ -69,7 +69,7 @@ extern "C" int get_texture_cache_preset();
 #define CACHE_FAST()        (get_texture_cache_preset() == 1) // Still buggy
 #define CACHE_NORMAL()      (get_texture_cache_preset() == 2) // Perfect Result (to the cost of FPS)
 #define CACHE_QUALITY()     (get_texture_cache_preset() == 3) // For Debug only
-
+  
 int frame_counter;
 
 #include "config.h"
@@ -78,6 +78,7 @@ int frame_counter;
 #include <malloc.h>
 #include "regs.h"
 #include "wii/wii_audio.h"
+#include <stdio.h> // needed for log
 
 // The FIFO is the command buffer for the GX hardware. 
 // 256KB is a standard size for most homebrew applications.
@@ -2683,6 +2684,10 @@ void SetFpsText(char *text)
 
 bool InitRenderer()
 {
+  // Diagnostic file logger
+  printf("Log to file check ndclog.txt\n");
+  freopen("/ndclog.txt", "w", stdout);
+  printf("[Init Renderer] Logging started\n");
   // Obtain the preferred video mode from the system
   // This will correspond to the settings in the Wii menu
   rmode = VIDEO_GetPreferredMode(NULL);
