@@ -466,7 +466,7 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H"); // Clear screen
 
-    printf("NullDC4Wii - Alpha 0.21   OPTIONS\n");
+    printf("NullDC4Wii - Alpha 0.22   OPTIONS\n");
     printf("===================================\n\n");
 
     // --- Launch game ---
@@ -652,7 +652,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H"); // Clear Screen
-    printf("\nNullDC4Wii - Alpha 0.21   ");
+    printf("\nNullDC4Wii - Alpha 0.22   ");
     printf("Current directory: %s\n", currentPath);
     // Display current GRAPHISM preset (cycled with Minus)
     printf("(-) GRAPHICS: ");
@@ -942,11 +942,6 @@ int main(int argc, wchar *argv[])
   if (fatInitDefault())
   {
     printf("SD card mounted!\n");
-    // This part export every printf to a txt file and disable every printf afterwards
-    /*
-    if (!fopen("/dolphin", "r"))
-        freopen("/ndclog.txt", "w", stdout);
-        */
   }
   else
   {
