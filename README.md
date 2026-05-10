@@ -9,6 +9,7 @@ a fork from https://github.com/skmp/nullDCe
 - Test current state with every game and report compatibility (see "compatibility" below)
 - Help me finding regression (NOT bugs or glitch, only regression for now please)
 - Test USB Key support (games in usb:/dreamcast/) and report to me
+- Comment / Guides / Documentation (WiiBrew Wiki)
 
 ### Developer (Easy)
 
@@ -18,12 +19,10 @@ a fork from https://github.com/skmp/nullDCe
 - Put external config file for controllers (controls.cfg)
 - Clean Clean Clean
 - Optimize Optimize Optimize
-- Comment / Guides / Documentation
 
 ### Developer (Normal)
 
 - Coding routine adjustement for accuracy (FAST/BALANCED/ACCURATE)
-- Coding routine adjustement for performance (LOW/NORMAL/HIGH/EXTRA)
 - 4/3 support (implemented, need fix on some games like Shenmue)
 - Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
 - Wii U Gamepad, Dualshock 3 and Wii U Pro Controller support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
@@ -308,7 +307,8 @@ All together, let's Cast the Dream.
 
 ### Special thanks
 
-All testers and all futur testers
+- All testers and all futur testers
+- People actually helping me on the wiibrew wiki
 
 ### Special no thanks
 
