@@ -97,7 +97,7 @@ extern "C" {
 
 int g_texture_cache_preset = 0;
 
-int g_player_count = 1; // 1 or 2 players
+int g_player_count = 2; // 1 or 2 players
 
 extern "C" {
   int  get_player_count()      { return g_player_count; }
@@ -474,7 +474,7 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H"); // Clear screen
 
-    printf("NullDC4Wii - Alpha 0.22   OPTIONS\n");
+    printf("NullDC4Wii - Alpha 0.23   OPTIONS\n");
     printf("===================================\n\n");
 
     // --- Launch game ---
@@ -667,7 +667,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H"); // Clear Screen
-    printf("\nNullDC4Wii - Alpha 0.22   ");
+    printf("\nNullDC4Wii - Alpha 0.23   ");
     printf("Current directory: %s\n", currentPath);
     // Display current GRAPHISM preset (cycled with Minus)
     printf("(-) GRAPHICS: ");
