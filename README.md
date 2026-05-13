@@ -8,7 +8,6 @@ a fork from https://github.com/skmp/nullDCe
 
 - Test current state with every game and report compatibility (see "compatibility" below)
 - Help me finding regression (NOT bugs or glitch, only regression for now please)
-- Test USB Key support (games in usb:/dreamcast/) and report to me
 - Comment / Guides / Documentation (WiiBrew Wiki)
 
 ### Developer (Easy)
@@ -59,7 +58,7 @@ a fork from https://github.com/skmp/nullDCe
 dc_nvmem.bin  
 vmu_default.bin  
 
-#### Game file in SD:/discs/
+#### Game file in SD:/discs/ or USB:/dreamcast/
 
 **Test with castlevania Resurrection and Sega Tetris to begin**
 
