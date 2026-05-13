@@ -96,6 +96,13 @@ extern "C" {
 }
 
 int g_texture_cache_preset = 0;
+
+int g_player_count = 1; // 1 or 2 players
+
+extern "C" {
+  int  get_player_count()      { return g_player_count; }
+  void set_player_count(int n) { g_player_count = (n >= 1 && n <= 2) ? n : 1; }
+}
 // 0 = CACHE_VERY_FAST
 // 1 = CACHE_FAST
 // 2 = CACHE_NORMAL
@@ -454,8 +461,9 @@ void displayAccuracyMenu()
 #define OPT_TEX_CACHE   7
 #define OPT_4BPP        8
 #define OPT_8BPP        9
-#define OPT_MORE_INFO   10  // "More Info" screen (was button 2 in file browser)
-#define OPT_ROW_COUNT   11  // total rows including blank
+#define OPT_PLAYERS     10
+#define OPT_MORE_INFO   11  // "More Info" screen
+#define OPT_ROW_COUNT   12  // total rows including blank
 
 // Returns true if the user chose "Launch game", false if they pressed B to go back.
 bool displayOptionsMenu()
@@ -564,6 +572,11 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- More Info ---
+    // --- Players ---
+    printf("%s PLAYERS       : ", (selectedRow == OPT_PLAYERS) ? ">" : " ");
+    printf(g_player_count == 1 ? "[< 1 PLAYER  >]" : "[< 2 PLAYERS >]");
+    printf("\n");
+
     printf("%s MORE INFO      (press A to open)\n", (selectedRow == OPT_MORE_INFO) ? ">" : " ");
 
     printf("\n");
@@ -599,6 +612,7 @@ bool displayOptionsMenu()
         case OPT_TEX_CACHE:  g_texture_cache_preset   = (g_texture_cache_preset   + 3) % 4; break;
         case OPT_4BPP:       g_4bpp_preset            = (g_4bpp_preset            + 4) % 5; break;
         case OPT_8BPP:       g_8bpp_preset            = (g_8bpp_preset            + 4) % 5; break;
+        case OPT_PLAYERS:    g_player_count           = (g_player_count == 1) ? 2 : 1; break;
         default: break;
       }
     }
@@ -614,6 +628,7 @@ bool displayOptionsMenu()
         case OPT_TEX_CACHE:  g_texture_cache_preset   = (g_texture_cache_preset   + 1) % 4; break;
         case OPT_4BPP:       g_4bpp_preset            = (g_4bpp_preset            + 1) % 5; break;
         case OPT_8BPP:       g_8bpp_preset            = (g_8bpp_preset            + 1) % 5; break;
+        case OPT_PLAYERS:    g_player_count           = (g_player_count == 1) ? 2 : 1; break;
         default: break;
       }
     }

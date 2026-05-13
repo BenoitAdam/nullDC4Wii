@@ -79,12 +79,22 @@ static bool mcfg_Create(MapleDeviceType type, u32 bus, u32 port)
 	return true;
 }
 
+// g_player_count is set by main.cpp options menu before EmuMain() is called.
+extern "C" int get_player_count();
+
 void mcfg_CreateDevices()
 {
-	// Port 0: Sega Controller on main slot, two VMUs on sub-slots
+	// Bus 0 = Player 1
 	mcfg_Create(MDT_SegaController, 0, 5);
 	mcfg_Create(MDT_SegaVMU,        0, 0);
 	mcfg_Create(MDT_SegaVMU,        0, 1);
+
+	// Bus 1 = Player 2 (only when 2-player mode is active)
+	if (get_player_count() >= 2)
+	{
+		mcfg_Create(MDT_SegaController, 1, 5);
+		mcfg_Create(MDT_SegaVMU,        1, 0);
+	}
 }
 
 void mcfg_DestroyDevices()
