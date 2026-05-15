@@ -4,7 +4,25 @@
 #include "maple_devs.h"
 #include "maple_cfg.h"
 
-void UpdateInputState(u32 port);
+// ============================================================================
+// Per-device update function declarations.
+// Each lives in its own .cpp file in plugs/drkMapleDevices/.
+// ============================================================================
+void UpdateInputState(u32 port);        // Standard controller  (drkMapleDevices.cpp)
+void UpdateLightGunState(u32 port);     // Light gun            (drkMapleLightGun.cpp)
+void UpdateMaracasState(u32 port);      // Maracas              (drkMapleMaracas.cpp)
+void UpdateKeyboardState(u32 port);     // Keyboard             (drkMapleKeyboard.cpp)
+void UpdateFishingRodState(u32 port);   // Fishing rod          (drkMapleFishingRod.cpp)
+
+// Init functions — called once before the emulator starts
+void InitControllers(void);
+void InitLightGun(void);
+void InitMaracas(void);
+void InitKeyboard(void);
+void InitFishingRod(void);
+
+// Controller type selection set by main.cpp options menu
+extern "C" int get_controller_type();  // 0=standard 1=lightgun 2=maracas 3=keyboard 4=fishing
 
 extern u16 kcode[4];
 extern u32 vks[4];
@@ -21,9 +39,31 @@ static inline u8 SignedToByte(s8 val)
 }
 
 // ----------------------------------------------------------------------------
+// DispatchUpdateInputState
+// Calls the correct platform update function for the active controller type.
+// The keyboard device calls GetInput(nullptr) and reads its own report
+// separately, so we handle that gracefully too.
+// ----------------------------------------------------------------------------
+static void DispatchUpdateInputState(u32 port)
+{
+	switch (get_controller_type())
+	{
+	case 1:  UpdateLightGunState(port);   break;
+	case 2:  UpdateMaracasState(port);    break;
+	case 3:  UpdateKeyboardState(port);   break;
+	case 4:  UpdateFishingRodState(port); break;
+	default: UpdateInputState(port);      break;
+	}
+}
+
+// ----------------------------------------------------------------------------
 // MapleConfigMap
 // Bridges the platform's raw input globals into the PlainJoystickState format
 // expected by the Maple device layer.
+//
+// For the keyboard device, GetInput() is called with pjs=nullptr just to
+// trigger the platform scan; the actual key report is read via
+// GetKeyboardReport() directly in maple_keyboard::dma().
 // ----------------------------------------------------------------------------
 struct MapleConfigMap : IMapleConfigMap
 {
@@ -33,10 +73,14 @@ struct MapleConfigMap : IMapleConfigMap
 
 	void GetInput(PlainJoystickState* pjs) override
 	{
-		if (!pjs || !dev)
+		if (!dev)
 			return;
 
-		UpdateInputState(dev->bus_id);
+		DispatchUpdateInputState(dev->bus_id);
+
+		// Keyboard: caller passes nullptr — nothing else to fill in here.
+		if (!pjs)
+			return;
 
 		// kcode is active-low; bits 0 and 8 and 11-15 are reserved by the
 		// Maple protocol. OR them in so they always read as "not pressed".
@@ -62,15 +106,11 @@ struct MapleConfigMap : IMapleConfigMap
 // ----------------------------------------------------------------------------
 
 // Creates a single Maple device, wires up its config map, and registers it.
-// Returns false if creation fails.
 static bool mcfg_Create(MapleDeviceType type, u32 bus, u32 port)
 {
 	maple_device* dev = maple_Create(type);
 	if (!dev)
-	{
-		// Failed to allocate device — log or assert here if your platform supports it
 		return false;
-	}
 
 	dev->Setup(maple_GetAddress(bus, port));
 	dev->config = new MapleConfigMap(dev);
@@ -79,21 +119,81 @@ static bool mcfg_Create(MapleDeviceType type, u32 bus, u32 port)
 	return true;
 }
 
+// ----------------------------------------------------------------------------
+// mcfg_GetControllerDeviceType
+// Maps the user-facing controller type integer to the correct MapleDeviceType.
+// ----------------------------------------------------------------------------
+static MapleDeviceType mcfg_GetControllerDeviceType()
+{
+	switch (get_controller_type())
+	{
+	case 1:  return MDT_LightGun;
+	case 2:  return MDT_Maracas;
+	case 3:  return MDT_Keyboard;
+	case 4:  return MDT_FishingRod;
+	default: return MDT_SegaController;
+	}
+}
+
+// ----------------------------------------------------------------------------
+// mcfg_InitSpecialDevice
+// Calls the one-time hardware init for whichever special device is selected.
+// Safe to call for the standard controller too (InitControllers already
+// existed before this system was added).
+// ----------------------------------------------------------------------------
+static void mcfg_InitSpecialDevice()
+{
+	switch (get_controller_type())
+	{
+	case 1:  InitLightGun();    break;
+	case 2:  InitMaracas();     break;
+	case 3:  InitKeyboard();    break;
+	case 4:  InitFishingRod();  break;
+	default: InitControllers(); break;
+	}
+}
+
 // g_player_count is set by main.cpp options menu before EmuMain() is called.
 extern "C" int get_player_count();
 
+// ----------------------------------------------------------------------------
+// mcfg_CreateDevices
+// Instantiates the correct Maple devices for all active player slots.
+//
+// Device layout per player:
+//   port 5 = main controller (sub-device slot for the bus root)
+//   port 0 = VMU slot A1
+//   port 1 = VMU slot A2  (only for standard controller)
+//
+// Special devices (light gun, maracas, keyboard, fishing rod) do not use
+// VMUs — the real DC peripherals didn't expose VMU slots either.
+//
+// Maracas note:
+//   Each DC port represents one "player" who uses 2 Wiimotes physically.
+//   The maracas device for bus 1 (P2) needs Wiimotes 2 & 3, so 4 Wiimotes
+//   total are required in 2-player maracas mode.
+// ----------------------------------------------------------------------------
 void mcfg_CreateDevices()
 {
-	// Bus 0 = Player 1
-	mcfg_Create(MDT_SegaController, 0, 5);
-	mcfg_Create(MDT_SegaVMU,        0, 0);
-	mcfg_Create(MDT_SegaVMU,        0, 1);
+	MapleDeviceType ctrlType = mcfg_GetControllerDeviceType();
+	bool isStandard = (ctrlType == MDT_SegaController);
 
-	// Bus 1 = Player 2 (only when 2-player mode is active)
+	// One-time hardware / data-format initialisation
+	mcfg_InitSpecialDevice();
+
+	// --- Bus 0 : Player 1 ---
+	mcfg_Create(ctrlType,       0, 5);  // Main controller
+	mcfg_Create(MDT_SegaVMU,   0, 0);  // VMU slot A1 (always present)
+	if (isStandard)
+		mcfg_Create(MDT_SegaVMU, 0, 1);  // VMU slot A2 (standard only)
+
+	// --- Bus 1 : Player 2 (when 2-player mode is active) ---
 	if (get_player_count() >= 2)
 	{
-		mcfg_Create(MDT_SegaController, 1, 5);
-		mcfg_Create(MDT_SegaVMU,        1, 0);
+		mcfg_Create(ctrlType,     1, 5);
+		mcfg_Create(MDT_SegaVMU, 1, 0);
+		if (isStandard)
+			mcfg_Create(MDT_SegaVMU, 1, 1);
 	}
 }
 

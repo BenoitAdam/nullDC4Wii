@@ -103,6 +103,38 @@ extern "C" {
   int  get_player_count()      { return g_player_count; }
   void set_player_count(int n) { g_player_count = (n >= 1 && n <= 2) ? n : 1; }
 }
+
+// ============================================================================
+// CONTROLLER TYPE (special device selection)
+// ============================================================================
+// Selects which special Maple device to emulate.
+// Applies to ALL active player slots (P1 and P2 use the same device type).
+//
+//   0 = STANDARD    Standard Dreamcast controller (drkMapleDevices.cpp)
+//   1 = LIGHT_GUN   Light gun / Stunner (drkMapleLightGun.cpp)
+//   2 = MARACAS     Samba de Amigo maracas (drkMapleMaracas.cpp)
+//   3 = KEYBOARD    Typing of the Dead USB keyboard (drkMapleKeyboard.cpp)
+//   4 = FISHING_ROD Sega Bass Fishing rod (drkMapleFishingRod.cpp)
+//
+// Note: MARACAS requires 2 Wiimotes per player (4 total for 2-player).
+//       LIGHT_GUN requires Sensor Bar to be connected.
+//       KEYBOARD works best with a USB HID keyboard; falls back to Wiimote D-pad.
+
+int g_controller_type = 0; // Default: standard controller
+
+extern "C" {
+  int get_controller_type() { return g_controller_type; }
+}
+
+// Human-readable names for the launch summary
+static const char* kControllerTypeNames[] = {
+  "STANDARD",
+  "LIGHT GUN",
+  "MARACAS (Samba de Amigo)",
+  "KEYBOARD (Typing of the Dead)",
+  "FISHING ROD (Bass Fishing)",
+};
+static const int kControllerTypeCount = 5;
 // 0 = CACHE_VERY_FAST
 // 1 = CACHE_FAST
 // 2 = CACHE_NORMAL
@@ -462,8 +494,9 @@ void displayAccuracyMenu()
 #define OPT_4BPP        8
 #define OPT_8BPP        9
 #define OPT_PLAYERS     10
-#define OPT_MORE_INFO   11  // "More Info" screen
-#define OPT_ROW_COUNT   12  // total rows including blank
+#define OPT_CTRL_TYPE   11  // Controller type (standard / light gun / maracas / etc.)
+#define OPT_MORE_INFO   12  // "More Info" screen
+#define OPT_ROW_COUNT   13  // total rows including blank
 
 // Returns true if the user chose "Launch game", false if they pressed B to go back.
 bool displayOptionsMenu()
@@ -577,6 +610,25 @@ bool displayOptionsMenu()
     printf(g_player_count == 1 ? "[< 1 PLAYER  >]" : "[< 2 PLAYERS >]");
     printf("\n");
 
+    // --- Controller type ---
+    printf("%s CONTROLLER    : ", (selectedRow == OPT_CTRL_TYPE) ? ">" : " ");
+    switch (g_controller_type) {
+      case 0: printf("[< STANDARD              >]"); break;
+      case 1: printf("[< LIGHT GUN             >]"); break;
+      case 2: printf("[< MARACAS               >]"); break;
+      case 3: printf("[< KEYBOARD              >]"); break;
+      case 4: printf("[< FISHING ROD           >]"); break;
+    }
+    // Show a helpful tip based on device type
+    switch (g_controller_type) {
+      case 1: printf(" (Needs Sensor Bar + IR)"); break;
+      case 2: printf(" (2 Wiimotes per player)"); break;
+      case 3: printf(" (USB keyboard or D-pad)"); break;
+      case 4: printf(" (Motion controls)");        break;
+      default: break;
+    }
+    printf("\n");
+
     printf("%s MORE INFO      (press A to open)\n", (selectedRow == OPT_MORE_INFO) ? ">" : " ");
 
     printf("\n");
@@ -613,6 +665,7 @@ bool displayOptionsMenu()
         case OPT_4BPP:       g_4bpp_preset            = (g_4bpp_preset            + 4) % 5; break;
         case OPT_8BPP:       g_8bpp_preset            = (g_8bpp_preset            + 4) % 5; break;
         case OPT_PLAYERS:    g_player_count           = (g_player_count == 1) ? 2 : 1; break;
+        case OPT_CTRL_TYPE:  g_controller_type        = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
         default: break;
       }
     }
@@ -629,6 +682,7 @@ bool displayOptionsMenu()
         case OPT_4BPP:       g_4bpp_preset            = (g_4bpp_preset            + 1) % 5; break;
         case OPT_8BPP:       g_8bpp_preset            = (g_8bpp_preset            + 1) % 5; break;
         case OPT_PLAYERS:    g_player_count           = (g_player_count == 1) ? 2 : 1; break;
+        case OPT_CTRL_TYPE:  g_controller_type        = (g_controller_type + 1) % kControllerTypeCount; break;
         default: break;
       }
     }
@@ -1057,6 +1111,18 @@ int main(int argc, wchar *argv[])
       case 3: printf("CI8 (NORMAL)\n");      break;
       case 4: printf("RGB565\n");            break;
     }
+    printf("Players        : %d\n", g_player_count);
+    printf("Controller     : %s\n",
+      (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
+        ? kControllerTypeNames[g_controller_type]
+        : "UNKNOWN");
+    // Warn user if controller type has special requirements
+    if (g_controller_type == 1)
+      printf("               (Light gun: make sure Sensor Bar is on!)\n");
+    if (g_controller_type == 2 && g_player_count == 2)
+      printf("               (Maracas 2P: needs 4 Wiimotes!)\n");
+    if (g_controller_type == 3)
+      printf("               (Keyboard: connect USB keyboard for best experience)\n");
   } // end main menu loop
 
   // Stop menu music before handing audio to the emulator

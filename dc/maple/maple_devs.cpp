@@ -606,6 +606,286 @@ struct maple_sega_vmu: maple_base
 	}	
 };
 
+// ============================================================================
+// External update functions defined in the special device .cpp files.
+// Called once per Maple poll (GetCondition) per active port.
+// ============================================================================
+void UpdateLightGunState(u32 port);
+void UpdateMaracasState(u32 port);
+void UpdateKeyboardState(u32 port);
+void UpdateFishingRodState(u32 port);
+
+// Exposed from drkMapleLightGun.cpp for coordinate reporting
+extern "C" u16 GetLightGunX(int port);
+extern "C" u16 GetLightGunY(int port);
+
+// DC_KeyboardReport layout (mirrors USB HID boot protocol, same as DC Maple).
+// The full definition lives in drkMapleKeyboard.cpp; we redeclare it here so
+// maple_keyboard::dma() can read the fields without pulling in that header.
+struct DC_KeyboardReport
+{
+	u8 modifiers;
+	u8 leds;
+	u8 keys[6];
+};
+
+// Exposed from drkMapleKeyboard.cpp for key-code reporting
+extern "C" const DC_KeyboardReport* GetKeyboardReport(int port);
+
+// ============================================================================
+// Light Gun
+// Maple function: MFID_7_LightGun
+// Reports gun X/Y screen coordinates + trigger button state.
+// ============================================================================
+const char* maple_sega_lightgun_name = "Dreamcast Gun";
+
+struct maple_lightgun : maple_base
+{
+	virtual u32 dma(u32 cmd)
+	{
+		switch (cmd)
+		{
+		case MDC_DeviceRequest:
+			// Function type: light gun input
+			w32(MFID_0_Input | MFID_7_LightGun);
+
+			// Capability words
+			w32(0xfe060f00);
+			w32(0);
+			w32(0);
+
+			w8(0xFF);   // Area code
+			w8(0);      // Direction
+
+			wstr(maple_sega_lightgun_name, 30);
+			wstr(maple_sega_brand, 60);
+
+			w16(0x01AE);
+			w16(0x01F4);
+
+			return MDRS_DeviceStatus;
+
+		case MDCF_GetCondition:
+			{
+				PlainJoystickState pjs;
+				config->GetInput(&pjs);   // calls UpdateLightGunState via MapleConfigMap
+
+				// Function type
+				w32(MFID_0_Input | MFID_7_LightGun);
+
+				// Button state (active-low)
+				w16(pjs.kcode);
+
+				// Gun X / Y coordinates (0-639 / 0-479; 0xFFFF = off-screen)
+				int port = dev()->bus_id;
+				w16(GetLightGunX(port));
+				w16(GetLightGunY(port));
+			}
+			return MDRS_DataTransfer;
+
+		default:
+			printf("maple_lightgun: unknown command %d\n", cmd);
+			return MDRE_UnknownFunction;
+		}
+	}
+
+	// Helper: get back to our own bus_id without storing it separately
+	maple_device* dev() { return this; }
+};
+
+// ============================================================================
+// Maracas (Samba de Amigo)
+// Maple function: MFID_0_Input
+// Height encoded in joyx/joyy; shake in lt/rt.
+// ============================================================================
+const char* maple_sega_maracas_name = "Maracas Controller";
+
+struct maple_maracas : maple_base
+{
+	virtual u32 dma(u32 cmd)
+	{
+		switch (cmd)
+		{
+		case MDC_DeviceRequest:
+			w32(MFID_0_Input);
+
+			w32(0xfe060f00);
+			w32(0);
+			w32(0);
+
+			w8(0xFF);
+			w8(0);
+
+			wstr(maple_sega_maracas_name, 30);
+			wstr(maple_sega_brand, 60);
+
+			w16(0x01AE);
+			w16(0x01F4);
+
+			return MDRS_DeviceStatus;
+
+		case MDCF_GetCondition:
+			{
+				PlainJoystickState pjs;
+				config->GetInput(&pjs);   // calls UpdateMaracasState via MapleConfigMap
+
+				w32(MFID_0_Input);
+
+				// Button state
+				w16(pjs.kcode);
+
+				// Shake on trigger bytes (255 = shaking)
+				w8(pjs.trigger[PJTI_R]);  // right maraca shake
+				w8(pjs.trigger[PJTI_L]);  // left  maraca shake
+
+				// Height on analog axes (centered at 0x80)
+				w8(pjs.joy[PJAI_X1]);     // left  maraca height
+				w8(pjs.joy[PJAI_Y1]);     // right maraca height
+
+				// Unused analog axes (centered)
+				w8(0x80);
+				w8(0x80);
+			}
+			return MDRS_DataTransfer;
+
+		default:
+			printf("maple_maracas: unknown command %d\n", cmd);
+			return MDRE_UnknownFunction;
+		}
+	}
+};
+
+// ============================================================================
+// Keyboard (Typing of the Dead)
+// Maple function: MFID_6_Keyboard
+// Reports USB HID key codes directly — DC keyboard IS a USB HID keyboard.
+// ============================================================================
+const char* maple_sega_keyboard_name_local = "Emulated Dreamcast Keyboard";
+
+struct maple_keyboard : maple_base
+{
+	virtual u32 dma(u32 cmd)
+	{
+		switch (cmd)
+		{
+		case MDC_DeviceRequest:
+			w32(MFID_6_Keyboard);
+
+			// Keyboard capability word (matches real DC keyboard)
+			w32(0x00000002);  // 2-byte LED + 6-byte key array
+			w32(0);
+			w32(0);
+
+			w8(0xFF);
+			w8(0);
+
+			wstr(maple_sega_keyboard_name_local, 30);
+			wstr(maple_sega_brand, 60);
+
+			w16(0x0110);
+			w16(0x0200);
+
+			return MDRS_DeviceStatus;
+
+		case MDCF_GetCondition:
+			{
+				// Trigger the platform update so key state is fresh
+				config->GetInput(nullptr);
+
+				int port = bus_id;
+				const DC_KeyboardReport* kr = GetKeyboardReport(port);
+
+				w32(MFID_6_Keyboard);
+
+				if (kr)
+				{
+					w8(kr->modifiers);
+					w8(kr->leds);
+					for (int i = 0; i < 6; i++)
+						w8(kr->keys[i]);
+				}
+				else
+				{
+					// No report available — send all-keys-up
+					w8(0); // modifiers
+					w8(0); // leds
+					for (int i = 0; i < 6; i++)
+						w8(0);
+				}
+			}
+			return MDRS_DataTransfer;
+
+		default:
+			printf("maple_keyboard: unknown command %d\n", cmd);
+			return MDRE_UnknownFunction;
+		}
+	}
+};
+
+// ============================================================================
+// Fishing Rod (Sega Bass Fishing)
+// Maple function: MFID_0_Input
+// Cast state on kcode bit B, reel speed on rt, rod direction on joyx/joyy,
+// cast tension on lt.
+// ============================================================================
+const char* maple_sega_fishingrod_name = "Fishing Controller";
+
+struct maple_fishing_rod : maple_base
+{
+	virtual u32 dma(u32 cmd)
+	{
+		switch (cmd)
+		{
+		case MDC_DeviceRequest:
+			w32(MFID_0_Input);
+
+			w32(0xfe060f00);
+			w32(0);
+			w32(0);
+
+			w8(0xFF);
+			w8(0);
+
+			wstr(maple_sega_fishingrod_name, 30);
+			wstr(maple_sega_brand, 60);
+
+			w16(0x01AE);
+			w16(0x01F4);
+
+			return MDRS_DeviceStatus;
+
+		case MDCF_GetCondition:
+			{
+				PlainJoystickState pjs;
+				config->GetInput(&pjs);   // calls UpdateFishingRodState via MapleConfigMap
+
+				w32(MFID_0_Input);
+
+				// Button state (cast = B bit, etc.)
+				w16(pjs.kcode);
+
+				// rt = reel speed (0-255), lt = cast tension (0-255)
+				w8(pjs.trigger[PJTI_R]);  // reel speed
+				w8(pjs.trigger[PJTI_L]);  // cast tension
+
+				// Rod tip direction
+				w8(pjs.joy[PJAI_X1]);     // horizontal
+				w8(pjs.joy[PJAI_Y1]);     // vertical
+
+				// Unused
+				w8(0x80);
+				w8(0x80);
+			}
+			return MDRS_DataTransfer;
+
+		default:
+			printf("maple_fishing_rod: unknown command %d\n", cmd);
+			return MDRE_UnknownFunction;
+		}
+	}
+};
+
+// ============================================================================
 maple_device* maple_Create(MapleDeviceType type)
 {
 	maple_device* rv=0;
@@ -617,6 +897,22 @@ maple_device* maple_Create(MapleDeviceType type)
 
 	case MDT_SegaVMU:
 		rv = new maple_sega_vmu();
+		break;
+
+	case MDT_LightGun:
+		rv = new maple_lightgun();
+		break;
+
+	case MDT_Maracas:
+		rv = new maple_maracas();
+		break;
+
+	case MDT_Keyboard:
+		rv = new maple_keyboard();
+		break;
+
+	case MDT_FishingRod:
+		rv = new maple_fishing_rod();
 		break;
 
 	default:

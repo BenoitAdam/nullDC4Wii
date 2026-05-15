@@ -5,6 +5,10 @@ enum MapleDeviceType
 {
 	MDT_SegaController,
 	MDT_SegaVMU,
+	MDT_LightGun,       // Dreamcast light gun / Stunner (drkMapleLightGun.cpp)
+	MDT_Maracas,        // Samba de Amigo maracas       (drkMapleMaracas.cpp)
+	MDT_Keyboard,       // DC keyboard / Typing of Dead (drkMapleKeyboard.cpp)
+	MDT_FishingRod,     // Sega Bass Fishing rod         (drkMapleFishingRod.cpp)
 
 	MDT_Count
 };
