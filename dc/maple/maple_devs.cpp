@@ -633,64 +633,104 @@ struct DC_KeyboardReport
 extern "C" const DC_KeyboardReport* GetKeyboardReport(int port);
 
 // ============================================================================
-// Light Gun
-// Maple function: MFID_7_LightGun
-// Reports gun X/Y screen coordinates + trigger button state.
+// Light Gun (Dreamcast "Stunner" / gun peripheral)
+//
+// Real hardware notes (from Maple bus captures):
+//   MDC_DeviceRequest function word: MFID_7_LightGun only (NOT combined with
+//   MFID_0_Input — that combination is not a real DC device and confuses BIOS).
+//
+//   MDCF_GetCondition response layout (10 bytes after the function word):
+//     u32  function   = MFID_7_LightGun
+//     u16  buttons    (active-low, same bit layout as standard controller)
+//     u16  gun_x      (0-639 NTSC; 0xFFFF = off-screen / missed)
+//     u16  gun_y      (0-479 NTSC; 0xFFFF = off-screen / missed)
+//   Total data words: 3 (12 bytes, last 2 bytes are the two u16 coords packed
+//   after the button u16 — all naturally aligned).
+//
+//   MDC_AllStatusReq / MDC_DeviceStatus: BIOS probes these during enumeration.
+//   We respond the same as MDC_DeviceRequest to avoid a hang.
 // ============================================================================
 const char* maple_sega_lightgun_name = "Dreamcast Gun";
 
 struct maple_lightgun : maple_base
 {
+	// Writes the standard device descriptor words (shared by DeviceRequest,
+	// DeviceStatus, AllStatusReq so we don't repeat ourselves).
+	void WriteDescriptor()
+	{
+		// Function type: light gun only — NOT combined with MFID_0_Input.
+		// Real Stunner advertises MFID_7_LightGun exclusively.
+		w32(MFID_7_LightGun);
+
+		// Capability sub-words (light gun has no extra capability data)
+		w32(0x00000000);
+		w32(0x00000000);
+		w32(0x00000000);
+
+		w8(0xFF);   // Area code (world)
+		w8(0x00);   // Direction
+
+		wstr(maple_sega_lightgun_name, 30);
+		wstr(maple_sega_brand,         60);
+
+		w16(0x01AE); // Standby power
+		w16(0x01F4); // Max power
+	}
+
 	virtual u32 dma(u32 cmd)
 	{
 		switch (cmd)
 		{
+		// ----------------------------------------------------------------
+		// Device enumeration — BIOS sends all three of these during boot.
+		// Respond identically for each so enumeration always succeeds.
+		// ----------------------------------------------------------------
 		case MDC_DeviceRequest:
-			// Function type: light gun input
-			w32(MFID_0_Input | MFID_7_LightGun);
-
-			// Capability words
-			w32(0xfe060f00);
-			w32(0);
-			w32(0);
-
-			w8(0xFF);   // Area code
-			w8(0);      // Direction
-
-			wstr(maple_sega_lightgun_name, 30);
-			wstr(maple_sega_brand, 60);
-
-			w16(0x01AE);
-			w16(0x01F4);
-
+		case MDC_DeviceStatus:
+		case MDC_AllStatusReq:
+			printf("[LightGun] MDC_DeviceRequest/Status cmd=0x%02X port=%d\n", cmd, bus_id);
+			WriteDescriptor();
 			return MDRS_DeviceStatus;
 
+		case MDC_DeviceReset:
+		case MDC_DeviceKill:
+			printf("[LightGun] Reset/Kill cmd=0x%02X port=%d\n", cmd, bus_id);
+			return MDRS_DeviceReply;
+
+		// ----------------------------------------------------------------
+		// Input poll — called every frame by the game
+		// ----------------------------------------------------------------
 		case MDCF_GetCondition:
 			{
 				PlainJoystickState pjs;
-				config->GetInput(&pjs);   // calls UpdateLightGunState via MapleConfigMap
+				config->GetInput(&pjs); // -> UpdateLightGunState()
 
-				// Function type
-				w32(MFID_0_Input | MFID_7_LightGun);
+				u16 gx = GetLightGunX(bus_id);
+				u16 gy = GetLightGunY(bus_id);
+
+				printf("[LightGun] GetCondition port=%d kcode=0x%04X x=%d y=%d\n",
+				       bus_id, pjs.kcode, gx, gy);
+
+				// Function word
+				w32(MFID_7_LightGun);
 
 				// Button state (active-low)
 				w16(pjs.kcode);
 
-				// Gun X / Y coordinates (0-639 / 0-479; 0xFFFF = off-screen)
-				int port = dev()->bus_id;
-				w16(GetLightGunX(port));
-				w16(GetLightGunY(port));
+				// Gun coordinates
+				w16(gx);  // 0-639 or 0xFFFF
+				w16(gy);  // 0-479 or 0xFFFF
+
+				// Pad to 4-byte boundary (one dummy byte — total data = 12 bytes = 3 words)
+				w16(0x0000);
 			}
 			return MDRS_DataTransfer;
 
 		default:
-			printf("maple_lightgun: unknown command %d\n", cmd);
+			printf("[LightGun] UNKNOWN cmd=0x%02X port=%d\n", cmd, bus_id);
 			return MDRE_UnknownFunction;
 		}
 	}
-
-	// Helper: get back to our own bus_id without storing it separately
-	maple_device* dev() { return this; }
 };
 
 // ============================================================================

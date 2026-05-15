@@ -112,6 +112,9 @@ static u16 ScaleIRCoord(s32 wiiVal, s32 wiiMax, s32 dcMax)
     return (u16)scaled;
 }
 
+// IR data format set lazily on first update call (WPAD must be fully ready)
+static bool s_ir_format_set[MAX_LG_PLAYERS] = {false, false};
+
 /**
  * Updates light gun input state for one player port.
  * Call once per frame per active port.
@@ -122,6 +125,16 @@ void UpdateLightGunState(u32 port)
 {
     if (port >= (u32)get_player_count() || port >= MAX_LG_PLAYERS)
         return;
+
+    // Enable IR tracking lazily — WPAD must be initialised and running
+    // before SetDataFormat is called, which is guaranteed by the time the
+    // emulator starts polling for input.
+    if (!s_ir_format_set[port])
+    {
+        WPAD_SetDataFormat(port, WPAD_FMT_BTNS_ACC_IR);
+        s_ir_format_set[port] = true;
+        printf("[LightGun] IR data format set for port %d\n", port);
+    }
 
     WPAD_ScanPads();
 
@@ -182,22 +195,21 @@ void UpdateLightGunState(u32 port)
 
 /**
  * Initializes light gun ports to safe default state.
+ * WPAD_SetDataFormat is called lazily on the first update, not here,
+ * because WPAD may not be fully ready during mcfg_CreateDevices().
  */
 void InitLightGun(void)
 {
     for (int i = 0; i < MAX_LG_PLAYERS; i++)
     {
-        kcode[i]  = 0xFFFF;
-        gun_x[i]  = DC_OFFSCREEN;
-        gun_y[i]  = DC_OFFSCREEN;
-        joyx[i]   = 0;
-        joyy[i]   = 0;
-        rt[i]     = 0;
-        lt[i]     = 0;
+        kcode[i]           = 0xFFFF;
+        gun_x[i]           = DC_OFFSCREEN;
+        gun_y[i]           = DC_OFFSCREEN;
+        joyx[i]            = 0;
+        joyy[i]            = 0;
+        rt[i]              = 0;
+        lt[i]              = 0;
+        s_ir_format_set[i] = false;
     }
-
-    // Enable IR on both Wiimotes (required for pointer tracking)
-    WPAD_SetDataFormat(WPAD_CHAN_0, WPAD_FMT_BTNS_ACC_IR);
-    if (get_player_count() >= 2)
-        WPAD_SetDataFormat(WPAD_CHAN_1, WPAD_FMT_BTNS_ACC_IR);
+    printf("[LightGun] Initialized (IR format will be set on first poll)\n");
 }
