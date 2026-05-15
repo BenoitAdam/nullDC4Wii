@@ -154,7 +154,6 @@ void UpdateFishingRodState(u32 port)
 
     WPADData *data    = WPAD_Data(port);
     u32 wiiButtons    = WPAD_ButtonsHeld(port);
-    u32 pressed       = WPAD_ButtonsDown(port);
 
     // Reset buttons
     kcode[port] = 0xFFFF;
