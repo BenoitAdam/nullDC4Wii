@@ -820,38 +820,57 @@ void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
 template <int type>
 void Plannar(u8 *praw, u32 w, u32 h)
 {
-  u16 *ptr = (u16 *)praw;
+  // host_ptr_xor(u16* p) = (u16*)((unat)p ^ (4-sizeof(u16))) = (u16*)((unat)p ^ 2).
+  // This correctly reads a DC little-endian u16 from Wii big-endian VRAM where each
+  // u32 word is stored byte-swapped: the FIRST DC pixel in a u32 lives at byte+2,
+  // the SECOND at byte+0.  ^2 handles that swap correctly for a FIXED address.
+  //
+  // BUT: the original sequential ptr++ loop reads even pixels via ^2 (correct)
+  // then advances ptr by 2 bytes, so the odd pixel is read at byte+2 via ^2
+  // which lands on byte+0 of the NEXT word — reading the wrong pixel.
+  // Net result: every adjacent pair of pixels is swapped.
+  //
+  // FIX: read both pixels of each u32 word at once, extract in correct order.
+  // The u32 read on Wii BE gives the correct DC u32 value directly (host_ptr_xor
+  // for u32 is ^0 = identity, so *(u32*)ptr is already correct).
+  // Within that u32: low 16 bits = first DC pixel, high 16 bits = second DC pixel.
+
+  u32 *src = (u32 *)praw;  // u32 reads give correct DC values directly
   u16 *dst = (u16 *)VramWork;
   u32 x, y;
 
   for (y = 0; y < h; y++)
   {
-    for (x = 0; x < w; x++)
+    for (x = 0; x < w; x += 2)  // two pixels per u32 word
     {
-      // Read with host_ptr_xor for correct byte order.
-      u32 col = *host_ptr_xor(ptr++);
+      u32 word = *src++;          // correct DC u32 value: low=pix0, high=pix1
+      u16 pix0 = (u16)(word & 0xFFFF);
+      u16 pix1 = (u16)(word >> 16);
+
       switch (type)
       {
       case 1555:
-        dst[GX_TexOffs(x, y, w)] = ABGR1555(col);
+        dst[GX_TexOffs(x + 0, y, w)] = ABGR1555(pix0);
+        dst[GX_TexOffs(x + 1, y, w)] = ABGR1555(pix1);
         break;
       case 565:
-        dst[GX_TexOffs(x, y, w)] = ABGR0565(col);
+        dst[GX_TexOffs(x + 0, y, w)] = ABGR0565(pix0);
+        dst[GX_TexOffs(x + 1, y, w)] = ABGR0565(pix1);
         break;
       case 4444:
-        dst[GX_TexOffs(x, y, w)] = ABGR4444(col);
+        dst[GX_TexOffs(x + 0, y, w)] = ABGR4444(pix0);
+        dst[GX_TexOffs(x + 1, y, w)] = ABGR4444(pix1);
         break;
       case 422:
       {
-        s32 Y0 = (col >> 8) & 255; //
-        s32 Yu = (col >> 0) & 255; // p_in[0]
-        u32 col = *ptr++;
-        s32 Y1 = (col >> 8) & 255; // p_in[3]
-        s32 Yv = (col >> 0) & 255; // p_in[2]
-
-        dst[GX_TexOffs(x, y, w)] = YUV422(Y0, Yu, Yv);
-        x++;
-        dst[GX_TexOffs(x, y, w)] = YUV422(Y1, Yu, Yv);
+        // DC YUV422 UYVY: one u32 word = [U][Y0][V][Y1] in DC byte order.
+        // As a correct DC u32 value: bits[7:0]=U, [15:8]=Y0, [23:16]=V, [31:24]=Y1.
+        s32 Yu = (word >>  0) & 255;  // U (Cb)
+        s32 Y0 = (word >>  8) & 255;  // Y0
+        s32 Yv = (word >> 16) & 255;  // V (Cr)
+        s32 Y1 = (word >> 24) & 255;  // Y1
+        dst[GX_TexOffs(x + 0, y, w)] = YUV422(Y0, Yu, Yv);
+        dst[GX_TexOffs(x + 1, y, w)] = YUV422(Y1, Yu, Yv);
       }
       break;
       }
