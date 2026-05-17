@@ -1,3 +1,9 @@
-For my dreamcast emulator for wii
+For my dreamcast emulator for Wii I need your help
+
+Actual state of the emulator :
+- Graphism is somewhat ok, especially in CACHE_NORMAL
+- 4BPP/8BPP is okish, still have problem, but we dont touch that for now.
+
+The problem I want to focus is :
 
 What does this file do and can you improve these files without breaking compatibility ?
