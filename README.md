@@ -10,11 +10,13 @@ a fork from https://github.com/skmp/nullDCe
 - Test 2 player mode on wiimote & gamecube also, please report
 - Help me finding regression (NOT bugs or glitch, only regression for now please)
 - Comment / Guides / Documentation (WiiBrew Wiki)
+- Test and report Fishing Rod/USB Keyboard/Lightgun/Maracas support
+
 
 ### Developer (Easy)
 
 - Player 3/4 Gamecube/Wiimote
-- Fishing Rod/USB Keyboard/Lightgun/Maracas support
+- Fishing Rod/USB Keyboard/Lightgun/Maracas support (probably unsupported now)
 - Put external config file for controllers (controls.cfg)
 - Presets for each game for the graphism. Ideally reads from a *.cfg file
 - Clean Clean Clean
