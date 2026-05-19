@@ -68,7 +68,8 @@ extern "C" int get_texture_cache_preset();
 #define CACHE_VERY_FAST()   (get_texture_cache_preset() == 0) // Original nullDC4Wii/SKMP algorithm.
 #define CACHE_FAST()        (get_texture_cache_preset() == 1) // Still buggy
 #define CACHE_NORMAL()      (get_texture_cache_preset() == 2) // Perfect Result (to the cost of FPS)
-#define CACHE_QUALITY()     (get_texture_cache_preset() == 3) // For Debug only
+#define CACHE_QUALITY()     (get_texture_cache_preset() == 3) // 
+#define CACHE_EXTRA()       (get_texture_cache_preset() == 4) // For Debug only
   
 int frame_counter;
 
@@ -224,7 +225,7 @@ static INLINE TextureCacheDesc* skimp_slot(u32 tex_addr)
   return (TextureCacheDesc*)&vram_buffer[cache_offset] - 1;
 }
 
-// ── CACHE_QUALITY / CACHE_NORMAL: per-frame bump allocator ───────────────────
+// CACHE_EXTRA / CACHE_QUALITY / CACHE_NORMAL: per-frame bump allocator
 static const u32 BUMP_TOTAL = 14u * 1024u * 1024u; // 14 MB bump arena
 
 static u32 s_bump_offset = 0;
@@ -989,13 +990,21 @@ static void SetTextureParams(PolyParam *mod)
   }
   else
   {
-    // QUALITY and NORMAL: pure bump allocator.
+    // NORMAL: pure bump allocator with within-frame dedup.
     // NORMAL: check within-frame dedup first.
     if (CACHE_NORMAL())
     {
       pbuff = bump_find(orig_tex_addr, &pixel_buf);
       if (pbuff) already_decoded_this_frame = true;
     }
+    // QUALITY: duplicate of NORMAL for now; keep it separate so NORMAL can
+    // be optimized independently later.
+    else if (CACHE_QUALITY())
+    {
+      pbuff = bump_find(orig_tex_addr, &pixel_buf);
+      if (pbuff) already_decoded_this_frame = true;
+    }
+    // EXTRA: old QUALITY behavior, pure bump allocation and always re-decode.
     if (!pbuff)
       pbuff = bump_alloc(decode_bytes, &pixel_buf);
   }
@@ -1067,7 +1076,7 @@ static void SetTextureParams(PolyParam *mod)
     if (CACHE_VERY_FAST())
       cache_valid = cache_valid && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
   }
-  else if (!CACHE_QUALITY())
+  else if (CACHE_NORMAL())
   {
     // NORMAL: corrected sentinel at orig_tex_addr.
     if (is_vq)
@@ -1088,7 +1097,28 @@ static void SetTextureParams(PolyParam *mod)
                    && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
     }
   }
-  // CACHE_QUALITY: cache_valid stays false, always re-decode.
+  else if (CACHE_QUALITY())
+  {
+    // QUALITY: duplicate of NORMAL for now.
+    if (is_vq)
+    {
+      u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
+      if (mod->tcw.NO_PAL.MipMapped)
+        idx_addr = (idx_addr + MipPoint[mod->tsp.TexU]) & VRAM_MASK;
+      u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
+      u32 idx_w0 = *(u32*)&params.vram[idx_addr];
+      u32 fp = cb_w0 ^ idx_w0;
+      cache_valid = (pbuff->addr == orig_tex_addr) && (pbuff->vq_codebook_w0 == fp);
+    }
+    else
+    {
+      u32 *ptex = (u32*)&params.vram[orig_tex_addr];
+      cache_valid = (*ptex == 0xDEADBEEF)
+                   && (pbuff->addr == orig_tex_addr)
+                   && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
+    }
+  }
+  // CACHE_EXTRA: cache_valid stays false, always re-decode.
 
   if (!cache_valid)
   {
