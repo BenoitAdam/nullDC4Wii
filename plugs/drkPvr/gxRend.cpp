@@ -231,18 +231,99 @@ static const u32 BUMP_TOTAL = 14u * 1024u * 1024u; // 14 MB bump arena
 static u32 s_bump_offset = 0;
 static void bump_reset() { s_bump_offset = 0; }
 
-static TextureCacheDesc* bump_find(u32 orig_tex_addr, u32 **pixel_out)
+// ── O(1) Hash Map for CACHE_NORMAL bump_find ─────────────────────────────────
+//
+// Replaces the old O(n) linear scan over the bump arena.
+//
+// Layout:
+//   - 512 slots, power-of-two so index = hash & (TEXMAP_SIZE-1).
+//   - Each slot stores the tex_addr key and the byte offset inside
+//     vram_buffer[] where the TextureCacheDesc for that entry lives.
+//     The pixel data immediately follows the descriptor (same layout as
+//     bump_alloc), so pixel_out is trivially derived from the offset.
+//   - TEXMAP_EMPTY (0xFFFFFFFF) marks a free slot. tex_addr 0xFFFFFFFF
+//     is not a valid DC texture address (masked by VRAM_MASK = 0x7FFFFF),
+//     so there is no false-positive risk.
+//   - Collision resolution: linear probing — simple, cache-friendly, and
+//     zero extra allocation. The probe wraps around with & mask.
+//   - Reset cost: memset of 512*8 = 4 KB — fast on PPC with dcbz.
+
+#define TEXMAP_SIZE  512u           // must be power-of-two
+#define TEXMAP_MASK  (TEXMAP_SIZE - 1u)
+#define TEXMAP_EMPTY 0xFFFFFFFFu    // sentinel: slot is free
+
+struct TexMapSlot
+{
+  u32 key;          // tex_addr stored here, TEXMAP_EMPTY if free
+  u32 bump_offset;  // byte offset of TextureCacheDesc in vram_buffer[]
+};
+
+// Static array: ~4 KB, lives in BSS — no heap, no malloc.
+static TexMapSlot s_texmap[TEXMAP_SIZE];
+
+// Knuth multiplicative hash — fast single-multiply on PowerPC.
+// DC tex_addr is already a multiple of 8 (TexAddr<<3), so we shift
+// right by 3 first to spread entropy into the low bits before hashing.
+static INLINE u32 texmap_hash(u32 addr)
+{
+  return ((addr >> 3) * 2654435761u) >> (32u - 9u); // 9 bits → 0..511
+}
+
+// Clear the map in O(TEXMAP_SIZE). Called every frame and on full reset.
+static void hash_map_reset()
+{
+  // memset to 0xFF fills every key field with TEXMAP_EMPTY (0xFFFFFFFF).
+  memset(s_texmap, 0xFF, sizeof(s_texmap));
+}
+
+// Insert a newly allocated descriptor into the map.
+// 'bump_off' is the byte offset returned by bump_alloc (s_bump_offset
+// before the allocation advances).
+static INLINE void hash_map_insert(u32 tex_addr, u32 bump_off)
+{
+  u32 idx = texmap_hash(tex_addr) & TEXMAP_MASK;
+  // Linear probe: find first free slot.
+  // In practice the map is reset every frame so load factor stays low.
+  u32 probe = 0;
+  while (s_texmap[idx].key != TEXMAP_EMPTY && probe < TEXMAP_SIZE)
+  {
+    idx = (idx + 1u) & TEXMAP_MASK;
+    probe++;
+  }
+  // If map is somehow full (shouldn't happen with 512 slots per frame)
+  // just silently drop the insert; bump_find will return nullptr and
+  // the texture will be re-decoded — correct, just not cached this call.
+  if (probe < TEXMAP_SIZE)
+  {
+    s_texmap[idx].key         = tex_addr;
+    s_texmap[idx].bump_offset = bump_off;
+  }
+}
+
+// O(1) replacement for the old O(n) bump_find linear scan.
+// Returns the TextureCacheDesc* and sets *pixel_out, exactly like the
+// old function, so all call-sites remain unchanged.
+static INLINE TextureCacheDesc* hash_map_find(u32 orig_tex_addr, u32 **pixel_out)
 {
   u32 desc_sz = (sizeof(TextureCacheDesc) + 31) & ~31u;
-  u32 off = 0;
-  while (off + desc_sz <= s_bump_offset)
+  u32 idx     = texmap_hash(orig_tex_addr) & TEXMAP_MASK;
+
+  u32 probe = 0;
+  while (probe < TEXMAP_SIZE)
   {
-    TextureCacheDesc *d = (TextureCacheDesc*)&vram_buffer[off];
-    if (d->slot_size == 0) break;
-    if (d->addr == orig_tex_addr) { *pixel_out = (u32*)&vram_buffer[off + desc_sz]; return d; }
-    off += d->slot_size;
+    u32 k = s_texmap[idx].key;
+    if (k == TEXMAP_EMPTY)
+      return nullptr;  // empty slot → key not present
+    if (k == orig_tex_addr)
+    {
+      u32 off = s_texmap[idx].bump_offset;
+      *pixel_out = (u32*)&vram_buffer[off + desc_sz];
+      return (TextureCacheDesc*)&vram_buffer[off];
+    }
+    idx = (idx + 1u) & TEXMAP_MASK;
+    probe++;
   }
-  return nullptr;
+  return nullptr;  // full table, not found (should never happen)
 }
 
 static TextureCacheDesc* bump_alloc(u32 pixel_bytes, u32 **pixel_out)
@@ -251,11 +332,12 @@ static TextureCacheDesc* bump_alloc(u32 pixel_bytes, u32 **pixel_out)
   u32 pixel_sz  = (pixel_bytes + 31) & ~31u;
   u32 total     = desc_sz + pixel_sz;
   if (s_bump_offset + total > BUMP_TOTAL) s_bump_offset = 0;
-  TextureCacheDesc *d = (TextureCacheDesc*)&vram_buffer[s_bump_offset];
-  *pixel_out           = (u32*)&vram_buffer[s_bump_offset + desc_sz];
+  u32 alloc_off            = s_bump_offset;   // capture before advancing
+  TextureCacheDesc *d      = (TextureCacheDesc*)&vram_buffer[alloc_off];
+  *pixel_out               = (u32*)&vram_buffer[alloc_off + desc_sz];
   memset(d, 0, desc_sz);
-  d->slot_size         = total;
-  s_bump_offset       += total;
+  d->slot_size             = total;
+  s_bump_offset           += total;
   return d;
 }
 
@@ -263,11 +345,13 @@ static TextureCacheDesc* bump_alloc(u32 pixel_bytes, u32 **pixel_out)
 static void tex_cache_init()
 {
   s_bump_offset = 0;
+  hash_map_reset();
 }
 
 static void tex_frame_reset()
 {
-  bump_reset(); // reset arena for new frame
+  bump_reset();       // reset arena for new frame
+  hash_map_reset();   // clear hash map — O(4 KB memset), fast on PPC
   // params.vram sentinels survive across frames.
 }
 
@@ -990,23 +1074,30 @@ static void SetTextureParams(PolyParam *mod)
   }
   else
   {
-    // NORMAL: pure bump allocator with within-frame dedup.
-    // NORMAL: check within-frame dedup first.
+    // NORMAL: O(1) hash map dedup (replaces old O(n) bump_find linear scan).
     if (CACHE_NORMAL())
     {
-      pbuff = bump_find(orig_tex_addr, &pixel_buf);
+      pbuff = hash_map_find(orig_tex_addr, &pixel_buf);
       if (pbuff) already_decoded_this_frame = true;
     }
-    // QUALITY: duplicate of NORMAL for now; keep it separate so NORMAL can
-    // be optimized independently later.
+    // QUALITY: still uses the old linear scan so it can be tuned separately.
     else if (CACHE_QUALITY())
     {
-      pbuff = bump_find(orig_tex_addr, &pixel_buf);
+      // NOTE: bump_find removed. QUALITY reuses hash_map_find for now;
+      // split into its own path later if needed.
+      pbuff = hash_map_find(orig_tex_addr, &pixel_buf);
       if (pbuff) already_decoded_this_frame = true;
     }
-    // EXTRA: old QUALITY behavior, pure bump allocation and always re-decode.
+    // EXTRA: pure bump allocation, always re-decode (no dedup).
     if (!pbuff)
+    {
+      u32 alloc_start = s_bump_offset; // capture offset BEFORE bump_alloc advances it
       pbuff = bump_alloc(decode_bytes, &pixel_buf);
+      // Register the new slot in the hash map so the next draw call
+      // referencing the same tex_addr hits the O(1) fast path.
+      if (CACHE_NORMAL() || CACHE_QUALITY())
+        hash_map_insert(orig_tex_addr, alloc_start);
+    }
   }
   u32 *dst_base = pixel_buf;
 
