@@ -6,6 +6,7 @@ wii/boot_dol/
 repomix/
 apps/
 !apps/nulldc4wii/data/game_presets.cfg
+!apps/nulldc4wii/data/meta.xml
 build/
 listfile.bat
 tmp
