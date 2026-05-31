@@ -2162,6 +2162,7 @@ void DoRender()
 
   int last_textured = -1;  // track texture state to skip redundant GX calls
   int last_alpha_fmt = -1; // -1 = unset
+  bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
 
   // Process opaque and then translucent lists.
   for (; drawLST != crLST; drawLST++)
@@ -2200,6 +2201,19 @@ void DoRender()
       {
         SetTextureParams(drawMod);
 
+        // ARGB1555 (fmt 0/7) and ARGB4444 (fmt 2) carry their own alpha in the texture.
+        // On real DC hardware the vertex alpha is ignored for these formats — the PVR
+        // blends using the texture's 1-bit (1555) or 4-bit (4444) alpha directly.
+        // Under GX_MODULATE the TEV multiplies vertex RGBA by texture RGBA, so a
+        // vertex alpha of 0 (which DC games leave at 0 for opaque-with-cutout polys)
+        // wipes the texture alpha and makes the polygon invisible.
+        // Fix: force vertex alpha to 0xFF for those formats so MODULATE leaves the
+        // texture alpha untouched.
+        {
+          u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
+          force_vtx_alpha_opaque = (fmt == 0 || fmt == 2 || fmt == 7);
+        }
+
         // Test - Claude say this is more accurate for alpha ?
         if (ADVANCED_ALPHA())
         {
@@ -2221,6 +2235,11 @@ void DoRender()
           }
         }
       }
+      else
+      {
+        // Untextured polygon — vertex alpha is meaningful as-is, never override it.
+        force_vtx_alpha_opaque = false;
+      }
 
       drawMod++;
       count &= 0x7FFF;
@@ -2232,7 +2251,13 @@ void DoRender()
       while (count--)
       {
         GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
-        GX_Color1u32(HOST_TO_LE32(drawVTX->col));
+        // For ARGB1555/4444 textures the DC game may leave vertex alpha = 0,
+        // expecting the hardware to ignore it. Force alpha = 0xFF so GX_MODULATE
+        // does not multiply the texture alpha away.
+        u32 vcol = drawVTX->col;
+        if (force_vtx_alpha_opaque)
+          vcol |= 0xFF000000u;
+        GX_Color1u32(HOST_TO_LE32(vcol));
         GX_TexCoord2f32(drawVTX->u, drawVTX->v);
         drawVTX++;
       }
