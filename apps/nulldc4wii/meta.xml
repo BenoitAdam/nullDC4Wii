@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <app version="1">
-  <name>NullDC4Wii</name>
+  <name>NullDC4Wii a024</name>
   <coder>Xale00, Skmp, NulldcTeam, Joseph Jordan, Flycast Team, AI</coder>
-  <version>Alpha 0.07</version>
-  <release_date>20260204</release_date>
+  <version>Alpha 0.24</version>
+  <release_date>20260531</release_date>
   <short_description>Dreamcast Emulator (Experimental)</short_description> 
   <long_description>NullDC4Wii is an attempt to port NullDC for Wii.
   
   It has been compiled years ago but never released.
 
   Put bios in sd:/apps/nulldc4wii/data/
-  Put games in sd:/discs/
+  Put games in sd:/discs/ or usb:/dreamcast/
    </long_description> 
 </app>
