@@ -192,7 +192,8 @@ Cache setting (starting alpha 0.21)
 | **CACHE_VERY_FAST** | skmp original algorythm. very fast but buggy  | Max FPS |
 | **CACHE_FAST** | Fast and more accurate cache. Buggy in some games  | Good FPS |
 | **CACHE_NORMAL** | Best accuracy. Display mostly correctly | Mid FPS |
-| **CACHE_QUALITY** | Redraw every frame. Accurate. Only for Debug | Low FPS |
+| **CACHE_QUALITY** | Best accuracy. Display mostly correctly | Mid FPS |
+| **CACHE_EXTRA** | Redraw every frame. Accurate (Only for dev & Debug) | Low FPS |
 
 See Compatiblity guide for hints depending of the games
 
