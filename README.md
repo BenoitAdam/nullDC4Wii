@@ -31,7 +31,6 @@ a fork from https://github.com/skmp/nullDCe
 
 ### Developer (Hard)
 
-- Texture Cache management (see) #22
 - Improve gxRend.cpp = main file about specific rendering for Wii
 - Splitting gxRend.cpp in multiple files ? (beware this is more tricky than it look)
 - Fix alpha/transparent stuff (may be costly in term of performances)
