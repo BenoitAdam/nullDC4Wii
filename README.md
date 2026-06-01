@@ -7,6 +7,7 @@ a fork from https://github.com/skmp/nullDCe
 ### Simple
 
 - Test current state with every game and report compatibility (see "compatibility" below)
+- Create presets for games
 - Test 2 player mode on wiimote & gamecube also, please report
 - Help me finding regression (NOT bugs or glitch, only regression for now please)
 - Comment / Guides / Documentation (WiiBrew Wiki)
@@ -18,7 +19,6 @@ a fork from https://github.com/skmp/nullDCe
 - Player 3/4 Gamecube/Wiimote
 - Fishing Rod/USB Keyboard/Lightgun/Maracas support (probably unsupported now)
 - Put external config file for controllers (controls.cfg)
-- Presets for each game for the graphism. Ideally reads from a *.cfg file
 - Clean Clean Clean
 - Optimize Optimize Optimize
 
@@ -28,10 +28,10 @@ a fork from https://github.com/skmp/nullDCe
 - 4/3 support (implemented, need fix on some games like Shenmue)
 - Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
 - Wii U Gamepad, Dualshock 3 and Wii U Pro Controller support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
+- Support for CDI/CHD/ELF game file
 
 ### Developer (Hard)
 
-- Texture Cache management (see) #22
 - Improve gxRend.cpp = main file about specific rendering for Wii
 - Splitting gxRend.cpp in multiple files ? (beware this is more tricky than it look)
 - Fix alpha/transparent stuff (may be costly in term of performances)
@@ -181,7 +181,7 @@ While the emulator is still in alpha, the visual difference is limited for now.
 |------|----------| ------------------------- | 
 | **I4_STUB/I8_STUB** | Dummy algorythm  | Some element doesn't display at all, for max FPS |
 | **I4 (FAST)/I8 (FAST)** | Basic algorythm  | Display in grey Scale (Use for debug) |
-| **CI4 (FAST)/CI8 (FAST)** | Basic algirythm | Display mostly correctly (consume a bit of FPS) |
+| **CI4 (FAST)/CI8 (FAST)** | Basic algorythm | Display mostly correctly (consume a bit of FPS) |
 | **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Should display better |
 | **RGB565** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
 
@@ -192,7 +192,8 @@ Cache setting (starting alpha 0.21)
 | **CACHE_VERY_FAST** | skmp original algorythm. very fast but buggy  | Max FPS |
 | **CACHE_FAST** | Fast and more accurate cache. Buggy in some games  | Good FPS |
 | **CACHE_NORMAL** | Best accuracy. Display mostly correctly | Mid FPS |
-| **CACHE_QUALITY** | Redraw every frame. Accurate. Only for Debug | Low FPS |
+| **CACHE_QUALITY** | Best accuracy. Display mostly correctly | Mid FPS |
+| **CACHE_EXTRA** | Redraw every frame. Accurate (Only for dev & Debug) | Low FPS |
 
 See Compatiblity guide for hints depending of the games
 
