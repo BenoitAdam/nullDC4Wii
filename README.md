@@ -7,6 +7,7 @@ a fork from https://github.com/skmp/nullDCe
 ### Simple
 
 - Test current state with every game and report compatibility (see "compatibility" below)
+- Create presets for games
 - Test 2 player mode on wiimote & gamecube also, please report
 - Help me finding regression (NOT bugs or glitch, only regression for now please)
 - Comment / Guides / Documentation (WiiBrew Wiki)
@@ -18,7 +19,6 @@ a fork from https://github.com/skmp/nullDCe
 - Player 3/4 Gamecube/Wiimote
 - Fishing Rod/USB Keyboard/Lightgun/Maracas support (probably unsupported now)
 - Put external config file for controllers (controls.cfg)
-- Presets for each game for the graphism. Ideally reads from a *.cfg file
 - Clean Clean Clean
 - Optimize Optimize Optimize
 
