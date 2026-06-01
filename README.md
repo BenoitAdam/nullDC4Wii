@@ -28,6 +28,7 @@ a fork from https://github.com/skmp/nullDCe
 - 4/3 support (implemented, need fix on some games like Shenmue)
 - Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
 - Wii U Gamepad, Dualshock 3 and Wii U Pro Controller support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
+- Support for CDI/CHD/ELF game file
 
 ### Developer (Hard)
 
