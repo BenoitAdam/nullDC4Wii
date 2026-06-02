@@ -45,6 +45,7 @@ SOURCES     += ../plugins/
 SOURCES     += ../plugs/nullExtDev/
 SOURCES     += ../plugs/drkMapleDevices/
 SOURCES     += ../plugs/EmptyAICA/
+SOURCES     += ../plugs/EmptyARM/
 SOURCES     += ../plugs/nullAICA/
 SOURCES     += ../plugs/vbaARM/
 SOURCES     += ../plugs/ImgReader/

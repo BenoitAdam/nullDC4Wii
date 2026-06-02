@@ -24,7 +24,14 @@
 #include "plugs/vbaARM/arm_aica.h"   // armUpdateARM, arm_sh4_bias
 
 // Forward declarations for the vbaARM plugin entry points defined in vbaARM.cpp
-extern "C" void armGetInterface(plugin_interface* info);
+// OLD - uses real vbaARM
+// extern "C" void armGetInterface(plugin_interface* info);
+
+// NEW - uses empty stub
+#include "plugs/emptyARM/emptyARM.h"
+#define armGetInterface emptyArmGetInterface
+
+
 
 //to avoid including windows.h
 #define EXCEPTION_EXECUTE_HANDLER       1
