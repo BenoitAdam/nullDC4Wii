@@ -29,6 +29,7 @@ a fork from https://github.com/skmp/nullDCe
 - Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
 - Wii U Gamepad, Dualshock 3 and Wii U Pro Controller support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
 - Support for CDI/CHD/ELF game file
+- AICA ARM7 handshake
 
 ### Developer (Hard)
 
@@ -40,6 +41,7 @@ a fork from https://github.com/skmp/nullDCe
 - Full Dynarec implementation (AI seems to know about this)
 - Sound implementation step 1 : NullAICA
 - Sound implementation step 2 : AICA ARM7
+- WinCE Games support
 
 
 ## Installation
