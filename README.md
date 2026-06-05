@@ -41,7 +41,7 @@ a fork from https://github.com/skmp/nullDCe
 - Full Dynarec implementation (AI seems to know about this)
 - Sound implementation step 1 : NullAICA
 - Sound implementation step 2 : AICA ARM7
-- WinCE Games support
+- WinCE Games support https://github.com/BenoitAdam94/nullDC4Wii/issues/37
 
 
 ## Installation
