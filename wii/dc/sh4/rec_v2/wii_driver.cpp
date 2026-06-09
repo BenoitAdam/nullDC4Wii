@@ -325,6 +325,26 @@ void ppc_sh_store_f32(u32 D,shil_param prm)
 	ppc_sh_store_f32(D,prm._reg);
 }
 
+// --- Vector float element access -------------------------------------------
+// For a float param (scalar FMT_F32, or vector FMT_V4/FMT_V16), prm._reg/_imm
+// holds the BASE fr/xf register index. Element i lives at offset(base)+i*4 in
+// the context. These load/store the i-th single-precision element.
+//
+// Float registers are NOT pinned (GetFloatReg is unused), so these always hit
+// memory — exactly what the vector ops need.
+u32 ppc_fvec_ofs(shil_param prm,u32 i)
+{
+	return Sh4cntx.offset(prm._reg) + i*4;
+}
+void ppc_fvec_load(u32 fd,shil_param prm,u32 i)
+{
+	ppc_lfs(fd,ppc_contex,ppc_fvec_ofs(prm,i));
+}
+void ppc_fvec_store(u32 fs,shil_param prm,u32 i)
+{
+	ppc_stfs(fs,ppc_contex,ppc_fvec_ofs(prm,i));
+}
+
 // ==========================
 // CALLING CONVENTION ADAPTER
 // ==========================
@@ -1393,6 +1413,87 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				ppc_fsubx(ppc_f0,ppc_f0,ppc_farg1,0);		// f0 = (double)(s32)r1
 				ppc_frspx(ppc_farg0,ppc_f0,0);			// narrow to single
 				ppc_sh_store_f32(ppc_farg0,op->rd);
+			}
+			break;
+
+		// --- FMAC: rd = rs1 + rs2 * rs3  (scalar) -----------------------------
+		// fmadds(D,A,B,C) = A*C + B  ->  rs2*rs3 + rs1
+		case shop_fmac:
+			ppc_sh_load_f32(ppc_f0,op->rs1);		// f0 = rs1 (addend)
+			ppc_sh_load_f32(ppc_f1,op->rs2);		// f1 = rs2
+			ppc_sh_load_f32(ppc_f2,op->rs3);		// f2 = rs3
+			ppc_fmaddsx(ppc_f0,ppc_f1,ppc_f0,ppc_f2,0);	// f0 = f1*f2 + f0
+			ppc_sh_store_f32(ppc_f0,op->rd);
+			break;
+
+		// --- FIPR: rd = dot(v1, v2) over 4 elements ---------------------------
+		// rs1,rs2 are FV4 vectors (base fr); rd is the 4th element slot.
+		case shop_fipr:
+			{
+				ppc_fvec_load(ppc_f1,op->rs1,0);
+				ppc_fvec_load(ppc_f2,op->rs2,0);
+				ppc_fmulsx(ppc_f0,ppc_f1,ppc_f2,0);		// acc = a0*b0
+				for (u32 i=1;i<4;i++)
+				{
+					ppc_fvec_load(ppc_f1,op->rs1,i);
+					ppc_fvec_load(ppc_f2,op->rs2,i);
+					ppc_fmaddsx(ppc_f0,ppc_f1,ppc_f0,ppc_f2,0);	// acc = ai*bi + acc
+				}
+				ppc_sh_store_f32(ppc_f0,op->rd);
+			}
+			break;
+
+		// --- FTRV: rd(vec4) = matrix(rs2) x vec(rs1) --------------------------
+		// rs1 = FV4 vector (fr base), rs2 = XMTRX (xf base), rd = FV4 (aliases rs1).
+		//   out[i] = m[i]*v[0] + m[4+i]*v[1] + m[8+i]*v[2] + m[12+i]*v[3]
+		// Results go to f4..f7 first because rd aliases rs1 (must finish reads
+		// before any store).
+		case shop_ftrv:
+			{
+				// Load the input vector once into f8..f11.
+				for (u32 j=0;j<4;j++)
+					ppc_fvec_load(ppc_f8+j,op->rs1,j);
+
+				for (u32 i=0;i<4;i++)
+				{
+					ppc_fvec_load(ppc_f1,op->rs2,i);		// m[i]
+					ppc_fmulsx(ppc_f0,ppc_f1,ppc_f8,0);		// out = m[i]*v0
+					for (u32 j=1;j<4;j++)
+					{
+						ppc_fvec_load(ppc_f1,op->rs2,j*4+i);	// m[j*4+i]
+						ppc_fmaddsx(ppc_f0,ppc_f1,ppc_f0,ppc_f8+j,0);	// out += m*vj
+					}
+					ppc_fmrx(ppc_f4+i,ppc_f0,0);			// stash out[i]
+				}
+				for (u32 i=0;i<4;i++)
+					ppc_fvec_store(ppc_f4+i,op->rd,i);
+			}
+			break;
+
+		// --- FSRRA / FSQRT: TEMPORARILY on the accurate C fallback ------------
+		// The frsqrte estimate (~5-bit) was suspected of distorting the BIOS
+		// swirl. Bisecting: route these to the canonical sqrtf path while
+		// keeping fipr/ftrv/fmac/fsca native. If the swirl renders correctly,
+		// the estimate precision is the culprit; restore the native estimate
+		// (or add Newton refinement) afterwards.
+		//   (cases intentionally omitted -> fall through to default fallback)
+
+		// --- FSCA: rd[0]=sin_table[idx], rd[1]=sin_table[idx+0x4000] ----------
+		// idx = rs1 & 0xFFFF. Table entries are f32 (4 bytes).
+		case shop_fsca:
+			{
+				ppc_sh_load(ppc_rarg0,op->rs1);			// rarg0 = fpul value
+				ppc_rlwinmx(ppc_rarg0,ppc_rarg0,2,14,29,0);	// rarg0 = (idx & 0xFFFF) * 4
+				// rarg1 = &sin_table  (split hi/lo via lis+addi pattern)
+				u32 lo=ppc_addr_high(ppc_rarg1,(void*)&sin_table[0]);
+				ppc_addi(ppc_rarg1,ppc_rarg1,lo);		// rarg1 = base of sin_table
+				ppc_lfsx(ppc_f0,ppc_rarg1,ppc_rarg0);		// sin_table[idx]
+				ppc_fvec_store(ppc_f0,op->rd,0);
+				// +0x4000 entries * 4 bytes = +0x10000 (doesn't fit addi s16;
+				// use addis to add 1<<16).
+				ppc_addis(ppc_rarg0,ppc_rarg0,1);		// rarg0 += 0x10000
+				ppc_lfsx(ppc_f1,ppc_rarg1,ppc_rarg0);		// sin_table[idx+0x4000]
+				ppc_fvec_store(ppc_f1,op->rd,1);
 			}
 			break;
 
