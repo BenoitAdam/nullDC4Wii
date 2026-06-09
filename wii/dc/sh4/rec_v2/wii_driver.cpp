@@ -43,6 +43,7 @@
 	  - Minor formatting/whitespace consistency improvements; no logic changes.
 */
 #include "types.h"
+#include <stddef.h>	// offsetof — used for jit_scratch context slot addressing
 #include "dc\sh4\sh4_opcode_list.h"
 
 #include "dc\sh4\sh4_registers.h"
@@ -409,6 +410,84 @@ void binop_start_fpu(shil_opcode* op)
 void binop_end_fpu(shil_opcode* op)
 {
 	ppc_sh_store_f32(ppc_farg0,op->rd);
+}
+
+// =================
+// UNARY OPERATIONS
+// =================
+
+// Unary integer: loads rs1 -> rarg0, operation writes rarg0, stores rarg0 -> rd
+void unop_start(shil_opcode* op)
+{
+	verify(!op->rs1.is_null() && !op->rd.is_null());
+	verify(op->rd.is_reg());
+
+	if (op->rs1.is_imm())
+		ppc_li(ppc_rarg0,op->rs1._imm);
+	else
+	{
+		verify(op->rs1.is_reg());
+		ppc_sh_load(ppc_rarg0,op->rs1);
+	}
+}
+
+void unop_end(shil_opcode* op)
+{
+	ppc_sh_store(ppc_rarg0,op->rd);
+}
+
+// Unary fpu: loads rs1 -> farg0, operation writes farg0, stores farg0 -> rd
+void unop_start_fpu(shil_opcode* op)
+{
+	verify(!op->rs1.is_null() && !op->rd.is_null());
+	verify(op->rs1.is_reg());
+	verify(op->rd.is_reg());
+
+	ppc_sh_load_f32(ppc_farg0,op->rs1);
+}
+
+void unop_end_fpu(shil_opcode* op)
+{
+	ppc_sh_store_f32(ppc_farg0,op->rd);
+}
+
+// ===================================================
+// COMPARE -> BOOLEAN (branchless CR0 bit extraction)
+// ===================================================
+//
+// SH4 set* ops produce a full 0/1 u32 in rd. We compare rarg0,rarg1 into CR0
+// (signed cmp or unsigned cmpl) then extract the desired CR0 bit into rarg0:
+//
+//   mfcr  rarg0          ; rarg0[CR0 field] = LT GT EQ SO at bits 0..3
+//   rlwinm rarg0,rarg0,(bit+1),31,31  ; rotate wanted bit to position 31, mask to 1
+//
+// CR0 occupies the top 4 bits of CR (bit 0=LT,1=GT,2=EQ,3=SO). After mfcr the
+// LT bit is in word-bit 0, so the bit for BI_CR0_xx index 'b' sits at word-bit
+// 'b'. A left-rotate of (b+1) brings it to bit 31; mask MB=ME=31 keeps just it.
+static void emit_cr0_bit_to_rarg0(u32 cr0_bit_index)
+{
+	ppc_mfcr(ppc_rarg0);
+	ppc_rlwinmx(ppc_rarg0,ppc_rarg0,cr0_bit_index+1,31,31,0);
+}
+
+// rd = (signed) rarg0 <cond> rarg1  -> 0/1
+static void emit_setcc_signed(shil_opcode* op,u32 cr0_bit_index,bool invert)
+{
+	ppc_cmp(ppc_cr0,ppc_rarg0,ppc_rarg1,0);
+	emit_cr0_bit_to_rarg0(cr0_bit_index);
+	if (invert)
+		ppc_xori(ppc_rarg0,ppc_rarg0,1);
+	binop_end(op);
+}
+
+// rd = (unsigned) rarg0 <cond> rarg1 -> 0/1
+static void emit_setcc_unsigned(shil_opcode* op,u32 cr0_bit_index,bool invert)
+{
+	ppc_cmpl(ppc_cr0,ppc_rarg0,ppc_rarg1,0);
+	emit_cr0_bit_to_rarg0(cr0_bit_index);
+	if (invert)
+		ppc_xori(ppc_rarg0,ppc_rarg0,1);
+	binop_end(op);
 }
 
 
@@ -809,6 +888,188 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		case shop_fmul: binop_start_fpu(op); ppc_fmulsx(ppc_farg0,ppc_farg0,ppc_farg1,0); binop_end_fpu(op); break;
 		case shop_fdiv: binop_start_fpu(op); ppc_fdivsx(ppc_farg0,ppc_farg0,ppc_farg1,0); binop_end_fpu(op); break;
 
+		// --- Additional native integer binops ---------------------------------
+		case shop_mul_u16:
+			// rd = (u16)r1 * (u16)r2  (low 32 bits). Zero-extend both, mullw.
+			binop_start(op);
+			ppc_rlwinmx(ppc_rarg0,ppc_rarg0,0,16,31,0);	// clrlwi rarg0,rarg0,16
+			ppc_rlwinmx(ppc_rarg1,ppc_rarg1,0,16,31,0);	// clrlwi rarg1,rarg1,16
+			ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0);
+			binop_end(op);
+			break;
+		case shop_mul_s16:
+			// rd = (s16)r1 * (s16)r2  (low 32 bits). Sign-extend both, mullw.
+			binop_start(op);
+			ppc_extshx(ppc_rarg0,ppc_rarg0,0);
+			ppc_extshx(ppc_rarg1,ppc_rarg1,0);
+			ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0);
+			binop_end(op);
+			break;
+
+		// --- 64-bit multiply: rd (low) / rd+1 (high) --------------------------
+		case shop_mul_u64:
+			// 64-bit unsigned product of two 32-bit values.
+			binop_start(op);
+			// high word first (mulhwu) since low word overwrites an input reg.
+			ppc_mulhwux(ppc_rarg2,ppc_rarg0,ppc_rarg1,0);	// hi = mulhwu(r1,r2)
+			ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0);	// lo = mullw(r1,r2)
+			ppc_sh_store(ppc_rarg0,op->rd);
+			ppc_sh_store(ppc_rarg2,op->rd._reg+1);
+			break;
+		case shop_mul_s64:
+			// 64-bit signed product of two 32-bit values.
+			binop_start(op);
+			ppc_mulhwx(ppc_rarg2,ppc_rarg0,ppc_rarg1,0);	// hi = mulhw(r1,r2)
+			ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0);	// lo = mullw(r1,r2)
+			ppc_sh_store(ppc_rarg0,op->rd);
+			ppc_sh_store(ppc_rarg2,op->rd._reg+1);
+			break;
+
+		// --- Shifts with dynamic SH4 semantics (branchless) -------------------
+		case shop_ror:
+			// rd = rotr(r1, r2&31). PPC rotates left; rotl by (32-(r2&31)).
+			// rlwnm rotate amount is taken from rB[27:31] (mod 32), so passing
+			// 32 when (r2&31)==0 is harmless (32 mod 32 == 0).
+			binop_start(op);
+			ppc_rlwinmx(ppc_rarg1,ppc_rarg1,0,27,31,0);	// rarg1 = r2 & 0x1F
+			ppc_subfic(ppc_rarg1,ppc_rarg1,32);			// rarg1 = 32 - (r2&31)
+			ppc_rlwnmx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,31,0);	// rotl, full mask
+			binop_end(op);
+			break;
+		case shop_shld:
+			// SH4 logical dynamic shift (branchless):
+			//   left  = r1 << (r2 & 0x1F)
+			//   rcnt  = (-r2) & 0x1F ;  if rcnt==0 force 32 so srw yields 0
+			//   right = r1 >> rcnt
+			//   res   = (r2 >= 0) ? left : right
+			// (When r2<0 and (r2&31)==0 SH4 yields 0; srw by 32 gives 0.)
+			{
+				binop_start(op);				// rarg0=r1, rarg1=r2
+				// left = r1 << (r2 & 0x1F)
+				ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,27,31,0);	// rarg2 = r2 & 0x1F
+				ppc_slwx(ppc_rarg3,ppc_rarg0,ppc_rarg2,0);	// rarg3 = left
+				// rcnt = (-r2) & 0x1F
+				ppc_negx(ppc_rarg2,ppc_rarg1,0,0);		// -r2
+				ppc_rlwinmx(ppc_rarg2,ppc_rarg2,0,27,31,0);	// rcnt = (-r2)&0x1F
+				// force 32 when rcnt==0:  isZero=(rcnt-1)>>31 ; rcnt += isZero*32
+				ppc_addi(ppc_r0,ppc_rarg2,-1);			// r0 = rcnt-1
+				ppc_rlwinmx(ppc_r0,ppc_r0,1,31,31,0);		// r0 = (rcnt==0)?1:0  (sign bit -> bit31)
+				ppc_rlwinmx(ppc_r0,ppc_r0,5,0,31,0);		// r0 <<= 5  -> 32 when zero
+				ppc_orx(ppc_rarg2,ppc_rarg2,ppc_r0,0);		// rcnt |= 32 when zero
+				ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_rarg2,0);	// rarg0 = right
+				// select: mask = (r2<0)? ~0 : 0
+				ppc_srawix(ppc_r0,ppc_rarg1,31,0);
+				ppc_andx(ppc_rarg0,ppc_rarg0,ppc_r0,0);		// right & mask
+				ppc_andcx(ppc_rarg3,ppc_rarg3,ppc_r0,0);	// left & ~mask
+				ppc_orx(ppc_rarg0,ppc_rarg0,ppc_rarg3,0);
+				binop_end(op);
+			}
+			break;
+		case shop_shad:
+			// SH4 arithmetic dynamic shift (branchless):
+			//   left  = r1 << (r2 & 0x1F)
+			//   rcnt  = (-r2) & 0x1F ;  if rcnt==0 force 31 (sign fill)
+			//   right = (s32)r1 >> rcnt
+			//   res   = (r2 >= 0) ? left : right
+			{
+				binop_start(op);				// rarg0=r1, rarg1=r2
+				ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,27,31,0);	// r2 & 0x1F
+				ppc_slwx(ppc_rarg3,ppc_rarg0,ppc_rarg2,0);	// rarg3 = left
+				// rcnt = (-r2) & 0x1F
+				ppc_negx(ppc_rarg2,ppc_rarg1,0,0);
+				ppc_rlwinmx(ppc_rarg2,ppc_rarg2,0,27,31,0);	// rcnt
+				// force 31 when rcnt==0:  isZero=(rcnt-1)>>31 ; rcnt += isZero*31
+				ppc_addi(ppc_r0,ppc_rarg2,-1);
+				ppc_rlwinmx(ppc_r0,ppc_r0,1,31,31,0);		// (rcnt==0)?1:0
+				ppc_mulli(ppc_r0,ppc_r0,31);			// 31 when zero else 0
+				ppc_addx(ppc_rarg2,ppc_rarg2,ppc_r0,0,0);	// rcnt = 31 in zero-case
+				ppc_srawx(ppc_rarg0,ppc_rarg0,ppc_rarg2,0);	// rarg0 = right (arithmetic)
+				// select on sign of r2
+				ppc_srawix(ppc_r0,ppc_rarg1,31,0);
+				ppc_andx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
+				ppc_andcx(ppc_rarg3,ppc_rarg3,ppc_r0,0);
+				ppc_orx(ppc_rarg0,ppc_rarg0,ppc_rarg3,0);
+				binop_end(op);
+			}
+			break;
+
+		// --- Integer comparisons / test ---------------------------------------
+		case shop_test:	// rd = (r1 & r2) == 0
+			binop_start(op);
+			ppc_andx(ppc_rarg0,ppc_rarg0,ppc_rarg1,1);	// and. sets CR0
+			emit_cr0_bit_to_rarg0(BI_CR0_EQ);
+			binop_end(op);
+			break;
+		case shop_seteq: binop_start(op); emit_setcc_signed(op,BI_CR0_EQ,false); break;
+		case shop_setgt: binop_start(op); emit_setcc_signed(op,BI_CR0_GT,false); break;
+		case shop_setge: binop_start(op); emit_setcc_signed(op,BI_CR0_LT,true);  break; // >= == !<
+		case shop_setab: binop_start(op); emit_setcc_unsigned(op,BI_CR0_GT,false); break;
+		case shop_setae: binop_start(op); emit_setcc_unsigned(op,BI_CR0_LT,true);  break; // >= == !<
+
+		// --- Unary integer ----------------------------------------------------
+		case shop_neg:    unop_start(op); ppc_negx(ppc_rarg0,ppc_rarg0,0,0); unop_end(op); break;
+		case shop_not:    unop_start(op); ppc_norx(ppc_rarg0,ppc_rarg0,ppc_rarg0,0); unop_end(op); break;
+		case shop_ext_s8: unop_start(op); ppc_extsbx(ppc_rarg0,ppc_rarg0,0); unop_end(op); break;
+		case shop_ext_s16:unop_start(op); ppc_extshx(ppc_rarg0,ppc_rarg0,0); unop_end(op); break;
+
+		// --- Unary float ------------------------------------------------------
+		case shop_fabs: unop_start_fpu(op); ppc_fabsx(ppc_farg0,ppc_farg0,0); unop_end_fpu(op); break;
+		case shop_fneg: unop_start_fpu(op); ppc_fnegx(ppc_farg0,ppc_farg0,0); unop_end_fpu(op); break;
+
+		// --- Float comparisons (rd is an integer 0/1) -------------------------
+		case shop_fseteq:
+			binop_start_fpu(op);
+			ppc_fcmpu(ppc_cr0,ppc_farg0,ppc_farg1);
+			emit_cr0_bit_to_rarg0(BI_CR0_EQ);
+			ppc_sh_store(ppc_rarg0,op->rd);
+			break;
+		case shop_fsetgt:
+			binop_start_fpu(op);
+			ppc_fcmpu(ppc_cr0,ppc_farg0,ppc_farg1);
+			emit_cr0_bit_to_rarg0(BI_CR0_GT);
+			ppc_sh_store(ppc_rarg0,op->rd);
+			break;
+
+		// --- Float<->int conversion -------------------------------------------
+		// All conversions bounce integer<->double bit patterns through the
+		// per-context jit_scratch slot (8 bytes, 8-aligned), addressed via
+		// ppc_contex. This avoids relying on a stack red zone (the devkitPPC
+		// EABI does not guarantee one below sp).
+		case shop_cvt_f2i_t:	// (s32)truncate(f)
+			{
+				unop_start_fpu(op);
+				u32 so = (u32)offsetof(Sh4Context, jit_scratch);
+				ppc_fctiwzx(ppc_f0,ppc_farg0,0);		// f0[low32] = (s32)trunc(farg0)
+				ppc_stfd(ppc_f0,ppc_contex,so);			// spill the double
+				ppc_lwz(ppc_rarg0,ppc_contex,so+4);		// low word (BE) = integer result
+				ppc_sh_store(ppc_rarg0,op->rd);
+			}
+			break;
+		case shop_cvt_i2f_n:	// (float)(s32)  round-to-nearest
+		case shop_cvt_i2f_z:	// (float)(s32)  (s32->f32 is identical for both modes here)
+			// Classic PPC s32->double magic-constant trick:
+			//   d = bitcast(0x43300000_00000000 | (u32)(r1 ^ 0x80000000)) - 0x4330000080000000.0
+			// d is the exact (double)(s32)r1; frsp narrows to single.
+			{
+				unop_start(op);					// rarg0 = r1
+				u32 so = (u32)offsetof(Sh4Context, jit_scratch);
+				// Build the biased value double: hi=0x43300000, lo=r1^0x80000000
+				ppc_xoris(ppc_rarg0,ppc_rarg0,0x8000);		// flip sign bit
+				ppc_addis(ppc_rarg1,0,0x4330);			// rarg1 = 0x43300000 (lis)
+				ppc_stw(ppc_rarg1,ppc_contex,so);		// scratch.hi
+				ppc_stw(ppc_rarg0,ppc_contex,so+4);		// scratch.lo
+				ppc_lfd(ppc_f0,ppc_contex,so);			// f0 = magic|value (double)
+				// Build the subtrahend 0x4330000080000000 in the same slot.
+				ppc_addis(ppc_rarg1,0,0x4330);
+				ppc_stw(ppc_rarg1,ppc_contex,so);
+				ppc_addis(ppc_rarg1,0,0x8000);
+				ppc_stw(ppc_rarg1,ppc_contex,so+4);
+				ppc_lfd(ppc_farg1,ppc_contex,so);		// farg1 = 0x4330000080000000
+				ppc_fsubx(ppc_f0,ppc_f0,ppc_farg1,0);		// f0 = (double)(s32)r1
+				ppc_frspx(ppc_farg0,ppc_f0,0);			// narrow to single
+				ppc_sh_store_f32(ppc_farg0,op->rd);
+			}
+			break;
 
 		default:
 			//canonical fallback ~

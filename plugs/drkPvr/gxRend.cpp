@@ -2356,7 +2356,7 @@ void DoRender()
   fb_stamp_present_magic();
 
   wii_audio_frame();
-  VIDEO_WaitVSync();
+  // VIDEO_WaitVSync() // vsync speed limit removed — don't block the SH4 thread
 }
 
 // ============================
