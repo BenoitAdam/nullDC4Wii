@@ -133,7 +133,12 @@ void wii_audio_init()
                   255,                  // left  volume (0–255)
                   255,                  // right volume (0–255)
                   audio_callback);
-    printf("[WiiAudio] wii_audio_init: done\n");
+
+    // ASND starts globally PAUSED after ASND_Init() (see asndlib.h). Without
+    // this unpause nothing is ever heard even though the voice is configured
+    // and the callback is registered.
+    ASND_Pause(0);
+    printf("[WiiAudio] wii_audio_init: done (unpaused)\n");
 }
 
 void wii_audio_term()

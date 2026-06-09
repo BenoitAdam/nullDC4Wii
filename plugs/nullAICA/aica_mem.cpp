@@ -15,6 +15,7 @@ u8* aica_ram_l;
 template<u32 sz>
 u32 ReadReg(u32 addr)
 {
+    // printf("ReadReg %08X\n", addr);
     if (addr < 0x2800)
     {
         ReadMemArrRet(aica_reg, addr, sz);
@@ -38,6 +39,7 @@ u32 ReadReg(u32 addr)
 template<u32 sz>
 void WriteReg(u32 addr, u32 data)
 {
+    // printf("WriteReg %08X %08X\n", addr, data);
     if (addr < 0x2000)
     {
         // Channel data: 64 channels, 128 bytes each
