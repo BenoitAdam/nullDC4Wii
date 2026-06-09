@@ -15,6 +15,7 @@ void ResetInterruptMask(InterruptID intr);
 #define InterruptMask(intr,v) ((v)==0?ResetInterruptMask(intr):SetInterruptMask(intr))
 
 int UpdateINTC();
+int UpdateINTC_pending();	// cheap predicate, no GPR side effects (see intc.cpp)
 void FASTCALL RaiseInterrupt_(InterruptID intr);
 void RaiseExeption(u32 code,u32 vector);
 bool Do_Exeption(u32 lvl, u32 expEvn, u32 CallVect);

@@ -20,6 +20,11 @@ struct Sh4Context
 	sr_type old_sr;
 	fpscr_type old_fpscr;
 
+	// Scratch bounce buffer used by the native recompiler for int<->float
+	// conversions (fctiwz / integer-to-double magic-constant trick). 8-byte
+	// aligned so lfd/stfd are well-formed. Not an SH4 architectural register.
+	u64 jit_scratch;
+
 	u32 offset(u32 sh4_reg);
 	u32 offset(Sh4RegType sh4_reg) { return offset((u32)sh4_reg); }
 };

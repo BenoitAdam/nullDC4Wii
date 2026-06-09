@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <gccore.h>
+#include <ogc/lwp_watchdog.h>	// gettime() / ticks_to_microsecs() for os_GetSeconds()
 #include <asndlib.h>
 #include <mp3player.h>
 #include "sample_mp3.h"
@@ -1037,7 +1038,22 @@ int os_GetFile(char *szFileName, char *szParse, u32 flags)
 
 double os_GetSeconds()
 {
-  return clock() / (double)CLOCKS_PER_SEC;
+  // NOTE: do NOT use clock()/CLOCKS_PER_SEC here — on the Wii's newlib/libogc
+  // clock() has no real backing timer and returns a (near-)constant.
+  //
+  // We read the PowerPC time base via gettime() (64-bit ticks, advances at
+  // PPC_TIMER_CLOCK = bus/4 = 60.75 MHz on Wii). Two pitfalls handled here:
+  //   * The absolute TB is enormous (Dolphin starts it ~5e16, i.e. decades of
+  //     ticks). Converting that whole value to a double loses the ~15 ms
+  //     per-frame increment in the mantissa, so seconds looked frozen. We
+  //     therefore anchor at the first call and only ever convert the DELTA.
+  //   * ticks_to_microsecs()/1e6 on the raw value also inflated the magnitude;
+  //     delta math keeps the numbers small and precise.
+  static u64 t0 = 0;
+  u64 now = gettime();
+  if (t0 == 0)
+    t0 = now;
+  return (double)ticks_to_microsecs(now - t0) / 1000000.0;
 }
 
 int os_msgbox(const wchar *text, unsigned int type)

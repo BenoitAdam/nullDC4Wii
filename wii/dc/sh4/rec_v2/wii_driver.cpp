@@ -43,6 +43,7 @@
 	  - Minor formatting/whitespace consistency improvements; no logic changes.
 */
 #include "types.h"
+#include <stddef.h>	// offsetof — used for jit_scratch context slot addressing
 #include "dc\sh4\sh4_opcode_list.h"
 
 #include "dc\sh4\sh4_registers.h"
@@ -199,6 +200,11 @@ struct
 } compile_state;
 u32 last_block;
 
+// Forward decls: GPR allocation map + flush/reload (defined later in this file).
+ppc_ireg GetIntReg(u32 reg);
+void reg_flush_all();
+void reg_reload_all();
+
 // =======================
 // BLOCK BEGIN/END
 // =======================
@@ -216,15 +222,34 @@ void ngen_Begin(DecodedBlock* block,bool force_checks)
 	ppc_jump(loop_do_update_write);
 
 	jdst->MarkLabel();
+
+	// No GPR reload here: pinned regs (r14..r28) hold the authoritative SH4 GPR
+	// values continuously across blocks, so there is nothing to re-read. They are
+	// loaded once in the mainloop prologue and only resynced with memory around
+	// shop_ifb / the canonical fallback.
 }
 
 // =====================
 // MEMORY ACCESS HELPERS
 // =====================
 
+// Static GPR allocation master switch. Full rationale at reg_flush_all().
+// Must be defined before the first use below; set to 0 for all-memory mode.
+#define STATIC_GPR_ALLOC 1
+
 //1 opcode
 void ppc_sh_load(u32 D,u32 sh4_reg)
 {
+#if STATIC_GPR_ALLOC
+	ppc_ireg ri=GetIntReg(sh4_reg);
+	if (ri!=ppc_rinvalid)
+	{
+		// Value already lives in a pinned PPC register; just move it.
+		if ((u32)ri!=D)
+			ppc_ori(D,ri,0);	// mr D, ri
+		return;
+	}
+#endif
 	ppc_lwz(D,ppc_contex,Sh4cntx.offset(sh4_reg));
 }
 void ppc_sh_load(u32 D,shil_param prm)
@@ -263,6 +288,16 @@ void ppc_sh_addr(u32 D,shil_param prm)
 //1 opcode
 void ppc_sh_store(u32 D,u32 sh4_reg)
 {
+#if STATIC_GPR_ALLOC
+	ppc_ireg ri=GetIntReg(sh4_reg);
+	if (ri!=ppc_rinvalid)
+	{
+		// Destination is a pinned PPC register; update it in place.
+		if ((u32)ri!=D)
+			ppc_ori(ri,D,0);	// mr ri, D
+		return;
+	}
+#endif
 	ppc_stw(D,ppc_contex,Sh4cntx.offset(sh4_reg));
 }
 void ppc_sh_store(u32 D,shil_param prm)
@@ -288,6 +323,26 @@ void ppc_sh_store_f32(u32 D,shil_param prm)
 {
 	verify(prm.is_reg());
 	ppc_sh_store_f32(D,prm._reg);
+}
+
+// --- Vector float element access -------------------------------------------
+// For a float param (scalar FMT_F32, or vector FMT_V4/FMT_V16), prm._reg/_imm
+// holds the BASE fr/xf register index. Element i lives at offset(base)+i*4 in
+// the context. These load/store the i-th single-precision element.
+//
+// Float registers are NOT pinned (GetFloatReg is unused), so these always hit
+// memory — exactly what the vector ops need.
+u32 ppc_fvec_ofs(shil_param prm,u32 i)
+{
+	return Sh4cntx.offset(prm._reg) + i*4;
+}
+void ppc_fvec_load(u32 fd,shil_param prm,u32 i)
+{
+	ppc_lfs(fd,ppc_contex,ppc_fvec_ofs(prm,i));
+}
+void ppc_fvec_store(u32 fs,shil_param prm,u32 i)
+{
+	ppc_stfs(fs,ppc_contex,ppc_fvec_ofs(prm,i));
 }
 
 // ==========================
@@ -395,6 +450,82 @@ void binop_end(shil_opcode* op)
 	ppc_sh_store(ppc_rarg0,op->rd);
 }
 
+// ---------------------------------------------------------------------------
+// Shadow-register-aware operand resolution (for SINGLE-instruction ops only).
+//
+// With static GPR allocation, an operand that is a pinned SH4 reg already lives
+// in a PPC register, so the op can read/write it in place instead of bouncing
+// through rarg0/rarg1. binop3_start() resolves rs1/rs2/rd into the PPC regs the
+// op should use:
+//   bop_a = source reg for rs1   (pinned reg, or rarg0 holding a loaded/imm value)
+//   bop_b = source reg for rs2   (pinned reg, or rarg1 holding a loaded/imm value)
+//   bop_d = dest reg for rd      (pinned reg, or rarg0 scratch)
+//
+// SAFETY: only valid for ops emitted as a SINGLE PPC instruction (add, sub,
+// and, or, xor, shl, shr, sar, mul_i32). Such an instruction reads both sources
+// then writes the dest atomically, so bop_d may safely alias bop_a or bop_b.
+// Multi-instruction ops (mul_u16/64, ror, shld, shad, set*, conversions) must
+// NOT use this — they clobber scratch mid-sequence; they keep using
+// binop_start()/binop_end() with the rarg0/rarg1 scratch window.
+// ---------------------------------------------------------------------------
+u32 bop_d, bop_a, bop_b;
+
+// Resolve rs1 -> bop_a (source) and rd -> bop_d (dest). Shared by the plain
+// register form and the immediate-folded form.
+void bop_resolve_a_d(shil_opcode* op)
+{
+	verify(!op->rs1.is_null() && !op->rd.is_null());
+	verify(op->rs1.is_reg());
+
+	ppc_ireg a=GetIntReg(op->rs1._reg);
+	if (a!=ppc_rinvalid)
+		bop_a=a;
+	else
+	{
+		ppc_sh_load(ppc_rarg0,op->rs1);
+		bop_a=ppc_rarg0;
+	}
+
+	ppc_ireg d=GetIntReg(op->rd._reg);
+	bop_d = (d!=ppc_rinvalid) ? (u32)d : ppc_rarg0;
+}
+
+// Resolve rs2 -> bop_b (source). Materialises an immediate into rarg1.
+void bop_resolve_b(shil_opcode* op)
+{
+	if (op->rs2.is_imm())
+	{
+		ppc_li(ppc_rarg1,op->rs2._imm);
+		bop_b=ppc_rarg1;
+	}
+	else
+	{
+		ppc_ireg b=GetIntReg(op->rs2._reg);
+		if (b!=ppc_rinvalid)
+			bop_b=b;
+		else
+		{
+			ppc_sh_load(ppc_rarg1,op->rs2);
+			bop_b=ppc_rarg1;
+		}
+	}
+}
+
+void binop3_start(shil_opcode* op)
+{
+	verify(!op->rs2.is_null());
+	bop_resolve_a_d(op);
+	bop_resolve_b(op);
+}
+
+void binop3_end(shil_opcode* op)
+{
+	// If rd is pinned the op already wrote it in place; only a scratch dest
+	// needs storing back to the context.
+	if (bop_d==ppc_rarg0 && GetIntReg(op->rd._reg)==ppc_rinvalid)
+		ppc_sh_store(ppc_rarg0,op->rd);
+}
+
 void binop_start_fpu(shil_opcode* op)
 {
 	verify(!op->rs1.is_null() && !op->rs2.is_null() && !op->rd.is_null());
@@ -409,6 +540,149 @@ void binop_start_fpu(shil_opcode* op)
 void binop_end_fpu(shil_opcode* op)
 {
 	ppc_sh_store_f32(ppc_farg0,op->rd);
+}
+
+// =================
+// UNARY OPERATIONS
+// =================
+
+// Unary integer: loads rs1 -> rarg0, operation writes rarg0, stores rarg0 -> rd
+void unop_start(shil_opcode* op)
+{
+	verify(!op->rs1.is_null() && !op->rd.is_null());
+	verify(op->rd.is_reg());
+
+	if (op->rs1.is_imm())
+		ppc_li(ppc_rarg0,op->rs1._imm);
+	else
+	{
+		verify(op->rs1.is_reg());
+		ppc_sh_load(ppc_rarg0,op->rs1);
+	}
+}
+
+void unop_end(shil_opcode* op)
+{
+	ppc_sh_store(ppc_rarg0,op->rd);
+}
+
+// Shadow-register-aware unary resolution (SINGLE-instruction ops only:
+// neg, not, ext_s8, ext_s16). Same safety rule as binop3_*: the op must be one
+// PPC instruction so bop_d may alias bop_a. Sets bop_a (source) / bop_d (dest).
+void unop3_start(shil_opcode* op)
+{
+	verify(!op->rs1.is_null() && !op->rd.is_null());
+	verify(op->rd.is_reg());
+
+	if (op->rs1.is_imm())
+	{
+		ppc_li(ppc_rarg0,op->rs1._imm);
+		bop_a=ppc_rarg0;
+	}
+	else
+	{
+		verify(op->rs1.is_reg());
+		ppc_ireg a=GetIntReg(op->rs1._reg);
+		if (a!=ppc_rinvalid)
+			bop_a=a;
+		else
+		{
+			ppc_sh_load(ppc_rarg0,op->rs1);
+			bop_a=ppc_rarg0;
+		}
+	}
+
+	ppc_ireg d=GetIntReg(op->rd._reg);
+	bop_d = (d!=ppc_rinvalid) ? (u32)d : ppc_rarg0;
+}
+
+void unop3_end(shil_opcode* op)
+{
+	if (bop_d==ppc_rarg0 && GetIntReg(op->rd._reg)==ppc_rinvalid)
+		ppc_sh_store(ppc_rarg0,op->rd);
+}
+
+// Unary fpu: loads rs1 -> farg0, operation writes farg0, stores farg0 -> rd
+void unop_start_fpu(shil_opcode* op)
+{
+	verify(!op->rs1.is_null() && !op->rd.is_null());
+	verify(op->rs1.is_reg());
+	verify(op->rd.is_reg());
+
+	ppc_sh_load_f32(ppc_farg0,op->rs1);
+}
+
+void unop_end_fpu(shil_opcode* op)
+{
+	ppc_sh_store_f32(ppc_farg0,op->rd);
+}
+
+// ===================================================
+// COMPARE -> BOOLEAN (branchless CR0 bit extraction)
+// ===================================================
+//
+// SH4 set* ops produce a full 0/1 u32 in rd. We compare rarg0,rarg1 into CR0
+// (signed cmp or unsigned cmpl) then extract the desired CR0 bit into rarg0:
+//
+//   mfcr  rarg0          ; rarg0[CR0 field] = LT GT EQ SO at bits 0..3
+//   rlwinm rarg0,rarg0,(bit+1),31,31  ; rotate wanted bit to position 31, mask to 1
+//
+// CR0 occupies the top 4 bits of CR (bit 0=LT,1=GT,2=EQ,3=SO). After mfcr the
+// LT bit is in word-bit 0, so the bit for BI_CR0_xx index 'b' sits at word-bit
+// 'b'. A left-rotate of (b+1) brings it to bit 31; mask MB=ME=31 keeps just it.
+static void emit_cr0_bit_to_rarg0(u32 cr0_bit_index)
+{
+	ppc_mfcr(ppc_rarg0);
+	ppc_rlwinmx(ppc_rarg0,ppc_rarg0,cr0_bit_index+1,31,31,0);
+}
+
+// Load rs1 into rarg0, then compare against rs2 into CR0. Folds a small
+// immediate rs2 into cmpi/cmpli (signed uses cmpi+s16, unsigned cmpli+u16),
+// otherwise loads rs2 into rarg1 and uses the register cmp/cmpl. Used by the
+// set*/test helpers below. rarg0 is left holding rs1 (clobbered by the
+// following mfcr in emit_cr0_bit_to_rarg0, which is fine).
+static void emit_cmp_into_cr0(shil_opcode* op,bool is_signed)
+{
+	ppc_sh_load(ppc_rarg0,op->rs1);
+
+	if (op->rs2.is_imm() && (is_signed ? op->rs2.is_imm_s16() : op->rs2.is_imm_u16()))
+	{
+		if (is_signed)
+			ppc_cmpi(ppc_cr0,ppc_rarg0,op->rs2._imm,0);
+		else
+			ppc_cmpli(ppc_cr0,ppc_rarg0,op->rs2._imm,0);
+		return;
+	}
+
+	if (op->rs2.is_imm())
+		ppc_li(ppc_rarg1,op->rs2._imm);
+	else
+		ppc_sh_load(ppc_rarg1,op->rs2);
+
+	if (is_signed)
+		ppc_cmp(ppc_cr0,ppc_rarg0,ppc_rarg1,0);
+	else
+		ppc_cmpl(ppc_cr0,ppc_rarg0,ppc_rarg1,0);
+}
+
+// rd = (signed) rs1 <cond> rs2  -> 0/1
+static void emit_setcc_signed(shil_opcode* op,u32 cr0_bit_index,bool invert)
+{
+	emit_cmp_into_cr0(op,true);
+	emit_cr0_bit_to_rarg0(cr0_bit_index);
+	if (invert)
+		ppc_xori(ppc_rarg0,ppc_rarg0,1);
+	binop_end(op);
+}
+
+// rd = (unsigned) rs1 <cond> rs2 -> 0/1
+static void emit_setcc_unsigned(shil_opcode* op,u32 cr0_bit_index,bool invert)
+{
+	emit_cmp_into_cr0(op,false);
+	emit_cr0_bit_to_rarg0(cr0_bit_index);
+	if (invert)
+		ppc_xori(ppc_rarg0,ppc_rarg0,1);
+	binop_end(op);
 }
 
 
@@ -428,6 +702,13 @@ void DoStatic(u32 pc)
 
 void ngen_End(DecodedBlock* block)
 {
+	// No blanket GPR flush here: the pinned PPC registers (r14..r28) are the
+	// authoritative copy of the SH4 GPRs and stay live across straight-line
+	// block transitions (static/dynamic jumps just flow into the next block).
+	// The exception is the interrupt path (BET_*Intr) below, which calls
+	// UpdateINTC -> Do_Exception (reads r[15], swaps the register bank); that
+	// case brackets the call with reg_flush_all()/reg_reload_all() locally.
+	// shop_ifb and the canonical fallback similarly self-bracket.
 	switch(block->BlockType)
 	{
 	case BET_Cond_0:
@@ -482,7 +763,12 @@ void ngen_End(DecodedBlock* block)
 				reg=ppc_djump;
 			}
 			ppc_sh_store(reg,reg_nextpc);
+			// UpdateINTC -> Do_Exception reads r[15] (sgr=r[15]) and swaps the
+			// register bank (sr.RB=1; UpdateSR). Pinned GPRs must be coherent in
+			// memory for the read, and re-read afterwards to pick up the swap.
+			reg_flush_all();
 			ppc_call(&UpdateINTC);
+			reg_reload_all();
 
 			ppc_sh_load(ppc_next_pc,reg_nextpc);
 			ppc_jump(loop_no_update);
@@ -527,33 +813,64 @@ ppc_ireg GetIntReg(u32 reg)
 
 	return ppc_rinvalid;
 }
+// ============================================================================
+// Static GPR allocation
+//
+// A fixed subset of SH4 integer registers is pinned to PPC callee-saved GPRs
+// (r14..r28) for the whole emulation session. The mapping is block-invariant
+// (no per-block colouring) — GetIntReg() defines it. SH4 r0..r15 (except r11,
+// which is skipped because the recompiler needs a volatile temp window) map to
+// r14..r28.
+//
+// Memory image vs register:
+//   * The pinned PPC regs are the AUTHORITATIVE copy of the SH4 GPRs for the
+//     whole JIT run. They are loaded once in the mainloop prologue and stay
+//     live across blocks; Sh4cntx.r[] may be stale at any point.
+//   * Sh4cntx.r[] is made coherent on demand only around code paths that read
+//     or write context GPRs directly, each self-bracketing flush -> call ->
+//     reload.
+//
+// Why we don't blanket flush/reload around ReadMem/WriteMem:
+//   r14..r28 are callee-saved under the PPC EABI, so an ordinary C call
+//   preserves them, and ReadMem/WriteMem touch only guest memory, not SH4
+//   context GPRs.
+//
+// The flush/reload points are:
+//   * shop_ifb              — interpreter handler reads/writes arbitrary GPRs
+//   * canonical fallback    — e.g. sync_sr -> UpdateSR (SR.RB bank swap)
+//   * BET_*Intr block end   — UpdateINTC -> Do_Interrupt (reads r[15], bank swap)
+//   * mainloop UpdateSystem — CONDITIONAL: the split UpdateSystem_no_event()
+//                             runs the GPR-free peripheral cascade + pending
+//                             check unflushed every timeslice; only when it
+//                             reports a pending interrupt do we flush, call
+//                             UpdateSystem_handle_event(), and reload.
+//
+// STATIC_GPR_ALLOC (defined near the top of this file) can be set to 0 to
+// disable the whole scheme (all accesses go through memory, as before) —
+// useful for A/B debugging.
+// ============================================================================
+
 void reg_flush_all()
 {
-	/*
-	for(u32 i=0;i<=sh4_reg_count;i++)
+#if STATIC_GPR_ALLOC
+	for (u32 i=reg_r0;i<=reg_r15;i++)
 	{
 		ppc_ireg ri=GetIntReg(i);
-		ppc_freg rf=GetFloatReg(i);
-		if (rf!=ppc_finvalid)
-			ppc_sh_store_f32(rf,i);
-		else if (ri!=ppc_rinvalid)
-			ppc_sh_store(ri,i);
+		if (ri!=ppc_rinvalid)
+			ppc_stw(ri,ppc_contex,Sh4cntx.offset(i));
 	}
-	*/
+#endif
 }
 void reg_reload_all()
 {
-	/*
-	for(u32 i=0;i<=sh4_reg_count;i++)
+#if STATIC_GPR_ALLOC
+	for (u32 i=reg_r0;i<=reg_r15;i++)
 	{
 		ppc_ireg ri=GetIntReg(i);
-		ppc_freg rf=GetFloatReg(i);
-		if (rf!=ppc_finvalid)
-			ppc_sh_load_f32(rf,i);
-		else if (ri!=ppc_rinvalid)
-			ppc_sh_load(ri,i);
+		if (ri!=ppc_rinvalid)
+			ppc_lwz(ri,ppc_contex,Sh4cntx.offset(i));
 	}
-	*/
+#endif
 }
 void FASTCALL do_sqw_mmu(u32 dst);
 void FASTCALL do_sqw_nommu(u32 dst);
@@ -631,31 +948,82 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 				if (!isram)
 				{
-					switch(op->flags)
+					// Inline the _vmem_readt fast path (direct RAM/VRAM) for
+					// runtime addresses, sizes 1/2/4. The MMIO path and 64-bit
+					// reads fall through to the C dispatcher.
+					//
+					//   iirf = _vmem_MemInfo_ptr[addr>>24];
+					//   ptr  = iirf & ~0x1F;
+					//   if (ptr) { sh=iirf&0x1F; a=(addr<<sh)>>sh;
+					//              if (sz<4) a^=4-sz; rv=*(T*)(ptr+a); }
+					//   else  rv = ReadMem<sz>(addr);   // slow
+					//
+					// addr is in rarg0 on entry. Scratch: r0, rarg1, rarg2.
+					if (op->flags==8)
 					{
-					case 1:
-						if (!fuct) fuct=(void*)ReadMem8;
-						ppc_call(fuct);
-						ppc_extsbx(ppc_rrv0,ppc_rrv0,0);
-						break;
-					case 2:
-						if (!fuct) fuct=(void*)ReadMem16;
-						ppc_call(fuct);
-						ppc_extshx(ppc_rrv0,ppc_rrv0,0);
-						break;
-					case 4:
-						if (!fuct) fuct=(void*)ReadMem32;
-						ppc_call(fuct);
-						break;
-					case 8:
+						// 64-bit: keep the C call (rare; BE pair handling).
 						if (!fuct) fuct=(void*)ReadMem64;
 						ppc_call(fuct);
-						break;
-					default:
-						verify(false);
+					}
+					else
+					{
+						const u32 sz=op->flags;
+						verify(sz==1||sz==2||sz==4);
+
+						// r0 = (addr>>24)*4   (byte index into the void* table)
+						ppc_rlwinmx(ppc_r0,ppc_rarg0,10,22,29,0);
+						// rarg1 = &_vmem_MemInfo_ptr
+						u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
+						ppc_addi(ppc_rarg1,ppc_rarg1,lo);
+						ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
+						// rarg2 = ptr = iirf & ~0x1F  (clear low 5 bits: ME=26)
+						// NOTE: ptr goes in rarg2 (NOT r0) — load-indexed treats a
+						// base of r0 as literal zero, which would drop the pointer.
+						ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,0,26,0);
+						ppc_cmpi(ppc_cr0,ppc_rarg2,0,0);		// ptr == 0 ?
+
+						ppc_label* slow=ppc_CreateLabel();
+						ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq slow (MMIO)
+
+						// --- fast direct path ---
+						// shift = iirf & 0x1F ; addr = (addr<<sh)>>sh
+						ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// r0 = shift (0..31)
+						ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
+						ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
+						// big-endian sub-word swizzle
+						if (sz<4)
+							ppc_xori(ppc_rarg0,ppc_rarg0,4-sz);
+						// load rrv0 = *(T*)(ptr + addr)   (ptr in rarg2, addr in rarg0)
+						if (sz==1)
+						{
+							ppc_lbzx(ppc_rrv0,ppc_rarg2,ppc_rarg0);
+							ppc_extsbx(ppc_rrv0,ppc_rrv0,0);
+						}
+						else if (sz==2)
+						{
+							ppc_lhzx(ppc_rrv0,ppc_rarg2,ppc_rarg0);
+							ppc_extshx(ppc_rrv0,ppc_rrv0,0);
+						}
+						else
+							ppc_lwzx(ppc_rrv0,ppc_rarg2,ppc_rarg0);
+
+						ppc_label* done=ppc_CreateLabel();
+						ppc_bcx(BO_ALWAYS,BI_CR0_EQ,0,0,0);		// b done
+
+						// --- slow MMIO path ---
+						slow->MarkLabel();
+						if (!fuct)
+							fuct=(sz==1)?(void*)ReadMem8:(sz==2)?(void*)ReadMem16:(void*)ReadMem32;
+						ppc_call(fuct);
+						if (sz==1)
+							ppc_extsbx(ppc_rrv0,ppc_rrv0,0);
+						else if (sz==2)
+							ppc_extshx(ppc_rrv0,ppc_rrv0,0);
+
+						done->MarkLabel();
 					}
 				}
-				
+
 				ppc_sh_store(ppc_rrv0,op->rd);
 
 				if (op->flags==8)
@@ -695,24 +1063,74 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					die("invalid rs3");
 				}
 
-				switch(op->flags)
+				// Inline the _vmem_writet fast path (direct RAM/VRAM) for runtime
+				// addresses, sizes 1/2/4. MMIO and 64-bit writes use the C call.
+				//
+				//   iirf = _vmem_MemInfo_ptr[addr>>24];
+				//   ptr  = iirf & ~0x1F;
+				//   if (ptr) { sh=iirf&0x1F; a=(addr<<sh)>>sh;
+				//              if (sz<4) a^=4-sz; *(T*)(ptr+a)=data; }
+				//   else  WriteMem<sz>(addr,data);   // slow
+				//
+				// On entry rarg0=addr, rarg1=data. addr/data MUST survive to the
+				// slow call, so the lookup uses only r0/rarg2/rarg3 as scratch.
+				if (op->flags==8)
 				{
-				case 1:
-					ppc_andi(ppc_rarg1,ppc_rarg1,0xFF);
-					ppc_call(&WriteMem8);
-					break;
-				case 2:
-					ppc_andi(ppc_rarg1,ppc_rarg1,0xFFFF);
-					ppc_call(&WriteMem16);
-					break;
-				case 4:
-					ppc_call(&WriteMem32);
-					break;
-				case 8:
 					ppc_call(&WriteMem64);
-					break;
-				default:
-					die("invalid size on memwrite");
+				}
+				else
+				{
+					const u32 sz=op->flags;
+					verify(sz==1||sz==2||sz==4);
+
+					// r0 = (addr>>24)*4   (byte index into the void* table)
+					ppc_rlwinmx(ppc_r0,ppc_rarg0,10,22,29,0);
+					// rarg2 = &_vmem_MemInfo_ptr
+					u32 lo=ppc_addr_high(ppc_rarg2,(void*)&_vmem_MemInfo_ptr[0]);
+					ppc_addi(ppc_rarg2,ppc_rarg2,lo);
+					ppc_lwzx(ppc_rarg2,ppc_rarg2,ppc_r0);		// rarg2 = iirf
+					// rarg3 = ptr = iirf & ~0x1F  (ptr NOT in r0: store-indexed
+					// treats base r0 as literal zero, dropping the pointer)
+					ppc_rlwinmx(ppc_rarg3,ppc_rarg2,0,0,26,0);
+					ppc_cmpi(ppc_cr0,ppc_rarg3,0,0);		// ptr == 0 ?
+
+					ppc_label* slow=ppc_CreateLabel();
+					ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq slow (MMIO)
+
+					// --- fast direct path ---
+					// shift = iirf & 0x1F ; eff = (addr<<sh)>>sh  (in rarg2 scratch)
+					ppc_andi(ppc_r0,ppc_rarg2,0x1F);		// r0 = shift (iirf still in rarg2)
+					ppc_slwx(ppc_rarg2,ppc_rarg0,ppc_r0,0);		// rarg2 = addr<<sh (overwrites iirf, no longer needed)
+					ppc_srwx(ppc_rarg2,ppc_rarg2,ppc_r0,0);		// rarg2 = (addr<<sh)>>sh
+					if (sz<4)
+						ppc_xori(ppc_rarg2,ppc_rarg2,4-sz);	// big-endian sub-word swizzle
+					// *(T*)(ptr+eff) = data   (ptr=rarg3, eff=rarg2, data=rarg1)
+					if (sz==1)
+						ppc_stbx(ppc_rarg1,ppc_rarg3,ppc_rarg2);
+					else if (sz==2)
+						ppc_sthx(ppc_rarg1,ppc_rarg3,ppc_rarg2);
+					else
+						ppc_stwx(ppc_rarg1,ppc_rarg3,ppc_rarg2);
+
+					ppc_label* done=ppc_CreateLabel();
+					ppc_bcx(BO_ALWAYS,BI_CR0_EQ,0,0,0);		// b done
+
+					// --- slow MMIO path (addr=rarg0, data=rarg1 preserved) ---
+					slow->MarkLabel();
+					if (sz==1)
+					{
+						ppc_andi(ppc_rarg1,ppc_rarg1,0xFF);
+						ppc_call(&WriteMem8);
+					}
+					else if (sz==2)
+					{
+						ppc_andi(ppc_rarg1,ppc_rarg1,0xFFFF);
+						ppc_call(&WriteMem16);
+					}
+					else
+						ppc_call(&WriteMem32);
+
+					done->MarkLabel();
 				}
 			}
 			break;
@@ -774,34 +1192,127 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			{
 				verify(op->rd.is_r32());
 
+				// Resolve dest: a pinned (integer) rd is written in place; a
+				// non-pinned or float-typed rd uses rarg0 + a context store.
+				ppc_ireg rdr = op->rd.is_r32i() ? GetIntReg(op->rd._reg) : ppc_rinvalid;
+				u32 dst = (rdr!=ppc_rinvalid) ? (u32)rdr : ppc_rarg0;
+
 				if (op->rs1.is_imm())
 				{
-					ppc_li(ppc_rarg0,op->rs1._imm);
+					ppc_li(dst,op->rs1._imm);
 				}
 				else if (op->rs1.is_r32())
 				{
-					ppc_sh_load(ppc_rarg0,op->rs1);
+					// reg -> reg. If rs1 is pinned, move/keep it directly.
+					ppc_ireg rsr = op->rs1.is_r32i() ? GetIntReg(op->rs1._reg) : ppc_rinvalid;
+					if (rsr!=ppc_rinvalid)
+					{
+						if ((u32)rsr!=dst)
+							ppc_ori(dst,rsr,0);	// mr dst, rsr  (skipped if same reg)
+					}
+					else
+					{
+						ppc_sh_load(dst,op->rs1);
+					}
 				}
 				else
 				{
 					die("Invalid mov32 size");
 				}
 
-				ppc_sh_store(ppc_rarg0,op->rd);
+				// Store back only when we used the scratch reg (non-pinned rd).
+				if (dst==ppc_rarg0 && rdr==ppc_rinvalid)
+					ppc_sh_store(ppc_rarg0,op->rd);
 			}
 			break;
 
-		case shop_add: binop_start(op); ppc_addx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0); binop_end(op); break;
-		case shop_sub: binop_start(op); ppc_subfx(ppc_rarg0,ppc_rarg1,ppc_rarg0,0,0); binop_end(op); break;
-		
-		case shop_or: binop_start(op); ppc_orx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
-		case shop_and: binop_start(op); ppc_andx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
-		case shop_xor: binop_start(op); ppc_xorx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
+		// Single-instruction binops — read/write pinned regs directly (binop3).
+		// Single-instruction binops. When rs2 is a small immediate we fold it
+		// straight into the PPC immediate-form instruction, skipping the
+		// ppc_li(rarg1,imm) materialisation. addi/subi use a SIGNED 16-bit
+		// field; andi./ori/xori use UNSIGNED 16-bit.
+		case shop_add:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm_s16())
+				ppc_addi(bop_d,bop_a,op->rs2._imm);		// d = a + imm
+			else
+				{ bop_resolve_b(op); ppc_addx(bop_d,bop_a,bop_b,0,0); }
+			binop3_end(op);
+			break;
+		case shop_sub:
+			// SH4 sub = rs1 - rs2; fold imm as a + (-imm) when -imm fits s16.
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm() && is_s16(0u-op->rs2._imm))
+				ppc_addi(bop_d,bop_a,0u-op->rs2._imm);		// d = a - imm
+			else
+				{ bop_resolve_b(op); ppc_subfx(bop_d,bop_b,bop_a,0,0); }
+			binop3_end(op);
+			break;
 
-		case shop_shl: binop_start(op); ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
-		case shop_shr: binop_start(op); ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
-		case shop_sar: binop_start(op); ppc_srawx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
-		case shop_mul_i32: binop_start(op); ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0); binop_end(op); break;
+		case shop_or:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm_u16())
+				ppc_ori(bop_d,bop_a,op->rs2._imm);
+			else
+				{ bop_resolve_b(op); ppc_orx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
+		case shop_and:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm_u16())
+				ppc_andi(bop_d,bop_a,op->rs2._imm);		// andi. (Rc=1, harmless)
+			else
+				{ bop_resolve_b(op); ppc_andx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
+		case shop_xor:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm_u16())
+				ppc_xori(bop_d,bop_a,op->rs2._imm);
+			else
+				{ bop_resolve_b(op); ppc_xorx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
+
+		// Shifts: fold a constant shift amount (0..31) into rlwinm/srawi.
+		case shop_shl:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm())
+			{
+				u32 s=op->rs2._imm&0x1F;
+				ppc_rlwinmx(bop_d,bop_a,s,0,31-s,0);		// slwi: rotl s, mask [0..31-s]
+			}
+			else
+				{ bop_resolve_b(op); ppc_slwx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
+		case shop_shr:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm())
+			{
+				u32 s=op->rs2._imm&0x1F;
+				ppc_rlwinmx(bop_d,bop_a,(32-s)&31,s,31,0);	// srwi: rotl 32-s, mask [s..31]
+			}
+			else
+				{ bop_resolve_b(op); ppc_srwx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
+		case shop_sar:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm())
+				ppc_srawix(bop_d,bop_a,op->rs2._imm&0x1F,0);	// srawi
+			else
+				{ bop_resolve_b(op); ppc_srawx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
+		case shop_mul_i32:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm_s16())
+				ppc_mulli(bop_d,bop_a,op->rs2._imm);		// d = a * imm
+			else
+				{ bop_resolve_b(op); ppc_mullwx(bop_d,bop_a,bop_b,0,0); }
+			binop3_end(op);
+			break;
 
 
 		case shop_fadd: binop_start_fpu(op); ppc_faddsx(ppc_farg0,ppc_farg0,ppc_farg1,0); binop_end_fpu(op); break;
@@ -809,6 +1320,283 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		case shop_fmul: binop_start_fpu(op); ppc_fmulsx(ppc_farg0,ppc_farg0,ppc_farg1,0); binop_end_fpu(op); break;
 		case shop_fdiv: binop_start_fpu(op); ppc_fdivsx(ppc_farg0,ppc_farg0,ppc_farg1,0); binop_end_fpu(op); break;
 
+		// --- Additional native integer binops ---------------------------------
+		case shop_mul_u16:
+			// rd = (u16)r1 * (u16)r2  (low 32 bits). Zero-extend both, mullw.
+			binop_start(op);
+			ppc_rlwinmx(ppc_rarg0,ppc_rarg0,0,16,31,0);	// clrlwi rarg0,rarg0,16
+			ppc_rlwinmx(ppc_rarg1,ppc_rarg1,0,16,31,0);	// clrlwi rarg1,rarg1,16
+			ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0);
+			binop_end(op);
+			break;
+		case shop_mul_s16:
+			// rd = (s16)r1 * (s16)r2  (low 32 bits). Sign-extend both, mullw.
+			binop_start(op);
+			ppc_extshx(ppc_rarg0,ppc_rarg0,0);
+			ppc_extshx(ppc_rarg1,ppc_rarg1,0);
+			ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0);
+			binop_end(op);
+			break;
+
+		// --- 64-bit multiply: low -> rd (macl) / high -> rd2 (mach) -----------
+		// NOTE: the decoder puts the high word in op->rd2 (reg_mach), NOT in
+		// op->rd._reg+1. reg_mach actually PRECEDES reg_macl in the enum, so
+		// rd._reg+1 == reg_pr — the old code corrupted PR and never wrote mach,
+		// which broke booting.
+		case shop_mul_u64:
+			// 64-bit unsigned product of two 32-bit values.
+			binop_start(op);
+			// high word first (mulhwu) since low word overwrites an input reg.
+			ppc_mulhwux(ppc_rarg2,ppc_rarg0,ppc_rarg1,0);	// hi = mulhwu(r1,r2)
+			ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0);	// lo = mullw(r1,r2)
+			ppc_sh_store(ppc_rarg0,op->rd);
+			ppc_sh_store(ppc_rarg2,op->rd2);
+			break;
+		case shop_mul_s64:
+			// 64-bit signed product of two 32-bit values.
+			binop_start(op);
+			ppc_mulhwx(ppc_rarg2,ppc_rarg0,ppc_rarg1,0);	// hi = mulhw(r1,r2)
+			ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0);	// lo = mullw(r1,r2)
+			ppc_sh_store(ppc_rarg0,op->rd);
+			ppc_sh_store(ppc_rarg2,op->rd2);
+			break;
+
+		// --- Shifts with dynamic SH4 semantics (branchless) -------------------
+		case shop_ror:
+			// rd = rotr(r1, r2&31). PPC rotates left; rotl by (32-(r2&31)).
+			// rlwnm rotate amount is taken from rB[27:31] (mod 32), so passing
+			// 32 when (r2&31)==0 is harmless (32 mod 32 == 0).
+			binop_start(op);
+			ppc_rlwinmx(ppc_rarg1,ppc_rarg1,0,27,31,0);	// rarg1 = r2 & 0x1F
+			ppc_subfic(ppc_rarg1,ppc_rarg1,32);			// rarg1 = 32 - (r2&31)
+			ppc_rlwnmx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,31,0);	// rotl, full mask
+			binop_end(op);
+			break;
+		case shop_shld:
+			// SH4 logical dynamic shift (branchless):
+			//   left  = r1 << (r2 & 0x1F)
+			//   rcnt  = (-r2) & 0x1F ;  if rcnt==0 force 32 so srw yields 0
+			//   right = r1 >> rcnt
+			//   res   = (r2 >= 0) ? left : right
+			// (When r2<0 and (r2&31)==0 SH4 yields 0; srw by 32 gives 0.)
+			{
+				binop_start(op);				// rarg0=r1, rarg1=r2
+				// left = r1 << (r2 & 0x1F)
+				ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,27,31,0);	// rarg2 = r2 & 0x1F
+				ppc_slwx(ppc_rarg3,ppc_rarg0,ppc_rarg2,0);	// rarg3 = left
+				// rcnt = (-r2) & 0x1F
+				ppc_negx(ppc_rarg2,ppc_rarg1,0,0);		// -r2
+				ppc_rlwinmx(ppc_rarg2,ppc_rarg2,0,27,31,0);	// rcnt = (-r2)&0x1F
+				// force 32 when rcnt==0:  isZero=(rcnt-1)>>31 ; rcnt += isZero*32
+				ppc_addi(ppc_r0,ppc_rarg2,-1);			// r0 = rcnt-1
+				ppc_rlwinmx(ppc_r0,ppc_r0,1,31,31,0);		// r0 = (rcnt==0)?1:0  (sign bit -> bit31)
+				ppc_rlwinmx(ppc_r0,ppc_r0,5,0,31,0);		// r0 <<= 5  -> 32 when zero
+				ppc_orx(ppc_rarg2,ppc_rarg2,ppc_r0,0);		// rcnt |= 32 when zero
+				ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_rarg2,0);	// rarg0 = right
+				// select: mask = (r2<0)? ~0 : 0
+				ppc_srawix(ppc_r0,ppc_rarg1,31,0);
+				ppc_andx(ppc_rarg0,ppc_rarg0,ppc_r0,0);		// right & mask
+				ppc_andcx(ppc_rarg3,ppc_rarg3,ppc_r0,0);	// left & ~mask
+				ppc_orx(ppc_rarg0,ppc_rarg0,ppc_rarg3,0);
+				binop_end(op);
+			}
+			break;
+		case shop_shad:
+			// SH4 arithmetic dynamic shift (branchless):
+			//   left  = r1 << (r2 & 0x1F)
+			//   rcnt  = (-r2) & 0x1F ;  if rcnt==0 force 31 (sign fill)
+			//   right = (s32)r1 >> rcnt
+			//   res   = (r2 >= 0) ? left : right
+			{
+				binop_start(op);				// rarg0=r1, rarg1=r2
+				ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,27,31,0);	// r2 & 0x1F
+				ppc_slwx(ppc_rarg3,ppc_rarg0,ppc_rarg2,0);	// rarg3 = left
+				// rcnt = (-r2) & 0x1F
+				ppc_negx(ppc_rarg2,ppc_rarg1,0,0);
+				ppc_rlwinmx(ppc_rarg2,ppc_rarg2,0,27,31,0);	// rcnt
+				// force 31 when rcnt==0:  isZero=(rcnt-1)>>31 ; rcnt += isZero*31
+				ppc_addi(ppc_r0,ppc_rarg2,-1);
+				ppc_rlwinmx(ppc_r0,ppc_r0,1,31,31,0);		// (rcnt==0)?1:0
+				ppc_mulli(ppc_r0,ppc_r0,31);			// 31 when zero else 0
+				ppc_addx(ppc_rarg2,ppc_rarg2,ppc_r0,0,0);	// rcnt = 31 in zero-case
+				ppc_srawx(ppc_rarg0,ppc_rarg0,ppc_rarg2,0);	// rarg0 = right (arithmetic)
+				// select on sign of r2
+				ppc_srawix(ppc_r0,ppc_rarg1,31,0);
+				ppc_andx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
+				ppc_andcx(ppc_rarg3,ppc_rarg3,ppc_r0,0);
+				ppc_orx(ppc_rarg0,ppc_rarg0,ppc_rarg3,0);
+				binop_end(op);
+			}
+			break;
+
+		// --- Integer comparisons / test ---------------------------------------
+		// (set*/test do their own operand load + immediate folding internally.)
+		case shop_test:	// rd = (r1 & r2) == 0
+			ppc_sh_load(ppc_rarg0,op->rs1);
+			if (op->rs2.is_imm_u16())
+				ppc_andi(ppc_rarg0,ppc_rarg0,op->rs2._imm);	// andi. sets CR0
+			else
+			{
+				if (op->rs2.is_imm())
+					ppc_li(ppc_rarg1,op->rs2._imm);
+				else
+					ppc_sh_load(ppc_rarg1,op->rs2);
+				ppc_andx(ppc_rarg0,ppc_rarg0,ppc_rarg1,1);	// and. sets CR0
+			}
+			emit_cr0_bit_to_rarg0(BI_CR0_EQ);
+			binop_end(op);
+			break;
+		case shop_seteq: emit_setcc_signed(op,BI_CR0_EQ,false); break;
+		case shop_setgt: emit_setcc_signed(op,BI_CR0_GT,false); break;
+		case shop_setge: emit_setcc_signed(op,BI_CR0_LT,true);  break; // >= == !<
+		case shop_setab: emit_setcc_unsigned(op,BI_CR0_GT,false); break;
+		case shop_setae: emit_setcc_unsigned(op,BI_CR0_LT,true);  break; // >= == !<
+
+		// --- Unary integer ----------------------------------------------------
+		case shop_neg:    unop3_start(op); ppc_negx(bop_d,bop_a,0,0);    unop3_end(op); break;
+		case shop_not:    unop3_start(op); ppc_norx(bop_d,bop_a,bop_a,0); unop3_end(op); break;
+		case shop_ext_s8: unop3_start(op); ppc_extsbx(bop_d,bop_a,0);    unop3_end(op); break;
+		case shop_ext_s16:unop3_start(op); ppc_extshx(bop_d,bop_a,0);    unop3_end(op); break;
+
+		// --- Unary float ------------------------------------------------------
+		case shop_fabs: unop_start_fpu(op); ppc_fabsx(ppc_farg0,ppc_farg0,0); unop_end_fpu(op); break;
+		case shop_fneg: unop_start_fpu(op); ppc_fnegx(ppc_farg0,ppc_farg0,0); unop_end_fpu(op); break;
+
+		// --- Float comparisons (rd is an integer 0/1) -------------------------
+		case shop_fseteq:
+			binop_start_fpu(op);
+			ppc_fcmpu(ppc_cr0,ppc_farg0,ppc_farg1);
+			emit_cr0_bit_to_rarg0(BI_CR0_EQ);
+			ppc_sh_store(ppc_rarg0,op->rd);
+			break;
+		case shop_fsetgt:
+			binop_start_fpu(op);
+			ppc_fcmpu(ppc_cr0,ppc_farg0,ppc_farg1);
+			emit_cr0_bit_to_rarg0(BI_CR0_GT);
+			ppc_sh_store(ppc_rarg0,op->rd);
+			break;
+
+		// --- Float<->int conversion -------------------------------------------
+		// All conversions bounce integer<->double bit patterns through the
+		// per-context jit_scratch slot (8 bytes, 8-aligned), addressed via
+		// ppc_contex. This avoids relying on a stack red zone (the devkitPPC
+		// EABI does not guarantee one below sp).
+		case shop_cvt_f2i_t:	// (s32)truncate(f)
+			{
+				unop_start_fpu(op);
+				u32 so = (u32)offsetof(Sh4Context, jit_scratch);
+				ppc_fctiwzx(ppc_f0,ppc_farg0,0);		// f0[low32] = (s32)trunc(farg0)
+				ppc_stfd(ppc_f0,ppc_contex,so);			// spill the double
+				ppc_lwz(ppc_rarg0,ppc_contex,so+4);		// low word (BE) = integer result
+				ppc_sh_store(ppc_rarg0,op->rd);
+			}
+			break;
+		case shop_cvt_i2f_n:	// (float)(s32)  round-to-nearest
+		case shop_cvt_i2f_z:	// (float)(s32)  (s32->f32 is identical for both modes here)
+			// Classic PPC s32->double magic-constant trick:
+			//   d = bitcast(0x43300000_00000000 | (u32)(r1 ^ 0x80000000)) - 0x4330000080000000.0
+			// d is the exact (double)(s32)r1; frsp narrows to single.
+			{
+				unop_start(op);					// rarg0 = r1
+				u32 so = (u32)offsetof(Sh4Context, jit_scratch);
+				// Build the biased value double: hi=0x43300000, lo=r1^0x80000000
+				ppc_xoris(ppc_rarg0,ppc_rarg0,0x8000);		// flip sign bit
+				ppc_addis(ppc_rarg1,0,0x4330);			// rarg1 = 0x43300000 (lis)
+				ppc_stw(ppc_rarg1,ppc_contex,so);		// scratch.hi
+				ppc_stw(ppc_rarg0,ppc_contex,so+4);		// scratch.lo
+				ppc_lfd(ppc_f0,ppc_contex,so);			// f0 = magic|value (double)
+				// Build the subtrahend 0x4330000080000000 in the same slot.
+				ppc_addis(ppc_rarg1,0,0x4330);
+				ppc_stw(ppc_rarg1,ppc_contex,so);
+				ppc_addis(ppc_rarg1,0,0x8000);
+				ppc_stw(ppc_rarg1,ppc_contex,so+4);
+				ppc_lfd(ppc_farg1,ppc_contex,so);		// farg1 = 0x4330000080000000
+				ppc_fsubx(ppc_f0,ppc_f0,ppc_farg1,0);		// f0 = (double)(s32)r1
+				ppc_frspx(ppc_farg0,ppc_f0,0);			// narrow to single
+				ppc_sh_store_f32(ppc_farg0,op->rd);
+			}
+			break;
+
+		// --- FMAC: rd = rs1 + rs2 * rs3  (scalar) -----------------------------
+		// fmadds(D,A,B,C) = A*C + B  ->  rs2*rs3 + rs1
+		case shop_fmac:
+			ppc_sh_load_f32(ppc_f0,op->rs1);		// f0 = rs1 (addend)
+			ppc_sh_load_f32(ppc_f1,op->rs2);		// f1 = rs2
+			ppc_sh_load_f32(ppc_f2,op->rs3);		// f2 = rs3
+			ppc_fmaddsx(ppc_f0,ppc_f1,ppc_f0,ppc_f2,0);	// f0 = f1*f2 + f0
+			ppc_sh_store_f32(ppc_f0,op->rd);
+			break;
+
+		// --- FIPR: rd = dot(v1, v2) over 4 elements ---------------------------
+		// rs1,rs2 are FV4 vectors (base fr); rd is the 4th element slot.
+		case shop_fipr:
+			{
+				ppc_fvec_load(ppc_f1,op->rs1,0);
+				ppc_fvec_load(ppc_f2,op->rs2,0);
+				ppc_fmulsx(ppc_f0,ppc_f1,ppc_f2,0);		// acc = a0*b0
+				for (u32 i=1;i<4;i++)
+				{
+					ppc_fvec_load(ppc_f1,op->rs1,i);
+					ppc_fvec_load(ppc_f2,op->rs2,i);
+					ppc_fmaddsx(ppc_f0,ppc_f1,ppc_f0,ppc_f2,0);	// acc = ai*bi + acc
+				}
+				ppc_sh_store_f32(ppc_f0,op->rd);
+			}
+			break;
+
+		// --- FTRV: rd(vec4) = matrix(rs2) x vec(rs1) --------------------------
+		// rs1 = FV4 vector (fr base), rs2 = XMTRX (xf base), rd = FV4 (aliases rs1).
+		//   out[i] = m[i]*v[0] + m[4+i]*v[1] + m[8+i]*v[2] + m[12+i]*v[3]
+		// Results go to f4..f7 first because rd aliases rs1 (must finish reads
+		// before any store).
+		case shop_ftrv:
+			{
+				// Load the input vector once into f8..f11.
+				for (u32 j=0;j<4;j++)
+					ppc_fvec_load(ppc_f8+j,op->rs1,j);
+
+				for (u32 i=0;i<4;i++)
+				{
+					ppc_fvec_load(ppc_f1,op->rs2,i);		// m[i]
+					ppc_fmulsx(ppc_f0,ppc_f1,ppc_f8,0);		// out = m[i]*v0
+					for (u32 j=1;j<4;j++)
+					{
+						ppc_fvec_load(ppc_f1,op->rs2,j*4+i);	// m[j*4+i]
+						ppc_fmaddsx(ppc_f0,ppc_f1,ppc_f0,ppc_f8+j,0);	// out += m*vj
+					}
+					ppc_fmrx(ppc_f4+i,ppc_f0,0);			// stash out[i]
+				}
+				for (u32 i=0;i<4;i++)
+					ppc_fvec_store(ppc_f4+i,op->rd,i);
+			}
+			break;
+
+		// --- FSRRA / FSQRT: TEMPORARILY on the accurate C fallback ------------
+		// The frsqrte estimate (~5-bit) was suspected of distorting the BIOS
+		// swirl. Bisecting: route these to the canonical sqrtf path while
+		// keeping fipr/ftrv/fmac/fsca native. If the swirl renders correctly,
+		// the estimate precision is the culprit; restore the native estimate
+		// (or add Newton refinement) afterwards.
+		//   (cases intentionally omitted -> fall through to default fallback)
+
+		// --- FSCA: rd[0]=sin_table[idx], rd[1]=sin_table[idx+0x4000] ----------
+		// idx = rs1 & 0xFFFF. Table entries are f32 (4 bytes).
+		case shop_fsca:
+			{
+				ppc_sh_load(ppc_rarg0,op->rs1);			// rarg0 = fpul value
+				ppc_rlwinmx(ppc_rarg0,ppc_rarg0,2,14,29,0);	// rarg0 = (idx & 0xFFFF) * 4
+				// rarg1 = &sin_table  (split hi/lo via lis+addi pattern)
+				u32 lo=ppc_addr_high(ppc_rarg1,(void*)&sin_table[0]);
+				ppc_addi(ppc_rarg1,ppc_rarg1,lo);		// rarg1 = base of sin_table
+				ppc_lfsx(ppc_f0,ppc_rarg1,ppc_rarg0);		// sin_table[idx]
+				ppc_fvec_store(ppc_f0,op->rd,0);
+				// +0x4000 entries * 4 bytes = +0x10000 (doesn't fit addi s16;
+				// use addis to add 1<<16).
+				ppc_addis(ppc_rarg0,ppc_rarg0,1);		// rarg0 += 0x10000
+				ppc_lfsx(ppc_f1,ppc_rarg1,ppc_rarg0);		// sin_table[idx+0x4000]
+				ppc_fvec_store(ppc_f1,op->rd,1);
+			}
+			break;
 
 		default:
 			//canonical fallback ~
@@ -816,7 +1604,14 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
           printf("OH CRAP %d\n", op->op);
           die("Recompiler doesn't know about that opcode");
       }
+			// Bracket the canonical fallback with flush/reload: some fallback
+			// handlers (notably sync_sr -> UpdateSR) mutate context GPRs directly
+			// (e.g. SR.RB bank switch), so pinned regs must be coherent in memory
+			// across the call and re-read afterwards. The CC param marshalling
+			// itself is register-aware and unaffected.
+			reg_flush_all();
 			shil_chf[op->op](op);
+			reg_reload_all();
 			break;
       
 		}
@@ -882,10 +1677,15 @@ void ngen_mainloop()
 			/*
 			pre load registers/counters etc ..
 			*/
-			reg_reload_all();
 
 			//cntx base
 			ppc_lip(ppc_contex,&Sh4cntx);
+
+			// Load the pinned SH4 GPRs ONCE here, after ppc_contex is valid and
+			// before the loop_no_update re-entry point below. They then stay live
+			// in r14..r28 for the entire JIT run (no per-block reload/flush); the
+			// only resync points are shop_ifb and the canonical fallback.
+			reg_reload_all();
 
 			//cycles
 			ppc_li(ppc_cycles,SH4_TIMESLICE);
@@ -907,7 +1707,20 @@ void ngen_mainloop()
 			ppc_sh_store(ppc_next_pc,reg_nextpc);
 			ppc_addi(ppc_cycles,ppc_cycles,SH4_TIMESLICE);	//add cycles ...
 
-			ppc_call(UpdateSystem);	//call UpdateSystem
+			// Split UpdateSystem: the GPR-free peripheral cascade + interrupt
+			// pending-check runs every timeslice WITHOUT flushing the pinned
+			// GPRs. Only if it reports a pending interrupt (rv != 0) do we flush,
+			// run the GPR-touching handler (Do_Interrupt / bank swap), and reload.
+			ppc_call(UpdateSystem_no_event);
+			ppc_cmpi(ppc_cr0,ppc_rrv0,0,0);			// rv == 0 ?
+			ppc_label* no_intr=ppc_CreateLabel();
+			ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq no_intr (skip handler)
+			{
+				reg_flush_all();
+				ppc_call(UpdateSystem_handle_event);
+				reg_reload_all();
+			}
+			no_intr->MarkLabel();
 			ppc_sh_load(ppc_next_pc,reg_nextpc);
 			//
 			ppc_jump(loop_no_update);

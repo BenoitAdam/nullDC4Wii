@@ -276,6 +276,15 @@ u32 INLINE BSR(u32 v)
 
 	return 0;
 }
+// Cheap, side-effect-free predicate: does an interrupt currently need handling?
+// Touches NO SH4 GPRs (does not run Do_Interrupt). Used by the JIT to decide
+// whether it must flush its pinned GPRs before dispatching the event handler.
+int UpdateINTC_pending()
+{
+	u32 intped=interrupt_vpend&interrupt_vmask;
+	return intped>decoded_srimask;
+}
+
 int UpdateINTC()
 {
 	u32 intped=interrupt_vpend&interrupt_vmask;

@@ -343,6 +343,41 @@ int FASTCALL UpdateSystem()
 }
 
 // -------------------------------------------------------------------------
+// Split form of UpdateSystem() for the recompiler's static GPR allocation.
+//
+// The peripheral cascade (Medium/TMU/Pvr) and the interrupt-pending check
+// touch NO SH4 GPRs, so the JIT can run them on its hot path WITHOUT flushing
+// its pinned registers. UpdateSystem_no_event() does exactly that work and
+// returns nonzero only when an interrupt must actually be dispatched.
+//
+// Only on that (rare) nonzero result does the JIT flush its GPRs, call
+// UpdateSystem_handle_event() — which runs the GPR-touching Do_Interrupt /
+// register-bank swap — and reload. This keeps the expensive flush/reload off
+// the common per-timeslice path.
+//
+// Invariant: _no_event() must perform every side effect of UpdateSystem()
+// EXCEPT the UpdateINTC() interrupt dispatch, and _handle_event() must perform
+// exactly that dispatch — so calling _no_event() then (conditionally)
+// _handle_event() is behaviourally identical to a single UpdateSystem().
+// -------------------------------------------------------------------------
+int FASTCALL UpdateSystem_no_event()
+{
+	if (!(update_cnt & (s_medium_period - 1)))
+		MediumUpdate();
+
+	update_cnt++;
+
+	UpdateTMU(s_timeslice);
+	UpdatePvr(s_timeslice);
+	return UpdateINTC_pending();
+}
+
+int FASTCALL UpdateSystem_handle_event()
+{
+	return UpdateINTC();
+}
+
+// -------------------------------------------------------------------------
 // Cache reset stub (no cache emulation in the interpreter)
 // -------------------------------------------------------------------------
 void sh4_int_resetcache() { }
