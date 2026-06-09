@@ -90,13 +90,16 @@ T fastcall ReadMemArm(u32 addr)
             switch (sz)
             {
                 case 4:
-                    u8 t[4];
-                    int i;
-                    for(i=0;i<4;++i)
-                        t[i]=arm_aica_ram[((addr+i)^3)&ARAM_MASK];
-                    
-                    return t[3]<<24 | t[2]<<16 | t[1]<<8 |t[0];
-                    break;
+                {
+                    // ARM7DI unaligned LDR: read the *aligned* word containing
+                    // the address, then rotate right by (addr&3)*8. This is the
+                    // hardware behavior; a plain byte-gather from the unaligned
+                    // offset gives the wrong result (and failed the LDR_* tests).
+                    u32 aligned = addr & ~3u;
+                    u32 word = *(u32*)&arm_aica_ram[aligned & ARAM_MASK];
+                    u32 rot  = (addr & 3) * 8;
+                    return (word >> rot) | (word << (32 - rot));
+                }
                 default:
                     dbgbreak;
             }

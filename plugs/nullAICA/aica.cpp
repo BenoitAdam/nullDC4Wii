@@ -32,13 +32,14 @@ u32 GetL(u32 witch)
     return rv;
 }
 
-// ArmInterruptChange is provided by the vbaARM plugin.
-// The ARM plugin registers this callback via its plugin_interface.
-// We call it through the dc/aica interface layer.
-/*
-extern "C" {
-    void FASTCALL ArmInterruptChange(u32 bits, u32 L);
-}
+// ArmInterruptChange is provided by the vbaARM plugin (arm_mem.cpp). It sets
+// the AICA interrupt-pending state which raises the ARM7 FIQ. The wrestler
+// test (and real games) program SCIEB + timers and then wait for this FIQ to
+// drive their main loop, so this MUST be wired up or the ARM7 spins in init
+// and never reaches KeyOn.
+// NOTE: declared with C++ linkage (NOT extern "C") to match the definition in
+// vbaARM/arm_mem.cpp; an extern "C" wrapper here breaks the link.
+void FASTCALL ArmInterruptChange(u32 bits, u32 L);
 
 void update_arm_interrupts()
 {
@@ -60,7 +61,7 @@ void update_arm_interrupts()
     }
 
     ArmInterruptChange(p_ints, Lval);
-}*/
+}
 
 void UpdateSh4Ints()
 {
@@ -161,7 +162,7 @@ void FASTCALL UpdateAICA(u32 Samples)
             timers[i].StepTimer();
     }
 
-    // update_arm_interrupts();
+    update_arm_interrupts();
     UpdateSh4Ints();
 }
 
@@ -177,7 +178,7 @@ void WriteAicaReg(u32 reg, u32 data)
         if (data & (1 << 5))
         {
             SCIPD->SCPU = 1;
-            // update_arm_interrupts();
+            update_arm_interrupts();
         }
         return; // read-only
 
@@ -185,7 +186,7 @@ void WriteAicaReg(u32 reg, u32 data)
         verify(sz != 1);
         SCIPD->full &= ~data;
         data = 0;
-        // update_arm_interrupts();
+        update_arm_interrupts();
         break;
 
     case MCIPD_addr:
@@ -269,8 +270,9 @@ void AICA_Term()
     sgc_Term();
 }
 
-// wii_audio.cpp calls this once per sample tick (735 times per frame).
-// It steps one AICA sample, ticks timers, and sets SAMPLE_DONE.
+// Steps one AICA sample, ticks timers, sets SAMPLE_DONE, and updates the
+// ARM7 / SH4 interrupt lines. Driven once per sample from the SH4 timeslice
+// (armUpdateARM) — see [[aica-arm-timing]].
 void libAICA_TimeStep()
 {
     AICA_Sample();
@@ -279,6 +281,6 @@ void libAICA_TimeStep()
     for (int i = 0; i < 3; i++)
         timers[i].StepTimer();
 
-    // update_arm_interrupts();
+    update_arm_interrupts();
     UpdateSh4Ints();
 }

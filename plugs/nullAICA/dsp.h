@@ -30,7 +30,7 @@ struct dsp_t
         u32  NOFL_2;
     } regs;
 
-    u32  DEC;
+    u32  DEC_;
 
     signed int ACC;
     signed int SHIFTED;

@@ -58,6 +58,7 @@ void plugins_Term();
 	void FASTCALL libARM_Term   ();
 	void FASTCALL libARM_Reset  (bool Manual);
 	void FASTCALL libARM_Update (u32 cycles);
+	void          libARM_SetResetState(u32 state);
 
 
 //GDR

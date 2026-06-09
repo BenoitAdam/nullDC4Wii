@@ -1,5 +1,9 @@
 // Wii Rendering
 
+#include <cstdio>
+#include <ogc/system.h>
+#define printf(...) SYS_Report(__VA_ARGS__)
+
 // RUNTIME - PRESET SELECTION
 
 // This is defined in main.cpp
@@ -356,7 +360,8 @@ static void tex_frame_reset()
 }
 
 
-void VBlank() {}
+// VBlank() is defined after PresentFramebuffer()/ShouldSkipFrame() below, so it
+// can present the VRAM framebuffer on vblanks where no PVR render occurred.
 
 // Static arrays for vertex data to avoid frequent heap allocations.
 // Limited by the Wii's MEM1/MEM2 availability.
@@ -1916,6 +1921,73 @@ static void SetTextureParams(PolyParam *mod)
 static bool s_did_3d_render = false;
 
 // ============================
+// Framebuffer-present tracking (devcast-style, magic-word variant)
+// ============================
+//
+// Some titles (notably MIL-CD / CDI selfboot 2D content) write their image
+// directly into VRAM and present it via the SPG scanout, without ever issuing
+// a PVR RENDER_START.  In that case StartRender() never runs and the screen
+// would stay stale.  devcast handles this by presenting the VRAM framebuffer
+// at vblank whenever no 3D render happened that frame (render_called / fb_dirty
+// gate in Renderer_if.cpp / RenderFramebuffer()).
+//
+// Here we use an in-VRAM magic word instead of a host-side flag so the signal
+// is tied to the actual framebuffer contents:
+//
+//   * When the PVR produces a frame (DoRender), we stamp FB_MAGIC into VRAM at
+//     the framebuffer *write* start address (FB_W_SOF1).  This marks "the image
+//     currently in VRAM was produced by the PVR and is already on screen".
+//   * At vblank (VBlank) we read the magic from the framebuffer *read* start
+//     address (FB_R_SOF1).  If it is still there, the on-screen image is the
+//     PVR's render and there is nothing new to show.  If it is gone, the CPU
+//     (or any non-PVR writer) has overwritten the framebuffer, so we present
+//     the VRAM framebuffer contents.
+//
+// The magic is written at the very first pixel of the framebuffer; a real frame
+// will normally overwrite pixel 0, which is exactly the "needs present" signal.
+#define FB_PRESENT_MAGIC 0xDC4F0FB0u   // "DC4 0FB" – framebuffer-presented marker
+
+// Linear 32-bit VRAM accessor (DC byte address -> interleaved 64-bit bank).
+// Mirrors vri()/vrf() but lets us write as well as read the magic word.
+static INLINE u32 fb_vram_read32(u32 addr)
+{
+  return *(u32 *)&params.vram[fast_ConvOffset32toOffset64(addr)];
+}
+
+static INLINE void fb_vram_write32(u32 addr, u32 val)
+{
+  *(u32 *)&params.vram[fast_ConvOffset32toOffset64(addr)] = val;
+}
+
+// Stamp the "already presented" marker into the framebuffer.  Called:
+//   * after a PVR 3D render, at the write origin (FB_W_SOF1) — the address the
+//     PVR just produced into and that the game will scan out from;
+//   * after a VRAM framebuffer present, at the read origin (FB_R_SOF1) — the
+//     address that was just shown.
+// In both cases the marker means "the current framebuffer contents are on
+// screen".  Any subsequent CPU/2D write to the framebuffer overwrites pixel 0
+// (and thus the marker), which is exactly the "needs present" signal.
+static INLINE void fb_stamp_present_magic_at(u32 addr)
+{
+  fb_vram_write32(addr & 0x00FFFFFF, FB_PRESENT_MAGIC);
+}
+
+static INLINE void fb_stamp_present_magic()
+{
+  fb_stamp_present_magic_at(FB_W_SOF1);
+}
+
+// True when the framebuffer read origin no longer holds our marker, i.e. the
+// framebuffer was written by something other than the present path and the new
+// contents still need to be shown.
+static INLINE bool fb_needs_present()
+{
+  return fb_vram_read32(FB_R_SOF1 & 0x00FFFFFF) != FB_PRESENT_MAGIC;
+}
+
+void PresentFramebuffer();
+
+// ============================
 // Frame-skip state
 // ============================
 
@@ -2278,8 +2350,194 @@ void DoRender()
 
   s_did_3d_render = true;
 
+  // Mark the VRAM framebuffer as "produced by the PVR / already on screen".
+  // VBlank() checks this magic word and only presents the VRAM framebuffer
+  // when it has been overwritten by a non-PVR (CPU/2D) writer.
+  fb_stamp_present_magic();
+
   wii_audio_frame();
-  VIDEO_WaitVSync();  
+  VIDEO_WaitVSync();
+}
+
+// ============================
+// FRAMEBUFFER PRESENT (VRAM scanout -> GX)
+// ============================
+//
+// Reads the Dreamcast framebuffer out of VRAM (at FB_R_SOF1) as a 640x480
+// image and draws it as a fullscreen textured quad, then copies to the Wii
+// framebuffer and presents.  Shared by the StartRender 2D-blit path and the
+// vblank-driven present in VBlank().
+// Fixed GX scratch texture, always 640x480 RGB565 (4x4 tiled). The DC source
+// framebuffer may be smaller/narrower; we decode the real region into the top
+// area of this texture and present only that sub-rect via UVs.
+#define FB2D_W 640
+#define FB2D_H 480
+
+void PresentFramebuffer()
+{
+  static u16 fb2d_tex[FB2D_W * FB2D_H] ATTRIBUTE_ALIGN(32);
+
+  // ── Derive the source framebuffer geometry from FB_R_SIZE / FB_R_CTRL ──────
+  // (devcast RenderFramebuffer).  FB_R_SIZE is a raw u32 here:
+  //   bits  0-9  fb_x_size, 10-19 fb_y_size, 20-29 fb_modulus.
+  u32 fb_x_size  =  FB_R_SIZE        & 0x3FF;
+  u32 fb_y_size  = (FB_R_SIZE >> 10) & 0x3FF;
+  u32 fb_modulus = (FB_R_SIZE >> 20) & 0x3FF;
+  u32 fb_depth   = FB_R_CTRL.fb_depth;
+
+  if(DEBUG_MESSAGE()) printf("[FB] PresentFramebuffer FB_R_SIZE=%08X (x=%u y=%u mod=%u) depth=%u SOF1=%08X\n",
+    (u32)FB_R_SIZE, fb_x_size, fb_y_size, fb_modulus, fb_depth, FB_R_SOF1);
+
+  if (fb_x_size == 0 || fb_y_size == 0)
+    return;   // nothing configured to scan out
+
+  // width/modulus expressed in pixels for the 16-bit (0555/565) formats.
+  int src_w   = (int)((fb_x_size + 1) << 1);   // pixels per line (16bpp word == 1 pixel)
+  int src_h   = (int)(fb_y_size + 1);
+  int mod_px  = (int)((fb_modulus > 0 ? (fb_modulus - 1) : 0) << 1); // gap pixels per line
+  int bpp     = 2;                              // bytes per pixel (16bpp paths)
+
+  // For 24/32bpp scanout the stride math differs; fall back to treating the
+  // pixels as 16bpp so we at least show something rather than a torn line.
+  // (DC selfboot 2D content is virtually always 0555/565.)
+
+  // Clamp the decoded region to the scratch texture.
+  int cpy_w = src_w > FB2D_W ? FB2D_W : src_w;
+  int cpy_h = src_h > FB2D_H ? FB2D_H : src_h;
+
+  u32 addr = (FB_R_SOF1 & 0x00FFFFFF);
+
+  // Decode line-by-line into the 4x4-tiled RGB565 scratch texture, honoring the
+  // real source stride (line width + modulus gap).
+  for (int y = 0; y < cpy_h; y++)
+  {
+    u32 line_addr = addr;
+    for (int x = 0; x < cpy_w; x++)
+    {
+      u32 off64 = fast_ConvOffset32toOffset64(line_addr);
+      u16 px = *host_ptr_xor((u16*)&params.vram[off64]);
+
+      // Convert 1555 -> 565 when needed so the GX texture format is uniform.
+      if (fb_depth != 1) // fbde_0555 (or non-565): RGB555 -> RGB565
+      {
+        u16 r = (px >> 10) & 0x1F;
+        u16 g = (px >>  5) & 0x1F;
+        u16 b =  px        & 0x1F;
+        px = (u16)((r << 11) | (g << 6) | b);
+      }
+
+      // 4x4 tile address inside fb2d_tex.
+      u16 *dst = &fb2d_tex[((y / 4) * (FB2D_W / 4) + (x / 4)) * 16
+                           + (y % 4) * 4 + (x % 4)];
+      *dst = px;
+
+      line_addr += bpp;
+    }
+    // Advance to the next source line by the full source width + modulus gap,
+    // regardless of how much we clamped into the scratch texture.
+    addr += (u32)((src_w + mod_px) * bpp);
+  }
+  DCFlushRange(fb2d_tex, sizeof(fb2d_tex));
+
+  // Texture is uniformly RGB565 now.
+  GXTexObj texobj;
+  GX_InitTexObj(&texobj, fb2d_tex, FB2D_W, FB2D_H, GX_TF_RGB565, GX_CLAMP, GX_CLAMP, GX_FALSE);
+  GX_InitTexObjLOD(&texobj, GX_LINEAR, GX_LINEAR, 0, 0, 0, GX_FALSE, GX_FALSE, GX_ANISO_1);
+  GX_LoadTexObj(&texobj, GX_TEXMAP0);
+
+  // UV sub-rect: only the decoded cpy_w x cpy_h region holds real pixels.
+  float u1 = (float)cpy_w / (float)FB2D_W;
+  float v1 = (float)cpy_h / (float)FB2D_H;
+
+  // VTXFMT1: XY+UV only, leaves VTXFMT0 (3D path) undisturbed.
+  GX_SetVtxAttrFmt(GX_VTXFMT1, GX_VA_POS,  GX_POS_XY,  GX_F32, 0);
+  GX_SetVtxAttrFmt(GX_VTXFMT1, GX_VA_TEX0, GX_TEX_ST,  GX_F32, 0);
+  GX_ClearVtxDesc();
+  GX_SetVtxDesc(GX_VA_POS,  GX_DIRECT);
+  GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
+  GX_SetNumChans(0);
+  GX_SetNumTexGens(1);
+  GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
+  GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLORNULL);
+  GX_SetTevOp(GX_TEVSTAGE0, GX_REPLACE);
+  GX_SetZMode(GX_FALSE, GX_ALWAYS, GX_FALSE);
+  GX_SetBlendMode(GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR);
+
+  Mtx44 ortho;
+  guOrtho(ortho, 0, 480, 0, 640, 0, 1);
+  GX_LoadProjectionMtx(ortho, GX_ORTHOGRAPHIC);
+  Mtx mv;
+  guMtxIdentity(mv);
+  GX_LoadPosMtxImm(mv, GX_PNMTX0);
+
+  // In 4:3 mode, draw the 2D framebuffer into a centred 4:3 sub-rectangle
+  // so logo screens and 2D content have the same correct framing as 3D.
+  float x0_2d, x1_2d;
+  if (FULLSCREEN())
+  {
+    x0_2d = 0.f;
+    x1_2d = 640.f;
+  }
+  else
+  {
+    // 4:3 inside 16:9: side bars are (1 - 3/4) / 2 * 640 = 80 px each side
+    const float ratio = (4.f / 3.f) / (16.f / 9.f); // 0.75
+    float margin = (640.f * (1.f - ratio)) * 0.5f;   // 80 px
+    x0_2d = margin;
+    x1_2d = 640.f - margin;
+  }
+
+  GX_Begin(GX_QUADS, GX_VTXFMT1, 4);
+    GX_Position2f32(x0_2d,   0); GX_TexCoord2f32(0,  0);
+    GX_Position2f32(x1_2d,   0); GX_TexCoord2f32(u1, 0);
+    GX_Position2f32(x1_2d, 480); GX_TexCoord2f32(u1, v1);
+    GX_Position2f32(x0_2d, 480); GX_TexCoord2f32(0,  v1);
+  GX_End();
+
+  GX_DrawDone();
+  GX_CopyDisp(frameBuffer[fb], GX_TRUE);
+  VIDEO_SetNextFramebuffer(frameBuffer[fb]);
+  VIDEO_Flush();
+  wii_audio_frame();
+  // VIDEO_WaitVSync() // Not necessary here (don't block the SH4 thread)
+
+  // Mark these framebuffer contents as shown.  The texture has already been
+  // sampled from VRAM above, so stamping the read origin now only affects what
+  // the *next* VBlank sees: it will re-present only if the game overwrites the
+  // framebuffer (clobbering the marker) before then.
+  fb_stamp_present_magic_at(FB_R_SOF1);
+}
+
+// ============================
+// VBLANK (vblank-driven framebuffer present)
+// ============================
+//
+// Called at the start of every vblank (from SPG.cpp).  devcast presents the
+// VRAM framebuffer here whenever no 3D render happened that frame
+// (Renderer_if.cpp rend_vblank -> RenderFramebuffer).  We do the same, but
+// detect the "needs present" condition via the in-VRAM magic word:
+//
+//   * If the framebuffer read origin (FB_R_SOF1) still holds FB_PRESENT_MAGIC,
+//     the on-screen image is the PVR's last render -> nothing new to show.
+//   * If the magic is gone, a non-PVR writer (CPU / 2D blit) has refreshed the
+//     framebuffer -> scan it out of VRAM and present it.
+void VBlank()
+{
+  if (!FB_R_CTRL.fb_enable)
+    return;   // display output disabled
+
+  if (!fb_needs_present())
+    return;   // on-screen image is still the PVR render; nothing new
+
+  if (ShouldSkipFrame())
+    return;
+
+  if(DEBUG_MESSAGE()) printf("[PATH] VBlank-FB present: FB_R_SOF1=%08X fb_depth=%d\n",
+    FB_R_SOF1, (int)FB_R_CTRL.fb_depth);
+
+  PresentFramebuffer();
+  s_did_3d_render = false;
+  FrameCount++;
 }
 
 // ============================
@@ -2324,82 +2582,7 @@ void StartRender()
     if(DEBUG_MESSAGE()) printf("[PATH] 2D-blit: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
       FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
 
-    static u16 fb2d_tex[640 * 480] ATTRIBUTE_ALIGN(32);
-    u32 vram_addr = FB_R_SOF1 & 0x00FFFFFF;
-
-    for (int ty = 0; ty < 480; ty += 4)
-      for (int tx = 0; tx < 640; tx += 4)
-      {
-        u16 *dst = &fb2d_tex[((ty / 4) * (640 / 4) + (tx / 4)) * 16];
-        for (int row = 0; row < 4; row++)
-          for (int col = 0; col < 4; col++)
-          {
-            u32 off64 = fast_ConvOffset32toOffset64(vram_addr + ((ty + row) * 640 + (tx + col)) * 2);
-            *dst++ = *host_ptr_xor((u16*)&params.vram[off64]);
-          }
-      }
-    DCFlushRange(fb2d_tex, sizeof(fb2d_tex));
-
-    // FB_R_CTRL.fb_depth: 1 = RGB565, others = ARGB1555 (RGB5A3 on GX)
-    GXTexObj texobj;
-    if (FB_R_CTRL.fb_depth == 1)
-      GX_InitTexObj(&texobj, fb2d_tex, 640, 480, GX_TF_RGB565,  GX_CLAMP, GX_CLAMP, GX_FALSE);
-    else
-      GX_InitTexObj(&texobj, fb2d_tex, 640, 480, GX_TF_RGB5A3,  GX_CLAMP, GX_CLAMP, GX_FALSE);
-    GX_InitTexObjLOD(&texobj, GX_NEAR, GX_NEAR, 0, 0, 0, GX_FALSE, GX_FALSE, GX_ANISO_1);
-    GX_LoadTexObj(&texobj, GX_TEXMAP0);
-
-    // VTXFMT1: XY+UV only, leaves VTXFMT0 (3D path) undisturbed.
-    GX_SetVtxAttrFmt(GX_VTXFMT1, GX_VA_POS,  GX_POS_XY,  GX_F32, 0);
-    GX_SetVtxAttrFmt(GX_VTXFMT1, GX_VA_TEX0, GX_TEX_ST,  GX_F32, 0);
-    GX_ClearVtxDesc();
-    GX_SetVtxDesc(GX_VA_POS,  GX_DIRECT);
-    GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
-    GX_SetNumChans(0);
-    GX_SetNumTexGens(1);
-    GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
-    GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLORNULL);
-    GX_SetTevOp(GX_TEVSTAGE0, GX_REPLACE);
-    GX_SetZMode(GX_FALSE, GX_ALWAYS, GX_FALSE);
-    GX_SetBlendMode(GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR);
-
-    Mtx44 ortho;
-    guOrtho(ortho, 0, 480, 0, 640, 0, 1);
-    GX_LoadProjectionMtx(ortho, GX_ORTHOGRAPHIC);
-    Mtx mv;
-    guMtxIdentity(mv);
-    GX_LoadPosMtxImm(mv, GX_PNMTX0);
-
-    // In 4:3 mode, draw the 2D framebuffer into a centred 4:3 sub-rectangle
-    // so logo screens and 2D content have the same correct framing as 3D.
-    float x0_2d, x1_2d;
-    if (FULLSCREEN())
-    {
-      x0_2d = 0.f;
-      x1_2d = 640.f;
-    }
-    else
-    {
-      // 4:3 inside 16:9: side bars are (1 - 3/4) / 2 * 640 = 80 px each side
-      const float ratio = (4.f / 3.f) / (16.f / 9.f); // 0.75
-      float margin = (640.f * (1.f - ratio)) * 0.5f;   // 80 px
-      x0_2d = margin;
-      x1_2d = 640.f - margin;
-    }
-
-    GX_Begin(GX_QUADS, GX_VTXFMT1, 4);
-      GX_Position2f32(x0_2d,   0); GX_TexCoord2f32(0, 0);
-      GX_Position2f32(x1_2d,   0); GX_TexCoord2f32(1, 0);
-      GX_Position2f32(x1_2d, 480); GX_TexCoord2f32(1, 1);
-      GX_Position2f32(x0_2d, 480); GX_TexCoord2f32(0, 1);
-    GX_End();
-
-    GX_DrawDone();
-    GX_CopyDisp(frameBuffer[fb], GX_TRUE);
-    VIDEO_SetNextFramebuffer(frameBuffer[fb]);
-    VIDEO_Flush();
-    wii_audio_frame();
-    // VIDEO_WaitVSync() // Not necessary here (don't block the SH4 thread)
+    PresentFramebuffer();
     FrameCount++;
     return;
   }

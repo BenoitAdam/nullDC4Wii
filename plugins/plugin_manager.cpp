@@ -23,13 +23,12 @@
 // Instead we forward-declare only what we need from vbaARM.cpp.
 #include "plugs/vbaARM/arm_aica.h"   // armUpdateARM, arm_sh4_bias
 
-// Forward declarations for the vbaARM plugin entry points defined in vbaARM.cpp
-// OLD - uses real vbaARM
-// extern "C" void armGetInterface(plugin_interface* info);
-
-// NEW - uses empty stub
-#include "plugs/emptyARM/emptyARM.h"
-#define armGetInterface emptyArmGetInterface
+// Use the real vbaARM ARM7DI core. We can't include vbaARM.h here (it re-defines
+// ReadMemArrRet / WriteMemArrRet, which collide with sh4_mem.h), so forward-
+// declare its plugin entry point. EmptyARM (a no-op stub whose Update did
+// nothing — which is why the ARM7 never ran and there was no sound) has been
+// removed.
+extern "C" void armGetInterface(plugin_interface* info);
 
 
 
@@ -109,6 +108,12 @@ void libARM_Update(u32 cycles)
 {
 	if (arm_plugin_loaded && arm_plugin.arm.Update)
 		arm_plugin.arm.Update(cycles);
+}
+
+void libARM_SetResetState(u32 state)
+{
+	if (arm_plugin_loaded && arm_plugin.arm.SetResetState)
+		arm_plugin.arm.SetResetState(state);
 }
 
 struct MapleState

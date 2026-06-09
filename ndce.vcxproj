@@ -253,9 +253,6 @@
     <ClCompile Include="dc\asic\asic.cpp" />
     <ClCompile Include="config\config.cpp" />
     <ClCompile Include="cl\cl.cpp" />
-    <ClCompile Include="plugs\EmptyAICA\aica_hax.cpp" />
-    <ClCompile Include="plugs\EmptyAICA\aica_hle.cpp" />
-    <ClCompile Include="plugs\EmptyAICA\EmptyAICA.cpp" />
     <ClCompile Include="plugs\drkPvr\drkPvr.cpp" />
     <ClCompile Include="plugs\drkPvr\Renderer_if.cpp" />
     <ClCompile Include="plugs\drkPvr\tex_decode.cpp" />
@@ -371,9 +368,6 @@
     <ClInclude Include="dc\asic\asic.h" />
     <ClInclude Include="config\config.h" />
     <ClInclude Include="cl\cl.h" />
-    <ClInclude Include="plugs\EmptyAICA\aica_hax.h" />
-    <ClInclude Include="plugs\EmptyAICA\aica_hle.h" />
-    <ClInclude Include="plugs\EmptyAICA\EmptyAICA.h" />
     <ClInclude Include="plugs\drkPvr\config.h" />
     <ClInclude Include="plugs\drkPvr\drkPvr.h" />
     <ClInclude Include="plugs\drkPvr\Renderer_if.h" />

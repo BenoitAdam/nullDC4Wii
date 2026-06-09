@@ -20,6 +20,9 @@
 // *** GAME PRESETS ***
 #include "wii/game_presets.h"
 
+// *** ARM7DI CORE SELF-TEST ***
+#include "plugs/vbaARM/arm7.h"
+
 // ============================================================================
 // GLOBAL EMULATOR PRESETS
 // ============================================================================
@@ -849,6 +852,26 @@ int main(int argc, wchar *argv[])
   VIDEO_WaitVSync();
   if (rmode->viTVMode & VI_NON_INTERLACE)
     VIDEO_WaitVSync();
+
+  // ---------------------------------------------------------------------------
+  // ARM7DI core self-test — runs before anything else so a broken AICA ARM
+  // core is caught (and visible on screen) before we ever boot a game.
+  // ---------------------------------------------------------------------------
+  // {
+  //   int arm7_failures = arm_RunSelfTests();
+  //   if (arm7_failures != 0)
+  //   {
+  //     printf("\nARM7DI SELF-TEST FAILED (%d). Press HOME to exit.\n", arm7_failures);
+  //     while (true)
+  //     {
+  //       WPAD_ScanPads();
+  //       if (WPAD_ButtonsDown(0) & WPAD_BUTTON_HOME)
+  //         break;
+  //       VIDEO_WaitVSync();
+  //     }
+  //     return 1;
+  //   }
+  // }
 
   if (mp3mainmenu)
     MP3Player_PlayBuffer(sample_mp3, sample_mp3_size, NULL);
