@@ -17,7 +17,6 @@ void arm_SetNextPC(u32 value);
 // Prints a per-test pass/fail summary via printf.
 int  arm_RunSelfTests();
 
-#define arm_sh4_bias (2)
-
+#define arm_sh4_bias (20) // 2 = fps drop / 20 = Nice / 25 = ok
 
 
