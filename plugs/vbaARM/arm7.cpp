@@ -53,35 +53,14 @@ enum
 	SPSR_FIQ =44,
 };
 
-#ifdef XENON
+// Register storage is a plain u32. The old union had endian-dependent
+// B0/B1/B2/B3 and W0/W1 sub-fields, which were wrong on big-endian hosts
+// (B.B0 was the MSB, W.W0 the high halfword) and silently corrupted STRB /
+// STRH / SWPB / register-specified shift amounts. All accesses now use
+// explicit masks/shifts on .I, so the sub-fields are gone entirely.
 typedef union {
-	struct {
-		u8 B3;
-		u8 B2;
-		u8 B1;
-		u8 B0;
-	} B;
-	struct {
-		u16 W1;
-		u16 W0;
-	} W;
 	u32 I;
 } reg_pair;
-#else
-typedef union {
-	struct {
-		u8 B0;
-		u8 B1;
-		u8 B2;
-		u8 B3;
-	} B;
-	struct {
-		u16 W0;
-		u16 W1;
-	} W;
-	u32 I;
-} reg_pair;
-#endif
 
 //bool arm_FiqPending; -- not used , i use the input directly :)
 //bool arm_IrqPending;
@@ -437,6 +416,14 @@ void arm_SetEnabled(bool enabled)
 {
 	if(!Arm7Enabled && enabled)
 			arm_Reset();
-	
+
 	Arm7Enabled=enabled;
 }
+
+// ── Self-test accessors ────────────────────────────────────────────────────
+// Minimal getters/setters so the ARM7DI conformance self-test (arm7_selftest.cpp)
+// can drive the core without duplicating the internal reg_pair layout.
+u32  arm_GetReg(int n)            { return arm_Reg[n].I; }
+void arm_SetReg(int n, u32 value) { arm_Reg[n].I = value; }
+u32  arm_GetNextPC()             { return arm_ArmNextPC; }
+void arm_SetNextPC(u32 value)    { arm_ArmNextPC = value; }
