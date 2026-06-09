@@ -1,5 +1,8 @@
 #include "cdi.h"
 
+#include <ogc/system.h>
+#define printf(...) SYS_Report(__VA_ARGS__)
+
 extern "C" int get_debug_loop();
 
 #define CDI_V2   0x80000004u
@@ -183,35 +186,123 @@ static void skip(FILE* f, int n) { fseek(f, n, SEEK_CUR); }
 
 // ─── header parser ───────────────────────────────────────────────────────────
 
-/*
- * Observed layout at hdr_pos (from hex dump of chuchurocket.cdi):
- *
- * +0x00  u16  track_count_session0        (= 1)
- * +0x02  u16  disc_type_raw               (= 0x0012)
- * +0x04  u8[8] unknown
- * +0x0C  u32  0xFFFF0000  ─┐ 8-byte separator
- * +0x10  u32  0x0000FFFF  ─┘
- * +0x14  u32  session_count               (= 1)
- * +0x18  u32  0xFFFFFFFF  end marker
- * +0x1C  u32  timestamp
- * +0x20  u8   filename_len
- * +0x21  char filename[filename_len]
- *        u8[11]  pad
- *        u32  pregap       (sectors)
- *        u32  length       (data sectors)
- *        u8[6] unknown
- *        u32  mode         (0=audio, 1=Mode1, 2=Mode2/XA)
- *        u8[12] unknown
- *        u32  lba          (raw LBA 0-based; FAD = lba+150)
- *        u32  total_length (pregap + length)
- *        u8[16] unknown
- *        u32  sector_size  (2048/2336/2352/2448)
- *        u32  extra        (V3.5 only)
- *        u8[12] trailing
- *
- * After all tracks: u32 session_end_marker
- * Tail: u32 disc_type, u32 sessions_end_lba, u32 pad, u32 leadout_lba
- */
+// Per-track record layout, ported verbatim from devcast's cdipsr.cpp
+// (CDI_read_track).  This is the authoritative DiscJuggler track descriptor
+// walk; the previous hex-dump-derived layout was missing the two track start
+// marks, the DJ extra-data / DJ4 markers, and read the sector size by track
+// type instead of from the on-disk sector_size_value field.
+//
+//   u32  temp            ; if != 0 -> skip 8  (DJ 3.00.780+ extra data)
+//   u8[10] start_mark     ; { 00 00 01 00 00 00 FF FF FF FF }
+//   u8[10] start_mark     ; (same, twice)
+//   skip 4
+//   u8   filename_length  ; + filename[filename_length]
+//   skip 11
+//   skip 4
+//   skip 4
+//   u32  temp            ; if == 0x80000000 -> skip 8  (DJ4)
+//   skip 2
+//   u32  pregap_length
+//   u32  length
+//   skip 6
+//   u32  mode             ; 0=audio, 1=Mode1, 2=Mode2
+//   skip 12
+//   u32  start_lba
+//   u32  total_length
+//   skip 16
+//   u32  sector_size_value; 0->2048 1->2336 2->2352 4->2448
+//   skip 29
+//   if version != V2:
+//       skip 5
+//       u32 temp ; if == 0xffffffff -> skip 78  (DJ 3.00.780+ extra data)
+
+static bool cdi_read_track(FILE* f, u32 version, u32 ses,
+                           u32* out_pregap, u32* out_length, u32* out_total,
+                           u32* out_mode, u32* out_lba, u32* out_ssize)
+{
+    static const u8 TRACK_START_MARK[10] =
+        { 0, 0, 0x01, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF };
+    u8 mark[10];
+
+    u32 temp = read_u32(f);
+    if (temp != 0) skip(f, 8); // DJ 3.00.780+ extra data
+
+    fread(mark, 10, 1, f);
+    if (memcmp(TRACK_START_MARK, mark, 10) != 0)
+        printf("[CDI] WARN: missing track start mark (1)\n");
+    fread(mark, 10, 1, f);
+    if (memcmp(TRACK_START_MARK, mark, 10) != 0)
+        printf("[CDI] WARN: missing track start mark (2)\n");
+
+    skip(f, 4);
+
+    u8 fname_len = 0;
+    fread(&fname_len, 1, 1, f);
+    char fname[256] = {0};
+    fread(fname, 1, fname_len, f);
+    skip(f, 11);
+
+    skip(f, 4);
+    skip(f, 4);
+
+    temp = read_u32(f);
+    if (temp == 0x80000000u) skip(f, 8); // DJ4
+
+    skip(f, 2);
+    u32 pregap   = read_u32(f);
+    u32 length   = read_u32(f);
+    skip(f, 6);
+    u32 mode     = read_u32(f);
+    skip(f, 12);
+    u32 lba      = read_u32(f);
+    u32 total    = read_u32(f);
+    skip(f, 16);
+    u32 ssize_v  = read_u32(f);
+
+    u32 sector_size;
+    switch (ssize_v)
+    {
+    case 0:  sector_size = 2048; break;
+    case 1:  sector_size = 2336; break;
+    case 2:  sector_size = 2352; break;
+    case 4:  sector_size = 2448; break;
+    default:
+        printf("[CDI] WARN: unsupported sector_size_value %u, defaulting 2352\n", ssize_v);
+        sector_size = 2352;
+        break;
+    }
+
+    if (mode > 2)
+        printf("[CDI] WARN: unsupported track mode %u\n", mode);
+
+    skip(f, 29);
+    if (version != CDI_V2)
+    {
+        skip(f, 5);
+        temp = read_u32(f);
+        if (temp == 0xFFFFFFFFu) skip(f, 78); // DJ 3.00.780+ extra data
+    }
+
+    printf("[CDI]   ses%u '%s' pregap=%u length=%u total=%u mode=%u lba=%u ssize=%u\n",
+           ses, fname, pregap, length, total, mode, lba, sector_size);
+
+    *out_pregap = pregap;
+    *out_length = length;
+    *out_total  = total;
+    *out_mode   = mode;
+    *out_lba    = lba;
+    *out_ssize  = sector_size;
+    return true;
+}
+
+// Skip the per-session header that precedes a session's track records, ported
+// from CDI_skip_next_session (cdipsr.cpp): skip 4 + 8, and 1 more for non-V2.
+static void cdi_skip_next_session(FILE* f, u32 version)
+{
+    skip(f, 4);
+    skip(f, 8);
+    if (version != CDI_V2) skip(f, 1);
+}
 
 static bool cdi_ParseHeader(FILE* f, u32 version, long file_size, u32 hdr_offset)
 {
@@ -221,340 +312,152 @@ static bool cdi_ParseHeader(FILE* f, u32 version, long file_size, u32 hdr_offset
            version==CDI_V2?"V2":version==CDI_V3?"V3":"V3.5",
            ftell(f));
 
-    // ── Session-0 prefix ─────────────────────────────────────────────────────
-    u16 first_track_count = read_u16(f);
-    u16 disc_type_raw     = read_u16(f);
-    skip(f, 8);
+    // CDI_get_sessions(): the header begins with a u16 session count.
+    u16 session_count = read_u16(f);
+    printf("[CDI] session_count=%u\n", session_count);
 
-    u32 sep_lo = read_u32(f);
-    u32 sep_hi = read_u32(f);
-    printf("[CDI] sep=0x%08X 0x%08X (expect 0xFFFF0000 / 0x0000FFFF)\n", sep_lo, sep_hi);
-
-    u32 session_count = read_u32(f);
-    u32 end_marker    = read_u32(f);
-    skip(f, 4); // timestamp
-
-    printf("[CDI] session_count=%u end_marker=0x%08X disc_type_raw=0x%04X first_track_count=%u\n",
-           session_count, end_marker, disc_type_raw, first_track_count);
-
-    if (session_count == 0 || session_count > 4)
+    if (session_count == 0 || session_count > 99)
     {
         printf("[CDI] ERROR: implausible session_count %u\n", session_count);
         printf("********************************END********************************\n\n");
         return false;
     }
 
-    // CDI selfboot discs are always standard CDs
-    // Selfboot CDI discs must report GdRom so BIOS uses the GD-ROM boot path.
-    // With CdRom (0x10), SecNumber.DiscFormat = 1 and BIOS enters audio-CD mode.
-    // With GdRom (0x80), SecNumber.DiscFormat = 8 and BIOS issues SPI_CD_READ FAD 150.
-    cdi_disc_type = CdRom;
-    printf("[CDI] disc type: CdRom (MIL-CD selfboot path reads FAD 150 directly)\n");
-
-    // Initialize TOC to 0xFF (unused slots per GDI convention)
     memset(&cdi_toc, 0xFF, sizeof(cdi_toc));
     memset(&cdi_ses, 0, sizeof(cdi_ses));
 
-    u32  first_data_ssize = 0;   // sector_size of track 0 (set after first track parsed)
-    cdi_track_count       = 0;
+    cdi_track_count = 0;
+    bool have_m1 = false, have_m2 = false, have_da = false;
+
+    // file_position: running byte offset where the current track's data begins
+    // in the image (DiscJuggler stores track data sequentially from byte 0).
+    long file_position = 0;
+    u32  end_fad = 0;
 
     for (u32 ses = 0; ses < session_count; ses++)
     {
-        u32 track_count;
-        if (ses == 0)
-        {
-            track_count = first_track_count;
-        }
-        else
-        {
-            track_count = read_u16(f);
-            skip(f, 2 + 8 + 8 + 4 + 4 + 4);
-        }
-
+        // CDI_get_tracks(): u16 track count for this session.
+        u16 track_count = read_u16(f);
         printf("[CDI] Session %u: %u tracks\n", ses, track_count);
 
-        if (track_count == 0 || track_count > 99)
+        if (track_count == 0)
+        {
+            printf("[CDI] Open session (0 tracks)\n");
+        }
+        else if (track_count > 99)
         {
             printf("[CDI] ERROR: implausible track_count=%u\n", track_count);
             printf("********************************END********************************\n\n");
             return false;
         }
 
+        bool first_in_session = true;
+
         for (u32 trk = 0; trk < track_count; trk++)
         {
-            u8 fname_len = 0;
-            fread(&fname_len, 1, 1, f);
-            char fname[256] = {0};
-            fread(fname, 1, fname_len < 255 ? fname_len : 254, f);
-            if (fname_len >= 255) skip(f, fname_len - 254);
-            skip(f, 11);
-
-            u32 pregap      = read_u32(f);
-            u32 length      = read_u32(f);
-            skip(f, 6);
-            u32 mode        = read_u32(f);
-            skip(f, 12);
-            u32 lba         = read_u32(f);
-            u32 total_len   = read_u32(f);
-            skip(f, 16);
-            u32 sector_size = read_u32(f);  // often garbage in CDI; we override below
-
-            if (version == CDI_V35) skip(f, 4);
-            skip(f, 12);
-
-            // Determine track type from mode field.
-            // CDI mode: 0=audio, 1=Mode1, 2=Mode2, etc. Values >=2 → data.
-            // The ssize field is unreliable in many CDI files; derive from track type.
-            u8  ctrl    = (mode == 0) ? 0x00 : 0x04;
-            u32 fad     = lba + 150;
-
-            // CDI selfboot discs store sectors as:
-            //   Data tracks:  2048 bytes/sector (cooked Mode1, no raw headers)
-            //   Audio tracks: 2352 bytes/sector (raw 16-bit stereo 44.1kHz)
-            // Override any garbage ssize with the correct derived value.
-            if (ctrl == 0x04)
-                sector_size = 2048;
-            else
-                sector_size = 2352;
-
-            // Save the first track's sector_size to convert subsequent LBAs to bytes.
-            if (cdi_track_count == 0)
-                first_data_ssize = sector_size;
-
-            // CDI file layout: data begins at byte 0.
-            // The 'lba' field is the absolute LBA from disc start (track 1 = LBA 0).
-            // All sectors before track N are first_data_ssize bytes each, so:
-            //   file_start = lba * first_data_ssize
-            //
-            // Pregap handling:
-            //   Track 1 (first track): pregap is NOT physically stored in the file.
-            //     The file starts directly at the first data sector (IP.BIN / FAD 150).
-            //     → file_offset = file_start (no pregap skip)
-            //   Track 2+ (subsequent tracks): pregap silence IS stored in the file
-            //     between the preceding track's data and this track's data.
-            //     → file_offset = file_start + pregap * sector_size
-            long file_start  = (long)lba * first_data_ssize;
-            long file_offset = file_start
-                             + (cdi_track_count > 0 ? (long)pregap * sector_size : 0);
-
-            printf("[CDI]   Track %u (ses%u trk%u): '%s'\n"
-                   "[CDI]     pregap=%u length=%u total=%u mode=%u lba=%u fad=%u\n"
-                   "[CDI]     sector_size=%u ctrl=0x%02X file_offset=0x%08lX\n",
-                   cdi_track_count+1, ses, trk, fname,
-                   pregap, length, total_len, mode, lba, fad,
-                   sector_size, ctrl, file_offset);
-
-            // Peek at multiple candidate offsets to locate IP.BIN / PVD
-            if (ctrl == 0x04)  // only for data tracks
+            u32 pregap, length, total, mode, lba, sector_size;
+            if (!cdi_read_track(f, version, ses,
+                                &pregap, &length, &total,
+                                &mode, &lba, &sector_size))
             {
-                long cur = ftell(f);
-                // Try several possible sector offsets to find IP.BIN or ISO9660 PVD
-                // "SEGA SEGAKATANA" = IP.BIN; "\x01CD001" = ISO9660 PVD (sector 16 of data)
-                struct { long off; const char* desc; } probes[] = {
-                    { 0,              "cooked_nopregap_s0"   },
-                    { 16,             "raw_nopregap_s0+16"   },
-                    { 2*2048,         "cooked_pregap2_s0"    },
-                    { 2*2352+16,      "raw_pregap2_s0+16"    },
-                    { 16*2048,        "cooked_nopregap_pvd"  },
-                    { (2+16)*2048,    "cooked_pregap2_pvd"   },
-                    { 16*2352+16,     "raw_nopregap_pvd"     },
-                    { (2+16)*2352+16, "raw_pregap2_pvd"      },
-                    // FAD-150 based offsets
-                    { 150L*2048,      "fad150_cooked"        },
-                    { 150L*2048+16,   "fad150_raw+16"        },
-                    { 150L*2048+16*2048, "fad150_pvd_cooked" },
-                    { 150L*2352+16,   "fad150_raw_s0+16"     },
-                    // Large offset binary search to find non-zero data
-                    { 0x100000L,      "1MB"                  },
-                    { 0x2000000L,     "32MB"                 },
-                    { 0x8000000L,     "128MB"                },
-                };
-                for (int pi = 0; pi < 15; pi++) {
-                    int sk = fseek(f, probes[pi].off, SEEK_SET);
-                    long pos = ftell(f);
-                    u8 peek[16] = {0};
-                    fread(peek, 1, 16, f);
-                    printf("[CDI]     probe[%s @ 0x%lX] seek=%d pos=%ld: ", 
-                           probes[pi].desc, probes[pi].off, sk, pos);
-                    for (int p = 0; p < 16; p++) printf("%02X", peek[p]);
-                    printf(" '");
-                    for (int p = 0; p < 16; p++)
-                        printf("%c", (peek[p] >= 0x20 && peek[p] < 0x7F) ? peek[p] : '.');
-                    printf("'\n");
-                }
-
-                // ── IP.BIN signature scan ────────────────────────────────────────
-                // Read 64KB chunks and scan for "SEGA SEGAKATANA" signature.
-                // Much faster than per-sector seeks on SD card.
-                // Reports file offset, inferred FAD for 2048 and 2352 stride.
-                static const u8 ipbin_sig[] = {0x53,0x45,0x47,0x41,0x20,0x53,0x45,0x47,0x41,0x4B};
-                static u8 scan_chunk[65536];
-                bool found_ipbin = false;
-                printf("[CDI]     Scanning for IP.BIN signature (SEGA SEGAKATANA)...\n");
-                for (long chunk_off = 0; chunk_off < 200L*1024*1024 && !found_ipbin; chunk_off += 65536) {
-                    fseek(f, chunk_off, SEEK_SET);
-                    int got = (int)fread(scan_chunk, 1, 65536, f);
-                    if (got < 10) break;
-                    for (int bi = 0; bi <= got - 10 && !found_ipbin; bi++) {
-                        if (memcmp(&scan_chunk[bi], ipbin_sig, 10) == 0) {
-                            long file_off = chunk_off + bi;
-                            u32 fad_2048 = (u32)(150 + file_off / 2048);
-                            u32 fad_2352 = (file_off >= 16) ? (u32)(150 + (file_off - 16) / 2352) : 150;
-                            printf("[CDI]     *** IP.BIN FOUND @ file_off=0x%lX ***\n", file_off);
-                            printf("[CDI]     inferred FAD if 2048-stride: %u (need remap: %u -> 45150)\n",
-                                   fad_2048, fad_2048);
-                            printf("[CDI]     inferred FAD if 2352-stride: %u\n", fad_2352);
-                            printf("[CDI]     bytes: %02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X\n",
-                                   scan_chunk[bi],scan_chunk[bi+1],scan_chunk[bi+2],scan_chunk[bi+3],
-                                   scan_chunk[bi+4],scan_chunk[bi+5],scan_chunk[bi+6],scan_chunk[bi+7],
-                                   scan_chunk[bi+8],scan_chunk[bi+9],scan_chunk[bi+10],scan_chunk[bi+11],
-                                   scan_chunk[bi+12],scan_chunk[bi+13],scan_chunk[bi+14],scan_chunk[bi+15]);
-                            found_ipbin = true;
-                        }
-                    }
-                }
-                if (!found_ipbin)
-                    printf("[CDI]     IP.BIN signature not found in first 200MB\n");
-
-                fseek(f, cur, SEEK_SET);
+                printf("********************************END********************************\n\n");
+                return false;
             }
+
+            if (mode == 1) have_m1 = true;
+            else if (mode == 2) have_m2 = true;
+            else if (mode == 0) have_da = true;
+
+            u8  ctrl     = (mode == 0) ? 0x00 : 0x04;
+            u32 start_fad = lba + pregap;            // matches devcast t.StartFAD
+
+            // Data for this track starts after its pregap (which is stored in
+            // the image), so the readable data offset is:
+            long data_offset = file_position + (long)pregap * sector_size;
 
             if (cdi_track_count < 100)
             {
-                cdi_tracks[cdi_track_count].FAD         = fad;
-                cdi_tracks[cdi_track_count].file_offset = (u32)file_offset;
+                cdi_tracks[cdi_track_count].FAD         = start_fad;
+                cdi_tracks[cdi_track_count].file_offset = (u32)data_offset;
                 cdi_tracks[cdi_track_count].sector_size = sector_size;
                 cdi_tracks[cdi_track_count].length      = length;
                 cdi_tracks[cdi_track_count].ctrl        = ctrl;
                 cdi_tracks[cdi_track_count].mode        = (u8)mode;
                 cdi_tracks[cdi_track_count].session     = (u8)ses;
-
-                // ── Zero-preamble fixup for Track 0 ──────────────────────────────
-                // Some CDI files (created by older BootDreams or CDI rippers) store
-                // a large block of zero sectors at the start of Track 1 before IP.BIN.
-                // This happens when the tool blanked the MIL-CD security ring data.
-                // We detect this by scanning sector-by-sector for the first non-zero
-                // sector, then adjust file_offset to point there.
-                // The BIOS will read that sector as FAD 150 (via our FAD remapping).
-                if (cdi_track_count == 0 && ctrl == 0x04)
-                {
-                    long cur2 = ftell(f);
-                    static u8 zero_scan_buf[2048];
-                    long scan_off = file_offset;
-                    long scan_limit = file_offset + 1024L * sector_size; // scan first 1024 sectors
-                    bool found_nonzero = false;
-                    while (scan_off < scan_limit)
-                    {
-                        fseek(f, scan_off, SEEK_SET);
-                        int got = (int)fread(zero_scan_buf, 1, sector_size, f);
-                        if (got < (int)sector_size) break;
-                        bool nonzero = false;
-                        for (int z = 0; z < (int)sector_size; z++)
-                            if (zero_scan_buf[z]) { nonzero = true; break; }
-                        if (nonzero)
-                        {
-                            if (scan_off != file_offset)
-                            {
-                                printf("[CDI] Zero-preamble fixup: %ld zero sectors detected\n",
-                                       (scan_off - file_offset) / sector_size);
-                                printf("[CDI] Adjusting Track 0 file_offset: 0x%lX -> 0x%lX\n",
-                                       file_offset, scan_off);
-                                cdi_tracks[cdi_track_count].file_offset = (u32)scan_off;
-                            }
-                            else
-                            {
-                                printf("[CDI] Track 0 starts with non-zero data at offset 0x%lX (no fixup needed)\n",
-                                       scan_off);
-                            }
-                            found_nonzero = true;
-                            break;
-                        }
-                        scan_off += sector_size;
-                    }
-                    if (!found_nonzero)
-                        printf("[CDI] WARN: Track 0 first 1024 sectors are all zero!\n");
-                    fseek(f, cur2, SEEK_SET);
-                }
-
                 cdi_track_count++;
             }
 
-            // (no data_offset accumulation needed; we use lba directly)
+            if (first_in_session)
+            {
+                first_in_session = false;
+                if (cdi_ses.SessionCount < 99)
+                {
+                    cdi_ses.SessionStart[cdi_ses.SessionCount] = cdi_track_count; // 1-based track #
+                    cdi_ses.SessionFAD[cdi_ses.SessionCount]   = start_fad;
+                    cdi_ses.SessionCount++;
+                }
+            }
+
+            if (total < length + pregap)
+                printf("[CDI] WARN: track seems truncated (total=%u < length=%u+pregap=%u)\n",
+                       total, length, pregap);
+
+            // Advance to the next track's data. Mirrors devcast's
+            // track.position += total_length * sector_size.
+            file_position += (long)total * sector_size;
+
+            end_fad = lba + total;  // matches devcast rv->EndFAD
         }
 
-        u32 sess_end = read_u32(f);
-        printf("[CDI] Session %u end_marker=0x%08X\n", ses, sess_end);
+        cdi_skip_next_session(f, version);
     }
 
-    // ── Tail ─────────────────────────────────────────────────────────────────
-    // ── Tail: try to read leadout LBA, but it may be 0/corrupt in some CDI files ──
-    u32 disc_type_tail = read_u32(f);
-    u32 sessions_end   = read_u32(f);
-    skip(f, 4);
-    u32 leadout_lba    = read_u32(f);
-    printf("[CDI] Tail (raw): disc_type_tail=0x%08X sessions_end=%u leadout_lba=%u\n",
-           disc_type_tail, sessions_end, leadout_lba);
+    if (cdi_track_count == 0)
+    {
+        printf("[CDI] ERROR: no tracks parsed\n");
+        printf("********************************END********************************\n\n");
+        return false;
+    }
 
-    if (leadout_lba > 150 && leadout_lba < 450000)
-    {
-        // Tail looks valid: use it directly.
-        cdi_leadout_fad = leadout_lba + 150;
-        printf("[CDI] Leadout from tail: lba=%u fad=%u\n", leadout_lba, cdi_leadout_fad);
-    }
-    else if (cdi_track_count > 0)
-    {
-        // Tail is corrupt (all-zeros is common). Compute from file size and last track.
-        // All data occupies file bytes [0 .. file_size - hdr_offset).
-        // Last track's data starts at file_start + pregap*ssize and runs to end of data area.
-        const CdiTrack& last = cdi_tracks[cdi_track_count - 1];
-        long data_area_end = (long)file_size - (long)hdr_offset;
-        long last_data_start = last.file_offset;          // already past pregap
-        long last_audio_bytes = data_area_end - last_data_start;
-        u32  last_sectors = (last.sector_size > 0)
-                            ? (u32)(last_audio_bytes / last.sector_size) : 0;
-        u32  last_lba = last.FAD - 150;  // convert FAD back to LBA
-        cdi_leadout_fad = last.FAD + last_sectors;
-        printf("[CDI] Leadout computed: last_lba=%u last_sectors=%u fad=%u\n",
-               last_lba, last_sectors, cdi_leadout_fad);
-    }
+    // Disc type — verbatim from devcast GuessDiscType(m1, m2, da).
+    if (have_m1 && !have_da && !have_m2)
+        cdi_disc_type = CdRom;
+    else if (have_m2)
+        cdi_disc_type = CdRom_XA;
+    else if (have_da && have_m1)
+        cdi_disc_type = CdRom_Extra;
     else
-    {
-        cdi_leadout_fad = 150;
-    }
+        cdi_disc_type = CdRom;
+    printf("[CDI] disc type: 0x%X (M1=%d M2=%d DA=%d)\n",
+           (u32)cdi_disc_type, have_m1, have_m2, have_da);
+
+    // Leadout — verbatim from devcast: rv->LeadOut.StartFAD = rv->EndFAD.
+    cdi_leadout_fad = end_fad;
 
     // ── Build TOC ─────────────────────────────────────────────────────────────
-    // Unused slots already 0xFF from memset above.
     for (u32 i = 0; i < cdi_track_count && i < 99; i++)
     {
         cdi_toc.tracks[i].FAD     = cdi_tracks[i].FAD;
         cdi_toc.tracks[i].Control = cdi_tracks[i].ctrl;
-        cdi_toc.tracks[i].Addr    = 0;
+        cdi_toc.tracks[i].Addr    = 1;   // matches devcast t.ADDR=1
         cdi_toc.tracks[i].Session = cdi_tracks[i].session + 1;
     }
     cdi_toc.FistTrack = 1;
     cdi_toc.LastTrack = (u8)cdi_track_count;
     cdi_toc.LeadOut.FAD     = cdi_leadout_fad;
-    cdi_toc.LeadOut.Control = 0x04;
+    cdi_toc.LeadOut.Control = 0;   // matches devcast LeadOut.CTRL=0
     cdi_toc.LeadOut.Addr    = 0;
     cdi_toc.LeadOut.Session = 0;
 
-    // ── Build SessionInfo ─────────────────────────────────────────────────────
-    // MIL-CD selfboot: 2 sessions. BIOS uses Session2 FAD to find IP.BIN.
-    // SessionStart[n] = first track number in that session (1-based).
-    // Both our synthetic sessions point to track 1 at FAD 150 (the data track).
-    cdi_ses.SessionCount    = 2;
-    cdi_ses.SessionsEndFAD  = cdi_leadout_fad;
-    cdi_ses.SessionStart[0] = 1;   // session 1 first track = 1
-    cdi_ses.SessionFAD[0]   = cdi_tracks[0].FAD;  // FAD 150
-    cdi_ses.SessionStart[1] = 1;   // session 2 first track = 1 (same data track)
-    cdi_ses.SessionFAD[1]   = cdi_tracks[0].FAD;  // FAD 150 (BIOS reads IP.BIN here)
+    cdi_ses.SessionsEndFAD = cdi_leadout_fad;
 
     printf("[CDI] TOC: %u tracks FistTrack=%u LastTrack=%u LeadOutFAD=%u\n",
            cdi_track_count, cdi_toc.FistTrack, cdi_toc.LastTrack, cdi_toc.LeadOut.FAD);
-    printf("[CDI] Ses: count=%u endFAD=%u start[0]=%u FAD[0]=%u start[1]=%u FAD[1]=%u\n",
-           cdi_ses.SessionCount, cdi_ses.SessionsEndFAD,
-           cdi_ses.SessionStart[0], cdi_ses.SessionFAD[0],
-           cdi_ses.SessionStart[1], cdi_ses.SessionFAD[1]);
+    printf("[CDI] Ses: count=%u endFAD=%u\n",
+           cdi_ses.SessionCount, cdi_ses.SessionsEndFAD);
+    for (u32 i = 0; i < cdi_ses.SessionCount; i++)
+        printf("[CDI]   session[%u]: startTrack=%u FAD=%u\n",
+               i, cdi_ses.SessionStart[i], cdi_ses.SessionFAD[i]);
     printf("********************************END********************************\n\n");
     return true;
 }
