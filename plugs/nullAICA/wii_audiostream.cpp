@@ -29,12 +29,11 @@ void wii_TermAudio()
     wii_audio_term();
 }
 
-// Called by AICA_Sample() at the end of each mixed sample.
-// With the frame-based wii_audio.h model, wii_audio_frame() drives the
-// timestep loop itself and reads mixl/mixr directly, so there is nothing
-// to do here. The function must exist to satisfy the linker.
+// Called by AICA_Sample() at the end of each mixed sample, once per generated
+// AICA sample. AICA is now stepped from the SH4 timeslice (armUpdateARM), so
+// this forwards each produced sample to the audio sink, which buffers it for
+// ASND playback. Note AICA_Sample() passes (r, l) in that order.
 void wii_WriteSample(s16 r, s16 l)
 {
-    (void)r;
-    (void)l;
+    wii_audio_push_sample(l, r);
 }

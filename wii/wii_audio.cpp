@@ -142,43 +142,42 @@ void wii_audio_term()
     ASND_StopVoice(VOICE_SLOT);
 }
 
-void wii_audio_frame()
+// Index of the next sample slot to write in the current fill buffer.
+static volatile int fill_pos = 0;
+
+// Audio sink — called once per generated AICA sample (from wii_WriteSample(),
+// i.e. from AICA_Sample()). AICA is now stepped by the SH4 timeslice via
+// armUpdateARM, so this just collects the produced samples into the ASND ring
+// buffer and swaps fill/play buffers each time a frame's worth is gathered.
+void wii_audio_push_sample(s16 l, s16 r)
 {
-    // Don't step AICA until it's been fully initialized
     if (!aica_ready)
         return;
 
-    static int first_frame = 1;
-    if (first_frame)
-    {
-        printf("[WiiAudio] wii_audio_frame: first frame called\n");
-        first_frame = 0;
-    }
-
     s16 *dst = audio_buf[fill_buf];
+    dst[fill_pos * 2 + 0] = l;
+    dst[fill_pos * 2 + 1] = r;
+    fill_pos++;
 
-    for (int i = 0; i < SAMPLES_PER_FRAME; i++)
+    if (fill_pos >= SAMPLES_PER_FRAME)
     {
-        // Step the AICA emulation by one sample
-        libAICA_TimeStep();
+        fill_pos = 0;
 
-        // mixl / mixr are s32 but already clipped to s16 range by sgc_if.cpp
-        // Clamp defensively anyway
-        int l = mixl;
-        int r = mixr;
-        if (l >  32767) l =  32767;
-        if (l < -32768) l = -32768;
-        if (r >  32767) r =  32767;
-        if (r < -32768) r = -32768;
+        // Flush the fill buffer out of CPU cache so ASND's DMA sees it.
+        DCFlushRange(audio_buf[fill_buf], BUF_BYTES);
 
-        // Interleaved stereo: L, R
-        dst[i * 2 + 0] = (s16)l;
-        dst[i * 2 + 1] = (s16)r;
+        // Hand this buffer to the playback side. The ASND callback swaps
+        // fill_buf/play_buf when it consumes buf_ready; if it hasn't yet
+        // (CPU produced faster than playback), keep filling the same buffer
+        // rather than racing the swap.
+        if (!buf_ready)
+            buf_ready = 1;
     }
+}
 
-    // Flush the fill buffer out of CPU cache so ASND's DMA sees it
-    DCFlushRange(audio_buf[fill_buf], BUF_BYTES);
-
-    // Signal the callback that a fresh buffer is waiting
-    buf_ready = 1;
+// Legacy entry kept so existing call sites still link. AICA is no longer
+// stepped from the video frame — sample generation is driven by the SH4
+// timeslice (armUpdateARM). This is intentionally a no-op.
+void wii_audio_frame()
+{
 }
