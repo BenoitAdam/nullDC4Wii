@@ -105,6 +105,12 @@ void ExecuteDelayslot();
 void ExecuteDelayslot_RTE();
 
 int FASTCALL UpdateSystem();
+// Split form for the recompiler: _no_event() runs the GPR-free peripheral
+// cascade + interrupt-pending check (returns nonzero if an interrupt must be
+// dispatched); _handle_event() runs the GPR-touching dispatch. See
+// sh4_interpreter.cpp for the equivalence invariant.
+int FASTCALL UpdateSystem_no_event();
+int FASTCALL UpdateSystem_handle_event();
 
 // Coarse timer (~13,216 kHz) used for block lifecycle tracking
 extern u32 gcp_timer;

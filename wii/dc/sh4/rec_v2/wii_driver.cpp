@@ -200,6 +200,11 @@ struct
 } compile_state;
 u32 last_block;
 
+// Forward decls: GPR allocation map + flush/reload (defined later in this file).
+ppc_ireg GetIntReg(u32 reg);
+void reg_flush_all();
+void reg_reload_all();
+
 // =======================
 // BLOCK BEGIN/END
 // =======================
@@ -217,15 +222,34 @@ void ngen_Begin(DecodedBlock* block,bool force_checks)
 	ppc_jump(loop_do_update_write);
 
 	jdst->MarkLabel();
+
+	// No GPR reload here: pinned regs (r14..r28) hold the authoritative SH4 GPR
+	// values continuously across blocks, so there is nothing to re-read. They are
+	// loaded once in the mainloop prologue and only resynced with memory around
+	// shop_ifb / the canonical fallback.
 }
 
 // =====================
 // MEMORY ACCESS HELPERS
 // =====================
 
+// Static GPR allocation master switch. Full rationale at reg_flush_all().
+// Must be defined before the first use below; set to 0 for all-memory mode.
+#define STATIC_GPR_ALLOC 1
+
 //1 opcode
 void ppc_sh_load(u32 D,u32 sh4_reg)
 {
+#if STATIC_GPR_ALLOC
+	ppc_ireg ri=GetIntReg(sh4_reg);
+	if (ri!=ppc_rinvalid)
+	{
+		// Value already lives in a pinned PPC register; just move it.
+		if ((u32)ri!=D)
+			ppc_ori(D,ri,0);	// mr D, ri
+		return;
+	}
+#endif
 	ppc_lwz(D,ppc_contex,Sh4cntx.offset(sh4_reg));
 }
 void ppc_sh_load(u32 D,shil_param prm)
@@ -264,6 +288,16 @@ void ppc_sh_addr(u32 D,shil_param prm)
 //1 opcode
 void ppc_sh_store(u32 D,u32 sh4_reg)
 {
+#if STATIC_GPR_ALLOC
+	ppc_ireg ri=GetIntReg(sh4_reg);
+	if (ri!=ppc_rinvalid)
+	{
+		// Destination is a pinned PPC register; update it in place.
+		if ((u32)ri!=D)
+			ppc_ori(ri,D,0);	// mr ri, D
+		return;
+	}
+#endif
 	ppc_stw(D,ppc_contex,Sh4cntx.offset(sh4_reg));
 }
 void ppc_sh_store(u32 D,shil_param prm)
@@ -396,6 +430,72 @@ void binop_end(shil_opcode* op)
 	ppc_sh_store(ppc_rarg0,op->rd);
 }
 
+// ---------------------------------------------------------------------------
+// Shadow-register-aware operand resolution (for SINGLE-instruction ops only).
+//
+// With static GPR allocation, an operand that is a pinned SH4 reg already lives
+// in a PPC register, so the op can read/write it in place instead of bouncing
+// through rarg0/rarg1. binop3_start() resolves rs1/rs2/rd into the PPC regs the
+// op should use:
+//   bop_a = source reg for rs1   (pinned reg, or rarg0 holding a loaded/imm value)
+//   bop_b = source reg for rs2   (pinned reg, or rarg1 holding a loaded/imm value)
+//   bop_d = dest reg for rd      (pinned reg, or rarg0 scratch)
+//
+// SAFETY: only valid for ops emitted as a SINGLE PPC instruction (add, sub,
+// and, or, xor, shl, shr, sar, mul_i32). Such an instruction reads both sources
+// then writes the dest atomically, so bop_d may safely alias bop_a or bop_b.
+// Multi-instruction ops (mul_u16/64, ror, shld, shad, set*, conversions) must
+// NOT use this — they clobber scratch mid-sequence; they keep using
+// binop_start()/binop_end() with the rarg0/rarg1 scratch window.
+// ---------------------------------------------------------------------------
+u32 bop_d, bop_a, bop_b;
+
+void binop3_start(shil_opcode* op)
+{
+	verify(!op->rs1.is_null() && !op->rs2.is_null() && !op->rd.is_null());
+	verify(op->rs1.is_reg());
+
+	// rs1 source
+	ppc_ireg a=GetIntReg(op->rs1._reg);
+	if (a!=ppc_rinvalid)
+		bop_a=a;
+	else
+	{
+		ppc_sh_load(ppc_rarg0,op->rs1);
+		bop_a=ppc_rarg0;
+	}
+
+	// rs2 source
+	if (op->rs2.is_imm())
+	{
+		ppc_li(ppc_rarg1,op->rs2._imm);
+		bop_b=ppc_rarg1;
+	}
+	else
+	{
+		ppc_ireg b=GetIntReg(op->rs2._reg);
+		if (b!=ppc_rinvalid)
+			bop_b=b;
+		else
+		{
+			ppc_sh_load(ppc_rarg1,op->rs2);
+			bop_b=ppc_rarg1;
+		}
+	}
+
+	// rd dest
+	ppc_ireg d=GetIntReg(op->rd._reg);
+	bop_d = (d!=ppc_rinvalid) ? (u32)d : ppc_rarg0;
+}
+
+void binop3_end(shil_opcode* op)
+{
+	// If rd is pinned the op already wrote it in place; only a scratch dest
+	// needs storing back to the context.
+	if (bop_d==ppc_rarg0 && GetIntReg(op->rd._reg)==ppc_rinvalid)
+		ppc_sh_store(ppc_rarg0,op->rd);
+}
+
 void binop_start_fpu(shil_opcode* op)
 {
 	verify(!op->rs1.is_null() && !op->rs2.is_null() && !op->rd.is_null());
@@ -434,6 +534,42 @@ void unop_start(shil_opcode* op)
 void unop_end(shil_opcode* op)
 {
 	ppc_sh_store(ppc_rarg0,op->rd);
+}
+
+// Shadow-register-aware unary resolution (SINGLE-instruction ops only:
+// neg, not, ext_s8, ext_s16). Same safety rule as binop3_*: the op must be one
+// PPC instruction so bop_d may alias bop_a. Sets bop_a (source) / bop_d (dest).
+void unop3_start(shil_opcode* op)
+{
+	verify(!op->rs1.is_null() && !op->rd.is_null());
+	verify(op->rd.is_reg());
+
+	if (op->rs1.is_imm())
+	{
+		ppc_li(ppc_rarg0,op->rs1._imm);
+		bop_a=ppc_rarg0;
+	}
+	else
+	{
+		verify(op->rs1.is_reg());
+		ppc_ireg a=GetIntReg(op->rs1._reg);
+		if (a!=ppc_rinvalid)
+			bop_a=a;
+		else
+		{
+			ppc_sh_load(ppc_rarg0,op->rs1);
+			bop_a=ppc_rarg0;
+		}
+	}
+
+	ppc_ireg d=GetIntReg(op->rd._reg);
+	bop_d = (d!=ppc_rinvalid) ? (u32)d : ppc_rarg0;
+}
+
+void unop3_end(shil_opcode* op)
+{
+	if (bop_d==ppc_rarg0 && GetIntReg(op->rd._reg)==ppc_rinvalid)
+		ppc_sh_store(ppc_rarg0,op->rd);
 }
 
 // Unary fpu: loads rs1 -> farg0, operation writes farg0, stores farg0 -> rd
@@ -507,6 +643,13 @@ void DoStatic(u32 pc)
 
 void ngen_End(DecodedBlock* block)
 {
+	// No blanket GPR flush here: the pinned PPC registers (r14..r28) are the
+	// authoritative copy of the SH4 GPRs and stay live across straight-line
+	// block transitions (static/dynamic jumps just flow into the next block).
+	// The exception is the interrupt path (BET_*Intr) below, which calls
+	// UpdateINTC -> Do_Exception (reads r[15], swaps the register bank); that
+	// case brackets the call with reg_flush_all()/reg_reload_all() locally.
+	// shop_ifb and the canonical fallback similarly self-bracket.
 	switch(block->BlockType)
 	{
 	case BET_Cond_0:
@@ -561,7 +704,12 @@ void ngen_End(DecodedBlock* block)
 				reg=ppc_djump;
 			}
 			ppc_sh_store(reg,reg_nextpc);
+			// UpdateINTC -> Do_Exception reads r[15] (sgr=r[15]) and swaps the
+			// register bank (sr.RB=1; UpdateSR). Pinned GPRs must be coherent in
+			// memory for the read, and re-read afterwards to pick up the swap.
+			reg_flush_all();
 			ppc_call(&UpdateINTC);
+			reg_reload_all();
 
 			ppc_sh_load(ppc_next_pc,reg_nextpc);
 			ppc_jump(loop_no_update);
@@ -606,33 +754,64 @@ ppc_ireg GetIntReg(u32 reg)
 
 	return ppc_rinvalid;
 }
+// ============================================================================
+// Static GPR allocation
+//
+// A fixed subset of SH4 integer registers is pinned to PPC callee-saved GPRs
+// (r14..r28) for the whole emulation session. The mapping is block-invariant
+// (no per-block colouring) — GetIntReg() defines it. SH4 r0..r15 (except r11,
+// which is skipped because the recompiler needs a volatile temp window) map to
+// r14..r28.
+//
+// Memory image vs register:
+//   * The pinned PPC regs are the AUTHORITATIVE copy of the SH4 GPRs for the
+//     whole JIT run. They are loaded once in the mainloop prologue and stay
+//     live across blocks; Sh4cntx.r[] may be stale at any point.
+//   * Sh4cntx.r[] is made coherent on demand only around code paths that read
+//     or write context GPRs directly, each self-bracketing flush -> call ->
+//     reload.
+//
+// Why we don't blanket flush/reload around ReadMem/WriteMem:
+//   r14..r28 are callee-saved under the PPC EABI, so an ordinary C call
+//   preserves them, and ReadMem/WriteMem touch only guest memory, not SH4
+//   context GPRs.
+//
+// The flush/reload points are:
+//   * shop_ifb              — interpreter handler reads/writes arbitrary GPRs
+//   * canonical fallback    — e.g. sync_sr -> UpdateSR (SR.RB bank swap)
+//   * BET_*Intr block end   — UpdateINTC -> Do_Interrupt (reads r[15], bank swap)
+//   * mainloop UpdateSystem — CONDITIONAL: the split UpdateSystem_no_event()
+//                             runs the GPR-free peripheral cascade + pending
+//                             check unflushed every timeslice; only when it
+//                             reports a pending interrupt do we flush, call
+//                             UpdateSystem_handle_event(), and reload.
+//
+// STATIC_GPR_ALLOC (defined near the top of this file) can be set to 0 to
+// disable the whole scheme (all accesses go through memory, as before) —
+// useful for A/B debugging.
+// ============================================================================
+
 void reg_flush_all()
 {
-	/*
-	for(u32 i=0;i<=sh4_reg_count;i++)
+#if STATIC_GPR_ALLOC
+	for (u32 i=reg_r0;i<=reg_r15;i++)
 	{
 		ppc_ireg ri=GetIntReg(i);
-		ppc_freg rf=GetFloatReg(i);
-		if (rf!=ppc_finvalid)
-			ppc_sh_store_f32(rf,i);
-		else if (ri!=ppc_rinvalid)
-			ppc_sh_store(ri,i);
+		if (ri!=ppc_rinvalid)
+			ppc_stw(ri,ppc_contex,Sh4cntx.offset(i));
 	}
-	*/
+#endif
 }
 void reg_reload_all()
 {
-	/*
-	for(u32 i=0;i<=sh4_reg_count;i++)
+#if STATIC_GPR_ALLOC
+	for (u32 i=reg_r0;i<=reg_r15;i++)
 	{
 		ppc_ireg ri=GetIntReg(i);
-		ppc_freg rf=GetFloatReg(i);
-		if (rf!=ppc_finvalid)
-			ppc_sh_load_f32(rf,i);
-		else if (ri!=ppc_rinvalid)
-			ppc_sh_load(ri,i);
+		if (ri!=ppc_rinvalid)
+			ppc_lwz(ri,ppc_contex,Sh4cntx.offset(i));
 	}
-	*/
+#endif
 }
 void FASTCALL do_sqw_mmu(u32 dst);
 void FASTCALL do_sqw_nommu(u32 dst);
@@ -853,34 +1032,52 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			{
 				verify(op->rd.is_r32());
 
+				// Resolve dest: a pinned (integer) rd is written in place; a
+				// non-pinned or float-typed rd uses rarg0 + a context store.
+				ppc_ireg rdr = op->rd.is_r32i() ? GetIntReg(op->rd._reg) : ppc_rinvalid;
+				u32 dst = (rdr!=ppc_rinvalid) ? (u32)rdr : ppc_rarg0;
+
 				if (op->rs1.is_imm())
 				{
-					ppc_li(ppc_rarg0,op->rs1._imm);
+					ppc_li(dst,op->rs1._imm);
 				}
 				else if (op->rs1.is_r32())
 				{
-					ppc_sh_load(ppc_rarg0,op->rs1);
+					// reg -> reg. If rs1 is pinned, move/keep it directly.
+					ppc_ireg rsr = op->rs1.is_r32i() ? GetIntReg(op->rs1._reg) : ppc_rinvalid;
+					if (rsr!=ppc_rinvalid)
+					{
+						if ((u32)rsr!=dst)
+							ppc_ori(dst,rsr,0);	// mr dst, rsr  (skipped if same reg)
+					}
+					else
+					{
+						ppc_sh_load(dst,op->rs1);
+					}
 				}
 				else
 				{
 					die("Invalid mov32 size");
 				}
 
-				ppc_sh_store(ppc_rarg0,op->rd);
+				// Store back only when we used the scratch reg (non-pinned rd).
+				if (dst==ppc_rarg0 && rdr==ppc_rinvalid)
+					ppc_sh_store(ppc_rarg0,op->rd);
 			}
 			break;
 
-		case shop_add: binop_start(op); ppc_addx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0); binop_end(op); break;
-		case shop_sub: binop_start(op); ppc_subfx(ppc_rarg0,ppc_rarg1,ppc_rarg0,0,0); binop_end(op); break;
-		
-		case shop_or: binop_start(op); ppc_orx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
-		case shop_and: binop_start(op); ppc_andx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
-		case shop_xor: binop_start(op); ppc_xorx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
+		// Single-instruction binops — read/write pinned regs directly (binop3).
+		case shop_add: binop3_start(op); ppc_addx(bop_d,bop_a,bop_b,0,0); binop3_end(op); break;
+		case shop_sub: binop3_start(op); ppc_subfx(bop_d,bop_b,bop_a,0,0); binop3_end(op); break;
 
-		case shop_shl: binop_start(op); ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
-		case shop_shr: binop_start(op); ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
-		case shop_sar: binop_start(op); ppc_srawx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0); binop_end(op); break;
-		case shop_mul_i32: binop_start(op); ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0); binop_end(op); break;
+		case shop_or:  binop3_start(op); ppc_orx(bop_d,bop_a,bop_b,0);  binop3_end(op); break;
+		case shop_and: binop3_start(op); ppc_andx(bop_d,bop_a,bop_b,0); binop3_end(op); break;
+		case shop_xor: binop3_start(op); ppc_xorx(bop_d,bop_a,bop_b,0); binop3_end(op); break;
+
+		case shop_shl: binop3_start(op); ppc_slwx(bop_d,bop_a,bop_b,0);  binop3_end(op); break;
+		case shop_shr: binop3_start(op); ppc_srwx(bop_d,bop_a,bop_b,0);  binop3_end(op); break;
+		case shop_sar: binop3_start(op); ppc_srawx(bop_d,bop_a,bop_b,0); binop3_end(op); break;
+		case shop_mul_i32: binop3_start(op); ppc_mullwx(bop_d,bop_a,bop_b,0,0); binop3_end(op); break;
 
 
 		case shop_fadd: binop_start_fpu(op); ppc_faddsx(ppc_farg0,ppc_farg0,ppc_farg1,0); binop_end_fpu(op); break;
@@ -906,7 +1103,11 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			binop_end(op);
 			break;
 
-		// --- 64-bit multiply: rd (low) / rd+1 (high) --------------------------
+		// --- 64-bit multiply: low -> rd (macl) / high -> rd2 (mach) -----------
+		// NOTE: the decoder puts the high word in op->rd2 (reg_mach), NOT in
+		// op->rd._reg+1. reg_mach actually PRECEDES reg_macl in the enum, so
+		// rd._reg+1 == reg_pr — the old code corrupted PR and never wrote mach,
+		// which broke booting.
 		case shop_mul_u64:
 			// 64-bit unsigned product of two 32-bit values.
 			binop_start(op);
@@ -914,7 +1115,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			ppc_mulhwux(ppc_rarg2,ppc_rarg0,ppc_rarg1,0);	// hi = mulhwu(r1,r2)
 			ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0);	// lo = mullw(r1,r2)
 			ppc_sh_store(ppc_rarg0,op->rd);
-			ppc_sh_store(ppc_rarg2,op->rd._reg+1);
+			ppc_sh_store(ppc_rarg2,op->rd2);
 			break;
 		case shop_mul_s64:
 			// 64-bit signed product of two 32-bit values.
@@ -922,7 +1123,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			ppc_mulhwx(ppc_rarg2,ppc_rarg0,ppc_rarg1,0);	// hi = mulhw(r1,r2)
 			ppc_mullwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0);	// lo = mullw(r1,r2)
 			ppc_sh_store(ppc_rarg0,op->rd);
-			ppc_sh_store(ppc_rarg2,op->rd._reg+1);
+			ppc_sh_store(ppc_rarg2,op->rd2);
 			break;
 
 		// --- Shifts with dynamic SH4 semantics (branchless) -------------------
@@ -1007,10 +1208,10 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		case shop_setae: binop_start(op); emit_setcc_unsigned(op,BI_CR0_LT,true);  break; // >= == !<
 
 		// --- Unary integer ----------------------------------------------------
-		case shop_neg:    unop_start(op); ppc_negx(ppc_rarg0,ppc_rarg0,0,0); unop_end(op); break;
-		case shop_not:    unop_start(op); ppc_norx(ppc_rarg0,ppc_rarg0,ppc_rarg0,0); unop_end(op); break;
-		case shop_ext_s8: unop_start(op); ppc_extsbx(ppc_rarg0,ppc_rarg0,0); unop_end(op); break;
-		case shop_ext_s16:unop_start(op); ppc_extshx(ppc_rarg0,ppc_rarg0,0); unop_end(op); break;
+		case shop_neg:    unop3_start(op); ppc_negx(bop_d,bop_a,0,0);    unop3_end(op); break;
+		case shop_not:    unop3_start(op); ppc_norx(bop_d,bop_a,bop_a,0); unop3_end(op); break;
+		case shop_ext_s8: unop3_start(op); ppc_extsbx(bop_d,bop_a,0);    unop3_end(op); break;
+		case shop_ext_s16:unop3_start(op); ppc_extshx(bop_d,bop_a,0);    unop3_end(op); break;
 
 		// --- Unary float ------------------------------------------------------
 		case shop_fabs: unop_start_fpu(op); ppc_fabsx(ppc_farg0,ppc_farg0,0); unop_end_fpu(op); break;
@@ -1077,7 +1278,14 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
           printf("OH CRAP %d\n", op->op);
           die("Recompiler doesn't know about that opcode");
       }
+			// Bracket the canonical fallback with flush/reload: some fallback
+			// handlers (notably sync_sr -> UpdateSR) mutate context GPRs directly
+			// (e.g. SR.RB bank switch), so pinned regs must be coherent in memory
+			// across the call and re-read afterwards. The CC param marshalling
+			// itself is register-aware and unaffected.
+			reg_flush_all();
 			shil_chf[op->op](op);
+			reg_reload_all();
 			break;
       
 		}
@@ -1143,10 +1351,15 @@ void ngen_mainloop()
 			/*
 			pre load registers/counters etc ..
 			*/
-			reg_reload_all();
 
 			//cntx base
 			ppc_lip(ppc_contex,&Sh4cntx);
+
+			// Load the pinned SH4 GPRs ONCE here, after ppc_contex is valid and
+			// before the loop_no_update re-entry point below. They then stay live
+			// in r14..r28 for the entire JIT run (no per-block reload/flush); the
+			// only resync points are shop_ifb and the canonical fallback.
+			reg_reload_all();
 
 			//cycles
 			ppc_li(ppc_cycles,SH4_TIMESLICE);
@@ -1168,7 +1381,20 @@ void ngen_mainloop()
 			ppc_sh_store(ppc_next_pc,reg_nextpc);
 			ppc_addi(ppc_cycles,ppc_cycles,SH4_TIMESLICE);	//add cycles ...
 
-			ppc_call(UpdateSystem);	//call UpdateSystem
+			// Split UpdateSystem: the GPR-free peripheral cascade + interrupt
+			// pending-check runs every timeslice WITHOUT flushing the pinned
+			// GPRs. Only if it reports a pending interrupt (rv != 0) do we flush,
+			// run the GPR-touching handler (Do_Interrupt / bank swap), and reload.
+			ppc_call(UpdateSystem_no_event);
+			ppc_cmpi(ppc_cr0,ppc_rrv0,0,0);			// rv == 0 ?
+			ppc_label* no_intr=ppc_CreateLabel();
+			ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq no_intr (skip handler)
+			{
+				reg_flush_all();
+				ppc_call(UpdateSystem_handle_event);
+				reg_reload_all();
+			}
+			no_intr->MarkLabel();
 			ppc_sh_load(ppc_next_pc,reg_nextpc);
 			//
 			ppc_jump(loop_no_update);

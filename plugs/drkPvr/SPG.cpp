@@ -6,6 +6,7 @@
 #include "spg.h"
 #include "Renderer_if.h"
 #include "regs.h"
+#include <ogc/system.h>
 
 u32 spg_InVblank = 0;
 s32 spg_ScanlineSh4CycleCounter = 0;
@@ -141,7 +142,7 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 rend_set_fps_text(fpsStr);
 
 #ifndef TARGET_PSP
-                printf("%s\n", fpsStr);
+                SYS_Report("%s\n", fpsStr);
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
             }
