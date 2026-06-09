@@ -323,6 +323,7 @@ All together, let's Cast the Dream.
 
 ### Special thanks
 
+- skmp because he's the god
 - All testers and all futur testers
 - People actually helping me on the wiibrew wiki
 
