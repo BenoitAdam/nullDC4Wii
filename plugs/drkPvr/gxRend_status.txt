@@ -46,7 +46,7 @@ colour conversion during decompression.
 | --------- | --- | ----------------- | ------------------------- | ------- | --------------- |
 | RGB565    | 0   | RGB565            | identical format          | yes ?   |
 | ARGB1555  | 1   | RGB5A3            | closest 16-bit equivalent | yes     | Shenmue Menu & Tree + SEGA logo in Sega Tetris |
-| ARGB4444  | 4   | RGB5A3 or RGBA8   | RGB5A3 loses precision    | yes     | DC letters - Castlevania : Sonia / HUD / Big wall  |
+| ARGB4444  | 4   | RGB5A3 or RGBA8   | RGB5A3 loses precision    | yes     | DC letters - Castlevania : Sonia / HUD / Big wall - Bios Background |
 | ARGB8888  | 8   | RGBA8             | perfect match             | no ?    | Guilty Gear X2, Capcom vs SNK 2, jojo ? |
 | YUV422    | 0   | CMPR or RGA8      | CMPR or RGA8              | ?       | Code Veronica FMV |
 | 4BPP      | Var | CI4 or RGB565     | CI4 partially work        | yes     | Jojo's health bar, SEGA above Tetris |
@@ -71,13 +71,14 @@ colour conversion during decompression.
 | scan=1    | Scanline (Linear)      | Pixels standard order           | Non-power-of-two textures (ex 320x240) or UI elements |
 
 
-fmt=0 or fmt=7 → ARGB1555
+fmt=0 → ARGB1555
 fmt=1 → RGB565
 fmt=2 → ARGB4444
 fmt=3 → YUV422
 fmt=4 → Bump Map
 fmt=5 → 4BPP palette
 fmt=6 → 8BPP palette
+fmt=7 → Reserved/Bump map on DC hardware. Not a real pixel format for normal textures.
 
 Dreamcast Intro boot logo :
 [RAWBYTES] addr=53C000 fmt=2 vq=0 scan=0 raw[0..7]=0B32 0B32 0B32 0B32
