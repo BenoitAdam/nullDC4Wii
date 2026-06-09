@@ -10,3 +10,4 @@ apps/
 build/
 listfile.bat
 tmp
+.claude/
