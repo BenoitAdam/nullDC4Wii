@@ -450,12 +450,13 @@ void binop_end(shil_opcode* op)
 // ---------------------------------------------------------------------------
 u32 bop_d, bop_a, bop_b;
 
-void binop3_start(shil_opcode* op)
+// Resolve rs1 -> bop_a (source) and rd -> bop_d (dest). Shared by the plain
+// register form and the immediate-folded form.
+void bop_resolve_a_d(shil_opcode* op)
 {
-	verify(!op->rs1.is_null() && !op->rs2.is_null() && !op->rd.is_null());
+	verify(!op->rs1.is_null() && !op->rd.is_null());
 	verify(op->rs1.is_reg());
 
-	// rs1 source
 	ppc_ireg a=GetIntReg(op->rs1._reg);
 	if (a!=ppc_rinvalid)
 		bop_a=a;
@@ -465,7 +466,13 @@ void binop3_start(shil_opcode* op)
 		bop_a=ppc_rarg0;
 	}
 
-	// rs2 source
+	ppc_ireg d=GetIntReg(op->rd._reg);
+	bop_d = (d!=ppc_rinvalid) ? (u32)d : ppc_rarg0;
+}
+
+// Resolve rs2 -> bop_b (source). Materialises an immediate into rarg1.
+void bop_resolve_b(shil_opcode* op)
+{
 	if (op->rs2.is_imm())
 	{
 		ppc_li(ppc_rarg1,op->rs2._imm);
@@ -482,10 +489,13 @@ void binop3_start(shil_opcode* op)
 			bop_b=ppc_rarg1;
 		}
 	}
+}
 
-	// rd dest
-	ppc_ireg d=GetIntReg(op->rd._reg);
-	bop_d = (d!=ppc_rinvalid) ? (u32)d : ppc_rarg0;
+void binop3_start(shil_opcode* op)
+{
+	verify(!op->rs2.is_null());
+	bop_resolve_a_d(op);
+	bop_resolve_b(op);
 }
 
 void binop3_end(shil_opcode* op)
@@ -606,20 +616,49 @@ static void emit_cr0_bit_to_rarg0(u32 cr0_bit_index)
 	ppc_rlwinmx(ppc_rarg0,ppc_rarg0,cr0_bit_index+1,31,31,0);
 }
 
-// rd = (signed) rarg0 <cond> rarg1  -> 0/1
+// Load rs1 into rarg0, then compare against rs2 into CR0. Folds a small
+// immediate rs2 into cmpi/cmpli (signed uses cmpi+s16, unsigned cmpli+u16),
+// otherwise loads rs2 into rarg1 and uses the register cmp/cmpl. Used by the
+// set*/test helpers below. rarg0 is left holding rs1 (clobbered by the
+// following mfcr in emit_cr0_bit_to_rarg0, which is fine).
+static void emit_cmp_into_cr0(shil_opcode* op,bool is_signed)
+{
+	ppc_sh_load(ppc_rarg0,op->rs1);
+
+	if (op->rs2.is_imm() && (is_signed ? op->rs2.is_imm_s16() : op->rs2.is_imm_u16()))
+	{
+		if (is_signed)
+			ppc_cmpi(ppc_cr0,ppc_rarg0,op->rs2._imm,0);
+		else
+			ppc_cmpli(ppc_cr0,ppc_rarg0,op->rs2._imm,0);
+		return;
+	}
+
+	if (op->rs2.is_imm())
+		ppc_li(ppc_rarg1,op->rs2._imm);
+	else
+		ppc_sh_load(ppc_rarg1,op->rs2);
+
+	if (is_signed)
+		ppc_cmp(ppc_cr0,ppc_rarg0,ppc_rarg1,0);
+	else
+		ppc_cmpl(ppc_cr0,ppc_rarg0,ppc_rarg1,0);
+}
+
+// rd = (signed) rs1 <cond> rs2  -> 0/1
 static void emit_setcc_signed(shil_opcode* op,u32 cr0_bit_index,bool invert)
 {
-	ppc_cmp(ppc_cr0,ppc_rarg0,ppc_rarg1,0);
+	emit_cmp_into_cr0(op,true);
 	emit_cr0_bit_to_rarg0(cr0_bit_index);
 	if (invert)
 		ppc_xori(ppc_rarg0,ppc_rarg0,1);
 	binop_end(op);
 }
 
-// rd = (unsigned) rarg0 <cond> rarg1 -> 0/1
+// rd = (unsigned) rs1 <cond> rs2 -> 0/1
 static void emit_setcc_unsigned(shil_opcode* op,u32 cr0_bit_index,bool invert)
 {
-	ppc_cmpl(ppc_cr0,ppc_rarg0,ppc_rarg1,0);
+	emit_cmp_into_cr0(op,false);
 	emit_cr0_bit_to_rarg0(cr0_bit_index);
 	if (invert)
 		ppc_xori(ppc_rarg0,ppc_rarg0,1);
@@ -1067,17 +1106,92 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			break;
 
 		// Single-instruction binops — read/write pinned regs directly (binop3).
-		case shop_add: binop3_start(op); ppc_addx(bop_d,bop_a,bop_b,0,0); binop3_end(op); break;
-		case shop_sub: binop3_start(op); ppc_subfx(bop_d,bop_b,bop_a,0,0); binop3_end(op); break;
+		// Single-instruction binops. When rs2 is a small immediate we fold it
+		// straight into the PPC immediate-form instruction, skipping the
+		// ppc_li(rarg1,imm) materialisation. addi/subi use a SIGNED 16-bit
+		// field; andi./ori/xori use UNSIGNED 16-bit.
+		case shop_add:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm_s16())
+				ppc_addi(bop_d,bop_a,op->rs2._imm);		// d = a + imm
+			else
+				{ bop_resolve_b(op); ppc_addx(bop_d,bop_a,bop_b,0,0); }
+			binop3_end(op);
+			break;
+		case shop_sub:
+			// SH4 sub = rs1 - rs2; fold imm as a + (-imm) when -imm fits s16.
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm() && is_s16(0u-op->rs2._imm))
+				ppc_addi(bop_d,bop_a,0u-op->rs2._imm);		// d = a - imm
+			else
+				{ bop_resolve_b(op); ppc_subfx(bop_d,bop_b,bop_a,0,0); }
+			binop3_end(op);
+			break;
 
-		case shop_or:  binop3_start(op); ppc_orx(bop_d,bop_a,bop_b,0);  binop3_end(op); break;
-		case shop_and: binop3_start(op); ppc_andx(bop_d,bop_a,bop_b,0); binop3_end(op); break;
-		case shop_xor: binop3_start(op); ppc_xorx(bop_d,bop_a,bop_b,0); binop3_end(op); break;
+		case shop_or:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm_u16())
+				ppc_ori(bop_d,bop_a,op->rs2._imm);
+			else
+				{ bop_resolve_b(op); ppc_orx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
+		case shop_and:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm_u16())
+				ppc_andi(bop_d,bop_a,op->rs2._imm);		// andi. (Rc=1, harmless)
+			else
+				{ bop_resolve_b(op); ppc_andx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
+		case shop_xor:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm_u16())
+				ppc_xori(bop_d,bop_a,op->rs2._imm);
+			else
+				{ bop_resolve_b(op); ppc_xorx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
 
-		case shop_shl: binop3_start(op); ppc_slwx(bop_d,bop_a,bop_b,0);  binop3_end(op); break;
-		case shop_shr: binop3_start(op); ppc_srwx(bop_d,bop_a,bop_b,0);  binop3_end(op); break;
-		case shop_sar: binop3_start(op); ppc_srawx(bop_d,bop_a,bop_b,0); binop3_end(op); break;
-		case shop_mul_i32: binop3_start(op); ppc_mullwx(bop_d,bop_a,bop_b,0,0); binop3_end(op); break;
+		// Shifts: fold a constant shift amount (0..31) into rlwinm/srawi.
+		case shop_shl:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm())
+			{
+				u32 s=op->rs2._imm&0x1F;
+				ppc_rlwinmx(bop_d,bop_a,s,0,31-s,0);		// slwi: rotl s, mask [0..31-s]
+			}
+			else
+				{ bop_resolve_b(op); ppc_slwx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
+		case shop_shr:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm())
+			{
+				u32 s=op->rs2._imm&0x1F;
+				ppc_rlwinmx(bop_d,bop_a,(32-s)&31,s,31,0);	// srwi: rotl 32-s, mask [s..31]
+			}
+			else
+				{ bop_resolve_b(op); ppc_srwx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
+		case shop_sar:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm())
+				ppc_srawix(bop_d,bop_a,op->rs2._imm&0x1F,0);	// srawi
+			else
+				{ bop_resolve_b(op); ppc_srawx(bop_d,bop_a,bop_b,0); }
+			binop3_end(op);
+			break;
+		case shop_mul_i32:
+			bop_resolve_a_d(op);
+			if (op->rs2.is_imm_s16())
+				ppc_mulli(bop_d,bop_a,op->rs2._imm);		// d = a * imm
+			else
+				{ bop_resolve_b(op); ppc_mullwx(bop_d,bop_a,bop_b,0,0); }
+			binop3_end(op);
+			break;
 
 
 		case shop_fadd: binop_start_fpu(op); ppc_faddsx(ppc_farg0,ppc_farg0,ppc_farg1,0); binop_end_fpu(op); break;
@@ -1195,17 +1309,27 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			break;
 
 		// --- Integer comparisons / test ---------------------------------------
+		// (set*/test do their own operand load + immediate folding internally.)
 		case shop_test:	// rd = (r1 & r2) == 0
-			binop_start(op);
-			ppc_andx(ppc_rarg0,ppc_rarg0,ppc_rarg1,1);	// and. sets CR0
+			ppc_sh_load(ppc_rarg0,op->rs1);
+			if (op->rs2.is_imm_u16())
+				ppc_andi(ppc_rarg0,ppc_rarg0,op->rs2._imm);	// andi. sets CR0
+			else
+			{
+				if (op->rs2.is_imm())
+					ppc_li(ppc_rarg1,op->rs2._imm);
+				else
+					ppc_sh_load(ppc_rarg1,op->rs2);
+				ppc_andx(ppc_rarg0,ppc_rarg0,ppc_rarg1,1);	// and. sets CR0
+			}
 			emit_cr0_bit_to_rarg0(BI_CR0_EQ);
 			binop_end(op);
 			break;
-		case shop_seteq: binop_start(op); emit_setcc_signed(op,BI_CR0_EQ,false); break;
-		case shop_setgt: binop_start(op); emit_setcc_signed(op,BI_CR0_GT,false); break;
-		case shop_setge: binop_start(op); emit_setcc_signed(op,BI_CR0_LT,true);  break; // >= == !<
-		case shop_setab: binop_start(op); emit_setcc_unsigned(op,BI_CR0_GT,false); break;
-		case shop_setae: binop_start(op); emit_setcc_unsigned(op,BI_CR0_LT,true);  break; // >= == !<
+		case shop_seteq: emit_setcc_signed(op,BI_CR0_EQ,false); break;
+		case shop_setgt: emit_setcc_signed(op,BI_CR0_GT,false); break;
+		case shop_setge: emit_setcc_signed(op,BI_CR0_LT,true);  break; // >= == !<
+		case shop_setab: emit_setcc_unsigned(op,BI_CR0_GT,false); break;
+		case shop_setae: emit_setcc_unsigned(op,BI_CR0_LT,true);  break; // >= == !<
 
 		// --- Unary integer ----------------------------------------------------
 		case shop_neg:    unop3_start(op); ppc_negx(bop_d,bop_a,0,0);    unop3_end(op); break;
