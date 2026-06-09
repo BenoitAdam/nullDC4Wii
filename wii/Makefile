@@ -44,6 +44,7 @@ SOURCES     += ../dc/sh4/rec_v2/
 SOURCES     += ../plugins/
 SOURCES     += ../plugs/nullExtDev/
 SOURCES     += ../plugs/drkMapleDevices/
+# SOURCES     += ../plugs/EmptyAICA/ // old Empty AICA (till alpha0.25) better performance on SEGA Tetris
 SOURCES     += ../plugs/nullAICA/
 SOURCES     += ../plugs/vbaARM/
 SOURCES     += ../plugs/ImgReader/
