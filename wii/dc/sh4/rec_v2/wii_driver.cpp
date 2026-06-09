@@ -948,31 +948,82 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 				if (!isram)
 				{
-					switch(op->flags)
+					// Inline the _vmem_readt fast path (direct RAM/VRAM) for
+					// runtime addresses, sizes 1/2/4. The MMIO path and 64-bit
+					// reads fall through to the C dispatcher.
+					//
+					//   iirf = _vmem_MemInfo_ptr[addr>>24];
+					//   ptr  = iirf & ~0x1F;
+					//   if (ptr) { sh=iirf&0x1F; a=(addr<<sh)>>sh;
+					//              if (sz<4) a^=4-sz; rv=*(T*)(ptr+a); }
+					//   else  rv = ReadMem<sz>(addr);   // slow
+					//
+					// addr is in rarg0 on entry. Scratch: r0, rarg1, rarg2.
+					if (op->flags==8)
 					{
-					case 1:
-						if (!fuct) fuct=(void*)ReadMem8;
-						ppc_call(fuct);
-						ppc_extsbx(ppc_rrv0,ppc_rrv0,0);
-						break;
-					case 2:
-						if (!fuct) fuct=(void*)ReadMem16;
-						ppc_call(fuct);
-						ppc_extshx(ppc_rrv0,ppc_rrv0,0);
-						break;
-					case 4:
-						if (!fuct) fuct=(void*)ReadMem32;
-						ppc_call(fuct);
-						break;
-					case 8:
+						// 64-bit: keep the C call (rare; BE pair handling).
 						if (!fuct) fuct=(void*)ReadMem64;
 						ppc_call(fuct);
-						break;
-					default:
-						verify(false);
+					}
+					else
+					{
+						const u32 sz=op->flags;
+						verify(sz==1||sz==2||sz==4);
+
+						// r0 = (addr>>24)*4   (byte index into the void* table)
+						ppc_rlwinmx(ppc_r0,ppc_rarg0,10,22,29,0);
+						// rarg1 = &_vmem_MemInfo_ptr
+						u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
+						ppc_addi(ppc_rarg1,ppc_rarg1,lo);
+						ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
+						// rarg2 = ptr = iirf & ~0x1F  (clear low 5 bits: ME=26)
+						// NOTE: ptr goes in rarg2 (NOT r0) — load-indexed treats a
+						// base of r0 as literal zero, which would drop the pointer.
+						ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,0,26,0);
+						ppc_cmpi(ppc_cr0,ppc_rarg2,0,0);		// ptr == 0 ?
+
+						ppc_label* slow=ppc_CreateLabel();
+						ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq slow (MMIO)
+
+						// --- fast direct path ---
+						// shift = iirf & 0x1F ; addr = (addr<<sh)>>sh
+						ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// r0 = shift (0..31)
+						ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
+						ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
+						// big-endian sub-word swizzle
+						if (sz<4)
+							ppc_xori(ppc_rarg0,ppc_rarg0,4-sz);
+						// load rrv0 = *(T*)(ptr + addr)   (ptr in rarg2, addr in rarg0)
+						if (sz==1)
+						{
+							ppc_lbzx(ppc_rrv0,ppc_rarg2,ppc_rarg0);
+							ppc_extsbx(ppc_rrv0,ppc_rrv0,0);
+						}
+						else if (sz==2)
+						{
+							ppc_lhzx(ppc_rrv0,ppc_rarg2,ppc_rarg0);
+							ppc_extshx(ppc_rrv0,ppc_rrv0,0);
+						}
+						else
+							ppc_lwzx(ppc_rrv0,ppc_rarg2,ppc_rarg0);
+
+						ppc_label* done=ppc_CreateLabel();
+						ppc_bcx(BO_ALWAYS,BI_CR0_EQ,0,0,0);		// b done
+
+						// --- slow MMIO path ---
+						slow->MarkLabel();
+						if (!fuct)
+							fuct=(sz==1)?(void*)ReadMem8:(sz==2)?(void*)ReadMem16:(void*)ReadMem32;
+						ppc_call(fuct);
+						if (sz==1)
+							ppc_extsbx(ppc_rrv0,ppc_rrv0,0);
+						else if (sz==2)
+							ppc_extshx(ppc_rrv0,ppc_rrv0,0);
+
+						done->MarkLabel();
 					}
 				}
-				
+
 				ppc_sh_store(ppc_rrv0,op->rd);
 
 				if (op->flags==8)
@@ -1012,24 +1063,74 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					die("invalid rs3");
 				}
 
-				switch(op->flags)
+				// Inline the _vmem_writet fast path (direct RAM/VRAM) for runtime
+				// addresses, sizes 1/2/4. MMIO and 64-bit writes use the C call.
+				//
+				//   iirf = _vmem_MemInfo_ptr[addr>>24];
+				//   ptr  = iirf & ~0x1F;
+				//   if (ptr) { sh=iirf&0x1F; a=(addr<<sh)>>sh;
+				//              if (sz<4) a^=4-sz; *(T*)(ptr+a)=data; }
+				//   else  WriteMem<sz>(addr,data);   // slow
+				//
+				// On entry rarg0=addr, rarg1=data. addr/data MUST survive to the
+				// slow call, so the lookup uses only r0/rarg2/rarg3 as scratch.
+				if (op->flags==8)
 				{
-				case 1:
-					ppc_andi(ppc_rarg1,ppc_rarg1,0xFF);
-					ppc_call(&WriteMem8);
-					break;
-				case 2:
-					ppc_andi(ppc_rarg1,ppc_rarg1,0xFFFF);
-					ppc_call(&WriteMem16);
-					break;
-				case 4:
-					ppc_call(&WriteMem32);
-					break;
-				case 8:
 					ppc_call(&WriteMem64);
-					break;
-				default:
-					die("invalid size on memwrite");
+				}
+				else
+				{
+					const u32 sz=op->flags;
+					verify(sz==1||sz==2||sz==4);
+
+					// r0 = (addr>>24)*4   (byte index into the void* table)
+					ppc_rlwinmx(ppc_r0,ppc_rarg0,10,22,29,0);
+					// rarg2 = &_vmem_MemInfo_ptr
+					u32 lo=ppc_addr_high(ppc_rarg2,(void*)&_vmem_MemInfo_ptr[0]);
+					ppc_addi(ppc_rarg2,ppc_rarg2,lo);
+					ppc_lwzx(ppc_rarg2,ppc_rarg2,ppc_r0);		// rarg2 = iirf
+					// rarg3 = ptr = iirf & ~0x1F  (ptr NOT in r0: store-indexed
+					// treats base r0 as literal zero, dropping the pointer)
+					ppc_rlwinmx(ppc_rarg3,ppc_rarg2,0,0,26,0);
+					ppc_cmpi(ppc_cr0,ppc_rarg3,0,0);		// ptr == 0 ?
+
+					ppc_label* slow=ppc_CreateLabel();
+					ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq slow (MMIO)
+
+					// --- fast direct path ---
+					// shift = iirf & 0x1F ; eff = (addr<<sh)>>sh  (in rarg2 scratch)
+					ppc_andi(ppc_r0,ppc_rarg2,0x1F);		// r0 = shift (iirf still in rarg2)
+					ppc_slwx(ppc_rarg2,ppc_rarg0,ppc_r0,0);		// rarg2 = addr<<sh (overwrites iirf, no longer needed)
+					ppc_srwx(ppc_rarg2,ppc_rarg2,ppc_r0,0);		// rarg2 = (addr<<sh)>>sh
+					if (sz<4)
+						ppc_xori(ppc_rarg2,ppc_rarg2,4-sz);	// big-endian sub-word swizzle
+					// *(T*)(ptr+eff) = data   (ptr=rarg3, eff=rarg2, data=rarg1)
+					if (sz==1)
+						ppc_stbx(ppc_rarg1,ppc_rarg3,ppc_rarg2);
+					else if (sz==2)
+						ppc_sthx(ppc_rarg1,ppc_rarg3,ppc_rarg2);
+					else
+						ppc_stwx(ppc_rarg1,ppc_rarg3,ppc_rarg2);
+
+					ppc_label* done=ppc_CreateLabel();
+					ppc_bcx(BO_ALWAYS,BI_CR0_EQ,0,0,0);		// b done
+
+					// --- slow MMIO path (addr=rarg0, data=rarg1 preserved) ---
+					slow->MarkLabel();
+					if (sz==1)
+					{
+						ppc_andi(ppc_rarg1,ppc_rarg1,0xFF);
+						ppc_call(&WriteMem8);
+					}
+					else if (sz==2)
+					{
+						ppc_andi(ppc_rarg1,ppc_rarg1,0xFFFF);
+						ppc_call(&WriteMem16);
+					}
+					else
+						ppc_call(&WriteMem32);
+
+					done->MarkLabel();
 				}
 			}
 			break;

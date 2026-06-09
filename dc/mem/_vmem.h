@@ -10,6 +10,12 @@
 //   • encodes a handler-table index for MMIO regions.
 // ---------------------------------------------------------------------------
 
+// Top-level dispatch table (256 entries, indexed by addr[31:24]). Exposed so
+// the recompiler can inline the fast direct-RAM read/write path. Each entry:
+//   • host pointer with low 5 bits = address-wrap shift (direct RAM/VRAM), or
+//   • a small integer handler-table index (ptr&~0x1F == 0 → MMIO path).
+extern void* _vmem_MemInfo_ptr[0x100];
+
 // ---- Function-pointer typedefs --------------------------------------------
 typedef u8   fastcall _vmem_ReadMem8FP  (u32 Address);
 typedef u16  fastcall _vmem_ReadMem16FP (u32 Address);
