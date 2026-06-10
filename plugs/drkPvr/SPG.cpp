@@ -142,7 +142,7 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 rend_set_fps_text(fpsStr);
 
 #ifndef TARGET_PSP
-                SYS_Report("%s\n", fpsStr);
+                printf("%s\n", fpsStr);
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
             }

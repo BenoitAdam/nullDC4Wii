@@ -20,7 +20,7 @@
 #include "arm7_selftest_data.h"
 
 #include <ogc/system.h>
-#define printf(...) SYS_Report(__VA_ARGS__)
+#define printf(...) printf(__VA_ARGS__)
 
 // Core internals we drive directly.
 extern u8* arm_aica_ram;

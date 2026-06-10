@@ -44,6 +44,7 @@
 */
 #include "types.h"
 #include <stddef.h>	// offsetof — used for jit_scratch context slot addressing
+#include <math.h>	// sqrtf — fsqrt/fsrra native call targets
 #include "dc\sh4\sh4_opcode_list.h"
 
 #include "dc\sh4\sh4_registers.h"
@@ -744,6 +745,45 @@ void ngen_End(DecodedBlock* block)
 		//printf("Dynamic !\n");
 		//mov reg,djump
 		ppc_ori(ppc_rarg0,ppc_djump,0);  // mr rarg0, djump
+		{
+			// Inline bm_GetCode's fast path (bm_CheckCache) before falling back
+			// to the loop_no_update machinery:
+			//   idx    = (addr>>2) & (16384-1);
+			//   cached = cache[idx];                  // DynarecBlock*
+			//   if (cached->addr==addr && cached->code) { cached->lookups++;
+			//       goto cached->code; }
+			//   else goto loop_no_update;             // full bm_GetCode
+			//
+			// Byte offset into cache[] = idx*4 = ((addr>>2)&16383)<<2
+			//                          = addr & 0xFFFC  (single rlwinm).
+			// DynarecBlock layout (PPC32): code@0, addr@4, lookups@8.
+			// addr stays in rarg0 for the miss path (bm_GetCode arg).
+			ppc_rlwinmx(ppc_rarg1,ppc_rarg0,0,16,29,0);	// rarg1 = addr & 0xFFFC
+			u32 lo=ppc_addr_high(ppc_rarg2,(void*)&cache[0]);
+			ppc_addi(ppc_rarg2,ppc_rarg2,lo);		// rarg2 = &cache
+			ppc_lwzx(ppc_rarg2,ppc_rarg2,ppc_rarg1);	// rarg2 = cache[idx]
+
+			ppc_lwz(ppc_rarg3,ppc_rarg2,offsetof(DynarecBlock,addr));
+			ppc_cmp(ppc_cr0,ppc_rarg3,ppc_rarg0,0);	// cached->addr == addr ?
+			ppc_label* miss1=ppc_CreateLabel();
+			ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);		// bne miss
+
+			ppc_lwz(ppc_rarg3,ppc_rarg2,offsetof(DynarecBlock,code));
+			ppc_cmpi(ppc_cr0,ppc_rarg3,0,0);		// code == 0 ? (empty_block)
+			ppc_label* miss2=ppc_CreateLabel();
+			ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq miss
+
+			// hit: lookups++ (keeps bm_GetCode's cache-replacement policy fed)
+			ppc_lwz(ppc_r0,ppc_rarg2,offsetof(DynarecBlock,lookups));
+			ppc_addi(ppc_r0,ppc_r0,1);
+			ppc_stw(ppc_r0,ppc_rarg2,offsetof(DynarecBlock,lookups));
+
+			ppc_mtctr(ppc_rarg3);
+			ppc_bcctrx(BO_ALWAYS,BI_CR0_EQ,0);		// bctr -> cached code
+
+			miss1->MarkLabel();
+			miss2->MarkLabel();
+		}
 		//jmp no update
 		ppc_jump(loop_no_update);
 		break;
@@ -874,6 +914,13 @@ void reg_reload_all()
 }
 void FASTCALL do_sqw_mmu(u32 dst);
 void FASTCALL do_sqw_nommu(u32 dst);
+
+// Native call targets for fsqrt/fsrra. Broadway has no hardware fsqrt and its
+// frsqrte estimate (~5-bit) is too imprecise (it distorted the BIOS swirl), so
+// these route to the accurate libm path via a single f32->f32 call. Matches the
+// canonical UN_OP_F(sqrtf) / UN_OP_F(1.0f/sqrtf) semantics exactly.
+static f32 rec_fsqrt(f32 x)  { return sqrtf(x); }
+static f32 rec_fsrra(f32 x)  { return 1.0f / sqrtf(x); }
 
 // =====================
 // OPERATION COMPILATION
@@ -1571,13 +1618,8 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			}
 			break;
 
-		// --- FSRRA / FSQRT: TEMPORARILY on the accurate C fallback ------------
-		// The frsqrte estimate (~5-bit) was suspected of distorting the BIOS
-		// swirl. Bisecting: route these to the canonical sqrtf path while
-		// keeping fipr/ftrv/fmac/fsca native. If the swirl renders correctly,
-		// the estimate precision is the culprit; restore the native estimate
-		// (or add Newton refinement) afterwards.
-		//   (cases intentionally omitted -> fall through to default fallback)
+		// fsqrt / fsrra are handled below via accurate native calls (the
+		// frsqrte estimate was too imprecise — it distorted the BIOS swirl).
 
 		// --- FSCA: rd[0]=sin_table[idx], rd[1]=sin_table[idx+0x4000] ----------
 		// idx = rs1 & 0xFFFF. Table entries are f32 (4 bytes).
@@ -1596,6 +1638,61 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				ppc_lfsx(ppc_f1,ppc_rarg1,ppc_rarg0);		// sin_table[idx+0x4000]
 				ppc_fvec_store(ppc_f1,op->rd,1);
 			}
+			break;
+
+		// --- SR / FPSCR sync, prefetch, sqrt: direct native calls ------------
+		// sync_sr: write SR side-effects. UpdateSR() -> ChangeGPR() swaps
+		// r[]<->r_bank[] IN MEMORY on an SR.RB change, so pinned GPRs must be
+		// flushed before and reloaded after. The bool return (interrupt pending)
+		// is intentionally ignored here: every SH4 op that emits sync_sr ends its
+		// block with BET_*Intr, whose native handler runs UpdateINTC and
+		// dispatches. (This is pseudo-core: keep it self-contained, do not rely
+		// on the generic fallback.)
+		case shop_sync_sr:
+			reg_flush_all();
+			ppc_call(&UpdateSR);
+			reg_reload_all();
+			break;
+
+		// sync_fpscr: UpdateFPSCR() (rounding mode + possible FR bank swap).
+		// Plain call — no GPR flush needed. NOTE: if STATIC_FPU_ALLOC is ever
+		// enabled, UpdateFPSCR()->ChangeFP() swaps fr[]<->xf[] in memory and this
+		// must be bracketed with reg_flush_all()/reg_reload_all() like sync_sr.
+		case shop_sync_fpscr:
+			ppc_call(&UpdateFPSCR);
+			break;
+
+		// pref: store-queue prefetch. Only addresses in the SQ region trigger a
+		// store-queue flush — the canonical guards with `if ((addr>>26)==0x38)`
+		// BEFORE calling do_sqw (do_sqw itself assumes an SQ address). For any
+		// other address pref is a no-op. The MMU vs no-MMU variant is chosen at
+		// COMPILE time from CCN_MMUCR.AT. addr in rarg0.
+		case shop_pref:
+			{
+				ppc_sh_load(ppc_rarg0,op->rs1);
+				ppc_rlwinmx(ppc_rarg1,ppc_rarg0,6,26,31,0);	// rarg1 = addr >> 26
+				ppc_cmpi(ppc_cr0,ppc_rarg1,0x38,0);		// SQ region?
+				ppc_label* skip=ppc_CreateLabel();
+				ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);		// bne skip (not SQ -> no-op)
+				if (CCN_MMUCR.AT)
+					ppc_call(&do_sqw_mmu);			// do_sqw reloads rarg0=addr arg
+				else
+					ppc_call(&do_sqw_nommu);
+				skip->MarkLabel();
+			}
+			break;
+
+		// fsqrt / fsrra: single f32->f32 calls (accurate libm path).
+		// arg in farg0 (f1), result in frv0 (f1) per PPC FP calling convention.
+		case shop_fsqrt:
+			ppc_sh_load_f32(ppc_farg0,op->rs1);
+			ppc_call(&rec_fsqrt);
+			ppc_sh_store_f32(ppc_frv0,op->rd);
+			break;
+		case shop_fsrra:
+			ppc_sh_load_f32(ppc_farg0,op->rs1);
+			ppc_call(&rec_fsrra);
+			ppc_sh_store_f32(ppc_frv0,op->rd);
 			break;
 
 		default:
