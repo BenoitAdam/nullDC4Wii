@@ -296,6 +296,69 @@ shil_opc(mul_u64) BIN_OP_I4(u64, *, u64, u32) shil_opc_end()
 shil_opc(mul_s64) BIN_OP_I4(s64, *, u64, s32) shil_opc_end()
 
 // ---------------------------------------------------------------------------
+// 32-bit division (matched ROTCL/DIV1 idiom — see MatchDiv32 in decoder.cpp).
+// Ported from devcast/reicast. quo -> rd, rem -> rd2.
+//
+// NOTE: the u64 is packed via pointer-cast on purpose: word [0] always ends up
+// in the FIRST return register (eax on x86, r3 on big-endian PPC), which is
+// what CPT_u64rvL stores to rd — so quo->rd / rem->rd2 holds on BOTH endians.
+// (The native PPC cases in wii_driver.cpp bypass this entirely.)
+// ---------------------------------------------------------------------------
+shil_opc(div32u)
+shil_canonical(
+    u64, f1, (u32 r1, u32 r2),
+    u32 quo = r1 / r2;
+    u32 rem = r1 % r2;
+    u64 rv;
+    ((u32*)&rv)[0] = quo;
+    ((u32*)&rv)[1] = rem;
+    return rv;
+)
+shil_compile(
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+shil_opc(div32s)
+shil_canonical(
+    u64, f1, (s32 r1, s32 r2),
+    u32 quo = r1 / r2;
+    u32 rem = r1 % r2;
+    u64 rv;
+    ((u32*)&rv)[0] = quo;
+    ((u32*)&rv)[1] = rem;
+    return rv;
+)
+shil_compile(
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+// div32 fixup step: reproduces the architectural register state the
+// non-restoring DIV1 sequence leaves behind (rd = T ? a : a-b).
+shil_opc(div32p2)
+shil_canonical(
+    u32, f1, (s32 a, s32 b, s32 T),
+    if (!T)
+        a -= b;
+    return a;
+)
+shil_compile(
+    shil_cf_arg_u32(rs3);
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u32(rd);
+)
+shil_opc_end()
+
+// ---------------------------------------------------------------------------
 // Float ↔ integer conversion
 // ---------------------------------------------------------------------------
 shil_opc(cvt_f2i_t)   // float → integer (truncate toward zero)
