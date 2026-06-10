@@ -1408,6 +1408,40 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			ppc_sh_store(ppc_rarg2,op->rd2);
 			break;
 
+		// --- 32-bit division (matched ROTCL/DIV1 idiom): quo->rd, rem->rd2 ----
+		// Broadway has hardware divide; remainder = dividend - quo*divisor.
+		// Division by zero gives an undefined register result on PPC (no trap),
+		// which is fine — matched sequences are compiler-generated divisions.
+		case shop_div32u:
+			binop_start(op);				// rarg0=dividend, rarg1=divisor
+			ppc_divwux(ppc_rarg2,ppc_rarg0,ppc_rarg1,0,0);	// quo = divwu
+			ppc_mullwx(ppc_rarg3,ppc_rarg2,ppc_rarg1,0,0);	// quo*divisor
+			ppc_subfx(ppc_rarg3,ppc_rarg3,ppc_rarg0,0,0);	// rem = dividend - quo*divisor
+			ppc_sh_store(ppc_rarg2,op->rd);
+			ppc_sh_store(ppc_rarg3,op->rd2);
+			break;
+		case shop_div32s:
+			// divw truncates toward zero, same as the C canonical.
+			binop_start(op);
+			ppc_divwx(ppc_rarg2,ppc_rarg0,ppc_rarg1,0,0);	// quo = divw
+			ppc_mullwx(ppc_rarg3,ppc_rarg2,ppc_rarg1,0,0);
+			ppc_subfx(ppc_rarg3,ppc_rarg3,ppc_rarg0,0,0);
+			ppc_sh_store(ppc_rarg2,op->rd);
+			ppc_sh_store(ppc_rarg3,op->rd2);
+			break;
+		case shop_div32p2:
+			// rd = T ? a : a-b  (non-restoring remainder fixup).
+			// PRECONDITION: T (rs3) is 0/1 — guaranteed because the decoder
+			// emits "and T,quo,1" immediately before this op. mask = T-1 maps
+			// 0 -> 0xFFFFFFFF (apply b) and 1 -> 0 (keep a). Branchless.
+			binop_start(op);				// rarg0=a, rarg1=b
+			ppc_sh_load(ppc_rarg2,op->rs3);			// T
+			ppc_addi(ppc_rarg2,ppc_rarg2,-1);		// mask = T-1
+			ppc_andx(ppc_rarg1,ppc_rarg1,ppc_rarg2,0);	// b &= mask
+			ppc_subfx(ppc_rarg0,ppc_rarg1,ppc_rarg0,0,0);	// a -= (T ? 0 : b)
+			binop_end(op);
+			break;
+
 		// --- Shifts with dynamic SH4 semantics (branchless) -------------------
 		case shop_ror:
 			// rd = rotr(r1, r2&31). PPC rotates left; rotl by (32-(r2&31)).

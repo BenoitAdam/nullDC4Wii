@@ -221,6 +221,7 @@ struct __settings
 		bool Enable;
 		bool CPpass;
 		bool UnderclockFpu;
+		bool safemode;		//disable risky recompiler transforms (div32 idiom match etc.)
 	} dynarec;
 
 	struct
