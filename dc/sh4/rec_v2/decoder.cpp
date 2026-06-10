@@ -695,6 +695,103 @@ void dec_param(DecParam p,shil_param& r1,shil_param& r2, u32 op)
 		die("Nop supported param used");
 	}
 }
+
+// ============================================================================
+// 32-bit division idiom detection (ported from devcast/reicast)
+//
+// Compilers emit 32/32 division on SH4 as DIV0U/DIV0S followed by exactly
+// 32 repetitions of "ROTCL Rq / DIV1 Rm,Rn" (64 instructions). MatchDiv32
+// scans forward and verifies the full idiom with consistent registers:
+//   reg1 = the ROTCL register (quotient accumulator / dividend)
+//   reg2 = DIV1's Rm          (divisor)
+//   reg3 = DIV1's Rn          (working remainder)
+// A perfect match (score 65) lets the recompiler emit one real divide
+// (shop_div32u/s + T/quotient adjust + shop_div32p2 remainder fixup) and skip
+// the 64 guest opcodes. Anything else falls back to the interpreter (ifb).
+// ============================================================================
+#define DIV1_KEY      0x3004
+#define ROTCL_KEY     0x4024
+#define DIV_MASK_N    0xF0FF	// masks out the n field
+#define DIV_MASK_N_M  0xF00F	// masks out both n and m fields
+
+static Sh4RegType div_som_reg1;
+static Sh4RegType div_som_reg2;
+static Sh4RegType div_som_reg3;
+
+static u32 MatchDiv32(u32 pc, Sh4RegType& reg1, Sh4RegType& reg2, Sh4RegType& reg3)
+{
+	u32 v_pc = pc;
+	u32 match = 1;
+	for (int i = 0; i < 32; i++)
+	{
+		u16 opcode = ReadMem16(v_pc);
+		v_pc += 2;
+		if ((opcode & DIV_MASK_N) == ROTCL_KEY)
+		{
+			if (reg1 == NoReg)
+				reg1 = (Sh4RegType)GetN(opcode);
+			else if (reg1 != (Sh4RegType)GetN(opcode))
+				break;
+			match++;
+		}
+		else
+			break;
+
+		opcode = ReadMem16(v_pc);
+		v_pc += 2;
+		if ((opcode & DIV_MASK_N_M) == DIV1_KEY)
+		{
+			if (reg2 == NoReg)
+				reg2 = (Sh4RegType)GetM(opcode);
+			else if (reg2 != (Sh4RegType)GetM(opcode))
+				break;
+
+			if (reg2 == reg1)
+				break;
+
+			if (reg3 == NoReg)
+				reg3 = (Sh4RegType)GetN(opcode);
+			else if (reg3 != (Sh4RegType)GetN(opcode))
+				break;
+
+			if (reg3 == reg1)
+				break;
+
+			match++;
+		}
+		else
+			break;
+	}
+
+	return match;
+}
+
+static bool MatchDiv32u(u32 op, u32 pc)
+{
+	if (settings.dynarec.safemode)
+		return false;
+
+	div_som_reg1 = NoReg;
+	div_som_reg2 = NoReg;
+	div_som_reg3 = NoReg;
+
+	// 1 (div0u) + 32 rotcl + 32 div1 = 65 on a perfect match
+	return MatchDiv32(pc + 2, div_som_reg1, div_som_reg2, div_som_reg3) == 65;
+}
+
+static bool MatchDiv32s(u32 op, u32 pc)
+{
+	if (settings.dynarec.safemode)
+		return false;
+
+	// DIV0S Rm,Rn fixes the divisor / working-remainder registers up front.
+	div_som_reg1 = NoReg;
+	div_som_reg2 = (Sh4RegType)GetM(op);
+	div_som_reg3 = (Sh4RegType)GetN(op);
+
+	return MatchDiv32(pc + 2, div_som_reg1, div_som_reg2, div_som_reg3) == 65;
+}
+
 bool dec_generic(u32 op)
 {
 	DecMode mode;DecParam d;DecParam s;shilop natop;u32 e;
@@ -897,7 +994,49 @@ bool dec_generic(u32 op)
 
 	case DM_DIV0:
 		{
-			if (e==1)
+			// Try to match the full 32-step ROTCL/DIV1 division idiom and
+			// replace it with one real divide. Unmatched div0u/div0s keep the
+			// original native SR bit-manipulation below; only div1 itself (no
+			// decoder entry) goes to the interpreter.
+			//
+			// On a match we must not be in a delay slot (we skip 128 bytes of
+			// guest code, which is meaningless mid-delay-slot).
+			bool matched = !state.cpu.is_delayslot &&
+				(e==1 ? MatchDiv32u(op, state.cpu.rpc)
+				      : MatchDiv32s(op, state.cpu.rpc));
+
+			if (matched)
+			{
+				if (e==1)
+				{
+					// div0u: unsigned divide. quo -> reg1, rem -> reg3
+					block.Emit(shop_div32u, mk_reg(div_som_reg1), mk_reg(div_som_reg1), mk_reg(div_som_reg2), 0, shil_param(), mk_reg(div_som_reg3));
+
+					// The 32nd quotient bit is still "in T" after the sequence;
+					// the register holds the upper 31 bits.
+					block.Emit(shop_and, mk_reg(reg_sr_T), mk_reg(div_som_reg1), mk_imm(1));
+					block.Emit(shop_shr, mk_reg(div_som_reg1), mk_reg(div_som_reg1), mk_imm(1));
+				}
+				else
+				{
+					// div0s: signed divide
+					block.Emit(shop_div32s, mk_reg(div_som_reg1), mk_reg(div_som_reg1), mk_reg(div_som_reg2), 0, shil_param(), mk_reg(div_som_reg3));
+
+					block.Emit(shop_and, mk_reg(reg_sr_T), mk_reg(div_som_reg1), mk_imm(1));
+					block.Emit(shop_sar, mk_reg(div_som_reg1), mk_reg(div_som_reg1), mk_imm(1));
+				}
+
+				// Non-restoring remainder fixup: reg3 = T ? rem : rem - divisor
+				block.Emit(shop_div32p2, mk_reg(div_som_reg3), mk_reg(div_som_reg3), mk_reg(div_som_reg2), 0, mk_reg(reg_sr_T));
+
+				// Skip the 64 matched guest opcodes (32x rotcl + 32x div1) and
+				// account for their cycles/opcode count (the decode loop won't
+				// see them). Also keeps the idle-loop detector honest.
+				state.cpu.rpc += 128;
+				block.cycles  += CPU_RATIO*64;
+				block.opcodes += 64;
+			}
+			else if (e==1)
 			{
 				//crear QM (bits 8,9)
 				u32 qm=(1<<8)|(1<<9);
