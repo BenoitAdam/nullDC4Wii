@@ -996,8 +996,8 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				if (!isram)
 				{
 					// Inline the _vmem_readt fast path (direct RAM/VRAM) for
-					// runtime addresses, sizes 1/2/4. The MMIO path and 64-bit
-					// reads fall through to the C dispatcher.
+					// runtime addresses. The MMIO path falls back to the C
+					// dispatcher.
 					//
 					//   iirf = _vmem_MemInfo_ptr[addr>>24];
 					//   ptr  = iirf & ~0x1F;
@@ -1008,9 +1008,38 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					// addr is in rarg0 on entry. Scratch: r0, rarg1, rarg2.
 					if (op->flags==8)
 					{
-						// 64-bit: keep the C call (rare; BE pair handling).
+						// 64-bit pair load (fmov.d / sz=1 pair fmov). Replicates
+						// the BE *(u64*)p load of _vmem_readt<u64>: the u64 is
+						// returned in r3:r4 = high:low, so word[addr] -> rrv0
+						// (-> rd) and word[addr+4] -> rrv1 (-> rd+1), matching
+						// the ReadMem64 slow path register-for-register.
+						ppc_rlwinmx(ppc_r0,ppc_rarg0,10,22,29,0);	// (addr>>24)*4
+						u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
+						ppc_addi(ppc_rarg1,ppc_rarg1,lo);
+						ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
+						ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,0,26,0);	// ptr (≠r0)
+						ppc_cmpi(ppc_cr0,ppc_rarg2,0,0);		// ptr == 0 ?
+
+						ppc_label* slow=ppc_CreateLabel();
+						ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq slow (MMIO)
+
+						// --- fast direct path ---
+						ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// shift (iirf dead after)
+						ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
+						ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);	// mirror mask
+						ppc_lwzx(ppc_rarg3,ppc_rarg2,ppc_rarg0);	// word[addr]
+						ppc_addi(ppc_rarg0,ppc_rarg0,4);
+						ppc_lwzx(ppc_rrv1,ppc_rarg2,ppc_rarg0);	// word[addr+4] -> r4
+						ppc_ori(ppc_rrv0,ppc_rarg3,0);			// r3 = word[addr]
+
+						ppc_label* done=ppc_CreateLabel();
+						ppc_bcx(BO_ALWAYS,BI_CR0_EQ,0,0,0);		// b done
+
+						// --- slow MMIO path (addr in rarg0 untouched) ---
+						slow->MarkLabel();
 						if (!fuct) fuct=(void*)ReadMem64;
 						ppc_call(fuct);
+						done->MarkLabel();
 					}
 					else
 					{
@@ -1082,16 +1111,11 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 		case shop_writem:
 			{
+				// Compute the FULL effective address first, THEN load the data.
+				// (The old order loaded data first; the rs3 register-index path
+				// uses rarg3 as scratch, which CLOBBERED the 64-bit data low
+				// word for indexed pair stores like "fmov.d FRm,@(R0,Rn)".)
 				ppc_sh_load(ppc_rarg0,op->rs1);
-				
-
-				if (op->flags==8)
-				{
-					ppc_sh_load(ppc_rarg2,op->rs2);
-					ppc_sh_load(ppc_rarg3,op->rs2._reg+1);
-				}
-				else
-					ppc_sh_load(ppc_rarg1,op->rs2);
 
 				if (op->rs3.is_imm())
 				{
@@ -1110,8 +1134,16 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					die("invalid rs3");
 				}
 
+				if (op->flags==8)
+				{
+					ppc_sh_load(ppc_rarg2,op->rs2);
+					ppc_sh_load(ppc_rarg3,op->rs2._reg+1);
+				}
+				else
+					ppc_sh_load(ppc_rarg1,op->rs2);
+
 				// Inline the _vmem_writet fast path (direct RAM/VRAM) for runtime
-				// addresses, sizes 1/2/4. MMIO and 64-bit writes use the C call.
+				// addresses. MMIO falls back to the C call.
 				//
 				//   iirf = _vmem_MemInfo_ptr[addr>>24];
 				//   ptr  = iirf & ~0x1F;
@@ -1119,11 +1151,42 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				//              if (sz<4) a^=4-sz; *(T*)(ptr+a)=data; }
 				//   else  WriteMem<sz>(addr,data);   // slow
 				//
-				// On entry rarg0=addr, rarg1=data. addr/data MUST survive to the
-				// slow call, so the lookup uses only r0/rarg2/rarg3 as scratch.
+				// On entry rarg0=addr, rarg1=data (or rarg2:rarg3 = high:low for
+				// 64-bit). addr/data MUST survive to the slow call.
 				if (op->flags==8)
 				{
+					// 64-bit pair store (fmov.d / sz=1 pair fmov). Data is in
+					// rarg2:rarg3 (r5:r6) = high:low — exactly the EABI registers
+					// WriteMem64(u32,u64) wants, so the slow path needs no moves.
+					// Direct path replicates the BE *(u64*)p store of
+					// _vmem_writet<u64>: word[addr]=high, word[addr+4]=low.
+					// Lookup may only use r0/rarg1 as scratch.
+					ppc_rlwinmx(ppc_r0,ppc_rarg0,10,22,29,0);	// (addr>>24)*4
+					u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
+					ppc_addi(ppc_rarg1,ppc_rarg1,lo);
+					ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
+					// Extract shift BEFORE masking iirf in place to ptr.
+					ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// r0 = shift
+					ppc_rlwinmx(ppc_rarg1,ppc_rarg1,0,0,26,0);	// rarg1 = ptr (≠r0)
+					ppc_cmpi(ppc_cr0,ppc_rarg1,0,0);		// ptr == 0 ?
+
+					ppc_label* slow=ppc_CreateLabel();
+					ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq slow (MMIO)
+
+					// --- fast direct path (addr masked only on this side) ---
+					ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
+					ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);	// mirror mask
+					ppc_stwx(ppc_rarg2,ppc_rarg1,ppc_rarg0);	// word[addr]   = high
+					ppc_addi(ppc_rarg0,ppc_rarg0,4);
+					ppc_stwx(ppc_rarg3,ppc_rarg1,ppc_rarg0);	// word[addr+4] = low
+
+					ppc_label* done=ppc_CreateLabel();
+					ppc_bcx(BO_ALWAYS,BI_CR0_EQ,0,0,0);		// b done
+
+					// --- slow MMIO path (addr/data untouched) ---
+					slow->MarkLabel();
 					ppc_call(&WriteMem64);
+					done->MarkLabel();
 				}
 				else
 				{
