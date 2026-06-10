@@ -1,6 +1,8 @@
 // Wii Rendering
 
 #include <cstdio>
+#include <ogc/system.h>
+#define printf(...) SYS_Report(__VA_ARGS__)
 
 // RUNTIME - PRESET SELECTION
 
