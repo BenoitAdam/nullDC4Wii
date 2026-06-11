@@ -1553,6 +1553,13 @@
 
   u32 opcode = CPUReadMemoryQuick(armNextPC);
 
+  if (opcode != 0 && armNextPC == 0x0000C84) totalops=1;
+
+  if (opcode != 0 && totalops != 0) {
+      printf("Decoding %08X for pc %08X\n", opcode, armNextPC);
+    if (totalops++> 64) { for(;;);}
+  }
+
   clockTicks += 6;
 
   armNextPC = reg[15].I;

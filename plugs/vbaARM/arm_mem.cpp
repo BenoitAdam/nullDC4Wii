@@ -81,7 +81,7 @@ void arm_term_mem()
 template<int sz,typename T>
 T fastcall ReadMemArm(u32 addr)
 {
-//	printf("ReadMemArm %08x\n",addr);
+	// printf("ReadMemArm %08x\n",addr);
 	addr&=0x00FFFFFF;
 	if (addr<0x800000)
 	{
@@ -109,6 +109,8 @@ T fastcall ReadMemArm(u32 addr)
         else if (sz==2)
             addr^=2;
         
+		// printf("ReadMemArm rv %08x\n",*(T*)&arm_aica_ram[addr&ARAM_MASK]);
+
         return *(T*)&arm_aica_ram[addr&ARAM_MASK];
 	}
 	else
