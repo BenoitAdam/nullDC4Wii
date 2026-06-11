@@ -3,7 +3,6 @@
 
 #if defined(GEN_LABELS)
 lbl_dp_and_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -21,7 +20,6 @@ lbl_dp_and_lsli:
   }
   ADVANCE();
 lbl_dp_and_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -40,7 +38,6 @@ lbl_dp_and_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_and_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -58,7 +55,6 @@ lbl_dp_and_lsri:
   }
   ADVANCE();
 lbl_dp_and_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -77,7 +73,6 @@ lbl_dp_and_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_and_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -95,7 +90,6 @@ lbl_dp_and_asri:
   }
   ADVANCE();
 lbl_dp_and_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -114,7 +108,6 @@ lbl_dp_and_asri_pcr:
   }
   ADVANCE();
 lbl_dp_and_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -132,7 +125,6 @@ lbl_dp_and_rori:
   }
   ADVANCE();
 lbl_dp_and_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -151,7 +143,6 @@ lbl_dp_and_rori_pcr:
   }
   ADVANCE();
 lbl_dp_and_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -169,7 +160,6 @@ lbl_dp_and_lslr:
   }
   ADVANCE();
 lbl_dp_and_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -188,7 +178,6 @@ lbl_dp_and_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_and_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -206,7 +195,6 @@ lbl_dp_and_lsrr:
   }
   ADVANCE();
 lbl_dp_and_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -225,7 +213,6 @@ lbl_dp_and_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_and_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -243,7 +230,6 @@ lbl_dp_and_asrr:
   }
   ADVANCE();
 lbl_dp_and_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -262,7 +248,6 @@ lbl_dp_and_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_and_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -280,7 +265,6 @@ lbl_dp_and_rorr:
   }
   ADVANCE();
 lbl_dp_and_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -299,7 +283,6 @@ lbl_dp_and_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_and_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -317,7 +300,6 @@ lbl_dp_and_imm0:
   }
   ADVANCE();
 lbl_dp_and_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -336,7 +318,6 @@ lbl_dp_and_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_and_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -354,7 +335,6 @@ lbl_dp_and_immn:
   }
   ADVANCE();
 lbl_dp_and_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -373,7 +353,6 @@ lbl_dp_and_immn_pcr:
   }
   ADVANCE();
 lbl_dp_ands_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -393,7 +372,6 @@ lbl_dp_ands_lsli:
   }
   ADVANCE();
 lbl_dp_ands_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -414,7 +392,6 @@ lbl_dp_ands_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_ands_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -434,7 +411,6 @@ lbl_dp_ands_lsri:
   }
   ADVANCE();
 lbl_dp_ands_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -455,7 +431,6 @@ lbl_dp_ands_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_ands_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -475,7 +450,6 @@ lbl_dp_ands_asri:
   }
   ADVANCE();
 lbl_dp_ands_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -496,7 +470,6 @@ lbl_dp_ands_asri_pcr:
   }
   ADVANCE();
 lbl_dp_ands_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -516,7 +489,6 @@ lbl_dp_ands_rori:
   }
   ADVANCE();
 lbl_dp_ands_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -537,7 +509,6 @@ lbl_dp_ands_rori_pcr:
   }
   ADVANCE();
 lbl_dp_ands_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -557,7 +528,6 @@ lbl_dp_ands_lslr:
   }
   ADVANCE();
 lbl_dp_ands_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -578,7 +548,6 @@ lbl_dp_ands_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_ands_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -598,7 +567,6 @@ lbl_dp_ands_lsrr:
   }
   ADVANCE();
 lbl_dp_ands_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -619,7 +587,6 @@ lbl_dp_ands_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_ands_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -639,7 +606,6 @@ lbl_dp_ands_asrr:
   }
   ADVANCE();
 lbl_dp_ands_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -660,7 +626,6 @@ lbl_dp_ands_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_ands_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -680,7 +645,6 @@ lbl_dp_ands_rorr:
   }
   ADVANCE();
 lbl_dp_ands_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -701,7 +665,6 @@ lbl_dp_ands_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_ands_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -721,7 +684,6 @@ lbl_dp_ands_imm0:
   }
   ADVANCE();
 lbl_dp_ands_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -742,7 +704,6 @@ lbl_dp_ands_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_ands_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -762,7 +723,6 @@ lbl_dp_ands_immn:
   }
   ADVANCE();
 lbl_dp_ands_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -783,7 +743,6 @@ lbl_dp_ands_immn_pcr:
   }
   ADVANCE();
 lbl_dp_eor_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -801,7 +760,6 @@ lbl_dp_eor_lsli:
   }
   ADVANCE();
 lbl_dp_eor_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -820,7 +778,6 @@ lbl_dp_eor_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_eor_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -838,7 +795,6 @@ lbl_dp_eor_lsri:
   }
   ADVANCE();
 lbl_dp_eor_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -857,7 +813,6 @@ lbl_dp_eor_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_eor_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -875,7 +830,6 @@ lbl_dp_eor_asri:
   }
   ADVANCE();
 lbl_dp_eor_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -894,7 +848,6 @@ lbl_dp_eor_asri_pcr:
   }
   ADVANCE();
 lbl_dp_eor_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -912,7 +865,6 @@ lbl_dp_eor_rori:
   }
   ADVANCE();
 lbl_dp_eor_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -931,7 +883,6 @@ lbl_dp_eor_rori_pcr:
   }
   ADVANCE();
 lbl_dp_eor_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -949,7 +900,6 @@ lbl_dp_eor_lslr:
   }
   ADVANCE();
 lbl_dp_eor_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -968,7 +918,6 @@ lbl_dp_eor_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_eor_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -986,7 +935,6 @@ lbl_dp_eor_lsrr:
   }
   ADVANCE();
 lbl_dp_eor_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1005,7 +953,6 @@ lbl_dp_eor_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_eor_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1023,7 +970,6 @@ lbl_dp_eor_asrr:
   }
   ADVANCE();
 lbl_dp_eor_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1042,7 +988,6 @@ lbl_dp_eor_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_eor_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1060,7 +1005,6 @@ lbl_dp_eor_rorr:
   }
   ADVANCE();
 lbl_dp_eor_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1079,7 +1023,6 @@ lbl_dp_eor_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_eor_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1097,7 +1040,6 @@ lbl_dp_eor_imm0:
   }
   ADVANCE();
 lbl_dp_eor_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1116,7 +1058,6 @@ lbl_dp_eor_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_eor_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1134,7 +1075,6 @@ lbl_dp_eor_immn:
   }
   ADVANCE();
 lbl_dp_eor_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1153,7 +1093,6 @@ lbl_dp_eor_immn_pcr:
   }
   ADVANCE();
 lbl_dp_eors_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1173,7 +1112,6 @@ lbl_dp_eors_lsli:
   }
   ADVANCE();
 lbl_dp_eors_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1194,7 +1132,6 @@ lbl_dp_eors_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_eors_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1214,7 +1151,6 @@ lbl_dp_eors_lsri:
   }
   ADVANCE();
 lbl_dp_eors_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1235,7 +1171,6 @@ lbl_dp_eors_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_eors_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1255,7 +1190,6 @@ lbl_dp_eors_asri:
   }
   ADVANCE();
 lbl_dp_eors_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1276,7 +1210,6 @@ lbl_dp_eors_asri_pcr:
   }
   ADVANCE();
 lbl_dp_eors_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1296,7 +1229,6 @@ lbl_dp_eors_rori:
   }
   ADVANCE();
 lbl_dp_eors_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1317,7 +1249,6 @@ lbl_dp_eors_rori_pcr:
   }
   ADVANCE();
 lbl_dp_eors_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1337,7 +1268,6 @@ lbl_dp_eors_lslr:
   }
   ADVANCE();
 lbl_dp_eors_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1358,7 +1288,6 @@ lbl_dp_eors_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_eors_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1378,7 +1307,6 @@ lbl_dp_eors_lsrr:
   }
   ADVANCE();
 lbl_dp_eors_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1399,7 +1327,6 @@ lbl_dp_eors_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_eors_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1419,7 +1346,6 @@ lbl_dp_eors_asrr:
   }
   ADVANCE();
 lbl_dp_eors_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1440,7 +1366,6 @@ lbl_dp_eors_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_eors_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1460,7 +1385,6 @@ lbl_dp_eors_rorr:
   }
   ADVANCE();
 lbl_dp_eors_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1481,7 +1405,6 @@ lbl_dp_eors_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_eors_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1501,7 +1424,6 @@ lbl_dp_eors_imm0:
   }
   ADVANCE();
 lbl_dp_eors_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1522,7 +1444,6 @@ lbl_dp_eors_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_eors_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1542,7 +1463,6 @@ lbl_dp_eors_immn:
   }
   ADVANCE();
 lbl_dp_eors_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1563,7 +1483,6 @@ lbl_dp_eors_immn_pcr:
   }
   ADVANCE();
 lbl_dp_sub_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1581,7 +1500,6 @@ lbl_dp_sub_lsli:
   }
   ADVANCE();
 lbl_dp_sub_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1600,7 +1518,6 @@ lbl_dp_sub_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_sub_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1618,7 +1535,6 @@ lbl_dp_sub_lsri:
   }
   ADVANCE();
 lbl_dp_sub_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1637,7 +1553,6 @@ lbl_dp_sub_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_sub_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1655,7 +1570,6 @@ lbl_dp_sub_asri:
   }
   ADVANCE();
 lbl_dp_sub_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1674,7 +1588,6 @@ lbl_dp_sub_asri_pcr:
   }
   ADVANCE();
 lbl_dp_sub_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1692,7 +1605,6 @@ lbl_dp_sub_rori:
   }
   ADVANCE();
 lbl_dp_sub_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1711,7 +1623,6 @@ lbl_dp_sub_rori_pcr:
   }
   ADVANCE();
 lbl_dp_sub_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1729,7 +1640,6 @@ lbl_dp_sub_lslr:
   }
   ADVANCE();
 lbl_dp_sub_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1748,7 +1658,6 @@ lbl_dp_sub_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_sub_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1766,7 +1675,6 @@ lbl_dp_sub_lsrr:
   }
   ADVANCE();
 lbl_dp_sub_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1785,7 +1693,6 @@ lbl_dp_sub_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_sub_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1803,7 +1710,6 @@ lbl_dp_sub_asrr:
   }
   ADVANCE();
 lbl_dp_sub_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1822,7 +1728,6 @@ lbl_dp_sub_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_sub_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1840,7 +1745,6 @@ lbl_dp_sub_rorr:
   }
   ADVANCE();
 lbl_dp_sub_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1859,7 +1763,6 @@ lbl_dp_sub_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_sub_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1877,7 +1780,6 @@ lbl_dp_sub_imm0:
   }
   ADVANCE();
 lbl_dp_sub_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1896,7 +1798,6 @@ lbl_dp_sub_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_sub_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1914,7 +1815,6 @@ lbl_dp_sub_immn:
   }
   ADVANCE();
 lbl_dp_sub_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1933,7 +1833,6 @@ lbl_dp_sub_immn_pcr:
   }
   ADVANCE();
 lbl_dp_subs_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1953,7 +1852,6 @@ lbl_dp_subs_lsli:
   }
   ADVANCE();
 lbl_dp_subs_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -1974,7 +1872,6 @@ lbl_dp_subs_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_subs_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -1994,7 +1891,6 @@ lbl_dp_subs_lsri:
   }
   ADVANCE();
 lbl_dp_subs_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2015,7 +1911,6 @@ lbl_dp_subs_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_subs_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2035,7 +1930,6 @@ lbl_dp_subs_asri:
   }
   ADVANCE();
 lbl_dp_subs_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2056,7 +1950,6 @@ lbl_dp_subs_asri_pcr:
   }
   ADVANCE();
 lbl_dp_subs_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2076,7 +1969,6 @@ lbl_dp_subs_rori:
   }
   ADVANCE();
 lbl_dp_subs_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2097,7 +1989,6 @@ lbl_dp_subs_rori_pcr:
   }
   ADVANCE();
 lbl_dp_subs_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2117,7 +2008,6 @@ lbl_dp_subs_lslr:
   }
   ADVANCE();
 lbl_dp_subs_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2138,7 +2028,6 @@ lbl_dp_subs_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_subs_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2158,7 +2047,6 @@ lbl_dp_subs_lsrr:
   }
   ADVANCE();
 lbl_dp_subs_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2179,7 +2067,6 @@ lbl_dp_subs_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_subs_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2199,7 +2086,6 @@ lbl_dp_subs_asrr:
   }
   ADVANCE();
 lbl_dp_subs_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2220,7 +2106,6 @@ lbl_dp_subs_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_subs_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2240,7 +2125,6 @@ lbl_dp_subs_rorr:
   }
   ADVANCE();
 lbl_dp_subs_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2261,7 +2145,6 @@ lbl_dp_subs_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_subs_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2281,7 +2164,6 @@ lbl_dp_subs_imm0:
   }
   ADVANCE();
 lbl_dp_subs_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2302,7 +2184,6 @@ lbl_dp_subs_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_subs_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2322,7 +2203,6 @@ lbl_dp_subs_immn:
   }
   ADVANCE();
 lbl_dp_subs_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2343,7 +2223,6 @@ lbl_dp_subs_immn_pcr:
   }
   ADVANCE();
 lbl_dp_rsb_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2361,7 +2240,6 @@ lbl_dp_rsb_lsli:
   }
   ADVANCE();
 lbl_dp_rsb_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2380,7 +2258,6 @@ lbl_dp_rsb_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_rsb_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2398,7 +2275,6 @@ lbl_dp_rsb_lsri:
   }
   ADVANCE();
 lbl_dp_rsb_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2417,7 +2293,6 @@ lbl_dp_rsb_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_rsb_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2435,7 +2310,6 @@ lbl_dp_rsb_asri:
   }
   ADVANCE();
 lbl_dp_rsb_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2454,7 +2328,6 @@ lbl_dp_rsb_asri_pcr:
   }
   ADVANCE();
 lbl_dp_rsb_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2472,7 +2345,6 @@ lbl_dp_rsb_rori:
   }
   ADVANCE();
 lbl_dp_rsb_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2491,7 +2363,6 @@ lbl_dp_rsb_rori_pcr:
   }
   ADVANCE();
 lbl_dp_rsb_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2509,7 +2380,6 @@ lbl_dp_rsb_lslr:
   }
   ADVANCE();
 lbl_dp_rsb_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2528,7 +2398,6 @@ lbl_dp_rsb_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_rsb_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2546,7 +2415,6 @@ lbl_dp_rsb_lsrr:
   }
   ADVANCE();
 lbl_dp_rsb_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2565,7 +2433,6 @@ lbl_dp_rsb_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_rsb_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2583,7 +2450,6 @@ lbl_dp_rsb_asrr:
   }
   ADVANCE();
 lbl_dp_rsb_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2602,7 +2468,6 @@ lbl_dp_rsb_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_rsb_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2620,7 +2485,6 @@ lbl_dp_rsb_rorr:
   }
   ADVANCE();
 lbl_dp_rsb_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2639,7 +2503,6 @@ lbl_dp_rsb_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_rsb_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2657,7 +2520,6 @@ lbl_dp_rsb_imm0:
   }
   ADVANCE();
 lbl_dp_rsb_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2676,7 +2538,6 @@ lbl_dp_rsb_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_rsb_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2694,7 +2555,6 @@ lbl_dp_rsb_immn:
   }
   ADVANCE();
 lbl_dp_rsb_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2713,7 +2573,6 @@ lbl_dp_rsb_immn_pcr:
   }
   ADVANCE();
 lbl_dp_rsbs_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2733,7 +2592,6 @@ lbl_dp_rsbs_lsli:
   }
   ADVANCE();
 lbl_dp_rsbs_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2754,7 +2612,6 @@ lbl_dp_rsbs_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_rsbs_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2774,7 +2631,6 @@ lbl_dp_rsbs_lsri:
   }
   ADVANCE();
 lbl_dp_rsbs_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2795,7 +2651,6 @@ lbl_dp_rsbs_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_rsbs_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2815,7 +2670,6 @@ lbl_dp_rsbs_asri:
   }
   ADVANCE();
 lbl_dp_rsbs_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2836,7 +2690,6 @@ lbl_dp_rsbs_asri_pcr:
   }
   ADVANCE();
 lbl_dp_rsbs_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2856,7 +2709,6 @@ lbl_dp_rsbs_rori:
   }
   ADVANCE();
 lbl_dp_rsbs_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2877,7 +2729,6 @@ lbl_dp_rsbs_rori_pcr:
   }
   ADVANCE();
 lbl_dp_rsbs_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2897,7 +2748,6 @@ lbl_dp_rsbs_lslr:
   }
   ADVANCE();
 lbl_dp_rsbs_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2918,7 +2768,6 @@ lbl_dp_rsbs_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_rsbs_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2938,7 +2787,6 @@ lbl_dp_rsbs_lsrr:
   }
   ADVANCE();
 lbl_dp_rsbs_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -2959,7 +2807,6 @@ lbl_dp_rsbs_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_rsbs_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -2979,7 +2826,6 @@ lbl_dp_rsbs_asrr:
   }
   ADVANCE();
 lbl_dp_rsbs_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3000,7 +2846,6 @@ lbl_dp_rsbs_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_rsbs_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3020,7 +2865,6 @@ lbl_dp_rsbs_rorr:
   }
   ADVANCE();
 lbl_dp_rsbs_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3041,7 +2885,6 @@ lbl_dp_rsbs_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_rsbs_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3061,7 +2904,6 @@ lbl_dp_rsbs_imm0:
   }
   ADVANCE();
 lbl_dp_rsbs_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3082,7 +2924,6 @@ lbl_dp_rsbs_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_rsbs_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3102,7 +2943,6 @@ lbl_dp_rsbs_immn:
   }
   ADVANCE();
 lbl_dp_rsbs_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3123,7 +2963,6 @@ lbl_dp_rsbs_immn_pcr:
   }
   ADVANCE();
 lbl_dp_add_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3141,7 +2980,6 @@ lbl_dp_add_lsli:
   }
   ADVANCE();
 lbl_dp_add_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3160,7 +2998,6 @@ lbl_dp_add_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_add_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3178,7 +3015,6 @@ lbl_dp_add_lsri:
   }
   ADVANCE();
 lbl_dp_add_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3197,7 +3033,6 @@ lbl_dp_add_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_add_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3215,7 +3050,6 @@ lbl_dp_add_asri:
   }
   ADVANCE();
 lbl_dp_add_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3234,7 +3068,6 @@ lbl_dp_add_asri_pcr:
   }
   ADVANCE();
 lbl_dp_add_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3252,7 +3085,6 @@ lbl_dp_add_rori:
   }
   ADVANCE();
 lbl_dp_add_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3271,7 +3103,6 @@ lbl_dp_add_rori_pcr:
   }
   ADVANCE();
 lbl_dp_add_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3289,7 +3120,6 @@ lbl_dp_add_lslr:
   }
   ADVANCE();
 lbl_dp_add_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3308,7 +3138,6 @@ lbl_dp_add_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_add_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3326,7 +3155,6 @@ lbl_dp_add_lsrr:
   }
   ADVANCE();
 lbl_dp_add_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3345,7 +3173,6 @@ lbl_dp_add_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_add_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3363,7 +3190,6 @@ lbl_dp_add_asrr:
   }
   ADVANCE();
 lbl_dp_add_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3382,7 +3208,6 @@ lbl_dp_add_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_add_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3400,7 +3225,6 @@ lbl_dp_add_rorr:
   }
   ADVANCE();
 lbl_dp_add_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3419,7 +3243,6 @@ lbl_dp_add_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_add_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3437,7 +3260,6 @@ lbl_dp_add_imm0:
   }
   ADVANCE();
 lbl_dp_add_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3456,7 +3278,6 @@ lbl_dp_add_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_add_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3474,7 +3295,6 @@ lbl_dp_add_immn:
   }
   ADVANCE();
 lbl_dp_add_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3493,7 +3313,6 @@ lbl_dp_add_immn_pcr:
   }
   ADVANCE();
 lbl_dp_adds_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3513,7 +3332,6 @@ lbl_dp_adds_lsli:
   }
   ADVANCE();
 lbl_dp_adds_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3534,7 +3352,6 @@ lbl_dp_adds_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_adds_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3554,7 +3371,6 @@ lbl_dp_adds_lsri:
   }
   ADVANCE();
 lbl_dp_adds_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3575,7 +3391,6 @@ lbl_dp_adds_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_adds_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3595,7 +3410,6 @@ lbl_dp_adds_asri:
   }
   ADVANCE();
 lbl_dp_adds_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3616,7 +3430,6 @@ lbl_dp_adds_asri_pcr:
   }
   ADVANCE();
 lbl_dp_adds_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3636,7 +3449,6 @@ lbl_dp_adds_rori:
   }
   ADVANCE();
 lbl_dp_adds_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3657,7 +3469,6 @@ lbl_dp_adds_rori_pcr:
   }
   ADVANCE();
 lbl_dp_adds_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3677,7 +3488,6 @@ lbl_dp_adds_lslr:
   }
   ADVANCE();
 lbl_dp_adds_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3698,7 +3508,6 @@ lbl_dp_adds_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_adds_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3718,7 +3527,6 @@ lbl_dp_adds_lsrr:
   }
   ADVANCE();
 lbl_dp_adds_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3739,7 +3547,6 @@ lbl_dp_adds_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_adds_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3759,7 +3566,6 @@ lbl_dp_adds_asrr:
   }
   ADVANCE();
 lbl_dp_adds_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3780,7 +3586,6 @@ lbl_dp_adds_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_adds_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3800,7 +3605,6 @@ lbl_dp_adds_rorr:
   }
   ADVANCE();
 lbl_dp_adds_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3821,7 +3625,6 @@ lbl_dp_adds_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_adds_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3841,7 +3644,6 @@ lbl_dp_adds_imm0:
   }
   ADVANCE();
 lbl_dp_adds_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3862,7 +3664,6 @@ lbl_dp_adds_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_adds_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3882,7 +3683,6 @@ lbl_dp_adds_immn:
   }
   ADVANCE();
 lbl_dp_adds_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3903,7 +3703,6 @@ lbl_dp_adds_immn_pcr:
   }
   ADVANCE();
 lbl_dp_adc_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3921,7 +3720,6 @@ lbl_dp_adc_lsli:
   }
   ADVANCE();
 lbl_dp_adc_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3940,7 +3738,6 @@ lbl_dp_adc_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_adc_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3958,7 +3755,6 @@ lbl_dp_adc_lsri:
   }
   ADVANCE();
 lbl_dp_adc_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -3977,7 +3773,6 @@ lbl_dp_adc_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_adc_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -3995,7 +3790,6 @@ lbl_dp_adc_asri:
   }
   ADVANCE();
 lbl_dp_adc_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4014,7 +3808,6 @@ lbl_dp_adc_asri_pcr:
   }
   ADVANCE();
 lbl_dp_adc_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4032,7 +3825,6 @@ lbl_dp_adc_rori:
   }
   ADVANCE();
 lbl_dp_adc_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4051,7 +3843,6 @@ lbl_dp_adc_rori_pcr:
   }
   ADVANCE();
 lbl_dp_adc_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4069,7 +3860,6 @@ lbl_dp_adc_lslr:
   }
   ADVANCE();
 lbl_dp_adc_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4088,7 +3878,6 @@ lbl_dp_adc_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_adc_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4106,7 +3895,6 @@ lbl_dp_adc_lsrr:
   }
   ADVANCE();
 lbl_dp_adc_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4125,7 +3913,6 @@ lbl_dp_adc_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_adc_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4143,7 +3930,6 @@ lbl_dp_adc_asrr:
   }
   ADVANCE();
 lbl_dp_adc_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4162,7 +3948,6 @@ lbl_dp_adc_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_adc_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4180,7 +3965,6 @@ lbl_dp_adc_rorr:
   }
   ADVANCE();
 lbl_dp_adc_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4199,7 +3983,6 @@ lbl_dp_adc_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_adc_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4217,7 +4000,6 @@ lbl_dp_adc_imm0:
   }
   ADVANCE();
 lbl_dp_adc_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4236,7 +4018,6 @@ lbl_dp_adc_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_adc_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4254,7 +4035,6 @@ lbl_dp_adc_immn:
   }
   ADVANCE();
 lbl_dp_adc_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4273,7 +4053,6 @@ lbl_dp_adc_immn_pcr:
   }
   ADVANCE();
 lbl_dp_adcs_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4293,7 +4072,6 @@ lbl_dp_adcs_lsli:
   }
   ADVANCE();
 lbl_dp_adcs_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4314,7 +4092,6 @@ lbl_dp_adcs_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_adcs_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4334,7 +4111,6 @@ lbl_dp_adcs_lsri:
   }
   ADVANCE();
 lbl_dp_adcs_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4355,7 +4131,6 @@ lbl_dp_adcs_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_adcs_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4375,7 +4150,6 @@ lbl_dp_adcs_asri:
   }
   ADVANCE();
 lbl_dp_adcs_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4396,7 +4170,6 @@ lbl_dp_adcs_asri_pcr:
   }
   ADVANCE();
 lbl_dp_adcs_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4416,7 +4189,6 @@ lbl_dp_adcs_rori:
   }
   ADVANCE();
 lbl_dp_adcs_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4437,7 +4209,6 @@ lbl_dp_adcs_rori_pcr:
   }
   ADVANCE();
 lbl_dp_adcs_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4457,7 +4228,6 @@ lbl_dp_adcs_lslr:
   }
   ADVANCE();
 lbl_dp_adcs_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4478,7 +4248,6 @@ lbl_dp_adcs_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_adcs_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4498,7 +4267,6 @@ lbl_dp_adcs_lsrr:
   }
   ADVANCE();
 lbl_dp_adcs_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4519,7 +4287,6 @@ lbl_dp_adcs_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_adcs_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4539,7 +4306,6 @@ lbl_dp_adcs_asrr:
   }
   ADVANCE();
 lbl_dp_adcs_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4560,7 +4326,6 @@ lbl_dp_adcs_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_adcs_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4580,7 +4345,6 @@ lbl_dp_adcs_rorr:
   }
   ADVANCE();
 lbl_dp_adcs_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4601,7 +4365,6 @@ lbl_dp_adcs_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_adcs_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4621,7 +4384,6 @@ lbl_dp_adcs_imm0:
   }
   ADVANCE();
 lbl_dp_adcs_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4642,7 +4404,6 @@ lbl_dp_adcs_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_adcs_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4662,7 +4423,6 @@ lbl_dp_adcs_immn:
   }
   ADVANCE();
 lbl_dp_adcs_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4683,7 +4443,6 @@ lbl_dp_adcs_immn_pcr:
   }
   ADVANCE();
 lbl_dp_sbc_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4701,7 +4460,6 @@ lbl_dp_sbc_lsli:
   }
   ADVANCE();
 lbl_dp_sbc_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4720,7 +4478,6 @@ lbl_dp_sbc_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_sbc_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4738,7 +4495,6 @@ lbl_dp_sbc_lsri:
   }
   ADVANCE();
 lbl_dp_sbc_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4757,7 +4513,6 @@ lbl_dp_sbc_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_sbc_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4775,7 +4530,6 @@ lbl_dp_sbc_asri:
   }
   ADVANCE();
 lbl_dp_sbc_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4794,7 +4548,6 @@ lbl_dp_sbc_asri_pcr:
   }
   ADVANCE();
 lbl_dp_sbc_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4812,7 +4565,6 @@ lbl_dp_sbc_rori:
   }
   ADVANCE();
 lbl_dp_sbc_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4831,7 +4583,6 @@ lbl_dp_sbc_rori_pcr:
   }
   ADVANCE();
 lbl_dp_sbc_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4849,7 +4600,6 @@ lbl_dp_sbc_lslr:
   }
   ADVANCE();
 lbl_dp_sbc_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4868,7 +4618,6 @@ lbl_dp_sbc_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_sbc_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4886,7 +4635,6 @@ lbl_dp_sbc_lsrr:
   }
   ADVANCE();
 lbl_dp_sbc_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4905,7 +4653,6 @@ lbl_dp_sbc_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_sbc_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4923,7 +4670,6 @@ lbl_dp_sbc_asrr:
   }
   ADVANCE();
 lbl_dp_sbc_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4942,7 +4688,6 @@ lbl_dp_sbc_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_sbc_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4960,7 +4705,6 @@ lbl_dp_sbc_rorr:
   }
   ADVANCE();
 lbl_dp_sbc_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -4979,7 +4723,6 @@ lbl_dp_sbc_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_sbc_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -4997,7 +4740,6 @@ lbl_dp_sbc_imm0:
   }
   ADVANCE();
 lbl_dp_sbc_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5016,7 +4758,6 @@ lbl_dp_sbc_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_sbc_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5034,7 +4775,6 @@ lbl_dp_sbc_immn:
   }
   ADVANCE();
 lbl_dp_sbc_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5053,7 +4793,6 @@ lbl_dp_sbc_immn_pcr:
   }
   ADVANCE();
 lbl_dp_sbcs_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5073,7 +4812,6 @@ lbl_dp_sbcs_lsli:
   }
   ADVANCE();
 lbl_dp_sbcs_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5094,7 +4832,6 @@ lbl_dp_sbcs_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_sbcs_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5114,7 +4851,6 @@ lbl_dp_sbcs_lsri:
   }
   ADVANCE();
 lbl_dp_sbcs_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5135,7 +4871,6 @@ lbl_dp_sbcs_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_sbcs_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5155,7 +4890,6 @@ lbl_dp_sbcs_asri:
   }
   ADVANCE();
 lbl_dp_sbcs_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5176,7 +4910,6 @@ lbl_dp_sbcs_asri_pcr:
   }
   ADVANCE();
 lbl_dp_sbcs_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5196,7 +4929,6 @@ lbl_dp_sbcs_rori:
   }
   ADVANCE();
 lbl_dp_sbcs_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5217,7 +4949,6 @@ lbl_dp_sbcs_rori_pcr:
   }
   ADVANCE();
 lbl_dp_sbcs_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5237,7 +4968,6 @@ lbl_dp_sbcs_lslr:
   }
   ADVANCE();
 lbl_dp_sbcs_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5258,7 +4988,6 @@ lbl_dp_sbcs_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_sbcs_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5278,7 +5007,6 @@ lbl_dp_sbcs_lsrr:
   }
   ADVANCE();
 lbl_dp_sbcs_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5299,7 +5027,6 @@ lbl_dp_sbcs_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_sbcs_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5319,7 +5046,6 @@ lbl_dp_sbcs_asrr:
   }
   ADVANCE();
 lbl_dp_sbcs_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5340,7 +5066,6 @@ lbl_dp_sbcs_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_sbcs_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5360,7 +5085,6 @@ lbl_dp_sbcs_rorr:
   }
   ADVANCE();
 lbl_dp_sbcs_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5381,7 +5105,6 @@ lbl_dp_sbcs_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_sbcs_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5401,7 +5124,6 @@ lbl_dp_sbcs_imm0:
   }
   ADVANCE();
 lbl_dp_sbcs_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5422,7 +5144,6 @@ lbl_dp_sbcs_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_sbcs_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5442,7 +5163,6 @@ lbl_dp_sbcs_immn:
   }
   ADVANCE();
 lbl_dp_sbcs_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5463,7 +5183,6 @@ lbl_dp_sbcs_immn_pcr:
   }
   ADVANCE();
 lbl_dp_rsc_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5481,7 +5200,6 @@ lbl_dp_rsc_lsli:
   }
   ADVANCE();
 lbl_dp_rsc_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5500,7 +5218,6 @@ lbl_dp_rsc_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_rsc_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5518,7 +5235,6 @@ lbl_dp_rsc_lsri:
   }
   ADVANCE();
 lbl_dp_rsc_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5537,7 +5253,6 @@ lbl_dp_rsc_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_rsc_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5555,7 +5270,6 @@ lbl_dp_rsc_asri:
   }
   ADVANCE();
 lbl_dp_rsc_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5574,7 +5288,6 @@ lbl_dp_rsc_asri_pcr:
   }
   ADVANCE();
 lbl_dp_rsc_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5592,7 +5305,6 @@ lbl_dp_rsc_rori:
   }
   ADVANCE();
 lbl_dp_rsc_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5611,7 +5323,6 @@ lbl_dp_rsc_rori_pcr:
   }
   ADVANCE();
 lbl_dp_rsc_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5629,7 +5340,6 @@ lbl_dp_rsc_lslr:
   }
   ADVANCE();
 lbl_dp_rsc_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5648,7 +5358,6 @@ lbl_dp_rsc_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_rsc_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5666,7 +5375,6 @@ lbl_dp_rsc_lsrr:
   }
   ADVANCE();
 lbl_dp_rsc_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5685,7 +5393,6 @@ lbl_dp_rsc_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_rsc_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5703,7 +5410,6 @@ lbl_dp_rsc_asrr:
   }
   ADVANCE();
 lbl_dp_rsc_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5722,7 +5428,6 @@ lbl_dp_rsc_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_rsc_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5740,7 +5445,6 @@ lbl_dp_rsc_rorr:
   }
   ADVANCE();
 lbl_dp_rsc_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5759,7 +5463,6 @@ lbl_dp_rsc_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_rsc_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5777,7 +5480,6 @@ lbl_dp_rsc_imm0:
   }
   ADVANCE();
 lbl_dp_rsc_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5796,7 +5498,6 @@ lbl_dp_rsc_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_rsc_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5814,7 +5515,6 @@ lbl_dp_rsc_immn:
   }
   ADVANCE();
 lbl_dp_rsc_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5833,7 +5533,6 @@ lbl_dp_rsc_immn_pcr:
   }
   ADVANCE();
 lbl_dp_rscs_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5853,7 +5552,6 @@ lbl_dp_rscs_lsli:
   }
   ADVANCE();
 lbl_dp_rscs_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5874,7 +5572,6 @@ lbl_dp_rscs_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_rscs_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5894,7 +5591,6 @@ lbl_dp_rscs_lsri:
   }
   ADVANCE();
 lbl_dp_rscs_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5915,7 +5611,6 @@ lbl_dp_rscs_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_rscs_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5935,7 +5630,6 @@ lbl_dp_rscs_asri:
   }
   ADVANCE();
 lbl_dp_rscs_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5956,7 +5650,6 @@ lbl_dp_rscs_asri_pcr:
   }
   ADVANCE();
 lbl_dp_rscs_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5976,7 +5669,6 @@ lbl_dp_rscs_rori:
   }
   ADVANCE();
 lbl_dp_rscs_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -5997,7 +5689,6 @@ lbl_dp_rscs_rori_pcr:
   }
   ADVANCE();
 lbl_dp_rscs_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6017,7 +5708,6 @@ lbl_dp_rscs_lslr:
   }
   ADVANCE();
 lbl_dp_rscs_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6038,7 +5728,6 @@ lbl_dp_rscs_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_rscs_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6058,7 +5747,6 @@ lbl_dp_rscs_lsrr:
   }
   ADVANCE();
 lbl_dp_rscs_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6079,7 +5767,6 @@ lbl_dp_rscs_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_rscs_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6099,7 +5786,6 @@ lbl_dp_rscs_asrr:
   }
   ADVANCE();
 lbl_dp_rscs_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6120,7 +5806,6 @@ lbl_dp_rscs_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_rscs_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6140,7 +5825,6 @@ lbl_dp_rscs_rorr:
   }
   ADVANCE();
 lbl_dp_rscs_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6161,7 +5845,6 @@ lbl_dp_rscs_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_rscs_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6181,7 +5864,6 @@ lbl_dp_rscs_imm0:
   }
   ADVANCE();
 lbl_dp_rscs_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6202,7 +5884,6 @@ lbl_dp_rscs_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_rscs_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6222,7 +5903,6 @@ lbl_dp_rscs_immn:
   }
   ADVANCE();
 lbl_dp_rscs_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6243,7 +5923,6 @@ lbl_dp_rscs_immn_pcr:
   }
   ADVANCE();
 lbl_dp_tst_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6254,7 +5933,6 @@ lbl_dp_tst_lsli:
   }
   ADVANCE();
 lbl_dp_tst_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6266,7 +5944,6 @@ lbl_dp_tst_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_tst_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6277,7 +5954,6 @@ lbl_dp_tst_lsri:
   }
   ADVANCE();
 lbl_dp_tst_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6289,7 +5965,6 @@ lbl_dp_tst_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_tst_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6300,7 +5975,6 @@ lbl_dp_tst_asri:
   }
   ADVANCE();
 lbl_dp_tst_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6312,7 +5986,6 @@ lbl_dp_tst_asri_pcr:
   }
   ADVANCE();
 lbl_dp_tst_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6323,7 +5996,6 @@ lbl_dp_tst_rori:
   }
   ADVANCE();
 lbl_dp_tst_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6335,7 +6007,6 @@ lbl_dp_tst_rori_pcr:
   }
   ADVANCE();
 lbl_dp_tst_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6346,7 +6017,6 @@ lbl_dp_tst_lslr:
   }
   ADVANCE();
 lbl_dp_tst_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6358,7 +6028,6 @@ lbl_dp_tst_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_tst_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6369,7 +6038,6 @@ lbl_dp_tst_lsrr:
   }
   ADVANCE();
 lbl_dp_tst_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6381,7 +6049,6 @@ lbl_dp_tst_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_tst_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6392,7 +6059,6 @@ lbl_dp_tst_asrr:
   }
   ADVANCE();
 lbl_dp_tst_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6404,7 +6070,6 @@ lbl_dp_tst_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_tst_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6415,7 +6080,6 @@ lbl_dp_tst_rorr:
   }
   ADVANCE();
 lbl_dp_tst_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6427,7 +6091,6 @@ lbl_dp_tst_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_tst_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6438,7 +6101,6 @@ lbl_dp_tst_imm0:
   }
   ADVANCE();
 lbl_dp_tst_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6450,7 +6112,6 @@ lbl_dp_tst_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_tst_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6461,7 +6122,6 @@ lbl_dp_tst_immn:
   }
   ADVANCE();
 lbl_dp_tst_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6473,7 +6133,6 @@ lbl_dp_tst_immn_pcr:
   }
   ADVANCE();
 lbl_dp_teq_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6484,7 +6143,6 @@ lbl_dp_teq_lsli:
   }
   ADVANCE();
 lbl_dp_teq_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6496,7 +6154,6 @@ lbl_dp_teq_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_teq_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6507,7 +6164,6 @@ lbl_dp_teq_lsri:
   }
   ADVANCE();
 lbl_dp_teq_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6519,7 +6175,6 @@ lbl_dp_teq_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_teq_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6530,7 +6185,6 @@ lbl_dp_teq_asri:
   }
   ADVANCE();
 lbl_dp_teq_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6542,7 +6196,6 @@ lbl_dp_teq_asri_pcr:
   }
   ADVANCE();
 lbl_dp_teq_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6553,7 +6206,6 @@ lbl_dp_teq_rori:
   }
   ADVANCE();
 lbl_dp_teq_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6565,7 +6217,6 @@ lbl_dp_teq_rori_pcr:
   }
   ADVANCE();
 lbl_dp_teq_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6576,7 +6227,6 @@ lbl_dp_teq_lslr:
   }
   ADVANCE();
 lbl_dp_teq_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6588,7 +6238,6 @@ lbl_dp_teq_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_teq_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6599,7 +6248,6 @@ lbl_dp_teq_lsrr:
   }
   ADVANCE();
 lbl_dp_teq_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6611,7 +6259,6 @@ lbl_dp_teq_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_teq_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6622,7 +6269,6 @@ lbl_dp_teq_asrr:
   }
   ADVANCE();
 lbl_dp_teq_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6634,7 +6280,6 @@ lbl_dp_teq_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_teq_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6645,7 +6290,6 @@ lbl_dp_teq_rorr:
   }
   ADVANCE();
 lbl_dp_teq_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6657,7 +6301,6 @@ lbl_dp_teq_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_teq_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6668,7 +6311,6 @@ lbl_dp_teq_imm0:
   }
   ADVANCE();
 lbl_dp_teq_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6680,7 +6322,6 @@ lbl_dp_teq_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_teq_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6691,7 +6332,6 @@ lbl_dp_teq_immn:
   }
   ADVANCE();
 lbl_dp_teq_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6703,7 +6343,6 @@ lbl_dp_teq_immn_pcr:
   }
   ADVANCE();
 lbl_dp_cmp_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6714,7 +6353,6 @@ lbl_dp_cmp_lsli:
   }
   ADVANCE();
 lbl_dp_cmp_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6726,7 +6364,6 @@ lbl_dp_cmp_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_cmp_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6737,7 +6374,6 @@ lbl_dp_cmp_lsri:
   }
   ADVANCE();
 lbl_dp_cmp_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6749,7 +6385,6 @@ lbl_dp_cmp_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_cmp_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6760,7 +6395,6 @@ lbl_dp_cmp_asri:
   }
   ADVANCE();
 lbl_dp_cmp_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6772,7 +6406,6 @@ lbl_dp_cmp_asri_pcr:
   }
   ADVANCE();
 lbl_dp_cmp_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6783,7 +6416,6 @@ lbl_dp_cmp_rori:
   }
   ADVANCE();
 lbl_dp_cmp_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6795,7 +6427,6 @@ lbl_dp_cmp_rori_pcr:
   }
   ADVANCE();
 lbl_dp_cmp_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6806,7 +6437,6 @@ lbl_dp_cmp_lslr:
   }
   ADVANCE();
 lbl_dp_cmp_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6818,7 +6448,6 @@ lbl_dp_cmp_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_cmp_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6829,7 +6458,6 @@ lbl_dp_cmp_lsrr:
   }
   ADVANCE();
 lbl_dp_cmp_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6841,7 +6469,6 @@ lbl_dp_cmp_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_cmp_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6852,7 +6479,6 @@ lbl_dp_cmp_asrr:
   }
   ADVANCE();
 lbl_dp_cmp_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6864,7 +6490,6 @@ lbl_dp_cmp_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_cmp_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6875,7 +6500,6 @@ lbl_dp_cmp_rorr:
   }
   ADVANCE();
 lbl_dp_cmp_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6887,7 +6511,6 @@ lbl_dp_cmp_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_cmp_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6898,7 +6521,6 @@ lbl_dp_cmp_imm0:
   }
   ADVANCE();
 lbl_dp_cmp_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6910,7 +6532,6 @@ lbl_dp_cmp_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_cmp_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6921,7 +6542,6 @@ lbl_dp_cmp_immn:
   }
   ADVANCE();
 lbl_dp_cmp_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6933,7 +6553,6 @@ lbl_dp_cmp_immn_pcr:
   }
   ADVANCE();
 lbl_dp_cmn_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6944,7 +6563,6 @@ lbl_dp_cmn_lsli:
   }
   ADVANCE();
 lbl_dp_cmn_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6956,7 +6574,6 @@ lbl_dp_cmn_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_cmn_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6967,7 +6584,6 @@ lbl_dp_cmn_lsri:
   }
   ADVANCE();
 lbl_dp_cmn_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -6979,7 +6595,6 @@ lbl_dp_cmn_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_cmn_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -6990,7 +6605,6 @@ lbl_dp_cmn_asri:
   }
   ADVANCE();
 lbl_dp_cmn_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7002,7 +6616,6 @@ lbl_dp_cmn_asri_pcr:
   }
   ADVANCE();
 lbl_dp_cmn_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -7013,7 +6626,6 @@ lbl_dp_cmn_rori:
   }
   ADVANCE();
 lbl_dp_cmn_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7025,7 +6637,6 @@ lbl_dp_cmn_rori_pcr:
   }
   ADVANCE();
 lbl_dp_cmn_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -7036,7 +6647,6 @@ lbl_dp_cmn_lslr:
   }
   ADVANCE();
 lbl_dp_cmn_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7048,7 +6658,6 @@ lbl_dp_cmn_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_cmn_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -7059,7 +6668,6 @@ lbl_dp_cmn_lsrr:
   }
   ADVANCE();
 lbl_dp_cmn_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7071,7 +6679,6 @@ lbl_dp_cmn_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_cmn_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -7082,7 +6689,6 @@ lbl_dp_cmn_asrr:
   }
   ADVANCE();
 lbl_dp_cmn_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7094,7 +6700,6 @@ lbl_dp_cmn_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_cmn_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -7105,7 +6710,6 @@ lbl_dp_cmn_rorr:
   }
   ADVANCE();
 lbl_dp_cmn_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7117,7 +6721,6 @@ lbl_dp_cmn_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_cmn_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -7128,7 +6731,6 @@ lbl_dp_cmn_imm0:
   }
   ADVANCE();
 lbl_dp_cmn_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7140,7 +6742,6 @@ lbl_dp_cmn_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_cmn_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -7151,7 +6752,6 @@ lbl_dp_cmn_immn:
   }
   ADVANCE();
 lbl_dp_cmn_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7163,7 +6763,6 @@ lbl_dp_cmn_immn_pcr:
   }
   ADVANCE();
 lbl_dp_orr_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7181,7 +6780,6 @@ lbl_dp_orr_lsli:
   }
   ADVANCE();
 lbl_dp_orr_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7200,7 +6798,6 @@ lbl_dp_orr_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_orr_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7218,7 +6815,6 @@ lbl_dp_orr_lsri:
   }
   ADVANCE();
 lbl_dp_orr_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7237,7 +6833,6 @@ lbl_dp_orr_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_orr_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7255,7 +6850,6 @@ lbl_dp_orr_asri:
   }
   ADVANCE();
 lbl_dp_orr_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7274,7 +6868,6 @@ lbl_dp_orr_asri_pcr:
   }
   ADVANCE();
 lbl_dp_orr_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7292,7 +6885,6 @@ lbl_dp_orr_rori:
   }
   ADVANCE();
 lbl_dp_orr_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7311,7 +6903,6 @@ lbl_dp_orr_rori_pcr:
   }
   ADVANCE();
 lbl_dp_orr_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7329,7 +6920,6 @@ lbl_dp_orr_lslr:
   }
   ADVANCE();
 lbl_dp_orr_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7348,7 +6938,6 @@ lbl_dp_orr_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_orr_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7366,7 +6955,6 @@ lbl_dp_orr_lsrr:
   }
   ADVANCE();
 lbl_dp_orr_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7385,7 +6973,6 @@ lbl_dp_orr_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_orr_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7403,7 +6990,6 @@ lbl_dp_orr_asrr:
   }
   ADVANCE();
 lbl_dp_orr_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7422,7 +7008,6 @@ lbl_dp_orr_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_orr_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7440,7 +7025,6 @@ lbl_dp_orr_rorr:
   }
   ADVANCE();
 lbl_dp_orr_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7459,7 +7043,6 @@ lbl_dp_orr_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_orr_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7477,7 +7060,6 @@ lbl_dp_orr_imm0:
   }
   ADVANCE();
 lbl_dp_orr_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7496,7 +7078,6 @@ lbl_dp_orr_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_orr_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7514,7 +7095,6 @@ lbl_dp_orr_immn:
   }
   ADVANCE();
 lbl_dp_orr_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7533,7 +7113,6 @@ lbl_dp_orr_immn_pcr:
   }
   ADVANCE();
 lbl_dp_orrs_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7553,7 +7132,6 @@ lbl_dp_orrs_lsli:
   }
   ADVANCE();
 lbl_dp_orrs_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7574,7 +7152,6 @@ lbl_dp_orrs_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_orrs_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7594,7 +7171,6 @@ lbl_dp_orrs_lsri:
   }
   ADVANCE();
 lbl_dp_orrs_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7615,7 +7191,6 @@ lbl_dp_orrs_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_orrs_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7635,7 +7210,6 @@ lbl_dp_orrs_asri:
   }
   ADVANCE();
 lbl_dp_orrs_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7656,7 +7230,6 @@ lbl_dp_orrs_asri_pcr:
   }
   ADVANCE();
 lbl_dp_orrs_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7676,7 +7249,6 @@ lbl_dp_orrs_rori:
   }
   ADVANCE();
 lbl_dp_orrs_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7697,7 +7269,6 @@ lbl_dp_orrs_rori_pcr:
   }
   ADVANCE();
 lbl_dp_orrs_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7717,7 +7288,6 @@ lbl_dp_orrs_lslr:
   }
   ADVANCE();
 lbl_dp_orrs_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7738,7 +7308,6 @@ lbl_dp_orrs_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_orrs_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7758,7 +7327,6 @@ lbl_dp_orrs_lsrr:
   }
   ADVANCE();
 lbl_dp_orrs_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7779,7 +7347,6 @@ lbl_dp_orrs_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_orrs_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7799,7 +7366,6 @@ lbl_dp_orrs_asrr:
   }
   ADVANCE();
 lbl_dp_orrs_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7820,7 +7386,6 @@ lbl_dp_orrs_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_orrs_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7840,7 +7405,6 @@ lbl_dp_orrs_rorr:
   }
   ADVANCE();
 lbl_dp_orrs_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7861,7 +7425,6 @@ lbl_dp_orrs_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_orrs_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7881,7 +7444,6 @@ lbl_dp_orrs_imm0:
   }
   ADVANCE();
 lbl_dp_orrs_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7902,7 +7464,6 @@ lbl_dp_orrs_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_orrs_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7922,7 +7483,6 @@ lbl_dp_orrs_immn:
   }
   ADVANCE();
 lbl_dp_orrs_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7943,7 +7503,6 @@ lbl_dp_orrs_immn_pcr:
   }
   ADVANCE();
 lbl_dp_mov_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7960,7 +7519,6 @@ lbl_dp_mov_lsli:
   }
   ADVANCE();
 lbl_dp_mov_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -7978,7 +7536,6 @@ lbl_dp_mov_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_mov_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -7995,7 +7552,6 @@ lbl_dp_mov_lsri:
   }
   ADVANCE();
 lbl_dp_mov_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8013,7 +7569,6 @@ lbl_dp_mov_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_mov_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8030,7 +7585,6 @@ lbl_dp_mov_asri:
   }
   ADVANCE();
 lbl_dp_mov_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8048,7 +7602,6 @@ lbl_dp_mov_asri_pcr:
   }
   ADVANCE();
 lbl_dp_mov_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8065,7 +7618,6 @@ lbl_dp_mov_rori:
   }
   ADVANCE();
 lbl_dp_mov_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8083,7 +7635,6 @@ lbl_dp_mov_rori_pcr:
   }
   ADVANCE();
 lbl_dp_mov_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8100,7 +7651,6 @@ lbl_dp_mov_lslr:
   }
   ADVANCE();
 lbl_dp_mov_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8118,7 +7668,6 @@ lbl_dp_mov_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_mov_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8135,7 +7684,6 @@ lbl_dp_mov_lsrr:
   }
   ADVANCE();
 lbl_dp_mov_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8153,7 +7701,6 @@ lbl_dp_mov_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_mov_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8170,7 +7717,6 @@ lbl_dp_mov_asrr:
   }
   ADVANCE();
 lbl_dp_mov_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8188,7 +7734,6 @@ lbl_dp_mov_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_mov_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8205,7 +7750,6 @@ lbl_dp_mov_rorr:
   }
   ADVANCE();
 lbl_dp_mov_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8223,7 +7767,6 @@ lbl_dp_mov_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_mov_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8240,7 +7783,6 @@ lbl_dp_mov_imm0:
   }
   ADVANCE();
 lbl_dp_mov_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8258,7 +7800,6 @@ lbl_dp_mov_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_mov_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8275,7 +7816,6 @@ lbl_dp_mov_immn:
   }
   ADVANCE();
 lbl_dp_mov_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8293,7 +7833,6 @@ lbl_dp_mov_immn_pcr:
   }
   ADVANCE();
 lbl_dp_movs_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8312,7 +7851,6 @@ lbl_dp_movs_lsli:
   }
   ADVANCE();
 lbl_dp_movs_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8332,7 +7870,6 @@ lbl_dp_movs_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_movs_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8351,7 +7888,6 @@ lbl_dp_movs_lsri:
   }
   ADVANCE();
 lbl_dp_movs_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8371,7 +7907,6 @@ lbl_dp_movs_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_movs_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8390,7 +7925,6 @@ lbl_dp_movs_asri:
   }
   ADVANCE();
 lbl_dp_movs_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8410,7 +7944,6 @@ lbl_dp_movs_asri_pcr:
   }
   ADVANCE();
 lbl_dp_movs_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8429,7 +7962,6 @@ lbl_dp_movs_rori:
   }
   ADVANCE();
 lbl_dp_movs_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8449,7 +7981,6 @@ lbl_dp_movs_rori_pcr:
   }
   ADVANCE();
 lbl_dp_movs_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8468,7 +7999,6 @@ lbl_dp_movs_lslr:
   }
   ADVANCE();
 lbl_dp_movs_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8488,7 +8018,6 @@ lbl_dp_movs_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_movs_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8507,7 +8036,6 @@ lbl_dp_movs_lsrr:
   }
   ADVANCE();
 lbl_dp_movs_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8527,7 +8055,6 @@ lbl_dp_movs_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_movs_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8546,7 +8073,6 @@ lbl_dp_movs_asrr:
   }
   ADVANCE();
 lbl_dp_movs_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8566,7 +8092,6 @@ lbl_dp_movs_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_movs_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8585,7 +8110,6 @@ lbl_dp_movs_rorr:
   }
   ADVANCE();
 lbl_dp_movs_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8605,7 +8129,6 @@ lbl_dp_movs_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_movs_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8624,7 +8147,6 @@ lbl_dp_movs_imm0:
   }
   ADVANCE();
 lbl_dp_movs_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8644,7 +8166,6 @@ lbl_dp_movs_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_movs_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8663,7 +8184,6 @@ lbl_dp_movs_immn:
   }
   ADVANCE();
 lbl_dp_movs_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8683,7 +8203,6 @@ lbl_dp_movs_immn_pcr:
   }
   ADVANCE();
 lbl_dp_bic_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8701,7 +8220,6 @@ lbl_dp_bic_lsli:
   }
   ADVANCE();
 lbl_dp_bic_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8720,7 +8238,6 @@ lbl_dp_bic_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_bic_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8738,7 +8255,6 @@ lbl_dp_bic_lsri:
   }
   ADVANCE();
 lbl_dp_bic_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8757,7 +8273,6 @@ lbl_dp_bic_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_bic_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8775,7 +8290,6 @@ lbl_dp_bic_asri:
   }
   ADVANCE();
 lbl_dp_bic_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8794,7 +8308,6 @@ lbl_dp_bic_asri_pcr:
   }
   ADVANCE();
 lbl_dp_bic_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8812,7 +8325,6 @@ lbl_dp_bic_rori:
   }
   ADVANCE();
 lbl_dp_bic_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8831,7 +8343,6 @@ lbl_dp_bic_rori_pcr:
   }
   ADVANCE();
 lbl_dp_bic_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8849,7 +8360,6 @@ lbl_dp_bic_lslr:
   }
   ADVANCE();
 lbl_dp_bic_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8868,7 +8378,6 @@ lbl_dp_bic_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_bic_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8886,7 +8395,6 @@ lbl_dp_bic_lsrr:
   }
   ADVANCE();
 lbl_dp_bic_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8905,7 +8413,6 @@ lbl_dp_bic_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_bic_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8923,7 +8430,6 @@ lbl_dp_bic_asrr:
   }
   ADVANCE();
 lbl_dp_bic_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8942,7 +8448,6 @@ lbl_dp_bic_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_bic_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8960,7 +8465,6 @@ lbl_dp_bic_rorr:
   }
   ADVANCE();
 lbl_dp_bic_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -8979,7 +8483,6 @@ lbl_dp_bic_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_bic_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -8997,7 +8500,6 @@ lbl_dp_bic_imm0:
   }
   ADVANCE();
 lbl_dp_bic_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9016,7 +8518,6 @@ lbl_dp_bic_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_bic_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9034,7 +8535,6 @@ lbl_dp_bic_immn:
   }
   ADVANCE();
 lbl_dp_bic_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9053,7 +8553,6 @@ lbl_dp_bic_immn_pcr:
   }
   ADVANCE();
 lbl_dp_bics_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9073,7 +8572,6 @@ lbl_dp_bics_lsli:
   }
   ADVANCE();
 lbl_dp_bics_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9094,7 +8592,6 @@ lbl_dp_bics_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_bics_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9114,7 +8611,6 @@ lbl_dp_bics_lsri:
   }
   ADVANCE();
 lbl_dp_bics_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9135,7 +8631,6 @@ lbl_dp_bics_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_bics_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9155,7 +8650,6 @@ lbl_dp_bics_asri:
   }
   ADVANCE();
 lbl_dp_bics_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9176,7 +8670,6 @@ lbl_dp_bics_asri_pcr:
   }
   ADVANCE();
 lbl_dp_bics_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9196,7 +8689,6 @@ lbl_dp_bics_rori:
   }
   ADVANCE();
 lbl_dp_bics_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9217,7 +8709,6 @@ lbl_dp_bics_rori_pcr:
   }
   ADVANCE();
 lbl_dp_bics_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9237,7 +8728,6 @@ lbl_dp_bics_lslr:
   }
   ADVANCE();
 lbl_dp_bics_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9258,7 +8748,6 @@ lbl_dp_bics_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_bics_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9278,7 +8767,6 @@ lbl_dp_bics_lsrr:
   }
   ADVANCE();
 lbl_dp_bics_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9299,7 +8787,6 @@ lbl_dp_bics_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_bics_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9319,7 +8806,6 @@ lbl_dp_bics_asrr:
   }
   ADVANCE();
 lbl_dp_bics_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9340,7 +8826,6 @@ lbl_dp_bics_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_bics_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9360,7 +8845,6 @@ lbl_dp_bics_rorr:
   }
   ADVANCE();
 lbl_dp_bics_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9381,7 +8865,6 @@ lbl_dp_bics_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_bics_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9401,7 +8884,6 @@ lbl_dp_bics_imm0:
   }
   ADVANCE();
 lbl_dp_bics_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9422,7 +8904,6 @@ lbl_dp_bics_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_bics_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9442,7 +8923,6 @@ lbl_dp_bics_immn:
   }
   ADVANCE();
 lbl_dp_bics_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9463,7 +8943,6 @@ lbl_dp_bics_immn_pcr:
   }
   ADVANCE();
 lbl_dp_mvn_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9480,7 +8959,6 @@ lbl_dp_mvn_lsli:
   }
   ADVANCE();
 lbl_dp_mvn_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9498,7 +8976,6 @@ lbl_dp_mvn_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_mvn_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9515,7 +8992,6 @@ lbl_dp_mvn_lsri:
   }
   ADVANCE();
 lbl_dp_mvn_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9533,7 +9009,6 @@ lbl_dp_mvn_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_mvn_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9550,7 +9025,6 @@ lbl_dp_mvn_asri:
   }
   ADVANCE();
 lbl_dp_mvn_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9568,7 +9042,6 @@ lbl_dp_mvn_asri_pcr:
   }
   ADVANCE();
 lbl_dp_mvn_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9585,7 +9058,6 @@ lbl_dp_mvn_rori:
   }
   ADVANCE();
 lbl_dp_mvn_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9603,7 +9075,6 @@ lbl_dp_mvn_rori_pcr:
   }
   ADVANCE();
 lbl_dp_mvn_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9620,7 +9091,6 @@ lbl_dp_mvn_lslr:
   }
   ADVANCE();
 lbl_dp_mvn_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9638,7 +9108,6 @@ lbl_dp_mvn_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_mvn_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9655,7 +9124,6 @@ lbl_dp_mvn_lsrr:
   }
   ADVANCE();
 lbl_dp_mvn_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9673,7 +9141,6 @@ lbl_dp_mvn_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_mvn_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9690,7 +9157,6 @@ lbl_dp_mvn_asrr:
   }
   ADVANCE();
 lbl_dp_mvn_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9708,7 +9174,6 @@ lbl_dp_mvn_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_mvn_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9725,7 +9190,6 @@ lbl_dp_mvn_rorr:
   }
   ADVANCE();
 lbl_dp_mvn_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9743,7 +9207,6 @@ lbl_dp_mvn_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_mvn_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9760,7 +9223,6 @@ lbl_dp_mvn_imm0:
   }
   ADVANCE();
 lbl_dp_mvn_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9778,7 +9240,6 @@ lbl_dp_mvn_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_mvn_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9795,7 +9256,6 @@ lbl_dp_mvn_immn:
   }
   ADVANCE();
 lbl_dp_mvn_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9813,7 +9273,6 @@ lbl_dp_mvn_immn_pcr:
   }
   ADVANCE();
 lbl_dp_mvns_lsli:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9832,7 +9291,6 @@ lbl_dp_mvns_lsli:
   }
   ADVANCE();
 lbl_dp_mvns_lsli_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9852,7 +9310,6 @@ lbl_dp_mvns_lsli_pcr:
   }
   ADVANCE();
 lbl_dp_mvns_lsri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9871,7 +9328,6 @@ lbl_dp_mvns_lsri:
   }
   ADVANCE();
 lbl_dp_mvns_lsri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9891,7 +9347,6 @@ lbl_dp_mvns_lsri_pcr:
   }
   ADVANCE();
 lbl_dp_mvns_asri:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9910,7 +9365,6 @@ lbl_dp_mvns_asri:
   }
   ADVANCE();
 lbl_dp_mvns_asri_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9930,7 +9384,6 @@ lbl_dp_mvns_asri_pcr:
   }
   ADVANCE();
 lbl_dp_mvns_rori:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9949,7 +9402,6 @@ lbl_dp_mvns_rori:
   }
   ADVANCE();
 lbl_dp_mvns_rori_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -9969,7 +9421,6 @@ lbl_dp_mvns_rori_pcr:
   }
   ADVANCE();
 lbl_dp_mvns_lslr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -9988,7 +9439,6 @@ lbl_dp_mvns_lslr:
   }
   ADVANCE();
 lbl_dp_mvns_lslr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10008,7 +9458,6 @@ lbl_dp_mvns_lslr_pcr:
   }
   ADVANCE();
 lbl_dp_mvns_lsrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10027,7 +9476,6 @@ lbl_dp_mvns_lsrr:
   }
   ADVANCE();
 lbl_dp_mvns_lsrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10047,7 +9495,6 @@ lbl_dp_mvns_lsrr_pcr:
   }
   ADVANCE();
 lbl_dp_mvns_asrr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10066,7 +9513,6 @@ lbl_dp_mvns_asrr:
   }
   ADVANCE();
 lbl_dp_mvns_asrr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10086,7 +9532,6 @@ lbl_dp_mvns_asrr_pcr:
   }
   ADVANCE();
 lbl_dp_mvns_rorr:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10105,7 +9550,6 @@ lbl_dp_mvns_rorr:
   }
   ADVANCE();
 lbl_dp_mvns_rorr_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10125,7 +9569,6 @@ lbl_dp_mvns_rorr_pcr:
   }
   ADVANCE();
 lbl_dp_mvns_imm0:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10144,7 +9587,6 @@ lbl_dp_mvns_imm0:
   }
   ADVANCE();
 lbl_dp_mvns_imm0_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10164,7 +9606,6 @@ lbl_dp_mvns_imm0_pcr:
   }
   ADVANCE();
 lbl_dp_mvns_immn:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10183,7 +9624,6 @@ lbl_dp_mvns_immn:
   }
   ADVANCE();
 lbl_dp_mvns_immn_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10205,7 +9645,6 @@ lbl_dp_mvns_immn_pcr:
 dp_pc_done:
   DISPATCH_PC();
 lbl_mem_str_i_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10219,7 +9658,6 @@ lbl_mem_str_i_000:
   }
   ADVANCE();
 lbl_mem_str_i_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10234,7 +9672,6 @@ lbl_mem_str_i_000_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsl_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10250,7 +9687,6 @@ lbl_mem_str_rlsl_000:
   }
   ADVANCE();
 lbl_mem_str_rlsl_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10267,7 +9703,6 @@ lbl_mem_str_rlsl_000_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsr_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10283,7 +9718,6 @@ lbl_mem_str_rlsr_000:
   }
   ADVANCE();
 lbl_mem_str_rlsr_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10300,7 +9734,6 @@ lbl_mem_str_rlsr_000_pcr:
   }
   ADVANCE();
 lbl_mem_str_rasr_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10316,7 +9749,6 @@ lbl_mem_str_rasr_000:
   }
   ADVANCE();
 lbl_mem_str_rasr_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10333,7 +9765,6 @@ lbl_mem_str_rasr_000_pcr:
   }
   ADVANCE();
 lbl_mem_str_rror_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10349,7 +9780,6 @@ lbl_mem_str_rror_000:
   }
   ADVANCE();
 lbl_mem_str_rror_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10366,7 +9796,6 @@ lbl_mem_str_rror_000_pcr:
   }
   ADVANCE();
 lbl_mem_str_i_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10380,7 +9809,6 @@ lbl_mem_str_i_001:
   }
   ADVANCE();
 lbl_mem_str_i_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10395,7 +9823,6 @@ lbl_mem_str_i_001_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsl_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10411,7 +9838,6 @@ lbl_mem_str_rlsl_001:
   }
   ADVANCE();
 lbl_mem_str_rlsl_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10428,7 +9854,6 @@ lbl_mem_str_rlsl_001_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsr_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10444,7 +9869,6 @@ lbl_mem_str_rlsr_001:
   }
   ADVANCE();
 lbl_mem_str_rlsr_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10461,7 +9885,6 @@ lbl_mem_str_rlsr_001_pcr:
   }
   ADVANCE();
 lbl_mem_str_rasr_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10477,7 +9900,6 @@ lbl_mem_str_rasr_001:
   }
   ADVANCE();
 lbl_mem_str_rasr_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10494,7 +9916,6 @@ lbl_mem_str_rasr_001_pcr:
   }
   ADVANCE();
 lbl_mem_str_rror_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10510,7 +9931,6 @@ lbl_mem_str_rror_001:
   }
   ADVANCE();
 lbl_mem_str_rror_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10527,7 +9947,6 @@ lbl_mem_str_rror_001_pcr:
   }
   ADVANCE();
 lbl_mem_str_i_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10541,7 +9960,6 @@ lbl_mem_str_i_010:
   }
   ADVANCE();
 lbl_mem_str_i_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10556,7 +9974,6 @@ lbl_mem_str_i_010_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsl_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10572,7 +9989,6 @@ lbl_mem_str_rlsl_010:
   }
   ADVANCE();
 lbl_mem_str_rlsl_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10589,7 +10005,6 @@ lbl_mem_str_rlsl_010_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsr_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10605,7 +10020,6 @@ lbl_mem_str_rlsr_010:
   }
   ADVANCE();
 lbl_mem_str_rlsr_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10622,7 +10036,6 @@ lbl_mem_str_rlsr_010_pcr:
   }
   ADVANCE();
 lbl_mem_str_rasr_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10638,7 +10051,6 @@ lbl_mem_str_rasr_010:
   }
   ADVANCE();
 lbl_mem_str_rasr_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10655,7 +10067,6 @@ lbl_mem_str_rasr_010_pcr:
   }
   ADVANCE();
 lbl_mem_str_rror_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10671,7 +10082,6 @@ lbl_mem_str_rror_010:
   }
   ADVANCE();
 lbl_mem_str_rror_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10688,7 +10098,6 @@ lbl_mem_str_rror_010_pcr:
   }
   ADVANCE();
 lbl_mem_str_i_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10702,7 +10111,6 @@ lbl_mem_str_i_011:
   }
   ADVANCE();
 lbl_mem_str_i_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10717,7 +10125,6 @@ lbl_mem_str_i_011_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsl_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10733,7 +10140,6 @@ lbl_mem_str_rlsl_011:
   }
   ADVANCE();
 lbl_mem_str_rlsl_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10750,7 +10156,6 @@ lbl_mem_str_rlsl_011_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsr_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10766,7 +10171,6 @@ lbl_mem_str_rlsr_011:
   }
   ADVANCE();
 lbl_mem_str_rlsr_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10783,7 +10187,6 @@ lbl_mem_str_rlsr_011_pcr:
   }
   ADVANCE();
 lbl_mem_str_rasr_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10799,7 +10202,6 @@ lbl_mem_str_rasr_011:
   }
   ADVANCE();
 lbl_mem_str_rasr_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10816,7 +10218,6 @@ lbl_mem_str_rasr_011_pcr:
   }
   ADVANCE();
 lbl_mem_str_rror_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10832,7 +10233,6 @@ lbl_mem_str_rror_011:
   }
   ADVANCE();
 lbl_mem_str_rror_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10849,7 +10249,6 @@ lbl_mem_str_rror_011_pcr:
   }
   ADVANCE();
 lbl_mem_str_i_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10862,7 +10261,6 @@ lbl_mem_str_i_100:
   }
   ADVANCE();
 lbl_mem_str_i_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10876,7 +10274,6 @@ lbl_mem_str_i_100_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsl_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10891,7 +10288,6 @@ lbl_mem_str_rlsl_100:
   }
   ADVANCE();
 lbl_mem_str_rlsl_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10907,7 +10303,6 @@ lbl_mem_str_rlsl_100_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsr_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10922,7 +10317,6 @@ lbl_mem_str_rlsr_100:
   }
   ADVANCE();
 lbl_mem_str_rlsr_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10938,7 +10332,6 @@ lbl_mem_str_rlsr_100_pcr:
   }
   ADVANCE();
 lbl_mem_str_rasr_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10953,7 +10346,6 @@ lbl_mem_str_rasr_100:
   }
   ADVANCE();
 lbl_mem_str_rasr_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -10969,7 +10361,6 @@ lbl_mem_str_rasr_100_pcr:
   }
   ADVANCE();
 lbl_mem_str_rror_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -10984,7 +10375,6 @@ lbl_mem_str_rror_100:
   }
   ADVANCE();
 lbl_mem_str_rror_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11000,7 +10390,6 @@ lbl_mem_str_rror_100_pcr:
   }
   ADVANCE();
 lbl_mem_str_i_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11014,7 +10403,6 @@ lbl_mem_str_i_101:
   }
   ADVANCE();
 lbl_mem_str_i_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11029,7 +10417,6 @@ lbl_mem_str_i_101_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsl_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11045,7 +10432,6 @@ lbl_mem_str_rlsl_101:
   }
   ADVANCE();
 lbl_mem_str_rlsl_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11062,7 +10448,6 @@ lbl_mem_str_rlsl_101_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsr_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11078,7 +10463,6 @@ lbl_mem_str_rlsr_101:
   }
   ADVANCE();
 lbl_mem_str_rlsr_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11095,7 +10479,6 @@ lbl_mem_str_rlsr_101_pcr:
   }
   ADVANCE();
 lbl_mem_str_rasr_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11111,7 +10494,6 @@ lbl_mem_str_rasr_101:
   }
   ADVANCE();
 lbl_mem_str_rasr_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11128,7 +10510,6 @@ lbl_mem_str_rasr_101_pcr:
   }
   ADVANCE();
 lbl_mem_str_rror_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11144,7 +10525,6 @@ lbl_mem_str_rror_101:
   }
   ADVANCE();
 lbl_mem_str_rror_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11161,7 +10541,6 @@ lbl_mem_str_rror_101_pcr:
   }
   ADVANCE();
 lbl_mem_str_i_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11174,7 +10553,6 @@ lbl_mem_str_i_110:
   }
   ADVANCE();
 lbl_mem_str_i_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11188,7 +10566,6 @@ lbl_mem_str_i_110_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsl_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11203,7 +10580,6 @@ lbl_mem_str_rlsl_110:
   }
   ADVANCE();
 lbl_mem_str_rlsl_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11219,7 +10595,6 @@ lbl_mem_str_rlsl_110_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsr_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11234,7 +10609,6 @@ lbl_mem_str_rlsr_110:
   }
   ADVANCE();
 lbl_mem_str_rlsr_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11250,7 +10624,6 @@ lbl_mem_str_rlsr_110_pcr:
   }
   ADVANCE();
 lbl_mem_str_rasr_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11265,7 +10638,6 @@ lbl_mem_str_rasr_110:
   }
   ADVANCE();
 lbl_mem_str_rasr_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11281,7 +10653,6 @@ lbl_mem_str_rasr_110_pcr:
   }
   ADVANCE();
 lbl_mem_str_rror_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11296,7 +10667,6 @@ lbl_mem_str_rror_110:
   }
   ADVANCE();
 lbl_mem_str_rror_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11312,7 +10682,6 @@ lbl_mem_str_rror_110_pcr:
   }
   ADVANCE();
 lbl_mem_str_i_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11326,7 +10695,6 @@ lbl_mem_str_i_111:
   }
   ADVANCE();
 lbl_mem_str_i_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11341,7 +10709,6 @@ lbl_mem_str_i_111_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsl_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11357,7 +10724,6 @@ lbl_mem_str_rlsl_111:
   }
   ADVANCE();
 lbl_mem_str_rlsl_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11374,7 +10740,6 @@ lbl_mem_str_rlsl_111_pcr:
   }
   ADVANCE();
 lbl_mem_str_rlsr_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11390,7 +10755,6 @@ lbl_mem_str_rlsr_111:
   }
   ADVANCE();
 lbl_mem_str_rlsr_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11407,7 +10771,6 @@ lbl_mem_str_rlsr_111_pcr:
   }
   ADVANCE();
 lbl_mem_str_rasr_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11423,7 +10786,6 @@ lbl_mem_str_rasr_111:
   }
   ADVANCE();
 lbl_mem_str_rasr_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11440,7 +10802,6 @@ lbl_mem_str_rasr_111_pcr:
   }
   ADVANCE();
 lbl_mem_str_rror_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11456,7 +10817,6 @@ lbl_mem_str_rror_111:
   }
   ADVANCE();
 lbl_mem_str_rror_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11473,7 +10833,6 @@ lbl_mem_str_rror_111_pcr:
   }
   ADVANCE();
 lbl_mem_strb_i_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11487,7 +10846,6 @@ lbl_mem_strb_i_000:
   }
   ADVANCE();
 lbl_mem_strb_i_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11502,7 +10860,6 @@ lbl_mem_strb_i_000_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11518,7 +10875,6 @@ lbl_mem_strb_rlsl_000:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11535,7 +10891,6 @@ lbl_mem_strb_rlsl_000_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11551,7 +10906,6 @@ lbl_mem_strb_rlsr_000:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11568,7 +10922,6 @@ lbl_mem_strb_rlsr_000_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rasr_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11584,7 +10937,6 @@ lbl_mem_strb_rasr_000:
   }
   ADVANCE();
 lbl_mem_strb_rasr_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11601,7 +10953,6 @@ lbl_mem_strb_rasr_000_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rror_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11617,7 +10968,6 @@ lbl_mem_strb_rror_000:
   }
   ADVANCE();
 lbl_mem_strb_rror_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11634,7 +10984,6 @@ lbl_mem_strb_rror_000_pcr:
   }
   ADVANCE();
 lbl_mem_strb_i_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11648,7 +10997,6 @@ lbl_mem_strb_i_001:
   }
   ADVANCE();
 lbl_mem_strb_i_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11663,7 +11011,6 @@ lbl_mem_strb_i_001_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11679,7 +11026,6 @@ lbl_mem_strb_rlsl_001:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11696,7 +11042,6 @@ lbl_mem_strb_rlsl_001_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11712,7 +11057,6 @@ lbl_mem_strb_rlsr_001:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11729,7 +11073,6 @@ lbl_mem_strb_rlsr_001_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rasr_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11745,7 +11088,6 @@ lbl_mem_strb_rasr_001:
   }
   ADVANCE();
 lbl_mem_strb_rasr_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11762,7 +11104,6 @@ lbl_mem_strb_rasr_001_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rror_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11778,7 +11119,6 @@ lbl_mem_strb_rror_001:
   }
   ADVANCE();
 lbl_mem_strb_rror_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11795,7 +11135,6 @@ lbl_mem_strb_rror_001_pcr:
   }
   ADVANCE();
 lbl_mem_strb_i_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11809,7 +11148,6 @@ lbl_mem_strb_i_010:
   }
   ADVANCE();
 lbl_mem_strb_i_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11824,7 +11162,6 @@ lbl_mem_strb_i_010_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11840,7 +11177,6 @@ lbl_mem_strb_rlsl_010:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11857,7 +11193,6 @@ lbl_mem_strb_rlsl_010_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11873,7 +11208,6 @@ lbl_mem_strb_rlsr_010:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11890,7 +11224,6 @@ lbl_mem_strb_rlsr_010_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rasr_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11906,7 +11239,6 @@ lbl_mem_strb_rasr_010:
   }
   ADVANCE();
 lbl_mem_strb_rasr_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11923,7 +11255,6 @@ lbl_mem_strb_rasr_010_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rror_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11939,7 +11270,6 @@ lbl_mem_strb_rror_010:
   }
   ADVANCE();
 lbl_mem_strb_rror_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11956,7 +11286,6 @@ lbl_mem_strb_rror_010_pcr:
   }
   ADVANCE();
 lbl_mem_strb_i_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -11970,7 +11299,6 @@ lbl_mem_strb_i_011:
   }
   ADVANCE();
 lbl_mem_strb_i_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -11985,7 +11313,6 @@ lbl_mem_strb_i_011_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12001,7 +11328,6 @@ lbl_mem_strb_rlsl_011:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12018,7 +11344,6 @@ lbl_mem_strb_rlsl_011_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12034,7 +11359,6 @@ lbl_mem_strb_rlsr_011:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12051,7 +11375,6 @@ lbl_mem_strb_rlsr_011_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rasr_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12067,7 +11390,6 @@ lbl_mem_strb_rasr_011:
   }
   ADVANCE();
 lbl_mem_strb_rasr_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12084,7 +11406,6 @@ lbl_mem_strb_rasr_011_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rror_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12100,7 +11421,6 @@ lbl_mem_strb_rror_011:
   }
   ADVANCE();
 lbl_mem_strb_rror_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12117,7 +11437,6 @@ lbl_mem_strb_rror_011_pcr:
   }
   ADVANCE();
 lbl_mem_strb_i_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12130,7 +11449,6 @@ lbl_mem_strb_i_100:
   }
   ADVANCE();
 lbl_mem_strb_i_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12144,7 +11462,6 @@ lbl_mem_strb_i_100_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12159,7 +11476,6 @@ lbl_mem_strb_rlsl_100:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12175,7 +11491,6 @@ lbl_mem_strb_rlsl_100_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12190,7 +11505,6 @@ lbl_mem_strb_rlsr_100:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12206,7 +11520,6 @@ lbl_mem_strb_rlsr_100_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rasr_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12221,7 +11534,6 @@ lbl_mem_strb_rasr_100:
   }
   ADVANCE();
 lbl_mem_strb_rasr_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12237,7 +11549,6 @@ lbl_mem_strb_rasr_100_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rror_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12252,7 +11563,6 @@ lbl_mem_strb_rror_100:
   }
   ADVANCE();
 lbl_mem_strb_rror_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12268,7 +11578,6 @@ lbl_mem_strb_rror_100_pcr:
   }
   ADVANCE();
 lbl_mem_strb_i_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12282,7 +11591,6 @@ lbl_mem_strb_i_101:
   }
   ADVANCE();
 lbl_mem_strb_i_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12297,7 +11605,6 @@ lbl_mem_strb_i_101_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12313,7 +11620,6 @@ lbl_mem_strb_rlsl_101:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12330,7 +11636,6 @@ lbl_mem_strb_rlsl_101_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12346,7 +11651,6 @@ lbl_mem_strb_rlsr_101:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12363,7 +11667,6 @@ lbl_mem_strb_rlsr_101_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rasr_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12379,7 +11682,6 @@ lbl_mem_strb_rasr_101:
   }
   ADVANCE();
 lbl_mem_strb_rasr_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12396,7 +11698,6 @@ lbl_mem_strb_rasr_101_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rror_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12412,7 +11713,6 @@ lbl_mem_strb_rror_101:
   }
   ADVANCE();
 lbl_mem_strb_rror_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12429,7 +11729,6 @@ lbl_mem_strb_rror_101_pcr:
   }
   ADVANCE();
 lbl_mem_strb_i_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12442,7 +11741,6 @@ lbl_mem_strb_i_110:
   }
   ADVANCE();
 lbl_mem_strb_i_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12456,7 +11754,6 @@ lbl_mem_strb_i_110_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12471,7 +11768,6 @@ lbl_mem_strb_rlsl_110:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12487,7 +11783,6 @@ lbl_mem_strb_rlsl_110_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12502,7 +11797,6 @@ lbl_mem_strb_rlsr_110:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12518,7 +11812,6 @@ lbl_mem_strb_rlsr_110_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rasr_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12533,7 +11826,6 @@ lbl_mem_strb_rasr_110:
   }
   ADVANCE();
 lbl_mem_strb_rasr_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12549,7 +11841,6 @@ lbl_mem_strb_rasr_110_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rror_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12564,7 +11855,6 @@ lbl_mem_strb_rror_110:
   }
   ADVANCE();
 lbl_mem_strb_rror_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12580,7 +11870,6 @@ lbl_mem_strb_rror_110_pcr:
   }
   ADVANCE();
 lbl_mem_strb_i_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12594,7 +11883,6 @@ lbl_mem_strb_i_111:
   }
   ADVANCE();
 lbl_mem_strb_i_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12609,7 +11897,6 @@ lbl_mem_strb_i_111_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12625,7 +11912,6 @@ lbl_mem_strb_rlsl_111:
   }
   ADVANCE();
 lbl_mem_strb_rlsl_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12642,7 +11928,6 @@ lbl_mem_strb_rlsl_111_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12658,7 +11943,6 @@ lbl_mem_strb_rlsr_111:
   }
   ADVANCE();
 lbl_mem_strb_rlsr_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12675,7 +11959,6 @@ lbl_mem_strb_rlsr_111_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rasr_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12691,7 +11974,6 @@ lbl_mem_strb_rasr_111:
   }
   ADVANCE();
 lbl_mem_strb_rasr_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12708,7 +11990,6 @@ lbl_mem_strb_rasr_111_pcr:
   }
   ADVANCE();
 lbl_mem_strb_rror_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12724,7 +12005,6 @@ lbl_mem_strb_rror_111:
   }
   ADVANCE();
 lbl_mem_strb_rror_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12741,7 +12021,6 @@ lbl_mem_strb_rror_111_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_i_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12761,7 +12040,6 @@ lbl_mem_ldr_i_000:
   }
   ADVANCE();
 lbl_mem_ldr_i_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12782,7 +12060,6 @@ lbl_mem_ldr_i_000_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12804,7 +12081,6 @@ lbl_mem_ldr_rlsl_000:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12827,7 +12103,6 @@ lbl_mem_ldr_rlsl_000_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12849,7 +12124,6 @@ lbl_mem_ldr_rlsr_000:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12872,7 +12146,6 @@ lbl_mem_ldr_rlsr_000_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12894,7 +12167,6 @@ lbl_mem_ldr_rasr_000:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12917,7 +12189,6 @@ lbl_mem_ldr_rasr_000_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rror_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12939,7 +12210,6 @@ lbl_mem_ldr_rror_000:
   }
   ADVANCE();
 lbl_mem_ldr_rror_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -12962,7 +12232,6 @@ lbl_mem_ldr_rror_000_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_i_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -12982,7 +12251,6 @@ lbl_mem_ldr_i_001:
   }
   ADVANCE();
 lbl_mem_ldr_i_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13003,7 +12271,6 @@ lbl_mem_ldr_i_001_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13025,7 +12292,6 @@ lbl_mem_ldr_rlsl_001:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13048,7 +12314,6 @@ lbl_mem_ldr_rlsl_001_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13070,7 +12335,6 @@ lbl_mem_ldr_rlsr_001:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13093,7 +12357,6 @@ lbl_mem_ldr_rlsr_001_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13115,7 +12378,6 @@ lbl_mem_ldr_rasr_001:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13138,7 +12400,6 @@ lbl_mem_ldr_rasr_001_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rror_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13160,7 +12421,6 @@ lbl_mem_ldr_rror_001:
   }
   ADVANCE();
 lbl_mem_ldr_rror_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13183,7 +12443,6 @@ lbl_mem_ldr_rror_001_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_i_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13203,7 +12462,6 @@ lbl_mem_ldr_i_010:
   }
   ADVANCE();
 lbl_mem_ldr_i_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13224,7 +12482,6 @@ lbl_mem_ldr_i_010_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13246,7 +12503,6 @@ lbl_mem_ldr_rlsl_010:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13269,7 +12525,6 @@ lbl_mem_ldr_rlsl_010_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13291,7 +12546,6 @@ lbl_mem_ldr_rlsr_010:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13314,7 +12568,6 @@ lbl_mem_ldr_rlsr_010_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13336,7 +12589,6 @@ lbl_mem_ldr_rasr_010:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13359,7 +12611,6 @@ lbl_mem_ldr_rasr_010_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rror_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13381,7 +12632,6 @@ lbl_mem_ldr_rror_010:
   }
   ADVANCE();
 lbl_mem_ldr_rror_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13404,7 +12654,6 @@ lbl_mem_ldr_rror_010_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_i_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13424,7 +12673,6 @@ lbl_mem_ldr_i_011:
   }
   ADVANCE();
 lbl_mem_ldr_i_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13445,7 +12693,6 @@ lbl_mem_ldr_i_011_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13467,7 +12714,6 @@ lbl_mem_ldr_rlsl_011:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13490,7 +12736,6 @@ lbl_mem_ldr_rlsl_011_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13512,7 +12757,6 @@ lbl_mem_ldr_rlsr_011:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13535,7 +12779,6 @@ lbl_mem_ldr_rlsr_011_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13557,7 +12800,6 @@ lbl_mem_ldr_rasr_011:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13580,7 +12822,6 @@ lbl_mem_ldr_rasr_011_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rror_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13602,7 +12843,6 @@ lbl_mem_ldr_rror_011:
   }
   ADVANCE();
 lbl_mem_ldr_rror_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13625,7 +12865,6 @@ lbl_mem_ldr_rror_011_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_i_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13644,7 +12883,6 @@ lbl_mem_ldr_i_100:
   }
   ADVANCE();
 lbl_mem_ldr_i_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13664,7 +12902,6 @@ lbl_mem_ldr_i_100_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13685,7 +12922,6 @@ lbl_mem_ldr_rlsl_100:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13707,7 +12943,6 @@ lbl_mem_ldr_rlsl_100_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13728,7 +12963,6 @@ lbl_mem_ldr_rlsr_100:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13750,7 +12984,6 @@ lbl_mem_ldr_rlsr_100_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13771,7 +13004,6 @@ lbl_mem_ldr_rasr_100:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13793,7 +13025,6 @@ lbl_mem_ldr_rasr_100_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rror_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13814,7 +13045,6 @@ lbl_mem_ldr_rror_100:
   }
   ADVANCE();
 lbl_mem_ldr_rror_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13836,7 +13066,6 @@ lbl_mem_ldr_rror_100_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_i_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13856,7 +13085,6 @@ lbl_mem_ldr_i_101:
   }
   ADVANCE();
 lbl_mem_ldr_i_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13877,7 +13105,6 @@ lbl_mem_ldr_i_101_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13899,7 +13126,6 @@ lbl_mem_ldr_rlsl_101:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13922,7 +13148,6 @@ lbl_mem_ldr_rlsl_101_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13944,7 +13169,6 @@ lbl_mem_ldr_rlsr_101:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -13967,7 +13191,6 @@ lbl_mem_ldr_rlsr_101_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -13989,7 +13212,6 @@ lbl_mem_ldr_rasr_101:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14012,7 +13234,6 @@ lbl_mem_ldr_rasr_101_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rror_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14034,7 +13255,6 @@ lbl_mem_ldr_rror_101:
   }
   ADVANCE();
 lbl_mem_ldr_rror_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14057,7 +13277,6 @@ lbl_mem_ldr_rror_101_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_i_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14076,7 +13295,6 @@ lbl_mem_ldr_i_110:
   }
   ADVANCE();
 lbl_mem_ldr_i_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14096,7 +13314,6 @@ lbl_mem_ldr_i_110_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14117,7 +13334,6 @@ lbl_mem_ldr_rlsl_110:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14139,7 +13355,6 @@ lbl_mem_ldr_rlsl_110_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14160,7 +13375,6 @@ lbl_mem_ldr_rlsr_110:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14182,7 +13396,6 @@ lbl_mem_ldr_rlsr_110_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14203,7 +13416,6 @@ lbl_mem_ldr_rasr_110:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14225,7 +13437,6 @@ lbl_mem_ldr_rasr_110_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rror_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14246,7 +13457,6 @@ lbl_mem_ldr_rror_110:
   }
   ADVANCE();
 lbl_mem_ldr_rror_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14268,7 +13478,6 @@ lbl_mem_ldr_rror_110_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_i_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14288,7 +13497,6 @@ lbl_mem_ldr_i_111:
   }
   ADVANCE();
 lbl_mem_ldr_i_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14309,7 +13517,6 @@ lbl_mem_ldr_i_111_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14331,7 +13538,6 @@ lbl_mem_ldr_rlsl_111:
   }
   ADVANCE();
 lbl_mem_ldr_rlsl_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14354,7 +13560,6 @@ lbl_mem_ldr_rlsl_111_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14376,7 +13581,6 @@ lbl_mem_ldr_rlsr_111:
   }
   ADVANCE();
 lbl_mem_ldr_rlsr_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14399,7 +13603,6 @@ lbl_mem_ldr_rlsr_111_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14421,7 +13624,6 @@ lbl_mem_ldr_rasr_111:
   }
   ADVANCE();
 lbl_mem_ldr_rasr_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14444,7 +13646,6 @@ lbl_mem_ldr_rasr_111_pcr:
   }
   ADVANCE();
 lbl_mem_ldr_rror_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14466,7 +13667,6 @@ lbl_mem_ldr_rror_111:
   }
   ADVANCE();
 lbl_mem_ldr_rror_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14489,7 +13689,6 @@ lbl_mem_ldr_rror_111_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_i_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14509,7 +13708,6 @@ lbl_mem_ldrb_i_000:
   }
   ADVANCE();
 lbl_mem_ldrb_i_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14530,7 +13728,6 @@ lbl_mem_ldrb_i_000_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14552,7 +13749,6 @@ lbl_mem_ldrb_rlsl_000:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14575,7 +13771,6 @@ lbl_mem_ldrb_rlsl_000_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14597,7 +13792,6 @@ lbl_mem_ldrb_rlsr_000:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14620,7 +13814,6 @@ lbl_mem_ldrb_rlsr_000_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14642,7 +13835,6 @@ lbl_mem_ldrb_rasr_000:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14665,7 +13857,6 @@ lbl_mem_ldrb_rasr_000_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_000:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14687,7 +13878,6 @@ lbl_mem_ldrb_rror_000:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_000_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14710,7 +13900,6 @@ lbl_mem_ldrb_rror_000_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_i_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14730,7 +13919,6 @@ lbl_mem_ldrb_i_001:
   }
   ADVANCE();
 lbl_mem_ldrb_i_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14751,7 +13939,6 @@ lbl_mem_ldrb_i_001_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14773,7 +13960,6 @@ lbl_mem_ldrb_rlsl_001:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14796,7 +13982,6 @@ lbl_mem_ldrb_rlsl_001_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14818,7 +14003,6 @@ lbl_mem_ldrb_rlsr_001:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14841,7 +14025,6 @@ lbl_mem_ldrb_rlsr_001_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14863,7 +14046,6 @@ lbl_mem_ldrb_rasr_001:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14886,7 +14068,6 @@ lbl_mem_ldrb_rasr_001_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_001:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14908,7 +14089,6 @@ lbl_mem_ldrb_rror_001:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_001_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14931,7 +14111,6 @@ lbl_mem_ldrb_rror_001_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_i_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14951,7 +14130,6 @@ lbl_mem_ldrb_i_010:
   }
   ADVANCE();
 lbl_mem_ldrb_i_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -14972,7 +14150,6 @@ lbl_mem_ldrb_i_010_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -14994,7 +14171,6 @@ lbl_mem_ldrb_rlsl_010:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15017,7 +14193,6 @@ lbl_mem_ldrb_rlsl_010_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15039,7 +14214,6 @@ lbl_mem_ldrb_rlsr_010:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15062,7 +14236,6 @@ lbl_mem_ldrb_rlsr_010_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15084,7 +14257,6 @@ lbl_mem_ldrb_rasr_010:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15107,7 +14279,6 @@ lbl_mem_ldrb_rasr_010_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_010:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15129,7 +14300,6 @@ lbl_mem_ldrb_rror_010:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_010_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15152,7 +14322,6 @@ lbl_mem_ldrb_rror_010_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_i_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15172,7 +14341,6 @@ lbl_mem_ldrb_i_011:
   }
   ADVANCE();
 lbl_mem_ldrb_i_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15193,7 +14361,6 @@ lbl_mem_ldrb_i_011_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15215,7 +14382,6 @@ lbl_mem_ldrb_rlsl_011:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15238,7 +14404,6 @@ lbl_mem_ldrb_rlsl_011_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15260,7 +14425,6 @@ lbl_mem_ldrb_rlsr_011:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15283,7 +14447,6 @@ lbl_mem_ldrb_rlsr_011_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15305,7 +14468,6 @@ lbl_mem_ldrb_rasr_011:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15328,7 +14490,6 @@ lbl_mem_ldrb_rasr_011_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_011:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15350,7 +14511,6 @@ lbl_mem_ldrb_rror_011:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_011_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15373,7 +14533,6 @@ lbl_mem_ldrb_rror_011_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_i_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15392,7 +14551,6 @@ lbl_mem_ldrb_i_100:
   }
   ADVANCE();
 lbl_mem_ldrb_i_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15412,7 +14570,6 @@ lbl_mem_ldrb_i_100_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15433,7 +14590,6 @@ lbl_mem_ldrb_rlsl_100:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15455,7 +14611,6 @@ lbl_mem_ldrb_rlsl_100_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15476,7 +14631,6 @@ lbl_mem_ldrb_rlsr_100:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15498,7 +14652,6 @@ lbl_mem_ldrb_rlsr_100_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15519,7 +14672,6 @@ lbl_mem_ldrb_rasr_100:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15541,7 +14693,6 @@ lbl_mem_ldrb_rasr_100_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_100:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15562,7 +14713,6 @@ lbl_mem_ldrb_rror_100:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_100_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15584,7 +14734,6 @@ lbl_mem_ldrb_rror_100_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_i_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15604,7 +14753,6 @@ lbl_mem_ldrb_i_101:
   }
   ADVANCE();
 lbl_mem_ldrb_i_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15625,7 +14773,6 @@ lbl_mem_ldrb_i_101_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15647,7 +14794,6 @@ lbl_mem_ldrb_rlsl_101:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15670,7 +14816,6 @@ lbl_mem_ldrb_rlsl_101_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15692,7 +14837,6 @@ lbl_mem_ldrb_rlsr_101:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15715,7 +14859,6 @@ lbl_mem_ldrb_rlsr_101_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15737,7 +14880,6 @@ lbl_mem_ldrb_rasr_101:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15760,7 +14902,6 @@ lbl_mem_ldrb_rasr_101_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_101:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15782,7 +14923,6 @@ lbl_mem_ldrb_rror_101:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_101_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15805,7 +14945,6 @@ lbl_mem_ldrb_rror_101_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_i_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15824,7 +14963,6 @@ lbl_mem_ldrb_i_110:
   }
   ADVANCE();
 lbl_mem_ldrb_i_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15844,7 +14982,6 @@ lbl_mem_ldrb_i_110_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15865,7 +15002,6 @@ lbl_mem_ldrb_rlsl_110:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15887,7 +15023,6 @@ lbl_mem_ldrb_rlsl_110_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15908,7 +15043,6 @@ lbl_mem_ldrb_rlsr_110:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15930,7 +15064,6 @@ lbl_mem_ldrb_rlsr_110_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15951,7 +15084,6 @@ lbl_mem_ldrb_rasr_110:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -15973,7 +15105,6 @@ lbl_mem_ldrb_rasr_110_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_110:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -15994,7 +15125,6 @@ lbl_mem_ldrb_rror_110:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_110_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -16016,7 +15146,6 @@ lbl_mem_ldrb_rror_110_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_i_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -16036,7 +15165,6 @@ lbl_mem_ldrb_i_111:
   }
   ADVANCE();
 lbl_mem_ldrb_i_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -16057,7 +15185,6 @@ lbl_mem_ldrb_i_111_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -16079,7 +15206,6 @@ lbl_mem_ldrb_rlsl_111:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsl_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -16102,7 +15228,6 @@ lbl_mem_ldrb_rlsl_111_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -16124,7 +15249,6 @@ lbl_mem_ldrb_rlsr_111:
   }
   ADVANCE();
 lbl_mem_ldrb_rlsr_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -16147,7 +15271,6 @@ lbl_mem_ldrb_rlsr_111_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -16169,7 +15292,6 @@ lbl_mem_ldrb_rasr_111:
   }
   ADVANCE();
 lbl_mem_ldrb_rasr_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
@@ -16192,7 +15314,6 @@ lbl_mem_ldrb_rasr_111_pcr:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_111:
-  COND_GUARD();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -16214,7 +15335,6 @@ lbl_mem_ldrb_rror_111:
   }
   ADVANCE();
 lbl_mem_ldrb_rror_111_pcr:
-  COND_GUARD();
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;

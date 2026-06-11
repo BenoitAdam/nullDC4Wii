@@ -90,7 +90,6 @@ def emit_dp_labels(out):
                 # path); compare ops don't. `base` (Rn) read by all but MOV/MVN.
                 uses_base = name not in ("mov", "movs", "mvn", "mvns")
                 out.append(f"lbl_{label}:")
-                out.append("  COND_GUARD();")
                 if pcread:
                     # Rn/Rm reference r15 -> need the ARM prefetch value.
                     out.append("  SET_PC_READ();")
@@ -237,7 +236,6 @@ def emit_mem_labels(out):
         for pcread in (False, True):
             label = nm + ("_pcr" if pcread else "")
             out.append(f"lbl_{label}:")
-            out.append("  COND_GUARD();")
             if pcread:
                 out.append("  SET_PC_READ();")
             out.append("  {")

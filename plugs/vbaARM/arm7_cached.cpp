@@ -106,28 +106,8 @@ static u32          ARM7_CACHE_LAST_OP;
 // initializes the dispatch sentinel and clears every entrypoint to it.
 static bool         s_cache_dirty = true;
 
-// ── Condition evaluation (mirrors arm-new.h) ────────────────────────────────
-static inline bool cond_check(u32 cond)
-{
-	switch(cond) {
-	case 0x0: return Z_FLAG;
-	case 0x1: return !Z_FLAG;
-	case 0x2: return C_FLAG;
-	case 0x3: return !C_FLAG;
-	case 0x4: return N_FLAG;
-	case 0x5: return !N_FLAG;
-	case 0x6: return V_FLAG;
-	case 0x7: return !V_FLAG;
-	case 0x8: return C_FLAG && !Z_FLAG;
-	case 0x9: return !C_FLAG || Z_FLAG;
-	case 0xA: return N_FLAG == V_FLAG;
-	case 0xB: return N_FLAG != V_FLAG;
-	case 0xC: return !Z_FLAG && (N_FLAG == V_FLAG);
-	case 0xD: return Z_FLAG || (N_FLAG != V_FLAG);
-	case 0xE: return true;
-	default:  return false; // 0xF: never (NV)
-	}
-}
+// Condition handling is now per-uop (lbl_cond_<cc> guard uops in
+// arm_Run_Cached); the old cond_check() helper is no longer needed.
 
 // ── Block-data-transfer execution helpers ───────────────────────────────────
 // LDM/STM are data-dependent (the register list is decoded at runtime), so per
@@ -393,6 +373,10 @@ void arm_Run_Cached(u32 CycleCount, bool reset)
 {
 	static int clockTicks;            // matches arm-new.h / LDM-STM helper signature
 	static ARM7CACHEOP* pc_op;
+	// Condition-code -> guard-uop label, indexed by opcode[31:28]. Filled once
+	// below (label addresses are only valid inside this function). Index 0xE (AL)
+	// is unused (no guard); 0xF (NV) maps to the always-skip guard.
+	static void* cond_labels[16];
 
 	if (reset) {
 		// Point every entrypoint at the decode trampoline and reset the pool.
@@ -414,6 +398,15 @@ void arm_Run_Cached(u32 CycleCount, bool reset)
 		for (u32 i = 0; i < ARM7_EP_SIZE; i++)
 			ARM7_ENTRYPOINTS[i] = &ARM7_CACHE[0];
 		ARM7_CACHE_LAST_OP = 1;
+		cond_labels[0x0] = &&lbl_cond_eq; cond_labels[0x1] = &&lbl_cond_ne;
+		cond_labels[0x2] = &&lbl_cond_cs; cond_labels[0x3] = &&lbl_cond_cc;
+		cond_labels[0x4] = &&lbl_cond_mi; cond_labels[0x5] = &&lbl_cond_pl;
+		cond_labels[0x6] = &&lbl_cond_vs; cond_labels[0x7] = &&lbl_cond_vc;
+		cond_labels[0x8] = &&lbl_cond_hi; cond_labels[0x9] = &&lbl_cond_ls;
+		cond_labels[0xA] = &&lbl_cond_ge; cond_labels[0xB] = &&lbl_cond_lt;
+		cond_labels[0xC] = &&lbl_cond_gt; cond_labels[0xD] = &&lbl_cond_le;
+		cond_labels[0xE] = &&lbl_cond_nv; /* AL: unused */
+		cond_labels[0xF] = &&lbl_cond_nv;
 		s_cache_dirty = false;
 	}
 
@@ -468,26 +461,41 @@ void arm_Run_Cached(u32 CycleCount, bool reset)
 	// Materialize the ARM prefetch value for the few uops that read r15.
 	#define SET_PC_READ() do { reg[15].I = dispatch_pc + 8; } while(0)
 
-	// Per-uop condition guard. A failed condition skips the instruction's effects
-	// (including any branch / PC write) and advances to the next instruction.
-	//
-	// The fail path RE-HOMES via the entrypoint table rather than pc_op++ : a
-	// block-ending conditional op (conditional B/BL/LDM{pc}/MOV pc/SWI) is the
-	// last uop of its block with NO contiguous successor, so pc_op++ would walk
-	// into an unrelated pool slot. Re-homing on dispatch_pc+4 is always correct
-	// regardless of the uop's position in the block. (Failed conditions are the
-	// uncommon case, so the extra table lookup here is not on the hot path.)
-	#define COND_GUARD() do {                            \
-			if (!cond_check(pc_op->cond)) {              \
-				dispatch_pc += 4;                         \
-				DISPATCH();                               \
-			}                                             \
-		} while(0)
+	// ── Condition-guard uops ────────────────────────────────────────────────
+	// A conditional instruction is decoded as TWO contiguous uops: a guard uop
+	// (lbl_cond_<cc>, which the instruction's entrypoint points at) followed by
+	// the (now unconditional) op uop. On PASS the guard falls through to the op
+	// via pc_op++ (no cycle charge / no dispatch_pc change -- same instruction).
+	// On FAIL it skips the instruction: advance dispatch_pc and re-home (which
+	// charges the +6 for the *next* instruction, exactly as a normal advance).
+	// AL instructions get no guard uop (the entrypoint points straight at the op).
+	#define COND_PASS()  do { pc_op++; goto *pc_op->dispatch; } while(0)
+	#define COND_FAIL()  do { dispatch_pc += 4; DISPATCH(); } while(0)
+	#define COND_UOP(cc, expr) \
+		lbl_cond_##cc: if (expr) COND_PASS(); else COND_FAIL();
 
 	// Kick off: start dispatching from the incoming PC (armNextPC), exactly the
 	// instruction the previous slice / reset / FIQ left pending.
 	dispatch_pc = armNextPC;
 	DISPATCH();
+
+	// The 14 ARM condition codes (EQ..LE) plus NV (never). cond_check's logic,
+	// inlined per-label so the common pass path is a single predicted branch.
+	COND_UOP(eq, Z_FLAG)
+	COND_UOP(ne, !Z_FLAG)
+	COND_UOP(cs, C_FLAG)
+	COND_UOP(cc, !C_FLAG)
+	COND_UOP(mi, N_FLAG)
+	COND_UOP(pl, !N_FLAG)
+	COND_UOP(vs, V_FLAG)
+	COND_UOP(vc, !V_FLAG)
+	COND_UOP(hi, C_FLAG && !Z_FLAG)
+	COND_UOP(ls, !C_FLAG || Z_FLAG)
+	COND_UOP(ge, N_FLAG == V_FLAG)
+	COND_UOP(lt, N_FLAG != V_FLAG)
+	COND_UOP(gt, !Z_FLAG && (N_FLAG == V_FLAG))
+	COND_UOP(le, Z_FLAG || (N_FLAG != V_FLAG))
+	COND_UOP(nv, false)        // NV: never executes -> always skip
 
 	// ── Generated threaded label bodies (data-proc + LDR/STR variants) ──────
 	#define GEN_LABELS
@@ -502,7 +510,6 @@ lbl_mul:
 	// MUL/MLA field convention (set by decode):
 	//   r0 = Rd (19:16)   r1 = Rs (11:8)   r2 = Rm (3:0)
 	//   imm bit 8 = S flag;  imm[3:0] = Rn (accumulate reg, 15:12) for MLA.
-	COND_GUARD();
 	{
 		ARM7CACHEOP* op = pc_op;
 		int dest = op->r0;
@@ -521,7 +528,6 @@ lbl_mul:
 	ADVANCE();
 
 lbl_mla:
-	COND_GUARD();
 	{
 		ARM7CACHEOP* op = pc_op;
 		int dest = op->r0;
@@ -540,7 +546,6 @@ lbl_mla:
 	ADVANCE();
 
 lbl_swp:
-	COND_GUARD();
 	{
 		ARM7CACHEOP* op = pc_op;
 		u32 address = reg[op->r1].I;          // Rn
@@ -552,7 +557,6 @@ lbl_swp:
 	ADVANCE();
 
 lbl_swpb:
-	COND_GUARD();
 	{
 		ARM7CACHEOP* op = pc_op;
 		u32 address = reg[op->r1].I;
@@ -564,20 +568,17 @@ lbl_swpb:
 	ADVANCE();
 
 lbl_mrs_cpsr:
-	COND_GUARD();
 	CPUUpdateCPSR();
 	reg[pc_op->r0].I = reg[16].I;
 	clockTicks += 1;
 	ADVANCE();
 
 lbl_mrs_spsr:
-	COND_GUARD();
 	reg[pc_op->r0].I = reg[17].I;
 	clockTicks += 1;
 	ADVANCE();
 
 lbl_msr_cpsr:
-	COND_GUARD();
 	{
 		// imm holds the raw opcode; works for both register and immediate forms.
 		u32 opcode = pc_op->imm;
@@ -606,7 +607,6 @@ lbl_msr_cpsr:
 	ADVANCE();
 
 lbl_msr_spsr:
-	COND_GUARD();
 	{
 		u32 opcode = pc_op->imm;
 		if (armMode > 0x10 && armMode < 0x1f) {
@@ -631,7 +631,6 @@ lbl_msr_spsr:
 	// "register list includes PC" (lbl_ldm_pc) vs not (lbl_ldm_nopc), with the
 	// register-list / P,U,S,W decode done at runtime from the raw opcode.
 lbl_stm:
-	COND_GUARD();
 	// STM may store r15 (as PC+12 = reg[15]+4) and reads reg[base]; materialize
 	// the prefetch PC so any r15 reference matches arm-new.h.
 	SET_PC_READ();
@@ -639,13 +638,11 @@ lbl_stm:
 	ADVANCE();
 
 lbl_ldm_nopc:
-	COND_GUARD();
 	SET_PC_READ();
 	arm_cached_ldm(pc_op->imm, clockTicks, /*hasPC=*/false);
 	ADVANCE();
 
 lbl_ldm_pc:
-	COND_GUARD();
 	SET_PC_READ();
 	arm_cached_ldm(pc_op->imm, clockTicks, /*hasPC=*/true);
 	// arm_cached_ldm stored the loaded PC into armNextPC; follow it.
@@ -653,7 +650,6 @@ lbl_ldm_pc:
 	DISPATCH_PC();
 
 lbl_b:
-	COND_GUARD();
 	{
 		// During execution reg[15] reads as A+8 = dispatch_pc+8; target =
 		// (A+8) + offset. Update dispatch_pc directly; no reg[15] maintenance.
@@ -664,7 +660,6 @@ lbl_b:
 	DISPATCH_PC();
 
 lbl_bl:
-	COND_GUARD();
 	{
 		// lr = address of next instruction = A+4 = dispatch_pc+4.
 		s32 offset = pc_op->imm;
@@ -675,7 +670,6 @@ lbl_bl:
 	DISPATCH_PC();
 
 lbl_swi:
-	COND_GUARD();
 	clockTicks += 3;
 	// CPUSoftwareInterrupt reads reg[15] (-> lr_svc = PC-4) and sets armNextPC=0x08.
 	SET_PC_READ();
@@ -684,7 +678,6 @@ lbl_swi:
 	DISPATCH_PC();
 
 lbl_undefined:
-	COND_GUARD();
 #ifdef DEV_VERSION
 	printf("Undefined ARM instruction (cached) %08x at %08x\n", pc_op->imm, dispatch_pc);
 #endif
@@ -726,7 +719,9 @@ lbl_unknown_block:
 
 		bool last = false;
 		do {
-			if (ARM7_CACHE_LAST_OP >= ARM7_CACHE_SIZE - 2) {
+			// Each instruction needs up to 3 slots (cond guard + op + cap
+			// terminator), so keep a margin of 4 before flushing the pool.
+			if (ARM7_CACHE_LAST_OP >= ARM7_CACHE_SIZE - 4) {
 				// Pool exhausted: flush and restart decoding this block.
 				for (u32 i = 0; i < ARM7_EP_SIZE; i++)
 					ARM7_ENTRYPOINTS[i] = &ARM7_CACHE[0];
@@ -737,14 +732,28 @@ lbl_unknown_block:
 			}
 
 			u32 opcode = CPUReadMemoryQuick(decode_pc);
+			u32 cond = opcode >> 28;
+
+			// Register the instruction's entrypoint. For a conditional instruction
+			// (cond != AL) the entrypoint points at a CONDITION-GUARD uop placed in
+			// this slot; the actual op uop goes in the NEXT contiguous slot and the
+			// guard falls through to it on pass (or re-homes at +4 on fail). AL
+			// instructions have no guard -- the entrypoint points straight at the op.
+			// Either way the entrypoint targets the address-aligned first uop so a
+			// branch INTO this instruction evaluates the condition correctly.
+			if (cond != 0xE) {
+				ARM7CACHEOP* guard = &ARM7_CACHE[ARM7_CACHE_LAST_OP];
+				guard->dispatch = cond_labels[cond];
+				ARM7_ENTRYPOINTS[decode_pc & ARM7_EP_MASK] = guard;
+				ARM7_CACHE_LAST_OP++;
+			}
+
 			ARM7CACHEOP* cop = &ARM7_CACHE[ARM7_CACHE_LAST_OP];
-			// Register an entrypoint for EVERY decoded instruction, not just the
-			// block start. Otherwise sequential flow (ADVANCE -> NEXT ->
-			// ENTRYPOINTS[next]) finds the sentinel at every non-start address and
-			// re-decodes a fresh, overlapping block per instruction, exhausting
-			// the pool and eventually dispatching a stale/garbage uop.
-			ARM7_ENTRYPOINTS[decode_pc & ARM7_EP_MASK] = cop;
-			cop->cond = opcode >> 28;
+			if (cond == 0xE) {
+				// AL: the op uop IS the entrypoint.
+				ARM7_ENTRYPOINTS[decode_pc & ARM7_EP_MASK] = cop;
+			}
+			cop->cond = cond;
 			cop->imm = opcode;          // default: keep raw opcode
 			last = false;
 
@@ -875,5 +884,7 @@ lbl_exit:
 	#undef ADVANCE
 	#undef DISPATCH_PC
 	#undef SET_PC_READ
-	#undef COND_GUARD
+	#undef COND_PASS
+	#undef COND_FAIL
+	#undef COND_UOP
 }
