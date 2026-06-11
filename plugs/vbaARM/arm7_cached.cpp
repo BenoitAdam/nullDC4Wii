@@ -412,13 +412,6 @@ void arm_Run_Cached(u32 CycleCount, bool reset)
 
 	clockTicks = 0;
 
-	// FIQ check at slice entry, mirroring arm_Run(). CPUFiq() reads reg[15] for
-	// lr_fiq and sets armNextPC to the FIQ vector; the kickoff below picks the
-	// new PC up via dispatch_pc = armNextPC.
-	if (armFiqEnable && e68k_out) {
-		CPUFiq();
-	}
-
 	// ── dispatch_pc execution model ────────────────────────────────────────────
 	// A single running program counter, dispatch_pc, drives dispatch. The common
 	// uops (no r15) never touch reg[15] / armNextPC: they do their work, advance
@@ -434,7 +427,21 @@ void arm_Run_Cached(u32 CycleCount, bool reset)
 	// Re-home: charge cycles + budget check + dispatch the uop registered for the
 	// current dispatch_pc via the entrypoint table. Used at block entry and after
 	// any control-flow change (branch / PC write).
+	//
+	// FIQ is sampled HERE -- at every block boundary -- rather than per
+	// instruction. e68k_out (the AICA FIQ pin) only changes at SH4-timeslice
+	// boundaries in this emulator, so block-granular sampling services it with
+	// the same effective latency as arm-new.h's per-instruction check, while
+	// straight-line ADVANCE() (pc_op++) pays nothing. CPUFiq() reads reg[15] as
+	// the FIQ return value (lr_fiq = next-instruction address + 4, matching the
+	// reference's pre-prologue reg[15]) and sets armNextPC to the FIQ vector,
+	// which we pick up as the new dispatch_pc.
 	#define DISPATCH() do {                              \
+			if (armFiqEnable && e68k_out) {              \
+				reg[15].I = dispatch_pc + 4;              \
+				CPUFiq();                                 \
+				dispatch_pc = armNextPC;                  \
+			}                                             \
 			if ((u32)clockTicks >= CycleCount) goto lbl_exit; \
 			clockTicks += 6;                              \
 			pc_op = ARM7_ENTRYPOINTS[dispatch_pc & ARM7_EP_MASK]; \
