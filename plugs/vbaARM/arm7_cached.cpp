@@ -419,37 +419,75 @@ void arm_Run_Cached(u32 CycleCount, bool reset)
 
 	clockTicks = 0;
 
-	// FIQ check at slice entry, mirroring arm_Run().
+	// FIQ check at slice entry, mirroring arm_Run(). CPUFiq() reads reg[15] for
+	// lr_fiq and sets armNextPC to the FIQ vector; the kickoff below picks the
+	// new PC up via dispatch_pc = armNextPC.
 	if (armFiqEnable && e68k_out) {
 		CPUFiq();
 	}
 
-	// Control-flow helpers used by every label (and the generated ones).
-	// Mirrors arm-new.h's per-instruction `clockTicks += 6`: the budget is
-	// checked first (so one arm_Run(1) executes exactly one instruction), then
-	// the base 6 ticks are charged for the instruction about to run. Per-op
-	// extra ticks (shifts, memory, multiply) accumulate on top inside the label.
-	#define NEXT() do {                                  \
+	// ── dispatch_pc execution model ────────────────────────────────────────────
+	// A single running program counter, dispatch_pc, drives dispatch. The common
+	// uops (no r15) never touch reg[15] / armNextPC: they do their work, advance
+	// dispatch_pc by 4, and re-dispatch. Only the special PC-read uops materialize
+	// reg[15] (= dispatch_pc + 8, the ARM prefetch value), and only the PC-write
+	// uops change the control flow (they set dispatch_pc to the new target).
+	//
+	// reg[15] / armNextPC are reconciled with dispatch_pc only at slice exit, so
+	// the next slice's FIQ/exception entry (which read reg[15]/armNextPC) and the
+	// kickoff see exactly what the old per-prologue engine left behind.
+	u32 dispatch_pc;
+
+	// Re-home: charge cycles + budget check + dispatch the uop registered for the
+	// current dispatch_pc via the entrypoint table. Used at block entry and after
+	// any control-flow change (branch / PC write).
+	#define DISPATCH() do {                              \
 			if ((u32)clockTicks >= CycleCount) goto lbl_exit; \
 			clockTicks += 6;                              \
-			pc_op = ARM7_ENTRYPOINTS[armNextPC & ARM7_EP_MASK]; \
-			armNextPC = reg[15].I;                        \
-			reg[15].I += 4;                               \
+			pc_op = ARM7_ENTRYPOINTS[dispatch_pc & ARM7_EP_MASK]; \
 			goto *pc_op->dispatch;                        \
 		} while(0)
-	#define ADVANCE() NEXT()
-	#define DISPATCH_PC() NEXT()
+
+	// Sequential advance (non-PC-writing ops): the next instruction's uop is the
+	// next CONTIGUOUS cache slot (the decoder lays a block out sequentially), so
+	// fall straight through with pc_op++ and SKIP the entrypoint-table lookup.
+	// The last uop of a capped block is a synthetic rehome terminator (lbl_rehome)
+	// that re-homes via DISPATCH(), so pc_op++ never walks past a block boundary.
+	#define ADVANCE() do {                               \
+			dispatch_pc += 4;                             \
+			if ((u32)clockTicks >= CycleCount) goto lbl_exit; \
+			clockTicks += 6;                              \
+			pc_op++;                                      \
+			goto *pc_op->dispatch;                        \
+		} while(0)
+
+	// Re-dispatch after a PC write: the op has already stored the new PC into
+	// dispatch_pc. (Kept as a named macro for the PC-write / branch labels.)
+	#define DISPATCH_PC() DISPATCH()
+
+	// Materialize the ARM prefetch value for the few uops that read r15.
+	#define SET_PC_READ() do { reg[15].I = dispatch_pc + 8; } while(0)
 
 	// Per-uop condition guard. A failed condition skips the instruction's effects
-	// (including any branch / PC write) and advances sequentially -- armNextPC was
-	// already set to the next instruction by the prologue. One predictable branch,
-	// exactly as arm-new.h's `if(cond_res)`. AL (0xE) short-circuits to true.
-	#define COND_GUARD() do { if (!cond_check(pc_op->cond)) NEXT(); } while(0)
+	// (including any branch / PC write) and advances to the next instruction.
+	//
+	// The fail path RE-HOMES via the entrypoint table rather than pc_op++ : a
+	// block-ending conditional op (conditional B/BL/LDM{pc}/MOV pc/SWI) is the
+	// last uop of its block with NO contiguous successor, so pc_op++ would walk
+	// into an unrelated pool slot. Re-homing on dispatch_pc+4 is always correct
+	// regardless of the uop's position in the block. (Failed conditions are the
+	// uncommon case, so the extra table lookup here is not on the hot path.)
+	#define COND_GUARD() do {                            \
+			if (!cond_check(pc_op->cond)) {              \
+				dispatch_pc += 4;                         \
+				DISPATCH();                               \
+			}                                             \
+		} while(0)
 
-	// Kick off: dispatch the uop for the instruction at the current armNextPC.
-	// NEXT() applies the same budget check + base-cycle charge + prologue as for
-	// every subsequent instruction.
-	NEXT();
+	// Kick off: start dispatching from the incoming PC (armNextPC), exactly the
+	// instruction the previous slice / reset / FIQ left pending.
+	dispatch_pc = armNextPC;
+	DISPATCH();
 
 	// ── Generated threaded label bodies (data-proc + LDR/STR variants) ──────
 	#define GEN_LABELS
@@ -480,7 +518,7 @@ lbl_mul:
 		else if ((rs & 0xFF000000) == 0) clockTicks += 4;
 		else clockTicks += 5;
 	}
-	NEXT();
+	ADVANCE();
 
 lbl_mla:
 	COND_GUARD();
@@ -499,7 +537,7 @@ lbl_mla:
 		else if ((rs & 0xFF000000) == 0) clockTicks += 5;
 		else clockTicks += 6;
 	}
-	NEXT();
+	ADVANCE();
 
 lbl_swp:
 	COND_GUARD();
@@ -511,7 +549,7 @@ lbl_swp:
 		reg[op->r0].I = temp;                 // Rd
 		clockTicks += 4;
 	}
-	NEXT();
+	ADVANCE();
 
 lbl_swpb:
 	COND_GUARD();
@@ -523,20 +561,20 @@ lbl_swpb:
 		reg[op->r0].I = temp & 0xFF;
 		clockTicks += 4;
 	}
-	NEXT();
+	ADVANCE();
 
 lbl_mrs_cpsr:
 	COND_GUARD();
 	CPUUpdateCPSR();
 	reg[pc_op->r0].I = reg[16].I;
 	clockTicks += 1;
-	NEXT();
+	ADVANCE();
 
 lbl_mrs_spsr:
 	COND_GUARD();
 	reg[pc_op->r0].I = reg[17].I;
 	clockTicks += 1;
-	NEXT();
+	ADVANCE();
 
 lbl_msr_cpsr:
 	COND_GUARD();
@@ -565,7 +603,7 @@ lbl_msr_cpsr:
 		CPUUpdateFlags();
 		clockTicks += 1;
 	}
-	NEXT();
+	ADVANCE();
 
 lbl_msr_spsr:
 	COND_GUARD();
@@ -587,34 +625,40 @@ lbl_msr_spsr:
 		}
 		clockTicks += 1;
 	}
-	NEXT();
+	ADVANCE();
 
 	// Block data transfer. Per project decision: a single handler split only by
 	// "register list includes PC" (lbl_ldm_pc) vs not (lbl_ldm_nopc), with the
 	// register-list / P,U,S,W decode done at runtime from the raw opcode.
 lbl_stm:
 	COND_GUARD();
+	// STM may store r15 (as PC+12 = reg[15]+4) and reads reg[base]; materialize
+	// the prefetch PC so any r15 reference matches arm-new.h.
+	SET_PC_READ();
 	arm_cached_stm(pc_op->imm, clockTicks);
-	NEXT();
+	ADVANCE();
 
 lbl_ldm_nopc:
 	COND_GUARD();
+	SET_PC_READ();
 	arm_cached_ldm(pc_op->imm, clockTicks, /*hasPC=*/false);
-	NEXT();
+	ADVANCE();
 
 lbl_ldm_pc:
 	COND_GUARD();
+	SET_PC_READ();
 	arm_cached_ldm(pc_op->imm, clockTicks, /*hasPC=*/true);
+	// arm_cached_ldm stored the loaded PC into armNextPC; follow it.
+	dispatch_pc = armNextPC;
 	DISPATCH_PC();
 
 lbl_b:
 	COND_GUARD();
 	{
+		// During execution reg[15] reads as A+8 = dispatch_pc+8; target =
+		// (A+8) + offset. Update dispatch_pc directly; no reg[15] maintenance.
 		s32 offset = pc_op->imm;     // pre-sign-extended, pre-shifted offset
-		u32 insnA = reg[15].I - 8;   // address of this B (reg[15] == A+8)
-		reg[15].I += offset;
-		armNextPC = reg[15].I;
-		reg[15].I += 4;
+		dispatch_pc = dispatch_pc + 8 + (u32)offset;
 		clockTicks += 3;
 	}
 	DISPATCH_PC();
@@ -622,11 +666,10 @@ lbl_b:
 lbl_bl:
 	COND_GUARD();
 	{
+		// lr = address of next instruction = A+4 = dispatch_pc+4.
 		s32 offset = pc_op->imm;
-		reg[14].I = reg[15].I - 4;
-		reg[15].I += offset;
-		armNextPC = reg[15].I;
-		reg[15].I += 4;
+		reg[14].I = dispatch_pc + 4;
+		dispatch_pc = dispatch_pc + 8 + (u32)offset;
 		clockTicks += 3;
 	}
 	DISPATCH_PC();
@@ -634,32 +677,41 @@ lbl_bl:
 lbl_swi:
 	COND_GUARD();
 	clockTicks += 3;
+	// CPUSoftwareInterrupt reads reg[15] (-> lr_svc = PC-4) and sets armNextPC=0x08.
+	SET_PC_READ();
 	CPUSoftwareInterrupt(pc_op->imm & 0x00FFFFFF);
+	dispatch_pc = armNextPC;
 	DISPATCH_PC();
 
 lbl_undefined:
 	COND_GUARD();
 #ifdef DEV_VERSION
-	printf("Undefined ARM instruction (cached) %08x at %08x\n", pc_op->imm, armNextPC - 4);
+	printf("Undefined ARM instruction (cached) %08x at %08x\n", pc_op->imm, dispatch_pc);
 #endif
+	// CPUUndefinedException sets armNextPC to the vector; pick it up via dispatch_pc.
+	reg[15].I = dispatch_pc + 8;
 	CPUUndefinedException();
+	dispatch_pc = armNextPC;
 	DISPATCH_PC();
 
-	// ── Block decode: fill cache slots for the block starting at armNextPC ──
+	// Block-cap terminator: the synthetic uop appended when a block hit the
+	// MAX_BLOCK_UOPS cap. Sequential ADVANCE() (pc_op++) lands here after the
+	// last real uop; dispatch_pc already points at the next instruction, so we
+	// re-home through the entrypoint table to its (separately decoded) block.
+lbl_rehome:
+	DISPATCH();
+
+	// ── Block decode: fill cache slots for the block starting at dispatch_pc ──
 	// Reached when an entrypoint still points at the sentinel ARM7_CACHE[0].
 lbl_unknown_block:
 	{
 		// The decode trampoline is not a real instruction: refund the base 6
-		// ticks NEXT() charged for it, so the re-home NEXT() charges exactly one
+		// ticks DISPATCH() charged for it, so the re-dispatch charges exactly one
 		// +6 for the real first instruction (and a CycleCount=1 slice still runs
 		// one instruction rather than being exhausted by the trampoline).
 		clockTicks -= 6;
-		// armNextPC has already been advanced by the prologue in NEXT(); the
-		// instruction we must decode is the one we just looked up, i.e. the one
-		// at (armNextPC - 4) ... but the prologue overwrote armNextPC. Recover
-		// the block start from reg[15]: during the prologue reg[15] = blkPC + 8,
-		// armNextPC = blkPC + 4. So blkPC = armNextPC - 4.
-		u32 blockStart = armNextPC - 4;
+		// dispatch_pc is the address we must decode (DISPATCH() does not advance it).
+		u32 blockStart = dispatch_pc;
 		u32 decode_pc = blockStart;
 
 		// (Each uop registers its own entrypoint inside the loop below, so no
@@ -667,9 +719,8 @@ lbl_unknown_block:
 
 		// Cap block length. A long straight-line run with no branch would
 		// otherwise grow one huge block; bound it so the next chunk gets its own
-		// entrypoint. When the cap is hit the final uop is an ordinary
-		// sequential instruction whose ADVANCE() falls through to the next
-		// address, where the still-sentinel entrypoint triggers a fresh decode.
+		// block. At the cap we append a rehome terminator uop (see below) that the
+		// last real uop's pc_op++ ADVANCE() lands on, which re-homes via the table.
 		const u32 MAX_BLOCK_UOPS = 128;
 		u32 blockUops = 0;
 
@@ -791,21 +842,38 @@ lbl_unknown_block:
 
 			ARM7_CACHE_LAST_OP++;
 			decode_pc += 4;
-			if (++blockUops >= MAX_BLOCK_UOPS)
-				last = true;            // cap reached: end the block here
+
+			// `last` set above means a control-flow instruction (branch / PC
+			// write / SWI / undefined) ended the block: it re-homes via its own
+			// dispatch, so no terminator is needed and pc_op++ never runs past it.
+			// The cap instead ends a block on an ORDINARY sequential instruction,
+			// whose ADVANCE() does pc_op++ -- so append a rehome terminator uop in
+			// the next contiguous slot for that pc_op++ to land on.
+			if (!last && ++blockUops >= MAX_BLOCK_UOPS) {
+				ARM7_CACHE[ARM7_CACHE_LAST_OP].dispatch = &&lbl_rehome;
+				ARM7_CACHE_LAST_OP++;
+				last = true;
+			}
 		} while (!last);
 
-		// Re-home: run the freshly decoded block from its first uop.
-		armNextPC = blockStart;         // NEXT() will re-prologue from here
-		reg[15].I = blockStart + 4;
+		// Re-dispatch: run the freshly decoded block from its first uop.
+		// dispatch_pc is still blockStart, whose entrypoint now points at the
+		// first decoded uop.
 	}
-	NEXT();
+	DISPATCH();
 
 lbl_exit:
-	// Persist the running counters back; nothing else to do — reg state is live.
+	// Reconcile the architectural PC with dispatch_pc so the next slice's FIQ /
+	// exception entry (which read reg[15] / armNextPC) and the kickoff resume
+	// exactly where this slice left off -- matching the old per-prologue engine
+	// (armNextPC = next instr, reg[15] = next instr + 4).
+	armNextPC = dispatch_pc;
+	reg[15].I = dispatch_pc + 4;
 	return;
 
-	#undef NEXT
+	#undef DISPATCH
 	#undef ADVANCE
 	#undef DISPATCH_PC
+	#undef SET_PC_READ
+	#undef COND_GUARD
 }

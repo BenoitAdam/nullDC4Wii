@@ -13,9 +13,26 @@ lbl_dp_and_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_AND
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_AND
+    }
+  }
+  ADVANCE();
+lbl_dp_and_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_AND
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_AND
@@ -33,9 +50,26 @@ lbl_dp_and_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_AND
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_AND
+    }
+  }
+  ADVANCE();
+lbl_dp_and_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_AND
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_AND
@@ -53,9 +87,26 @@ lbl_dp_and_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_AND
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_AND
+    }
+  }
+  ADVANCE();
+lbl_dp_and_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_AND
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_AND
@@ -73,9 +124,26 @@ lbl_dp_and_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_AND
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_AND
+    }
+  }
+  ADVANCE();
+lbl_dp_and_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_AND
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_AND
@@ -93,9 +161,26 @@ lbl_dp_and_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_AND
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_AND
+    }
+  }
+  ADVANCE();
+lbl_dp_and_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_AND
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_AND
@@ -113,9 +198,26 @@ lbl_dp_and_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_AND
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_AND
+    }
+  }
+  ADVANCE();
+lbl_dp_and_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_AND
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_AND
@@ -133,9 +235,26 @@ lbl_dp_and_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_AND
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_AND
+    }
+  }
+  ADVANCE();
+lbl_dp_and_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_AND
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_AND
@@ -153,9 +272,26 @@ lbl_dp_and_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_AND
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_AND
+    }
+  }
+  ADVANCE();
+lbl_dp_and_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_AND
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_AND
@@ -173,9 +309,26 @@ lbl_dp_and_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_AND
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_AND
+    }
+  }
+  ADVANCE();
+lbl_dp_and_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_AND
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_AND
@@ -193,9 +346,26 @@ lbl_dp_and_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_AND
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_AND
+    }
+  }
+  ADVANCE();
+lbl_dp_and_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_AND
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_AND
@@ -215,9 +385,28 @@ lbl_dp_ands_lsli:
       DO_ANDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ANDS
+    }
+  }
+  ADVANCE();
+lbl_dp_ands_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_ANDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ANDS
@@ -237,9 +426,28 @@ lbl_dp_ands_lsri:
       DO_ANDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ANDS
+    }
+  }
+  ADVANCE();
+lbl_dp_ands_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_ANDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ANDS
@@ -259,9 +467,28 @@ lbl_dp_ands_asri:
       DO_ANDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ANDS
+    }
+  }
+  ADVANCE();
+lbl_dp_ands_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_ANDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ANDS
@@ -281,9 +508,28 @@ lbl_dp_ands_rori:
       DO_ANDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ANDS
+    }
+  }
+  ADVANCE();
+lbl_dp_ands_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_ANDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ANDS
@@ -303,9 +549,28 @@ lbl_dp_ands_lslr:
       DO_ANDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ANDS
+    }
+  }
+  ADVANCE();
+lbl_dp_ands_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_ANDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ANDS
@@ -325,9 +590,28 @@ lbl_dp_ands_lsrr:
       DO_ANDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ANDS
+    }
+  }
+  ADVANCE();
+lbl_dp_ands_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_ANDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ANDS
@@ -347,9 +631,28 @@ lbl_dp_ands_asrr:
       DO_ANDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ANDS
+    }
+  }
+  ADVANCE();
+lbl_dp_ands_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_ANDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ANDS
@@ -369,9 +672,28 @@ lbl_dp_ands_rorr:
       DO_ANDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ANDS
+    }
+  }
+  ADVANCE();
+lbl_dp_ands_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_ANDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ANDS
@@ -391,9 +713,28 @@ lbl_dp_ands_imm0:
       DO_ANDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ANDS
+    }
+  }
+  ADVANCE();
+lbl_dp_ands_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_ANDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ANDS
@@ -413,9 +754,28 @@ lbl_dp_ands_immn:
       DO_ANDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ANDS
+    }
+  }
+  ADVANCE();
+lbl_dp_ands_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_ANDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ANDS
@@ -433,9 +793,26 @@ lbl_dp_eor_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_EOR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EOR
+    }
+  }
+  ADVANCE();
+lbl_dp_eor_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_EOR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EOR
@@ -453,9 +830,26 @@ lbl_dp_eor_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_EOR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EOR
+    }
+  }
+  ADVANCE();
+lbl_dp_eor_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_EOR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EOR
@@ -473,9 +867,26 @@ lbl_dp_eor_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_EOR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EOR
+    }
+  }
+  ADVANCE();
+lbl_dp_eor_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_EOR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EOR
@@ -493,9 +904,26 @@ lbl_dp_eor_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_EOR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EOR
+    }
+  }
+  ADVANCE();
+lbl_dp_eor_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_EOR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EOR
@@ -513,9 +941,26 @@ lbl_dp_eor_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_EOR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EOR
+    }
+  }
+  ADVANCE();
+lbl_dp_eor_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_EOR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EOR
@@ -533,9 +978,26 @@ lbl_dp_eor_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_EOR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EOR
+    }
+  }
+  ADVANCE();
+lbl_dp_eor_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_EOR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EOR
@@ -553,9 +1015,26 @@ lbl_dp_eor_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_EOR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EOR
+    }
+  }
+  ADVANCE();
+lbl_dp_eor_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_EOR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EOR
@@ -573,9 +1052,26 @@ lbl_dp_eor_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_EOR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EOR
+    }
+  }
+  ADVANCE();
+lbl_dp_eor_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_EOR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EOR
@@ -593,9 +1089,26 @@ lbl_dp_eor_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_EOR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EOR
+    }
+  }
+  ADVANCE();
+lbl_dp_eor_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_EOR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EOR
@@ -613,9 +1126,26 @@ lbl_dp_eor_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_EOR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EOR
+    }
+  }
+  ADVANCE();
+lbl_dp_eor_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_EOR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EOR
@@ -635,9 +1165,28 @@ lbl_dp_eors_lsli:
       DO_EORS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EORS
+    }
+  }
+  ADVANCE();
+lbl_dp_eors_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_EORS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EORS
@@ -657,9 +1206,28 @@ lbl_dp_eors_lsri:
       DO_EORS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EORS
+    }
+  }
+  ADVANCE();
+lbl_dp_eors_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_EORS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EORS
@@ -679,9 +1247,28 @@ lbl_dp_eors_asri:
       DO_EORS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EORS
+    }
+  }
+  ADVANCE();
+lbl_dp_eors_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_EORS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EORS
@@ -701,9 +1288,28 @@ lbl_dp_eors_rori:
       DO_EORS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EORS
+    }
+  }
+  ADVANCE();
+lbl_dp_eors_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_EORS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EORS
@@ -723,9 +1329,28 @@ lbl_dp_eors_lslr:
       DO_EORS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EORS
+    }
+  }
+  ADVANCE();
+lbl_dp_eors_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_EORS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EORS
@@ -745,9 +1370,28 @@ lbl_dp_eors_lsrr:
       DO_EORS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EORS
+    }
+  }
+  ADVANCE();
+lbl_dp_eors_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_EORS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EORS
@@ -767,9 +1411,28 @@ lbl_dp_eors_asrr:
       DO_EORS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EORS
+    }
+  }
+  ADVANCE();
+lbl_dp_eors_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_EORS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EORS
@@ -789,9 +1452,28 @@ lbl_dp_eors_rorr:
       DO_EORS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EORS
+    }
+  }
+  ADVANCE();
+lbl_dp_eors_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_EORS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EORS
@@ -811,9 +1493,28 @@ lbl_dp_eors_imm0:
       DO_EORS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EORS
+    }
+  }
+  ADVANCE();
+lbl_dp_eors_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_EORS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EORS
@@ -833,9 +1534,28 @@ lbl_dp_eors_immn:
       DO_EORS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_EORS
+    }
+  }
+  ADVANCE();
+lbl_dp_eors_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_EORS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_EORS
@@ -853,9 +1573,26 @@ lbl_dp_sub_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_SUB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUB
+    }
+  }
+  ADVANCE();
+lbl_dp_sub_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_SUB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUB
@@ -873,9 +1610,26 @@ lbl_dp_sub_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_SUB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUB
+    }
+  }
+  ADVANCE();
+lbl_dp_sub_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_SUB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUB
@@ -893,9 +1647,26 @@ lbl_dp_sub_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_SUB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUB
+    }
+  }
+  ADVANCE();
+lbl_dp_sub_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_SUB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUB
@@ -913,9 +1684,26 @@ lbl_dp_sub_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_SUB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUB
+    }
+  }
+  ADVANCE();
+lbl_dp_sub_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_SUB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUB
@@ -933,9 +1721,26 @@ lbl_dp_sub_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_SUB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUB
+    }
+  }
+  ADVANCE();
+lbl_dp_sub_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_SUB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUB
@@ -953,9 +1758,26 @@ lbl_dp_sub_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_SUB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUB
+    }
+  }
+  ADVANCE();
+lbl_dp_sub_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_SUB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUB
@@ -973,9 +1795,26 @@ lbl_dp_sub_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_SUB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUB
+    }
+  }
+  ADVANCE();
+lbl_dp_sub_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_SUB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUB
@@ -993,9 +1832,26 @@ lbl_dp_sub_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_SUB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUB
+    }
+  }
+  ADVANCE();
+lbl_dp_sub_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_SUB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUB
@@ -1013,9 +1869,26 @@ lbl_dp_sub_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_SUB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUB
+    }
+  }
+  ADVANCE();
+lbl_dp_sub_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_SUB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUB
@@ -1033,9 +1906,26 @@ lbl_dp_sub_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_SUB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUB
+    }
+  }
+  ADVANCE();
+lbl_dp_sub_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_SUB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUB
@@ -1055,9 +1945,28 @@ lbl_dp_subs_lsli:
       DO_SUBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUBS
+    }
+  }
+  ADVANCE();
+lbl_dp_subs_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_SUBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUBS
@@ -1077,9 +1986,28 @@ lbl_dp_subs_lsri:
       DO_SUBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUBS
+    }
+  }
+  ADVANCE();
+lbl_dp_subs_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_SUBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUBS
@@ -1099,9 +2027,28 @@ lbl_dp_subs_asri:
       DO_SUBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUBS
+    }
+  }
+  ADVANCE();
+lbl_dp_subs_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_SUBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUBS
@@ -1121,9 +2068,28 @@ lbl_dp_subs_rori:
       DO_SUBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUBS
+    }
+  }
+  ADVANCE();
+lbl_dp_subs_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_SUBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUBS
@@ -1143,9 +2109,28 @@ lbl_dp_subs_lslr:
       DO_SUBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUBS
+    }
+  }
+  ADVANCE();
+lbl_dp_subs_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_SUBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUBS
@@ -1165,9 +2150,28 @@ lbl_dp_subs_lsrr:
       DO_SUBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUBS
+    }
+  }
+  ADVANCE();
+lbl_dp_subs_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_SUBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUBS
@@ -1187,9 +2191,28 @@ lbl_dp_subs_asrr:
       DO_SUBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUBS
+    }
+  }
+  ADVANCE();
+lbl_dp_subs_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_SUBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUBS
@@ -1209,9 +2232,28 @@ lbl_dp_subs_rorr:
       DO_SUBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUBS
+    }
+  }
+  ADVANCE();
+lbl_dp_subs_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_SUBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUBS
@@ -1231,9 +2273,28 @@ lbl_dp_subs_imm0:
       DO_SUBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUBS
+    }
+  }
+  ADVANCE();
+lbl_dp_subs_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_SUBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUBS
@@ -1253,9 +2314,28 @@ lbl_dp_subs_immn:
       DO_SUBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SUBS
+    }
+  }
+  ADVANCE();
+lbl_dp_subs_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_SUBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SUBS
@@ -1273,9 +2353,26 @@ lbl_dp_rsb_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_RSB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSB
+    }
+  }
+  ADVANCE();
+lbl_dp_rsb_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_RSB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSB
@@ -1293,9 +2390,26 @@ lbl_dp_rsb_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_RSB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSB
+    }
+  }
+  ADVANCE();
+lbl_dp_rsb_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_RSB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSB
@@ -1313,9 +2427,26 @@ lbl_dp_rsb_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_RSB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSB
+    }
+  }
+  ADVANCE();
+lbl_dp_rsb_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_RSB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSB
@@ -1333,9 +2464,26 @@ lbl_dp_rsb_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_RSB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSB
+    }
+  }
+  ADVANCE();
+lbl_dp_rsb_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_RSB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSB
@@ -1353,9 +2501,26 @@ lbl_dp_rsb_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_RSB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSB
+    }
+  }
+  ADVANCE();
+lbl_dp_rsb_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_RSB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSB
@@ -1373,9 +2538,26 @@ lbl_dp_rsb_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_RSB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSB
+    }
+  }
+  ADVANCE();
+lbl_dp_rsb_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_RSB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSB
@@ -1393,9 +2575,26 @@ lbl_dp_rsb_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_RSB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSB
+    }
+  }
+  ADVANCE();
+lbl_dp_rsb_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_RSB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSB
@@ -1413,9 +2612,26 @@ lbl_dp_rsb_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_RSB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSB
+    }
+  }
+  ADVANCE();
+lbl_dp_rsb_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_RSB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSB
@@ -1433,9 +2649,26 @@ lbl_dp_rsb_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_RSB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSB
+    }
+  }
+  ADVANCE();
+lbl_dp_rsb_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_RSB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSB
@@ -1453,9 +2686,26 @@ lbl_dp_rsb_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_RSB
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSB
+    }
+  }
+  ADVANCE();
+lbl_dp_rsb_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_RSB
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSB
@@ -1475,9 +2725,28 @@ lbl_dp_rsbs_lsli:
       DO_RSBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSBS
+    }
+  }
+  ADVANCE();
+lbl_dp_rsbs_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_RSBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSBS
@@ -1497,9 +2766,28 @@ lbl_dp_rsbs_lsri:
       DO_RSBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSBS
+    }
+  }
+  ADVANCE();
+lbl_dp_rsbs_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_RSBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSBS
@@ -1519,9 +2807,28 @@ lbl_dp_rsbs_asri:
       DO_RSBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSBS
+    }
+  }
+  ADVANCE();
+lbl_dp_rsbs_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_RSBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSBS
@@ -1541,9 +2848,28 @@ lbl_dp_rsbs_rori:
       DO_RSBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSBS
+    }
+  }
+  ADVANCE();
+lbl_dp_rsbs_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_RSBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSBS
@@ -1563,9 +2889,28 @@ lbl_dp_rsbs_lslr:
       DO_RSBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSBS
+    }
+  }
+  ADVANCE();
+lbl_dp_rsbs_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_RSBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSBS
@@ -1585,9 +2930,28 @@ lbl_dp_rsbs_lsrr:
       DO_RSBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSBS
+    }
+  }
+  ADVANCE();
+lbl_dp_rsbs_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_RSBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSBS
@@ -1607,9 +2971,28 @@ lbl_dp_rsbs_asrr:
       DO_RSBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSBS
+    }
+  }
+  ADVANCE();
+lbl_dp_rsbs_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_RSBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSBS
@@ -1629,9 +3012,28 @@ lbl_dp_rsbs_rorr:
       DO_RSBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSBS
+    }
+  }
+  ADVANCE();
+lbl_dp_rsbs_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_RSBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSBS
@@ -1651,9 +3053,28 @@ lbl_dp_rsbs_imm0:
       DO_RSBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSBS
+    }
+  }
+  ADVANCE();
+lbl_dp_rsbs_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_RSBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSBS
@@ -1673,9 +3094,28 @@ lbl_dp_rsbs_immn:
       DO_RSBS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSBS
+    }
+  }
+  ADVANCE();
+lbl_dp_rsbs_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_RSBS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSBS
@@ -1693,9 +3133,26 @@ lbl_dp_add_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_ADD
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADD
+    }
+  }
+  ADVANCE();
+lbl_dp_add_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_ADD
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADD
@@ -1713,9 +3170,26 @@ lbl_dp_add_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_ADD
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADD
+    }
+  }
+  ADVANCE();
+lbl_dp_add_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_ADD
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADD
@@ -1733,9 +3207,26 @@ lbl_dp_add_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_ADD
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADD
+    }
+  }
+  ADVANCE();
+lbl_dp_add_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_ADD
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADD
@@ -1753,9 +3244,26 @@ lbl_dp_add_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_ADD
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADD
+    }
+  }
+  ADVANCE();
+lbl_dp_add_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_ADD
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADD
@@ -1773,9 +3281,26 @@ lbl_dp_add_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_ADD
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADD
+    }
+  }
+  ADVANCE();
+lbl_dp_add_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_ADD
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADD
@@ -1793,9 +3318,26 @@ lbl_dp_add_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_ADD
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADD
+    }
+  }
+  ADVANCE();
+lbl_dp_add_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_ADD
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADD
@@ -1813,9 +3355,26 @@ lbl_dp_add_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_ADD
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADD
+    }
+  }
+  ADVANCE();
+lbl_dp_add_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_ADD
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADD
@@ -1833,9 +3392,26 @@ lbl_dp_add_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_ADD
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADD
+    }
+  }
+  ADVANCE();
+lbl_dp_add_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_ADD
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADD
@@ -1853,9 +3429,26 @@ lbl_dp_add_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_ADD
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADD
+    }
+  }
+  ADVANCE();
+lbl_dp_add_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_ADD
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADD
@@ -1873,9 +3466,26 @@ lbl_dp_add_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_ADD
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADD
+    }
+  }
+  ADVANCE();
+lbl_dp_add_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_ADD
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADD
@@ -1895,9 +3505,28 @@ lbl_dp_adds_lsli:
       DO_ADDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADDS
+    }
+  }
+  ADVANCE();
+lbl_dp_adds_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_ADDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADDS
@@ -1917,9 +3546,28 @@ lbl_dp_adds_lsri:
       DO_ADDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADDS
+    }
+  }
+  ADVANCE();
+lbl_dp_adds_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_ADDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADDS
@@ -1939,9 +3587,28 @@ lbl_dp_adds_asri:
       DO_ADDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADDS
+    }
+  }
+  ADVANCE();
+lbl_dp_adds_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_ADDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADDS
@@ -1961,9 +3628,28 @@ lbl_dp_adds_rori:
       DO_ADDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADDS
+    }
+  }
+  ADVANCE();
+lbl_dp_adds_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_ADDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADDS
@@ -1983,9 +3669,28 @@ lbl_dp_adds_lslr:
       DO_ADDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADDS
+    }
+  }
+  ADVANCE();
+lbl_dp_adds_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_ADDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADDS
@@ -2005,9 +3710,28 @@ lbl_dp_adds_lsrr:
       DO_ADDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADDS
+    }
+  }
+  ADVANCE();
+lbl_dp_adds_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_ADDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADDS
@@ -2027,9 +3751,28 @@ lbl_dp_adds_asrr:
       DO_ADDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADDS
+    }
+  }
+  ADVANCE();
+lbl_dp_adds_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_ADDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADDS
@@ -2049,9 +3792,28 @@ lbl_dp_adds_rorr:
       DO_ADDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADDS
+    }
+  }
+  ADVANCE();
+lbl_dp_adds_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_ADDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADDS
@@ -2071,9 +3833,28 @@ lbl_dp_adds_imm0:
       DO_ADDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADDS
+    }
+  }
+  ADVANCE();
+lbl_dp_adds_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_ADDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADDS
@@ -2093,9 +3874,28 @@ lbl_dp_adds_immn:
       DO_ADDS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADDS
+    }
+  }
+  ADVANCE();
+lbl_dp_adds_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_ADDS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADDS
@@ -2113,9 +3913,26 @@ lbl_dp_adc_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_ADC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADC
+    }
+  }
+  ADVANCE();
+lbl_dp_adc_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_ADC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADC
@@ -2133,9 +3950,26 @@ lbl_dp_adc_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_ADC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADC
+    }
+  }
+  ADVANCE();
+lbl_dp_adc_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_ADC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADC
@@ -2153,9 +3987,26 @@ lbl_dp_adc_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_ADC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADC
+    }
+  }
+  ADVANCE();
+lbl_dp_adc_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_ADC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADC
@@ -2173,9 +4024,26 @@ lbl_dp_adc_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_ADC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADC
+    }
+  }
+  ADVANCE();
+lbl_dp_adc_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_ADC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADC
@@ -2193,9 +4061,26 @@ lbl_dp_adc_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_ADC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADC
+    }
+  }
+  ADVANCE();
+lbl_dp_adc_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_ADC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADC
@@ -2213,9 +4098,26 @@ lbl_dp_adc_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_ADC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADC
+    }
+  }
+  ADVANCE();
+lbl_dp_adc_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_ADC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADC
@@ -2233,9 +4135,26 @@ lbl_dp_adc_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_ADC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADC
+    }
+  }
+  ADVANCE();
+lbl_dp_adc_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_ADC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADC
@@ -2253,9 +4172,26 @@ lbl_dp_adc_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_ADC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADC
+    }
+  }
+  ADVANCE();
+lbl_dp_adc_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_ADC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADC
@@ -2273,9 +4209,26 @@ lbl_dp_adc_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_ADC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADC
+    }
+  }
+  ADVANCE();
+lbl_dp_adc_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_ADC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADC
@@ -2293,9 +4246,26 @@ lbl_dp_adc_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_ADC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADC
+    }
+  }
+  ADVANCE();
+lbl_dp_adc_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_ADC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADC
@@ -2315,9 +4285,28 @@ lbl_dp_adcs_lsli:
       DO_ADCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADCS
+    }
+  }
+  ADVANCE();
+lbl_dp_adcs_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_ADCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADCS
@@ -2337,9 +4326,28 @@ lbl_dp_adcs_lsri:
       DO_ADCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADCS
+    }
+  }
+  ADVANCE();
+lbl_dp_adcs_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_ADCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADCS
@@ -2359,9 +4367,28 @@ lbl_dp_adcs_asri:
       DO_ADCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADCS
+    }
+  }
+  ADVANCE();
+lbl_dp_adcs_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_ADCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADCS
@@ -2381,9 +4408,28 @@ lbl_dp_adcs_rori:
       DO_ADCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADCS
+    }
+  }
+  ADVANCE();
+lbl_dp_adcs_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_ADCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADCS
@@ -2403,9 +4449,28 @@ lbl_dp_adcs_lslr:
       DO_ADCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADCS
+    }
+  }
+  ADVANCE();
+lbl_dp_adcs_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_ADCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADCS
@@ -2425,9 +4490,28 @@ lbl_dp_adcs_lsrr:
       DO_ADCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADCS
+    }
+  }
+  ADVANCE();
+lbl_dp_adcs_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_ADCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADCS
@@ -2447,9 +4531,28 @@ lbl_dp_adcs_asrr:
       DO_ADCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADCS
+    }
+  }
+  ADVANCE();
+lbl_dp_adcs_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_ADCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADCS
@@ -2469,9 +4572,28 @@ lbl_dp_adcs_rorr:
       DO_ADCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADCS
+    }
+  }
+  ADVANCE();
+lbl_dp_adcs_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_ADCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADCS
@@ -2491,9 +4613,28 @@ lbl_dp_adcs_imm0:
       DO_ADCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADCS
+    }
+  }
+  ADVANCE();
+lbl_dp_adcs_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_ADCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADCS
@@ -2513,9 +4654,28 @@ lbl_dp_adcs_immn:
       DO_ADCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ADCS
+    }
+  }
+  ADVANCE();
+lbl_dp_adcs_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_ADCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ADCS
@@ -2533,9 +4693,26 @@ lbl_dp_sbc_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_SBC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBC
+    }
+  }
+  ADVANCE();
+lbl_dp_sbc_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_SBC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBC
@@ -2553,9 +4730,26 @@ lbl_dp_sbc_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_SBC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBC
+    }
+  }
+  ADVANCE();
+lbl_dp_sbc_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_SBC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBC
@@ -2573,9 +4767,26 @@ lbl_dp_sbc_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_SBC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBC
+    }
+  }
+  ADVANCE();
+lbl_dp_sbc_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_SBC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBC
@@ -2593,9 +4804,26 @@ lbl_dp_sbc_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_SBC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBC
+    }
+  }
+  ADVANCE();
+lbl_dp_sbc_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_SBC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBC
@@ -2613,9 +4841,26 @@ lbl_dp_sbc_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_SBC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBC
+    }
+  }
+  ADVANCE();
+lbl_dp_sbc_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_SBC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBC
@@ -2633,9 +4878,26 @@ lbl_dp_sbc_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_SBC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBC
+    }
+  }
+  ADVANCE();
+lbl_dp_sbc_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_SBC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBC
@@ -2653,9 +4915,26 @@ lbl_dp_sbc_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_SBC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBC
+    }
+  }
+  ADVANCE();
+lbl_dp_sbc_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_SBC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBC
@@ -2673,9 +4952,26 @@ lbl_dp_sbc_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_SBC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBC
+    }
+  }
+  ADVANCE();
+lbl_dp_sbc_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_SBC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBC
@@ -2693,9 +4989,26 @@ lbl_dp_sbc_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_SBC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBC
+    }
+  }
+  ADVANCE();
+lbl_dp_sbc_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_SBC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBC
@@ -2713,9 +5026,26 @@ lbl_dp_sbc_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_SBC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBC
+    }
+  }
+  ADVANCE();
+lbl_dp_sbc_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_SBC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBC
@@ -2735,9 +5065,28 @@ lbl_dp_sbcs_lsli:
       DO_SBCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBCS
+    }
+  }
+  ADVANCE();
+lbl_dp_sbcs_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_SBCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBCS
@@ -2757,9 +5106,28 @@ lbl_dp_sbcs_lsri:
       DO_SBCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBCS
+    }
+  }
+  ADVANCE();
+lbl_dp_sbcs_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_SBCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBCS
@@ -2779,9 +5147,28 @@ lbl_dp_sbcs_asri:
       DO_SBCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBCS
+    }
+  }
+  ADVANCE();
+lbl_dp_sbcs_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_SBCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBCS
@@ -2801,9 +5188,28 @@ lbl_dp_sbcs_rori:
       DO_SBCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBCS
+    }
+  }
+  ADVANCE();
+lbl_dp_sbcs_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_SBCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBCS
@@ -2823,9 +5229,28 @@ lbl_dp_sbcs_lslr:
       DO_SBCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBCS
+    }
+  }
+  ADVANCE();
+lbl_dp_sbcs_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_SBCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBCS
@@ -2845,9 +5270,28 @@ lbl_dp_sbcs_lsrr:
       DO_SBCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBCS
+    }
+  }
+  ADVANCE();
+lbl_dp_sbcs_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_SBCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBCS
@@ -2867,9 +5311,28 @@ lbl_dp_sbcs_asrr:
       DO_SBCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBCS
+    }
+  }
+  ADVANCE();
+lbl_dp_sbcs_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_SBCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBCS
@@ -2889,9 +5352,28 @@ lbl_dp_sbcs_rorr:
       DO_SBCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBCS
+    }
+  }
+  ADVANCE();
+lbl_dp_sbcs_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_SBCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBCS
@@ -2911,9 +5393,28 @@ lbl_dp_sbcs_imm0:
       DO_SBCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBCS
+    }
+  }
+  ADVANCE();
+lbl_dp_sbcs_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_SBCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBCS
@@ -2933,9 +5434,28 @@ lbl_dp_sbcs_immn:
       DO_SBCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_SBCS
+    }
+  }
+  ADVANCE();
+lbl_dp_sbcs_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_SBCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_SBCS
@@ -2953,9 +5473,26 @@ lbl_dp_rsc_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_RSC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSC
+    }
+  }
+  ADVANCE();
+lbl_dp_rsc_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_RSC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSC
@@ -2973,9 +5510,26 @@ lbl_dp_rsc_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_RSC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSC
+    }
+  }
+  ADVANCE();
+lbl_dp_rsc_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_RSC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSC
@@ -2993,9 +5547,26 @@ lbl_dp_rsc_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_RSC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSC
+    }
+  }
+  ADVANCE();
+lbl_dp_rsc_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_RSC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSC
@@ -3013,9 +5584,26 @@ lbl_dp_rsc_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_RSC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSC
+    }
+  }
+  ADVANCE();
+lbl_dp_rsc_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_RSC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSC
@@ -3033,9 +5621,26 @@ lbl_dp_rsc_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_RSC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSC
+    }
+  }
+  ADVANCE();
+lbl_dp_rsc_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_RSC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSC
@@ -3053,9 +5658,26 @@ lbl_dp_rsc_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_RSC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSC
+    }
+  }
+  ADVANCE();
+lbl_dp_rsc_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_RSC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSC
@@ -3073,9 +5695,26 @@ lbl_dp_rsc_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_RSC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSC
+    }
+  }
+  ADVANCE();
+lbl_dp_rsc_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_RSC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSC
@@ -3093,9 +5732,26 @@ lbl_dp_rsc_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_RSC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSC
+    }
+  }
+  ADVANCE();
+lbl_dp_rsc_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_RSC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSC
@@ -3113,9 +5769,26 @@ lbl_dp_rsc_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_RSC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSC
+    }
+  }
+  ADVANCE();
+lbl_dp_rsc_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_RSC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSC
@@ -3133,9 +5806,26 @@ lbl_dp_rsc_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_RSC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSC
+    }
+  }
+  ADVANCE();
+lbl_dp_rsc_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_RSC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSC
@@ -3155,9 +5845,28 @@ lbl_dp_rscs_lsli:
       DO_RSCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSCS
+    }
+  }
+  ADVANCE();
+lbl_dp_rscs_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_RSCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSCS
@@ -3177,9 +5886,28 @@ lbl_dp_rscs_lsri:
       DO_RSCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSCS
+    }
+  }
+  ADVANCE();
+lbl_dp_rscs_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_RSCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSCS
@@ -3199,9 +5927,28 @@ lbl_dp_rscs_asri:
       DO_RSCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSCS
+    }
+  }
+  ADVANCE();
+lbl_dp_rscs_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_RSCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSCS
@@ -3221,9 +5968,28 @@ lbl_dp_rscs_rori:
       DO_RSCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSCS
+    }
+  }
+  ADVANCE();
+lbl_dp_rscs_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_RSCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSCS
@@ -3243,9 +6009,28 @@ lbl_dp_rscs_lslr:
       DO_RSCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSCS
+    }
+  }
+  ADVANCE();
+lbl_dp_rscs_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_RSCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSCS
@@ -3265,9 +6050,28 @@ lbl_dp_rscs_lsrr:
       DO_RSCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSCS
+    }
+  }
+  ADVANCE();
+lbl_dp_rscs_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_RSCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSCS
@@ -3287,9 +6091,28 @@ lbl_dp_rscs_asrr:
       DO_RSCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSCS
+    }
+  }
+  ADVANCE();
+lbl_dp_rscs_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_RSCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSCS
@@ -3309,9 +6132,28 @@ lbl_dp_rscs_rorr:
       DO_RSCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSCS
+    }
+  }
+  ADVANCE();
+lbl_dp_rscs_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_RSCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSCS
@@ -3331,9 +6173,28 @@ lbl_dp_rscs_imm0:
       DO_RSCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSCS
+    }
+  }
+  ADVANCE();
+lbl_dp_rscs_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_RSCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSCS
@@ -3353,9 +6214,28 @@ lbl_dp_rscs_immn:
       DO_RSCS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_RSCS
+    }
+  }
+  ADVANCE();
+lbl_dp_rscs_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_RSCS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_RSCS
@@ -3364,6 +6244,18 @@ lbl_dp_rscs_immn:
   ADVANCE();
 lbl_dp_tst_lsli:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    DO_TST
+  }
+  ADVANCE();
+lbl_dp_tst_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3384,8 +6276,32 @@ lbl_dp_tst_lsri:
     DO_TST
   }
   ADVANCE();
+lbl_dp_tst_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    DO_TST
+  }
+  ADVANCE();
 lbl_dp_tst_asri:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    DO_TST
+  }
+  ADVANCE();
+lbl_dp_tst_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3406,8 +6322,32 @@ lbl_dp_tst_rori:
     DO_TST
   }
   ADVANCE();
+lbl_dp_tst_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    DO_TST
+  }
+  ADVANCE();
 lbl_dp_tst_lslr:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    DO_TST
+  }
+  ADVANCE();
+lbl_dp_tst_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3428,8 +6368,32 @@ lbl_dp_tst_lsrr:
     DO_TST
   }
   ADVANCE();
+lbl_dp_tst_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    DO_TST
+  }
+  ADVANCE();
 lbl_dp_tst_asrr:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    DO_TST
+  }
+  ADVANCE();
+lbl_dp_tst_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3450,8 +6414,32 @@ lbl_dp_tst_rorr:
     DO_TST
   }
   ADVANCE();
+lbl_dp_tst_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    DO_TST
+  }
+  ADVANCE();
 lbl_dp_tst_imm0:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    DO_TST
+  }
+  ADVANCE();
+lbl_dp_tst_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3472,8 +6460,32 @@ lbl_dp_tst_immn:
     DO_TST
   }
   ADVANCE();
+lbl_dp_tst_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    DO_TST
+  }
+  ADVANCE();
 lbl_dp_teq_lsli:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    DO_TEQ
+  }
+  ADVANCE();
+lbl_dp_teq_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3494,8 +6506,32 @@ lbl_dp_teq_lsri:
     DO_TEQ
   }
   ADVANCE();
+lbl_dp_teq_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    DO_TEQ
+  }
+  ADVANCE();
 lbl_dp_teq_asri:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    DO_TEQ
+  }
+  ADVANCE();
+lbl_dp_teq_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3516,8 +6552,32 @@ lbl_dp_teq_rori:
     DO_TEQ
   }
   ADVANCE();
+lbl_dp_teq_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    DO_TEQ
+  }
+  ADVANCE();
 lbl_dp_teq_lslr:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    DO_TEQ
+  }
+  ADVANCE();
+lbl_dp_teq_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3538,8 +6598,32 @@ lbl_dp_teq_lsrr:
     DO_TEQ
   }
   ADVANCE();
+lbl_dp_teq_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    DO_TEQ
+  }
+  ADVANCE();
 lbl_dp_teq_asrr:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    DO_TEQ
+  }
+  ADVANCE();
+lbl_dp_teq_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3560,8 +6644,32 @@ lbl_dp_teq_rorr:
     DO_TEQ
   }
   ADVANCE();
+lbl_dp_teq_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    DO_TEQ
+  }
+  ADVANCE();
 lbl_dp_teq_imm0:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    DO_TEQ
+  }
+  ADVANCE();
+lbl_dp_teq_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3582,8 +6690,32 @@ lbl_dp_teq_immn:
     DO_TEQ
   }
   ADVANCE();
+lbl_dp_teq_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    DO_TEQ
+  }
+  ADVANCE();
 lbl_dp_cmp_lsli:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    DO_CMP
+  }
+  ADVANCE();
+lbl_dp_cmp_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3604,8 +6736,32 @@ lbl_dp_cmp_lsri:
     DO_CMP
   }
   ADVANCE();
+lbl_dp_cmp_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    DO_CMP
+  }
+  ADVANCE();
 lbl_dp_cmp_asri:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    DO_CMP
+  }
+  ADVANCE();
+lbl_dp_cmp_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3626,8 +6782,32 @@ lbl_dp_cmp_rori:
     DO_CMP
   }
   ADVANCE();
+lbl_dp_cmp_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    DO_CMP
+  }
+  ADVANCE();
 lbl_dp_cmp_lslr:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    DO_CMP
+  }
+  ADVANCE();
+lbl_dp_cmp_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3648,8 +6828,32 @@ lbl_dp_cmp_lsrr:
     DO_CMP
   }
   ADVANCE();
+lbl_dp_cmp_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    DO_CMP
+  }
+  ADVANCE();
 lbl_dp_cmp_asrr:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    DO_CMP
+  }
+  ADVANCE();
+lbl_dp_cmp_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3670,8 +6874,32 @@ lbl_dp_cmp_rorr:
     DO_CMP
   }
   ADVANCE();
+lbl_dp_cmp_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    DO_CMP
+  }
+  ADVANCE();
 lbl_dp_cmp_imm0:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    DO_CMP
+  }
+  ADVANCE();
+lbl_dp_cmp_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3692,8 +6920,32 @@ lbl_dp_cmp_immn:
     DO_CMP
   }
   ADVANCE();
+lbl_dp_cmp_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    DO_CMP
+  }
+  ADVANCE();
 lbl_dp_cmn_lsli:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    DO_CMN
+  }
+  ADVANCE();
+lbl_dp_cmn_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3714,8 +6966,32 @@ lbl_dp_cmn_lsri:
     DO_CMN
   }
   ADVANCE();
+lbl_dp_cmn_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    DO_CMN
+  }
+  ADVANCE();
 lbl_dp_cmn_asri:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    DO_CMN
+  }
+  ADVANCE();
+lbl_dp_cmn_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3736,8 +7012,32 @@ lbl_dp_cmn_rori:
     DO_CMN
   }
   ADVANCE();
+lbl_dp_cmn_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    DO_CMN
+  }
+  ADVANCE();
 lbl_dp_cmn_lslr:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    DO_CMN
+  }
+  ADVANCE();
+lbl_dp_cmn_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3758,8 +7058,32 @@ lbl_dp_cmn_lsrr:
     DO_CMN
   }
   ADVANCE();
+lbl_dp_cmn_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    DO_CMN
+  }
+  ADVANCE();
 lbl_dp_cmn_asrr:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    DO_CMN
+  }
+  ADVANCE();
+lbl_dp_cmn_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3780,8 +7104,32 @@ lbl_dp_cmn_rorr:
     DO_CMN
   }
   ADVANCE();
+lbl_dp_cmn_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    DO_CMN
+  }
+  ADVANCE();
 lbl_dp_cmn_imm0:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    DO_CMN
+  }
+  ADVANCE();
+lbl_dp_cmn_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
@@ -3802,6 +7150,18 @@ lbl_dp_cmn_immn:
     DO_CMN
   }
   ADVANCE();
+lbl_dp_cmn_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    DO_CMN
+  }
+  ADVANCE();
 lbl_dp_orr_lsli:
   COND_GUARD();
   {
@@ -3813,9 +7173,26 @@ lbl_dp_orr_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_ORR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORR
+    }
+  }
+  ADVANCE();
+lbl_dp_orr_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_ORR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORR
@@ -3833,9 +7210,26 @@ lbl_dp_orr_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_ORR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORR
+    }
+  }
+  ADVANCE();
+lbl_dp_orr_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_ORR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORR
@@ -3853,9 +7247,26 @@ lbl_dp_orr_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_ORR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORR
+    }
+  }
+  ADVANCE();
+lbl_dp_orr_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_ORR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORR
@@ -3873,9 +7284,26 @@ lbl_dp_orr_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_ORR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORR
+    }
+  }
+  ADVANCE();
+lbl_dp_orr_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_ORR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORR
@@ -3893,9 +7321,26 @@ lbl_dp_orr_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_ORR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORR
+    }
+  }
+  ADVANCE();
+lbl_dp_orr_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_ORR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORR
@@ -3913,9 +7358,26 @@ lbl_dp_orr_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_ORR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORR
+    }
+  }
+  ADVANCE();
+lbl_dp_orr_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_ORR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORR
@@ -3933,9 +7395,26 @@ lbl_dp_orr_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_ORR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORR
+    }
+  }
+  ADVANCE();
+lbl_dp_orr_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_ORR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORR
@@ -3953,9 +7432,26 @@ lbl_dp_orr_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_ORR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORR
+    }
+  }
+  ADVANCE();
+lbl_dp_orr_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_ORR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORR
@@ -3973,9 +7469,26 @@ lbl_dp_orr_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_ORR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORR
+    }
+  }
+  ADVANCE();
+lbl_dp_orr_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_ORR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORR
@@ -3993,9 +7506,26 @@ lbl_dp_orr_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_ORR
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORR
+    }
+  }
+  ADVANCE();
+lbl_dp_orr_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_ORR
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORR
@@ -4015,9 +7545,28 @@ lbl_dp_orrs_lsli:
       DO_ORRS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORRS
+    }
+  }
+  ADVANCE();
+lbl_dp_orrs_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_ORRS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORRS
@@ -4037,9 +7586,28 @@ lbl_dp_orrs_lsri:
       DO_ORRS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORRS
+    }
+  }
+  ADVANCE();
+lbl_dp_orrs_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_ORRS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORRS
@@ -4059,9 +7627,28 @@ lbl_dp_orrs_asri:
       DO_ORRS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORRS
+    }
+  }
+  ADVANCE();
+lbl_dp_orrs_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_ORRS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORRS
@@ -4081,9 +7668,28 @@ lbl_dp_orrs_rori:
       DO_ORRS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORRS
+    }
+  }
+  ADVANCE();
+lbl_dp_orrs_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_ORRS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORRS
@@ -4103,9 +7709,28 @@ lbl_dp_orrs_lslr:
       DO_ORRS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORRS
+    }
+  }
+  ADVANCE();
+lbl_dp_orrs_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_ORRS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORRS
@@ -4125,9 +7750,28 @@ lbl_dp_orrs_lsrr:
       DO_ORRS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORRS
+    }
+  }
+  ADVANCE();
+lbl_dp_orrs_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_ORRS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORRS
@@ -4147,9 +7791,28 @@ lbl_dp_orrs_asrr:
       DO_ORRS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORRS
+    }
+  }
+  ADVANCE();
+lbl_dp_orrs_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_ORRS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORRS
@@ -4169,9 +7832,28 @@ lbl_dp_orrs_rorr:
       DO_ORRS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORRS
+    }
+  }
+  ADVANCE();
+lbl_dp_orrs_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_ORRS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORRS
@@ -4191,9 +7873,28 @@ lbl_dp_orrs_imm0:
       DO_ORRS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORRS
+    }
+  }
+  ADVANCE();
+lbl_dp_orrs_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_ORRS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORRS
@@ -4213,9 +7914,28 @@ lbl_dp_orrs_immn:
       DO_ORRS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_ORRS
+    }
+  }
+  ADVANCE();
+lbl_dp_orrs_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_ORRS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_ORRS
@@ -4232,9 +7952,25 @@ lbl_dp_mov_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_MOV
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOV
+    }
+  }
+  ADVANCE();
+lbl_dp_mov_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_MOV
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOV
@@ -4251,9 +7987,25 @@ lbl_dp_mov_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_MOV
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOV
+    }
+  }
+  ADVANCE();
+lbl_dp_mov_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_MOV
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOV
@@ -4270,9 +8022,25 @@ lbl_dp_mov_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_MOV
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOV
+    }
+  }
+  ADVANCE();
+lbl_dp_mov_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_MOV
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOV
@@ -4289,9 +8057,25 @@ lbl_dp_mov_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_MOV
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOV
+    }
+  }
+  ADVANCE();
+lbl_dp_mov_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_MOV
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOV
@@ -4308,9 +8092,25 @@ lbl_dp_mov_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_MOV
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOV
+    }
+  }
+  ADVANCE();
+lbl_dp_mov_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_MOV
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOV
@@ -4327,9 +8127,25 @@ lbl_dp_mov_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_MOV
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOV
+    }
+  }
+  ADVANCE();
+lbl_dp_mov_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_MOV
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOV
@@ -4346,9 +8162,25 @@ lbl_dp_mov_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_MOV
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOV
+    }
+  }
+  ADVANCE();
+lbl_dp_mov_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_MOV
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOV
@@ -4365,9 +8197,25 @@ lbl_dp_mov_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_MOV
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOV
+    }
+  }
+  ADVANCE();
+lbl_dp_mov_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_MOV
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOV
@@ -4384,9 +8232,25 @@ lbl_dp_mov_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_MOV
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOV
+    }
+  }
+  ADVANCE();
+lbl_dp_mov_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_MOV
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOV
@@ -4403,9 +8267,25 @@ lbl_dp_mov_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_MOV
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOV
+    }
+  }
+  ADVANCE();
+lbl_dp_mov_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_MOV
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOV
@@ -4424,9 +8304,27 @@ lbl_dp_movs_lsli:
       DO_MOVS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOVS
+    }
+  }
+  ADVANCE();
+lbl_dp_movs_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_MOVS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOVS
@@ -4445,9 +8343,27 @@ lbl_dp_movs_lsri:
       DO_MOVS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOVS
+    }
+  }
+  ADVANCE();
+lbl_dp_movs_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_MOVS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOVS
@@ -4466,9 +8382,27 @@ lbl_dp_movs_asri:
       DO_MOVS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOVS
+    }
+  }
+  ADVANCE();
+lbl_dp_movs_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_MOVS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOVS
@@ -4487,9 +8421,27 @@ lbl_dp_movs_rori:
       DO_MOVS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOVS
+    }
+  }
+  ADVANCE();
+lbl_dp_movs_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_MOVS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOVS
@@ -4508,9 +8460,27 @@ lbl_dp_movs_lslr:
       DO_MOVS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOVS
+    }
+  }
+  ADVANCE();
+lbl_dp_movs_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_MOVS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOVS
@@ -4529,9 +8499,27 @@ lbl_dp_movs_lsrr:
       DO_MOVS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOVS
+    }
+  }
+  ADVANCE();
+lbl_dp_movs_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_MOVS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOVS
@@ -4550,9 +8538,27 @@ lbl_dp_movs_asrr:
       DO_MOVS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOVS
+    }
+  }
+  ADVANCE();
+lbl_dp_movs_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_MOVS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOVS
@@ -4571,9 +8577,27 @@ lbl_dp_movs_rorr:
       DO_MOVS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOVS
+    }
+  }
+  ADVANCE();
+lbl_dp_movs_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_MOVS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOVS
@@ -4592,9 +8616,27 @@ lbl_dp_movs_imm0:
       DO_MOVS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOVS
+    }
+  }
+  ADVANCE();
+lbl_dp_movs_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_MOVS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOVS
@@ -4613,9 +8655,27 @@ lbl_dp_movs_immn:
       DO_MOVS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MOVS
+    }
+  }
+  ADVANCE();
+lbl_dp_movs_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_MOVS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MOVS
@@ -4633,9 +8693,26 @@ lbl_dp_bic_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_BIC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BIC
+    }
+  }
+  ADVANCE();
+lbl_dp_bic_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_BIC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BIC
@@ -4653,9 +8730,26 @@ lbl_dp_bic_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_BIC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BIC
+    }
+  }
+  ADVANCE();
+lbl_dp_bic_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_BIC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BIC
@@ -4673,9 +8767,26 @@ lbl_dp_bic_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_BIC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BIC
+    }
+  }
+  ADVANCE();
+lbl_dp_bic_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_BIC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BIC
@@ -4693,9 +8804,26 @@ lbl_dp_bic_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_BIC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BIC
+    }
+  }
+  ADVANCE();
+lbl_dp_bic_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_BIC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BIC
@@ -4713,9 +8841,26 @@ lbl_dp_bic_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_BIC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BIC
+    }
+  }
+  ADVANCE();
+lbl_dp_bic_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_BIC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BIC
@@ -4733,9 +8878,26 @@ lbl_dp_bic_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_BIC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BIC
+    }
+  }
+  ADVANCE();
+lbl_dp_bic_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_BIC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BIC
@@ -4753,9 +8915,26 @@ lbl_dp_bic_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_BIC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BIC
+    }
+  }
+  ADVANCE();
+lbl_dp_bic_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_BIC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BIC
@@ -4773,9 +8952,26 @@ lbl_dp_bic_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_BIC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BIC
+    }
+  }
+  ADVANCE();
+lbl_dp_bic_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_BIC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BIC
@@ -4793,9 +8989,26 @@ lbl_dp_bic_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_BIC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BIC
+    }
+  }
+  ADVANCE();
+lbl_dp_bic_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_BIC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BIC
@@ -4813,9 +9026,26 @@ lbl_dp_bic_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_BIC
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BIC
+    }
+  }
+  ADVANCE();
+lbl_dp_bic_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_BIC
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BIC
@@ -4835,9 +9065,28 @@ lbl_dp_bics_lsli:
       DO_BICS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BICS
+    }
+  }
+  ADVANCE();
+lbl_dp_bics_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_BICS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BICS
@@ -4857,9 +9106,28 @@ lbl_dp_bics_lsri:
       DO_BICS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BICS
+    }
+  }
+  ADVANCE();
+lbl_dp_bics_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_BICS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BICS
@@ -4879,9 +9147,28 @@ lbl_dp_bics_asri:
       DO_BICS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BICS
+    }
+  }
+  ADVANCE();
+lbl_dp_bics_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_BICS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BICS
@@ -4901,9 +9188,28 @@ lbl_dp_bics_rori:
       DO_BICS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BICS
+    }
+  }
+  ADVANCE();
+lbl_dp_bics_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_BICS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BICS
@@ -4923,9 +9229,28 @@ lbl_dp_bics_lslr:
       DO_BICS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BICS
+    }
+  }
+  ADVANCE();
+lbl_dp_bics_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_BICS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BICS
@@ -4945,9 +9270,28 @@ lbl_dp_bics_lsrr:
       DO_BICS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BICS
+    }
+  }
+  ADVANCE();
+lbl_dp_bics_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_BICS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BICS
@@ -4967,9 +9311,28 @@ lbl_dp_bics_asrr:
       DO_BICS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BICS
+    }
+  }
+  ADVANCE();
+lbl_dp_bics_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_BICS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BICS
@@ -4989,9 +9352,28 @@ lbl_dp_bics_rorr:
       DO_BICS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BICS
+    }
+  }
+  ADVANCE();
+lbl_dp_bics_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_BICS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BICS
@@ -5011,9 +9393,28 @@ lbl_dp_bics_imm0:
       DO_BICS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BICS
+    }
+  }
+  ADVANCE();
+lbl_dp_bics_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_BICS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BICS
@@ -5033,9 +9434,28 @@ lbl_dp_bics_immn:
       DO_BICS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_BICS
+    }
+  }
+  ADVANCE();
+lbl_dp_bics_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_BICS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_BICS
@@ -5052,9 +9472,25 @@ lbl_dp_mvn_lsli:
     FORM_LSL_IMM
     if (dest == 15) {
       DO_MVN
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVN
+    }
+  }
+  ADVANCE();
+lbl_dp_mvn_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_MVN
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVN
@@ -5071,9 +9507,25 @@ lbl_dp_mvn_lsri:
     FORM_LSR_IMM
     if (dest == 15) {
       DO_MVN
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVN
+    }
+  }
+  ADVANCE();
+lbl_dp_mvn_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_MVN
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVN
@@ -5090,9 +9542,25 @@ lbl_dp_mvn_asri:
     FORM_ASR_IMM
     if (dest == 15) {
       DO_MVN
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVN
+    }
+  }
+  ADVANCE();
+lbl_dp_mvn_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_MVN
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVN
@@ -5109,9 +9577,25 @@ lbl_dp_mvn_rori:
     FORM_ROR_IMM
     if (dest == 15) {
       DO_MVN
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVN
+    }
+  }
+  ADVANCE();
+lbl_dp_mvn_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_MVN
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVN
@@ -5128,9 +9612,25 @@ lbl_dp_mvn_lslr:
     FORM_LSL_REG
     if (dest == 15) {
       DO_MVN
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVN
+    }
+  }
+  ADVANCE();
+lbl_dp_mvn_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_MVN
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVN
@@ -5147,9 +9647,25 @@ lbl_dp_mvn_lsrr:
     FORM_LSR_REG
     if (dest == 15) {
       DO_MVN
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVN
+    }
+  }
+  ADVANCE();
+lbl_dp_mvn_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_MVN
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVN
@@ -5166,9 +9682,25 @@ lbl_dp_mvn_asrr:
     FORM_ASR_REG
     if (dest == 15) {
       DO_MVN
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVN
+    }
+  }
+  ADVANCE();
+lbl_dp_mvn_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_MVN
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVN
@@ -5185,9 +9717,25 @@ lbl_dp_mvn_rorr:
     FORM_ROR_REG
     if (dest == 15) {
       DO_MVN
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVN
+    }
+  }
+  ADVANCE();
+lbl_dp_mvn_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_MVN
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVN
@@ -5204,9 +9752,25 @@ lbl_dp_mvn_imm0:
     FORM_IMM_ROT0
     if (dest == 15) {
       DO_MVN
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVN
+    }
+  }
+  ADVANCE();
+lbl_dp_mvn_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_MVN
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVN
@@ -5223,9 +9787,25 @@ lbl_dp_mvn_immn:
     FORM_IMM_ROTN
     if (dest == 15) {
       DO_MVN
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVN
+    }
+  }
+  ADVANCE();
+lbl_dp_mvn_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_MVN
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVN
@@ -5244,9 +9824,27 @@ lbl_dp_mvns_lsli:
       DO_MVNS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVNS
+    }
+  }
+  ADVANCE();
+lbl_dp_mvns_lsli_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_IMM
+    if (dest == 15) {
+      DO_MVNS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVNS
@@ -5265,9 +9863,27 @@ lbl_dp_mvns_lsri:
       DO_MVNS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVNS
+    }
+  }
+  ADVANCE();
+lbl_dp_mvns_lsri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_IMM
+    if (dest == 15) {
+      DO_MVNS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVNS
@@ -5286,9 +9902,27 @@ lbl_dp_mvns_asri:
       DO_MVNS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVNS
+    }
+  }
+  ADVANCE();
+lbl_dp_mvns_asri_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_IMM
+    if (dest == 15) {
+      DO_MVNS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVNS
@@ -5307,9 +9941,27 @@ lbl_dp_mvns_rori:
       DO_MVNS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVNS
+    }
+  }
+  ADVANCE();
+lbl_dp_mvns_rori_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_IMM
+    if (dest == 15) {
+      DO_MVNS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVNS
@@ -5328,9 +9980,27 @@ lbl_dp_mvns_lslr:
       DO_MVNS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVNS
+    }
+  }
+  ADVANCE();
+lbl_dp_mvns_lslr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSL_REG
+    if (dest == 15) {
+      DO_MVNS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVNS
@@ -5349,9 +10019,27 @@ lbl_dp_mvns_lsrr:
       DO_MVNS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVNS
+    }
+  }
+  ADVANCE();
+lbl_dp_mvns_lsrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_LSR_REG
+    if (dest == 15) {
+      DO_MVNS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVNS
@@ -5370,9 +10058,27 @@ lbl_dp_mvns_asrr:
       DO_MVNS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVNS
+    }
+  }
+  ADVANCE();
+lbl_dp_mvns_asrr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ASR_REG
+    if (dest == 15) {
+      DO_MVNS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVNS
@@ -5391,9 +10097,27 @@ lbl_dp_mvns_rorr:
       DO_MVNS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVNS
+    }
+  }
+  ADVANCE();
+lbl_dp_mvns_rorr_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_ROR_REG
+    if (dest == 15) {
+      DO_MVNS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVNS
@@ -5412,9 +10136,27 @@ lbl_dp_mvns_imm0:
       DO_MVNS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVNS
+    }
+  }
+  ADVANCE();
+lbl_dp_mvns_imm0_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROT0
+    if (dest == 15) {
+      DO_MVNS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVNS
@@ -5433,9 +10175,27 @@ lbl_dp_mvns_immn:
       DO_MVNS
       clockTicks++;
       CPUSwitchMode(reg[17].I & 0x1f, false);
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    } else {
+      DO_MVNS
+    }
+  }
+  ADVANCE();
+lbl_dp_mvns_immn_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value;
+    C_OUT = C_FLAG;
+    FORM_IMM_ROTN
+    if (dest == 15) {
+      DO_MVNS
+      clockTicks++;
+      CPUSwitchMode(reg[17].I & 0x1f, false);
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     } else {
       DO_MVNS
@@ -5458,8 +10218,40 @@ lbl_mem_str_i_000:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_i_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rlsl_000:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rlsl_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5490,8 +10282,42 @@ lbl_mem_str_rlsr_000:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rlsr_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rasr_000:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rasr_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5522,6 +10348,23 @@ lbl_mem_str_rror_000:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rror_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_i_001:
   COND_GUARD();
   {
@@ -5536,8 +10379,40 @@ lbl_mem_str_i_001:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_i_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rlsl_001:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rlsl_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5568,8 +10443,42 @@ lbl_mem_str_rlsr_001:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rlsr_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rasr_001:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rasr_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5600,6 +10509,23 @@ lbl_mem_str_rror_001:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rror_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_i_010:
   COND_GUARD();
   {
@@ -5614,8 +10540,40 @@ lbl_mem_str_i_010:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_i_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rlsl_010:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rlsl_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5646,8 +10604,42 @@ lbl_mem_str_rlsr_010:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rlsr_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rasr_010:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rasr_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5678,6 +10670,23 @@ lbl_mem_str_rror_010:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rror_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_i_011:
   COND_GUARD();
   {
@@ -5692,8 +10701,40 @@ lbl_mem_str_i_011:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_i_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rlsl_011:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rlsl_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5724,8 +10765,42 @@ lbl_mem_str_rlsr_011:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rlsr_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rasr_011:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rasr_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5756,6 +10831,23 @@ lbl_mem_str_rror_011:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rror_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteMemory(address, reg[dest].I);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_i_100:
   COND_GUARD();
   {
@@ -5769,8 +10861,38 @@ lbl_mem_str_i_100:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_i_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rlsl_100:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rlsl_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5799,8 +10921,40 @@ lbl_mem_str_rlsr_100:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rlsr_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rasr_100:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rasr_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5829,6 +10983,22 @@ lbl_mem_str_rror_100:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rror_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_i_101:
   COND_GUARD();
   {
@@ -5843,8 +11013,40 @@ lbl_mem_str_i_101:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_i_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    reg[base].I = address;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rlsl_101:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    reg[base].I = address;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rlsl_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5875,8 +11077,42 @@ lbl_mem_str_rlsr_101:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rlsr_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    reg[base].I = address;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rasr_101:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    reg[base].I = address;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rasr_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5907,6 +11143,23 @@ lbl_mem_str_rror_101:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rror_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    reg[base].I = address;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_i_110:
   COND_GUARD();
   {
@@ -5920,8 +11173,38 @@ lbl_mem_str_i_110:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_i_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rlsl_110:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rlsl_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5950,8 +11233,40 @@ lbl_mem_str_rlsr_110:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rlsr_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rasr_110:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rasr_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -5980,6 +11295,22 @@ lbl_mem_str_rror_110:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rror_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_i_111:
   COND_GUARD();
   {
@@ -5994,8 +11325,40 @@ lbl_mem_str_i_111:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_i_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    reg[base].I = address;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rlsl_111:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    reg[base].I = address;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rlsl_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6026,8 +11389,42 @@ lbl_mem_str_rlsr_111:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rlsr_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    reg[base].I = address;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_str_rasr_111:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    reg[base].I = address;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
+lbl_mem_str_rasr_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6058,6 +11455,23 @@ lbl_mem_str_rror_111:
     clockTicks += 2 + CPUUpdateTicksAccess32(address);
   }
   ADVANCE();
+lbl_mem_str_rror_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    reg[base].I = address;
+    CPUWriteMemory(address, reg[dest].I);
+    clockTicks += 2 + CPUUpdateTicksAccess32(address);
+  }
+  ADVANCE();
 lbl_mem_strb_i_000:
   COND_GUARD();
   {
@@ -6072,8 +11486,40 @@ lbl_mem_strb_i_000:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_i_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rlsl_000:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rlsl_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6104,8 +11550,42 @@ lbl_mem_strb_rlsr_000:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rlsr_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rasr_000:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rasr_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6136,6 +11616,23 @@ lbl_mem_strb_rror_000:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rror_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_i_001:
   COND_GUARD();
   {
@@ -6150,8 +11647,40 @@ lbl_mem_strb_i_001:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_i_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rlsl_001:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rlsl_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6182,8 +11711,42 @@ lbl_mem_strb_rlsr_001:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rlsr_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rasr_001:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rasr_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6214,6 +11777,23 @@ lbl_mem_strb_rror_001:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rror_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn - offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_i_010:
   COND_GUARD();
   {
@@ -6228,8 +11808,40 @@ lbl_mem_strb_i_010:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_i_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rlsl_010:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rlsl_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6260,8 +11872,42 @@ lbl_mem_strb_rlsr_010:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rlsr_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rasr_010:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rasr_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6292,6 +11938,23 @@ lbl_mem_strb_rror_010:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rror_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_i_011:
   COND_GUARD();
   {
@@ -6306,8 +11969,40 @@ lbl_mem_strb_i_011:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_i_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rlsl_011:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rlsl_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6338,8 +12033,42 @@ lbl_mem_strb_rlsr_011:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rlsr_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rasr_011:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rasr_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6370,6 +12099,23 @@ lbl_mem_strb_rror_011:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rror_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    reg[base].I = rn + offset;
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_i_100:
   COND_GUARD();
   {
@@ -6383,8 +12129,38 @@ lbl_mem_strb_i_100:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_i_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rlsl_100:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rlsl_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6413,8 +12189,40 @@ lbl_mem_strb_rlsr_100:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rlsr_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rasr_100:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rasr_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6443,6 +12251,22 @@ lbl_mem_strb_rror_100:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rror_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_i_101:
   COND_GUARD();
   {
@@ -6457,8 +12281,40 @@ lbl_mem_strb_i_101:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_i_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    reg[base].I = address;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rlsl_101:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    reg[base].I = address;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rlsl_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6489,8 +12345,42 @@ lbl_mem_strb_rlsr_101:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rlsr_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    reg[base].I = address;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rasr_101:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    reg[base].I = address;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rasr_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6521,6 +12411,23 @@ lbl_mem_strb_rror_101:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rror_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    reg[base].I = address;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_i_110:
   COND_GUARD();
   {
@@ -6534,8 +12441,38 @@ lbl_mem_strb_i_110:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_i_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rlsl_110:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rlsl_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6564,8 +12501,40 @@ lbl_mem_strb_rlsr_110:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rlsr_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rasr_110:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rasr_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6594,6 +12563,22 @@ lbl_mem_strb_rror_110:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rror_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_i_111:
   COND_GUARD();
   {
@@ -6608,8 +12593,40 @@ lbl_mem_strb_i_111:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_i_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    reg[base].I = address;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rlsl_111:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    reg[base].I = address;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rlsl_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6640,8 +12657,42 @@ lbl_mem_strb_rlsr_111:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rlsr_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    reg[base].I = address;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_strb_rasr_111:
   COND_GUARD();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    reg[base].I = address;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
+lbl_mem_strb_rasr_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
@@ -6672,6 +12723,23 @@ lbl_mem_strb_rror_111:
     clockTicks += 2 + CPUUpdateTicksAccess16(address);
   }
   ADVANCE();
+lbl_mem_strb_rror_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    reg[base].I = address;
+    CPUWriteByte(address, reg[dest].I & 0xFF);
+    clockTicks += 2 + CPUUpdateTicksAccess16(address);
+  }
+  ADVANCE();
 lbl_mem_ldr_i_000:
   COND_GUARD();
   {
@@ -6687,9 +12755,28 @@ lbl_mem_ldr_i_000:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_i_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6711,9 +12798,30 @@ lbl_mem_ldr_rlsl_000:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsl_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6735,9 +12843,30 @@ lbl_mem_ldr_rlsr_000:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsr_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6759,9 +12888,30 @@ lbl_mem_ldr_rasr_000:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rasr_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6783,9 +12933,30 @@ lbl_mem_ldr_rror_000:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rror_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6805,9 +12976,28 @@ lbl_mem_ldr_i_001:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_i_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6829,9 +13019,30 @@ lbl_mem_ldr_rlsl_001:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsl_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6853,9 +13064,30 @@ lbl_mem_ldr_rlsr_001:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsr_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6877,9 +13109,30 @@ lbl_mem_ldr_rasr_001:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rasr_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6901,9 +13154,30 @@ lbl_mem_ldr_rror_001:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rror_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6923,9 +13197,28 @@ lbl_mem_ldr_i_010:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_i_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6947,9 +13240,30 @@ lbl_mem_ldr_rlsl_010:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsl_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6971,9 +13285,30 @@ lbl_mem_ldr_rlsr_010:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsr_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -6995,9 +13330,30 @@ lbl_mem_ldr_rasr_010:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rasr_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7019,9 +13375,30 @@ lbl_mem_ldr_rror_010:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rror_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7041,9 +13418,28 @@ lbl_mem_ldr_i_011:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_i_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7065,9 +13461,30 @@ lbl_mem_ldr_rlsl_011:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsl_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7089,9 +13506,30 @@ lbl_mem_ldr_rlsr_011:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsr_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7113,9 +13551,30 @@ lbl_mem_ldr_rasr_011:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rasr_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7137,9 +13596,30 @@ lbl_mem_ldr_rror_011:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rror_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7158,9 +13638,27 @@ lbl_mem_ldr_i_100:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_i_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadMemory(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7181,9 +13679,29 @@ lbl_mem_ldr_rlsl_100:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsl_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadMemory(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7204,9 +13722,29 @@ lbl_mem_ldr_rlsr_100:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsr_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadMemory(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7227,9 +13765,29 @@ lbl_mem_ldr_rasr_100:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rasr_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadMemory(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7250,9 +13808,29 @@ lbl_mem_ldr_rror_100:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rror_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadMemory(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7272,9 +13850,28 @@ lbl_mem_ldr_i_101:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_i_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7296,9 +13893,30 @@ lbl_mem_ldr_rlsl_101:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsl_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7320,9 +13938,30 @@ lbl_mem_ldr_rlsr_101:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsr_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7344,9 +13983,30 @@ lbl_mem_ldr_rasr_101:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rasr_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7368,9 +14028,30 @@ lbl_mem_ldr_rror_101:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rror_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7389,9 +14070,27 @@ lbl_mem_ldr_i_110:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_i_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadMemory(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7412,9 +14111,29 @@ lbl_mem_ldr_rlsl_110:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsl_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadMemory(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7435,9 +14154,29 @@ lbl_mem_ldr_rlsr_110:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsr_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadMemory(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7458,9 +14197,29 @@ lbl_mem_ldr_rasr_110:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rasr_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadMemory(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7481,9 +14240,29 @@ lbl_mem_ldr_rror_110:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rror_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadMemory(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7503,9 +14282,28 @@ lbl_mem_ldr_i_111:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_i_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7527,9 +14325,30 @@ lbl_mem_ldr_rlsl_111:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsl_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7551,9 +14370,30 @@ lbl_mem_ldr_rlsr_111:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rlsr_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7575,9 +14415,30 @@ lbl_mem_ldr_rasr_111:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rasr_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7599,9 +14460,30 @@ lbl_mem_ldr_rror_111:
     clockTicks += 3 + CPUUpdateTicksAccess32(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldr_rror_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadMemory(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess32(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7621,9 +14503,28 @@ lbl_mem_ldrb_i_000:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_i_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7645,9 +14546,30 @@ lbl_mem_ldrb_rlsl_000:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsl_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7669,9 +14591,30 @@ lbl_mem_ldrb_rlsr_000:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsr_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7693,9 +14636,30 @@ lbl_mem_ldrb_rasr_000:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rasr_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7717,9 +14681,30 @@ lbl_mem_ldrb_rror_000:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rror_000_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7739,9 +14724,28 @@ lbl_mem_ldrb_i_001:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_i_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7763,9 +14767,30 @@ lbl_mem_ldrb_rlsl_001:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsl_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7787,9 +14812,30 @@ lbl_mem_ldrb_rlsr_001:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsr_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7811,9 +14857,30 @@ lbl_mem_ldrb_rasr_001:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rasr_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7835,9 +14902,30 @@ lbl_mem_ldrb_rror_001:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rror_001_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn - offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7857,9 +14945,28 @@ lbl_mem_ldrb_i_010:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_i_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7881,9 +14988,30 @@ lbl_mem_ldrb_rlsl_010:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsl_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7905,9 +15033,30 @@ lbl_mem_ldrb_rlsr_010:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsr_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7929,9 +15078,30 @@ lbl_mem_ldrb_rasr_010:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rasr_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7953,9 +15123,30 @@ lbl_mem_ldrb_rror_010:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rror_010_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7975,9 +15166,28 @@ lbl_mem_ldrb_i_011:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_i_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -7999,9 +15209,30 @@ lbl_mem_ldrb_rlsl_011:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsl_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8023,9 +15254,30 @@ lbl_mem_ldrb_rlsr_011:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsr_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8047,9 +15299,30 @@ lbl_mem_ldrb_rasr_011:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rasr_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8071,9 +15344,30 @@ lbl_mem_ldrb_rror_011:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rror_011_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = rn + offset;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8092,9 +15386,27 @@ lbl_mem_ldrb_i_100:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_i_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadByte(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8115,9 +15427,29 @@ lbl_mem_ldrb_rlsl_100:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsl_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadByte(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8138,9 +15470,29 @@ lbl_mem_ldrb_rlsr_100:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsr_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadByte(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8161,9 +15513,29 @@ lbl_mem_ldrb_rasr_100:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rasr_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadByte(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8184,9 +15556,29 @@ lbl_mem_ldrb_rror_100:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rror_100_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadByte(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8206,9 +15598,28 @@ lbl_mem_ldrb_i_101:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_i_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8230,9 +15641,30 @@ lbl_mem_ldrb_rlsl_101:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsl_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8254,9 +15686,30 @@ lbl_mem_ldrb_rlsr_101:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsr_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8278,9 +15731,30 @@ lbl_mem_ldrb_rasr_101:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rasr_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8302,9 +15776,30 @@ lbl_mem_ldrb_rror_101:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rror_101_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn - offset;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8323,9 +15818,27 @@ lbl_mem_ldrb_i_110:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_i_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadByte(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8346,9 +15859,29 @@ lbl_mem_ldrb_rlsl_110:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsl_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadByte(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8369,9 +15902,29 @@ lbl_mem_ldrb_rlsr_110:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsr_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadByte(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8392,9 +15945,29 @@ lbl_mem_ldrb_rasr_110:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rasr_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadByte(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8415,9 +15988,29 @@ lbl_mem_ldrb_rror_110:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rror_110_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadByte(address);
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8437,9 +16030,28 @@ lbl_mem_ldrb_i_111:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_i_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 offset = op->imm & 0xFFF;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8461,9 +16073,30 @@ lbl_mem_ldrb_rlsl_111:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsl_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = rm << sa;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8485,9 +16118,30 @@ lbl_mem_ldrb_rlsr_111:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rlsr_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (rm >> sa) : 0;
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8509,9 +16163,30 @@ lbl_mem_ldrb_rasr_111:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rasr_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? (u32)((s32)rm >> (int)sa) : ((rm & 0x80000000) ? 0xFFFFFFFF : 0);
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8533,9 +16208,30 @@ lbl_mem_ldrb_rror_111:
     clockTicks += 3 + CPUUpdateTicksAccess16(address);
     if (dest == 15) {
       clockTicks += 2;
-      reg[15].I &= 0xFFFFFFFC;
-      armNextPC = reg[15].I;
-      reg[15].I += 4;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
+      goto dp_pc_done;
+    }
+  }
+  ADVANCE();
+lbl_mem_ldrb_rror_111_pcr:
+  COND_GUARD();
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 rm = reg[op->imm & 0xF].I;
+    u32 sa = (op->imm >> 7) & 0x1F;
+    u32 offset = sa ? ((rm >> sa) | (rm << (32 - sa))) : ((((u32)C_FLAG) << 31) | (rm >> 1));
+    u32 rn = reg[base].I;
+    u32 address = rn + offset;
+    u32 data = CPUReadByte(address);
+    if (dest != base) reg[base].I = address;
+    reg[dest].I = data;
+    clockTicks += 3 + CPUUpdateTicksAccess16(address);
+    if (dest == 15) {
+      clockTicks += 2;
+      dispatch_pc = reg[15].I & 0xFFFFFFFC;
       goto dp_pc_done;
     }
   }
@@ -8550,41 +16246,100 @@ lbl_mem_ldrb_rror_111:
     cop->r0 = (opcode >> 12) & 0xF;   /* Rd */
     cop->r1 = (opcode >> 16) & 0xF;   /* Rn */
     cop->r2 = opcode & 0xF;           /* Rm */
+    int rn15 = (((opcode >> 16) & 0xF) == 15);
+    int rm15 = ((opcode & 0xF) == 15);
     if (opcode & 0x02000000) {
       /* immediate operand2 */
       u32 imm8 = opcode & 0xFF;
       u32 rot  = ((opcode >> 8) & 0xF) * 2;
       cop->imm = rot ? ((imm8 >> rot) | (imm8 << (32 - rot))) : imm8;
       int rotn = rot != 0;
+      int pcr = rn15;   /* immediate form: only Rn can be r15 */
       switch ((op4 << 1) | sbit) {
-      case 0x00: cop->dispatch = rotn ? &&lbl_dp_and_immn : &&lbl_dp_and_imm0; break;
-      case 0x01: cop->dispatch = rotn ? &&lbl_dp_ands_immn : &&lbl_dp_ands_imm0; break;
-      case 0x02: cop->dispatch = rotn ? &&lbl_dp_eor_immn : &&lbl_dp_eor_imm0; break;
-      case 0x03: cop->dispatch = rotn ? &&lbl_dp_eors_immn : &&lbl_dp_eors_imm0; break;
-      case 0x04: cop->dispatch = rotn ? &&lbl_dp_sub_immn : &&lbl_dp_sub_imm0; break;
-      case 0x05: cop->dispatch = rotn ? &&lbl_dp_subs_immn : &&lbl_dp_subs_imm0; break;
-      case 0x06: cop->dispatch = rotn ? &&lbl_dp_rsb_immn : &&lbl_dp_rsb_imm0; break;
-      case 0x07: cop->dispatch = rotn ? &&lbl_dp_rsbs_immn : &&lbl_dp_rsbs_imm0; break;
-      case 0x08: cop->dispatch = rotn ? &&lbl_dp_add_immn : &&lbl_dp_add_imm0; break;
-      case 0x09: cop->dispatch = rotn ? &&lbl_dp_adds_immn : &&lbl_dp_adds_imm0; break;
-      case 0x0a: cop->dispatch = rotn ? &&lbl_dp_adc_immn : &&lbl_dp_adc_imm0; break;
-      case 0x0b: cop->dispatch = rotn ? &&lbl_dp_adcs_immn : &&lbl_dp_adcs_imm0; break;
-      case 0x0c: cop->dispatch = rotn ? &&lbl_dp_sbc_immn : &&lbl_dp_sbc_imm0; break;
-      case 0x0d: cop->dispatch = rotn ? &&lbl_dp_sbcs_immn : &&lbl_dp_sbcs_imm0; break;
-      case 0x0e: cop->dispatch = rotn ? &&lbl_dp_rsc_immn : &&lbl_dp_rsc_imm0; break;
-      case 0x0f: cop->dispatch = rotn ? &&lbl_dp_rscs_immn : &&lbl_dp_rscs_imm0; break;
-      case 0x11: cop->dispatch = rotn ? &&lbl_dp_tst_immn : &&lbl_dp_tst_imm0; break;
-      case 0x13: cop->dispatch = rotn ? &&lbl_dp_teq_immn : &&lbl_dp_teq_imm0; break;
-      case 0x15: cop->dispatch = rotn ? &&lbl_dp_cmp_immn : &&lbl_dp_cmp_imm0; break;
-      case 0x17: cop->dispatch = rotn ? &&lbl_dp_cmn_immn : &&lbl_dp_cmn_imm0; break;
-      case 0x18: cop->dispatch = rotn ? &&lbl_dp_orr_immn : &&lbl_dp_orr_imm0; break;
-      case 0x19: cop->dispatch = rotn ? &&lbl_dp_orrs_immn : &&lbl_dp_orrs_imm0; break;
-      case 0x1a: cop->dispatch = rotn ? &&lbl_dp_mov_immn : &&lbl_dp_mov_imm0; break;
-      case 0x1b: cop->dispatch = rotn ? &&lbl_dp_movs_immn : &&lbl_dp_movs_imm0; break;
-      case 0x1c: cop->dispatch = rotn ? &&lbl_dp_bic_immn : &&lbl_dp_bic_imm0; break;
-      case 0x1d: cop->dispatch = rotn ? &&lbl_dp_bics_immn : &&lbl_dp_bics_imm0; break;
-      case 0x1e: cop->dispatch = rotn ? &&lbl_dp_mvn_immn : &&lbl_dp_mvn_imm0; break;
-      case 0x1f: cop->dispatch = rotn ? &&lbl_dp_mvns_immn : &&lbl_dp_mvns_imm0; break;
+      case 0x00: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_and_immn_pcr : &&lbl_dp_and_imm0_pcr)
+        : (rotn ? &&lbl_dp_and_immn     : &&lbl_dp_and_imm0); break;
+      case 0x01: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_ands_immn_pcr : &&lbl_dp_ands_imm0_pcr)
+        : (rotn ? &&lbl_dp_ands_immn     : &&lbl_dp_ands_imm0); break;
+      case 0x02: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_eor_immn_pcr : &&lbl_dp_eor_imm0_pcr)
+        : (rotn ? &&lbl_dp_eor_immn     : &&lbl_dp_eor_imm0); break;
+      case 0x03: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_eors_immn_pcr : &&lbl_dp_eors_imm0_pcr)
+        : (rotn ? &&lbl_dp_eors_immn     : &&lbl_dp_eors_imm0); break;
+      case 0x04: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_sub_immn_pcr : &&lbl_dp_sub_imm0_pcr)
+        : (rotn ? &&lbl_dp_sub_immn     : &&lbl_dp_sub_imm0); break;
+      case 0x05: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_subs_immn_pcr : &&lbl_dp_subs_imm0_pcr)
+        : (rotn ? &&lbl_dp_subs_immn     : &&lbl_dp_subs_imm0); break;
+      case 0x06: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_rsb_immn_pcr : &&lbl_dp_rsb_imm0_pcr)
+        : (rotn ? &&lbl_dp_rsb_immn     : &&lbl_dp_rsb_imm0); break;
+      case 0x07: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_rsbs_immn_pcr : &&lbl_dp_rsbs_imm0_pcr)
+        : (rotn ? &&lbl_dp_rsbs_immn     : &&lbl_dp_rsbs_imm0); break;
+      case 0x08: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_add_immn_pcr : &&lbl_dp_add_imm0_pcr)
+        : (rotn ? &&lbl_dp_add_immn     : &&lbl_dp_add_imm0); break;
+      case 0x09: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_adds_immn_pcr : &&lbl_dp_adds_imm0_pcr)
+        : (rotn ? &&lbl_dp_adds_immn     : &&lbl_dp_adds_imm0); break;
+      case 0x0a: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_adc_immn_pcr : &&lbl_dp_adc_imm0_pcr)
+        : (rotn ? &&lbl_dp_adc_immn     : &&lbl_dp_adc_imm0); break;
+      case 0x0b: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_adcs_immn_pcr : &&lbl_dp_adcs_imm0_pcr)
+        : (rotn ? &&lbl_dp_adcs_immn     : &&lbl_dp_adcs_imm0); break;
+      case 0x0c: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_sbc_immn_pcr : &&lbl_dp_sbc_imm0_pcr)
+        : (rotn ? &&lbl_dp_sbc_immn     : &&lbl_dp_sbc_imm0); break;
+      case 0x0d: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_sbcs_immn_pcr : &&lbl_dp_sbcs_imm0_pcr)
+        : (rotn ? &&lbl_dp_sbcs_immn     : &&lbl_dp_sbcs_imm0); break;
+      case 0x0e: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_rsc_immn_pcr : &&lbl_dp_rsc_imm0_pcr)
+        : (rotn ? &&lbl_dp_rsc_immn     : &&lbl_dp_rsc_imm0); break;
+      case 0x0f: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_rscs_immn_pcr : &&lbl_dp_rscs_imm0_pcr)
+        : (rotn ? &&lbl_dp_rscs_immn     : &&lbl_dp_rscs_imm0); break;
+      case 0x11: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_tst_immn_pcr : &&lbl_dp_tst_imm0_pcr)
+        : (rotn ? &&lbl_dp_tst_immn     : &&lbl_dp_tst_imm0); break;
+      case 0x13: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_teq_immn_pcr : &&lbl_dp_teq_imm0_pcr)
+        : (rotn ? &&lbl_dp_teq_immn     : &&lbl_dp_teq_imm0); break;
+      case 0x15: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_cmp_immn_pcr : &&lbl_dp_cmp_imm0_pcr)
+        : (rotn ? &&lbl_dp_cmp_immn     : &&lbl_dp_cmp_imm0); break;
+      case 0x17: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_cmn_immn_pcr : &&lbl_dp_cmn_imm0_pcr)
+        : (rotn ? &&lbl_dp_cmn_immn     : &&lbl_dp_cmn_imm0); break;
+      case 0x18: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_orr_immn_pcr : &&lbl_dp_orr_imm0_pcr)
+        : (rotn ? &&lbl_dp_orr_immn     : &&lbl_dp_orr_imm0); break;
+      case 0x19: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_orrs_immn_pcr : &&lbl_dp_orrs_imm0_pcr)
+        : (rotn ? &&lbl_dp_orrs_immn     : &&lbl_dp_orrs_imm0); break;
+      case 0x1a: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_mov_immn_pcr : &&lbl_dp_mov_imm0_pcr)
+        : (rotn ? &&lbl_dp_mov_immn     : &&lbl_dp_mov_imm0); break;
+      case 0x1b: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_movs_immn_pcr : &&lbl_dp_movs_imm0_pcr)
+        : (rotn ? &&lbl_dp_movs_immn     : &&lbl_dp_movs_imm0); break;
+      case 0x1c: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_bic_immn_pcr : &&lbl_dp_bic_imm0_pcr)
+        : (rotn ? &&lbl_dp_bic_immn     : &&lbl_dp_bic_imm0); break;
+      case 0x1d: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_bics_immn_pcr : &&lbl_dp_bics_imm0_pcr)
+        : (rotn ? &&lbl_dp_bics_immn     : &&lbl_dp_bics_imm0); break;
+      case 0x1e: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_mvn_immn_pcr : &&lbl_dp_mvn_imm0_pcr)
+        : (rotn ? &&lbl_dp_mvn_immn     : &&lbl_dp_mvn_imm0); break;
+      case 0x1f: cop->dispatch = pcr
+        ? (rotn ? &&lbl_dp_mvns_immn_pcr : &&lbl_dp_mvns_imm0_pcr)
+        : (rotn ? &&lbl_dp_mvns_immn     : &&lbl_dp_mvns_imm0); break;
       default: cop->dispatch = &&lbl_undefined; break;
       }
     } else {
@@ -8597,341 +16352,342 @@ lbl_mem_ldrb_rror_111:
         cop->imm = (opcode >> 7) & 0x1F;  /* shift amount */
       }
       int fsel = (byreg << 2) | shtype;  /* 0..3 imm, 4..7 reg */
+      int pcr = rn15 || rm15;   /* reg form: Rn or Rm can be r15 */
       switch ((op4 << 1) | sbit) {
       case 0x00:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_and_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_and_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_and_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_and_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_and_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_and_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_and_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_and_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_and_lsli_pcr : &&lbl_dp_and_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_and_lsri_pcr : &&lbl_dp_and_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_and_asri_pcr : &&lbl_dp_and_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_and_rori_pcr : &&lbl_dp_and_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_and_lslr_pcr : &&lbl_dp_and_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_and_lsrr_pcr : &&lbl_dp_and_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_and_asrr_pcr : &&lbl_dp_and_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_and_rorr_pcr : &&lbl_dp_and_rorr; break;
         }
         break;
       case 0x01:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_ands_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_ands_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_ands_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_ands_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_ands_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_ands_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_ands_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_ands_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_ands_lsli_pcr : &&lbl_dp_ands_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_ands_lsri_pcr : &&lbl_dp_ands_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_ands_asri_pcr : &&lbl_dp_ands_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_ands_rori_pcr : &&lbl_dp_ands_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_ands_lslr_pcr : &&lbl_dp_ands_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_ands_lsrr_pcr : &&lbl_dp_ands_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_ands_asrr_pcr : &&lbl_dp_ands_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_ands_rorr_pcr : &&lbl_dp_ands_rorr; break;
         }
         break;
       case 0x02:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_eor_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_eor_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_eor_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_eor_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_eor_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_eor_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_eor_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_eor_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_eor_lsli_pcr : &&lbl_dp_eor_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_eor_lsri_pcr : &&lbl_dp_eor_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_eor_asri_pcr : &&lbl_dp_eor_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_eor_rori_pcr : &&lbl_dp_eor_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_eor_lslr_pcr : &&lbl_dp_eor_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_eor_lsrr_pcr : &&lbl_dp_eor_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_eor_asrr_pcr : &&lbl_dp_eor_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_eor_rorr_pcr : &&lbl_dp_eor_rorr; break;
         }
         break;
       case 0x03:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_eors_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_eors_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_eors_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_eors_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_eors_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_eors_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_eors_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_eors_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_eors_lsli_pcr : &&lbl_dp_eors_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_eors_lsri_pcr : &&lbl_dp_eors_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_eors_asri_pcr : &&lbl_dp_eors_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_eors_rori_pcr : &&lbl_dp_eors_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_eors_lslr_pcr : &&lbl_dp_eors_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_eors_lsrr_pcr : &&lbl_dp_eors_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_eors_asrr_pcr : &&lbl_dp_eors_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_eors_rorr_pcr : &&lbl_dp_eors_rorr; break;
         }
         break;
       case 0x04:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_sub_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_sub_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_sub_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_sub_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_sub_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_sub_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_sub_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_sub_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_sub_lsli_pcr : &&lbl_dp_sub_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_sub_lsri_pcr : &&lbl_dp_sub_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_sub_asri_pcr : &&lbl_dp_sub_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_sub_rori_pcr : &&lbl_dp_sub_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_sub_lslr_pcr : &&lbl_dp_sub_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_sub_lsrr_pcr : &&lbl_dp_sub_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_sub_asrr_pcr : &&lbl_dp_sub_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_sub_rorr_pcr : &&lbl_dp_sub_rorr; break;
         }
         break;
       case 0x05:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_subs_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_subs_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_subs_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_subs_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_subs_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_subs_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_subs_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_subs_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_subs_lsli_pcr : &&lbl_dp_subs_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_subs_lsri_pcr : &&lbl_dp_subs_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_subs_asri_pcr : &&lbl_dp_subs_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_subs_rori_pcr : &&lbl_dp_subs_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_subs_lslr_pcr : &&lbl_dp_subs_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_subs_lsrr_pcr : &&lbl_dp_subs_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_subs_asrr_pcr : &&lbl_dp_subs_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_subs_rorr_pcr : &&lbl_dp_subs_rorr; break;
         }
         break;
       case 0x06:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_rsb_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_rsb_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_rsb_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_rsb_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_rsb_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_rsb_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_rsb_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_rsb_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_rsb_lsli_pcr : &&lbl_dp_rsb_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_rsb_lsri_pcr : &&lbl_dp_rsb_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_rsb_asri_pcr : &&lbl_dp_rsb_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_rsb_rori_pcr : &&lbl_dp_rsb_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_rsb_lslr_pcr : &&lbl_dp_rsb_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_rsb_lsrr_pcr : &&lbl_dp_rsb_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_rsb_asrr_pcr : &&lbl_dp_rsb_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_rsb_rorr_pcr : &&lbl_dp_rsb_rorr; break;
         }
         break;
       case 0x07:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_rsbs_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_rsbs_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_rsbs_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_rsbs_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_rsbs_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_rsbs_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_rsbs_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_rsbs_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_rsbs_lsli_pcr : &&lbl_dp_rsbs_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_rsbs_lsri_pcr : &&lbl_dp_rsbs_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_rsbs_asri_pcr : &&lbl_dp_rsbs_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_rsbs_rori_pcr : &&lbl_dp_rsbs_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_rsbs_lslr_pcr : &&lbl_dp_rsbs_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_rsbs_lsrr_pcr : &&lbl_dp_rsbs_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_rsbs_asrr_pcr : &&lbl_dp_rsbs_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_rsbs_rorr_pcr : &&lbl_dp_rsbs_rorr; break;
         }
         break;
       case 0x08:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_add_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_add_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_add_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_add_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_add_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_add_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_add_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_add_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_add_lsli_pcr : &&lbl_dp_add_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_add_lsri_pcr : &&lbl_dp_add_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_add_asri_pcr : &&lbl_dp_add_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_add_rori_pcr : &&lbl_dp_add_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_add_lslr_pcr : &&lbl_dp_add_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_add_lsrr_pcr : &&lbl_dp_add_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_add_asrr_pcr : &&lbl_dp_add_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_add_rorr_pcr : &&lbl_dp_add_rorr; break;
         }
         break;
       case 0x09:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_adds_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_adds_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_adds_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_adds_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_adds_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_adds_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_adds_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_adds_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_adds_lsli_pcr : &&lbl_dp_adds_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_adds_lsri_pcr : &&lbl_dp_adds_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_adds_asri_pcr : &&lbl_dp_adds_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_adds_rori_pcr : &&lbl_dp_adds_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_adds_lslr_pcr : &&lbl_dp_adds_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_adds_lsrr_pcr : &&lbl_dp_adds_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_adds_asrr_pcr : &&lbl_dp_adds_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_adds_rorr_pcr : &&lbl_dp_adds_rorr; break;
         }
         break;
       case 0x0a:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_adc_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_adc_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_adc_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_adc_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_adc_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_adc_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_adc_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_adc_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_adc_lsli_pcr : &&lbl_dp_adc_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_adc_lsri_pcr : &&lbl_dp_adc_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_adc_asri_pcr : &&lbl_dp_adc_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_adc_rori_pcr : &&lbl_dp_adc_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_adc_lslr_pcr : &&lbl_dp_adc_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_adc_lsrr_pcr : &&lbl_dp_adc_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_adc_asrr_pcr : &&lbl_dp_adc_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_adc_rorr_pcr : &&lbl_dp_adc_rorr; break;
         }
         break;
       case 0x0b:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_adcs_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_adcs_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_adcs_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_adcs_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_adcs_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_adcs_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_adcs_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_adcs_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_adcs_lsli_pcr : &&lbl_dp_adcs_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_adcs_lsri_pcr : &&lbl_dp_adcs_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_adcs_asri_pcr : &&lbl_dp_adcs_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_adcs_rori_pcr : &&lbl_dp_adcs_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_adcs_lslr_pcr : &&lbl_dp_adcs_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_adcs_lsrr_pcr : &&lbl_dp_adcs_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_adcs_asrr_pcr : &&lbl_dp_adcs_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_adcs_rorr_pcr : &&lbl_dp_adcs_rorr; break;
         }
         break;
       case 0x0c:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_sbc_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_sbc_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_sbc_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_sbc_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_sbc_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_sbc_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_sbc_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_sbc_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_sbc_lsli_pcr : &&lbl_dp_sbc_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_sbc_lsri_pcr : &&lbl_dp_sbc_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_sbc_asri_pcr : &&lbl_dp_sbc_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_sbc_rori_pcr : &&lbl_dp_sbc_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_sbc_lslr_pcr : &&lbl_dp_sbc_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_sbc_lsrr_pcr : &&lbl_dp_sbc_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_sbc_asrr_pcr : &&lbl_dp_sbc_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_sbc_rorr_pcr : &&lbl_dp_sbc_rorr; break;
         }
         break;
       case 0x0d:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_sbcs_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_sbcs_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_sbcs_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_sbcs_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_sbcs_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_sbcs_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_sbcs_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_sbcs_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_sbcs_lsli_pcr : &&lbl_dp_sbcs_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_sbcs_lsri_pcr : &&lbl_dp_sbcs_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_sbcs_asri_pcr : &&lbl_dp_sbcs_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_sbcs_rori_pcr : &&lbl_dp_sbcs_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_sbcs_lslr_pcr : &&lbl_dp_sbcs_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_sbcs_lsrr_pcr : &&lbl_dp_sbcs_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_sbcs_asrr_pcr : &&lbl_dp_sbcs_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_sbcs_rorr_pcr : &&lbl_dp_sbcs_rorr; break;
         }
         break;
       case 0x0e:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_rsc_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_rsc_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_rsc_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_rsc_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_rsc_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_rsc_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_rsc_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_rsc_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_rsc_lsli_pcr : &&lbl_dp_rsc_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_rsc_lsri_pcr : &&lbl_dp_rsc_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_rsc_asri_pcr : &&lbl_dp_rsc_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_rsc_rori_pcr : &&lbl_dp_rsc_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_rsc_lslr_pcr : &&lbl_dp_rsc_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_rsc_lsrr_pcr : &&lbl_dp_rsc_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_rsc_asrr_pcr : &&lbl_dp_rsc_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_rsc_rorr_pcr : &&lbl_dp_rsc_rorr; break;
         }
         break;
       case 0x0f:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_rscs_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_rscs_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_rscs_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_rscs_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_rscs_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_rscs_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_rscs_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_rscs_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_rscs_lsli_pcr : &&lbl_dp_rscs_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_rscs_lsri_pcr : &&lbl_dp_rscs_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_rscs_asri_pcr : &&lbl_dp_rscs_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_rscs_rori_pcr : &&lbl_dp_rscs_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_rscs_lslr_pcr : &&lbl_dp_rscs_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_rscs_lsrr_pcr : &&lbl_dp_rscs_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_rscs_asrr_pcr : &&lbl_dp_rscs_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_rscs_rorr_pcr : &&lbl_dp_rscs_rorr; break;
         }
         break;
       case 0x11:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_tst_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_tst_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_tst_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_tst_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_tst_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_tst_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_tst_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_tst_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_tst_lsli_pcr : &&lbl_dp_tst_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_tst_lsri_pcr : &&lbl_dp_tst_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_tst_asri_pcr : &&lbl_dp_tst_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_tst_rori_pcr : &&lbl_dp_tst_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_tst_lslr_pcr : &&lbl_dp_tst_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_tst_lsrr_pcr : &&lbl_dp_tst_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_tst_asrr_pcr : &&lbl_dp_tst_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_tst_rorr_pcr : &&lbl_dp_tst_rorr; break;
         }
         break;
       case 0x13:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_teq_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_teq_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_teq_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_teq_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_teq_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_teq_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_teq_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_teq_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_teq_lsli_pcr : &&lbl_dp_teq_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_teq_lsri_pcr : &&lbl_dp_teq_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_teq_asri_pcr : &&lbl_dp_teq_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_teq_rori_pcr : &&lbl_dp_teq_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_teq_lslr_pcr : &&lbl_dp_teq_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_teq_lsrr_pcr : &&lbl_dp_teq_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_teq_asrr_pcr : &&lbl_dp_teq_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_teq_rorr_pcr : &&lbl_dp_teq_rorr; break;
         }
         break;
       case 0x15:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_cmp_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_cmp_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_cmp_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_cmp_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_cmp_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_cmp_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_cmp_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_cmp_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_cmp_lsli_pcr : &&lbl_dp_cmp_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_cmp_lsri_pcr : &&lbl_dp_cmp_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_cmp_asri_pcr : &&lbl_dp_cmp_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_cmp_rori_pcr : &&lbl_dp_cmp_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_cmp_lslr_pcr : &&lbl_dp_cmp_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_cmp_lsrr_pcr : &&lbl_dp_cmp_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_cmp_asrr_pcr : &&lbl_dp_cmp_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_cmp_rorr_pcr : &&lbl_dp_cmp_rorr; break;
         }
         break;
       case 0x17:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_cmn_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_cmn_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_cmn_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_cmn_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_cmn_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_cmn_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_cmn_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_cmn_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_cmn_lsli_pcr : &&lbl_dp_cmn_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_cmn_lsri_pcr : &&lbl_dp_cmn_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_cmn_asri_pcr : &&lbl_dp_cmn_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_cmn_rori_pcr : &&lbl_dp_cmn_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_cmn_lslr_pcr : &&lbl_dp_cmn_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_cmn_lsrr_pcr : &&lbl_dp_cmn_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_cmn_asrr_pcr : &&lbl_dp_cmn_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_cmn_rorr_pcr : &&lbl_dp_cmn_rorr; break;
         }
         break;
       case 0x18:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_orr_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_orr_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_orr_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_orr_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_orr_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_orr_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_orr_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_orr_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_orr_lsli_pcr : &&lbl_dp_orr_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_orr_lsri_pcr : &&lbl_dp_orr_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_orr_asri_pcr : &&lbl_dp_orr_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_orr_rori_pcr : &&lbl_dp_orr_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_orr_lslr_pcr : &&lbl_dp_orr_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_orr_lsrr_pcr : &&lbl_dp_orr_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_orr_asrr_pcr : &&lbl_dp_orr_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_orr_rorr_pcr : &&lbl_dp_orr_rorr; break;
         }
         break;
       case 0x19:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_orrs_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_orrs_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_orrs_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_orrs_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_orrs_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_orrs_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_orrs_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_orrs_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_orrs_lsli_pcr : &&lbl_dp_orrs_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_orrs_lsri_pcr : &&lbl_dp_orrs_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_orrs_asri_pcr : &&lbl_dp_orrs_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_orrs_rori_pcr : &&lbl_dp_orrs_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_orrs_lslr_pcr : &&lbl_dp_orrs_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_orrs_lsrr_pcr : &&lbl_dp_orrs_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_orrs_asrr_pcr : &&lbl_dp_orrs_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_orrs_rorr_pcr : &&lbl_dp_orrs_rorr; break;
         }
         break;
       case 0x1a:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_mov_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_mov_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_mov_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_mov_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_mov_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_mov_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_mov_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_mov_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_mov_lsli_pcr : &&lbl_dp_mov_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_mov_lsri_pcr : &&lbl_dp_mov_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_mov_asri_pcr : &&lbl_dp_mov_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_mov_rori_pcr : &&lbl_dp_mov_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_mov_lslr_pcr : &&lbl_dp_mov_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_mov_lsrr_pcr : &&lbl_dp_mov_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_mov_asrr_pcr : &&lbl_dp_mov_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_mov_rorr_pcr : &&lbl_dp_mov_rorr; break;
         }
         break;
       case 0x1b:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_movs_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_movs_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_movs_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_movs_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_movs_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_movs_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_movs_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_movs_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_movs_lsli_pcr : &&lbl_dp_movs_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_movs_lsri_pcr : &&lbl_dp_movs_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_movs_asri_pcr : &&lbl_dp_movs_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_movs_rori_pcr : &&lbl_dp_movs_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_movs_lslr_pcr : &&lbl_dp_movs_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_movs_lsrr_pcr : &&lbl_dp_movs_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_movs_asrr_pcr : &&lbl_dp_movs_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_movs_rorr_pcr : &&lbl_dp_movs_rorr; break;
         }
         break;
       case 0x1c:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_bic_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_bic_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_bic_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_bic_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_bic_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_bic_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_bic_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_bic_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_bic_lsli_pcr : &&lbl_dp_bic_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_bic_lsri_pcr : &&lbl_dp_bic_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_bic_asri_pcr : &&lbl_dp_bic_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_bic_rori_pcr : &&lbl_dp_bic_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_bic_lslr_pcr : &&lbl_dp_bic_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_bic_lsrr_pcr : &&lbl_dp_bic_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_bic_asrr_pcr : &&lbl_dp_bic_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_bic_rorr_pcr : &&lbl_dp_bic_rorr; break;
         }
         break;
       case 0x1d:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_bics_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_bics_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_bics_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_bics_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_bics_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_bics_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_bics_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_bics_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_bics_lsli_pcr : &&lbl_dp_bics_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_bics_lsri_pcr : &&lbl_dp_bics_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_bics_asri_pcr : &&lbl_dp_bics_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_bics_rori_pcr : &&lbl_dp_bics_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_bics_lslr_pcr : &&lbl_dp_bics_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_bics_lsrr_pcr : &&lbl_dp_bics_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_bics_asrr_pcr : &&lbl_dp_bics_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_bics_rorr_pcr : &&lbl_dp_bics_rorr; break;
         }
         break;
       case 0x1e:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_mvn_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_mvn_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_mvn_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_mvn_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_mvn_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_mvn_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_mvn_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_mvn_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_mvn_lsli_pcr : &&lbl_dp_mvn_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_mvn_lsri_pcr : &&lbl_dp_mvn_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_mvn_asri_pcr : &&lbl_dp_mvn_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_mvn_rori_pcr : &&lbl_dp_mvn_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_mvn_lslr_pcr : &&lbl_dp_mvn_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_mvn_lsrr_pcr : &&lbl_dp_mvn_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_mvn_asrr_pcr : &&lbl_dp_mvn_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_mvn_rorr_pcr : &&lbl_dp_mvn_rorr; break;
         }
         break;
       case 0x1f:
         switch (fsel) {
-        case 0: cop->dispatch = &&lbl_dp_mvns_lsli; break;
-        case 1: cop->dispatch = &&lbl_dp_mvns_lsri; break;
-        case 2: cop->dispatch = &&lbl_dp_mvns_asri; break;
-        case 3: cop->dispatch = &&lbl_dp_mvns_rori; break;
-        case 4: cop->dispatch = &&lbl_dp_mvns_lslr; break;
-        case 5: cop->dispatch = &&lbl_dp_mvns_lsrr; break;
-        case 6: cop->dispatch = &&lbl_dp_mvns_asrr; break;
-        case 7: cop->dispatch = &&lbl_dp_mvns_rorr; break;
+        case 0: cop->dispatch = pcr ? &&lbl_dp_mvns_lsli_pcr : &&lbl_dp_mvns_lsli; break;
+        case 1: cop->dispatch = pcr ? &&lbl_dp_mvns_lsri_pcr : &&lbl_dp_mvns_lsri; break;
+        case 2: cop->dispatch = pcr ? &&lbl_dp_mvns_asri_pcr : &&lbl_dp_mvns_asri; break;
+        case 3: cop->dispatch = pcr ? &&lbl_dp_mvns_rori_pcr : &&lbl_dp_mvns_rori; break;
+        case 4: cop->dispatch = pcr ? &&lbl_dp_mvns_lslr_pcr : &&lbl_dp_mvns_lslr; break;
+        case 5: cop->dispatch = pcr ? &&lbl_dp_mvns_lsrr_pcr : &&lbl_dp_mvns_lsrr; break;
+        case 6: cop->dispatch = pcr ? &&lbl_dp_mvns_asrr_pcr : &&lbl_dp_mvns_asrr; break;
+        case 7: cop->dispatch = pcr ? &&lbl_dp_mvns_rorr_pcr : &&lbl_dp_mvns_rorr; break;
         }
         break;
       default: cop->dispatch = &&lbl_undefined; break;
@@ -8954,293 +16710,296 @@ lbl_mem_ldrb_rror_111:
     u32 mI = (opcode >> 25) & 1;
     u32 mShtype = (opcode >> 5) & 3;
     u32 mKey6 = (mL<<5)|(mB<<4)|(mP<<3)|(mU<<2)|(mW<<1)|mI;
+    int rn15 = (((opcode >> 16) & 0xF) == 15);
+    int rm15 = ((opcode & 0xF) == 15);
+    int pcr = mI ? (rn15 || rm15) : rn15;
     switch (mKey6) {
-    case 0x00: cop->dispatch = &&lbl_mem_str_i_000; break;
-    case 0x02: cop->dispatch = &&lbl_mem_str_i_001; break;
-    case 0x04: cop->dispatch = &&lbl_mem_str_i_010; break;
-    case 0x06: cop->dispatch = &&lbl_mem_str_i_011; break;
-    case 0x08: cop->dispatch = &&lbl_mem_str_i_100; break;
-    case 0x0a: cop->dispatch = &&lbl_mem_str_i_101; break;
-    case 0x0c: cop->dispatch = &&lbl_mem_str_i_110; break;
-    case 0x0e: cop->dispatch = &&lbl_mem_str_i_111; break;
-    case 0x10: cop->dispatch = &&lbl_mem_strb_i_000; break;
-    case 0x12: cop->dispatch = &&lbl_mem_strb_i_001; break;
-    case 0x14: cop->dispatch = &&lbl_mem_strb_i_010; break;
-    case 0x16: cop->dispatch = &&lbl_mem_strb_i_011; break;
-    case 0x18: cop->dispatch = &&lbl_mem_strb_i_100; break;
-    case 0x1a: cop->dispatch = &&lbl_mem_strb_i_101; break;
-    case 0x1c: cop->dispatch = &&lbl_mem_strb_i_110; break;
-    case 0x1e: cop->dispatch = &&lbl_mem_strb_i_111; break;
-    case 0x20: cop->dispatch = &&lbl_mem_ldr_i_000; break;
-    case 0x22: cop->dispatch = &&lbl_mem_ldr_i_001; break;
-    case 0x24: cop->dispatch = &&lbl_mem_ldr_i_010; break;
-    case 0x26: cop->dispatch = &&lbl_mem_ldr_i_011; break;
-    case 0x28: cop->dispatch = &&lbl_mem_ldr_i_100; break;
-    case 0x2a: cop->dispatch = &&lbl_mem_ldr_i_101; break;
-    case 0x2c: cop->dispatch = &&lbl_mem_ldr_i_110; break;
-    case 0x2e: cop->dispatch = &&lbl_mem_ldr_i_111; break;
-    case 0x30: cop->dispatch = &&lbl_mem_ldrb_i_000; break;
-    case 0x32: cop->dispatch = &&lbl_mem_ldrb_i_001; break;
-    case 0x34: cop->dispatch = &&lbl_mem_ldrb_i_010; break;
-    case 0x36: cop->dispatch = &&lbl_mem_ldrb_i_011; break;
-    case 0x38: cop->dispatch = &&lbl_mem_ldrb_i_100; break;
-    case 0x3a: cop->dispatch = &&lbl_mem_ldrb_i_101; break;
-    case 0x3c: cop->dispatch = &&lbl_mem_ldrb_i_110; break;
-    case 0x3e: cop->dispatch = &&lbl_mem_ldrb_i_111; break;
+    case 0x00: cop->dispatch = pcr ? &&lbl_mem_str_i_000_pcr : &&lbl_mem_str_i_000; break;
+    case 0x02: cop->dispatch = pcr ? &&lbl_mem_str_i_001_pcr : &&lbl_mem_str_i_001; break;
+    case 0x04: cop->dispatch = pcr ? &&lbl_mem_str_i_010_pcr : &&lbl_mem_str_i_010; break;
+    case 0x06: cop->dispatch = pcr ? &&lbl_mem_str_i_011_pcr : &&lbl_mem_str_i_011; break;
+    case 0x08: cop->dispatch = pcr ? &&lbl_mem_str_i_100_pcr : &&lbl_mem_str_i_100; break;
+    case 0x0a: cop->dispatch = pcr ? &&lbl_mem_str_i_101_pcr : &&lbl_mem_str_i_101; break;
+    case 0x0c: cop->dispatch = pcr ? &&lbl_mem_str_i_110_pcr : &&lbl_mem_str_i_110; break;
+    case 0x0e: cop->dispatch = pcr ? &&lbl_mem_str_i_111_pcr : &&lbl_mem_str_i_111; break;
+    case 0x10: cop->dispatch = pcr ? &&lbl_mem_strb_i_000_pcr : &&lbl_mem_strb_i_000; break;
+    case 0x12: cop->dispatch = pcr ? &&lbl_mem_strb_i_001_pcr : &&lbl_mem_strb_i_001; break;
+    case 0x14: cop->dispatch = pcr ? &&lbl_mem_strb_i_010_pcr : &&lbl_mem_strb_i_010; break;
+    case 0x16: cop->dispatch = pcr ? &&lbl_mem_strb_i_011_pcr : &&lbl_mem_strb_i_011; break;
+    case 0x18: cop->dispatch = pcr ? &&lbl_mem_strb_i_100_pcr : &&lbl_mem_strb_i_100; break;
+    case 0x1a: cop->dispatch = pcr ? &&lbl_mem_strb_i_101_pcr : &&lbl_mem_strb_i_101; break;
+    case 0x1c: cop->dispatch = pcr ? &&lbl_mem_strb_i_110_pcr : &&lbl_mem_strb_i_110; break;
+    case 0x1e: cop->dispatch = pcr ? &&lbl_mem_strb_i_111_pcr : &&lbl_mem_strb_i_111; break;
+    case 0x20: cop->dispatch = pcr ? &&lbl_mem_ldr_i_000_pcr : &&lbl_mem_ldr_i_000; break;
+    case 0x22: cop->dispatch = pcr ? &&lbl_mem_ldr_i_001_pcr : &&lbl_mem_ldr_i_001; break;
+    case 0x24: cop->dispatch = pcr ? &&lbl_mem_ldr_i_010_pcr : &&lbl_mem_ldr_i_010; break;
+    case 0x26: cop->dispatch = pcr ? &&lbl_mem_ldr_i_011_pcr : &&lbl_mem_ldr_i_011; break;
+    case 0x28: cop->dispatch = pcr ? &&lbl_mem_ldr_i_100_pcr : &&lbl_mem_ldr_i_100; break;
+    case 0x2a: cop->dispatch = pcr ? &&lbl_mem_ldr_i_101_pcr : &&lbl_mem_ldr_i_101; break;
+    case 0x2c: cop->dispatch = pcr ? &&lbl_mem_ldr_i_110_pcr : &&lbl_mem_ldr_i_110; break;
+    case 0x2e: cop->dispatch = pcr ? &&lbl_mem_ldr_i_111_pcr : &&lbl_mem_ldr_i_111; break;
+    case 0x30: cop->dispatch = pcr ? &&lbl_mem_ldrb_i_000_pcr : &&lbl_mem_ldrb_i_000; break;
+    case 0x32: cop->dispatch = pcr ? &&lbl_mem_ldrb_i_001_pcr : &&lbl_mem_ldrb_i_001; break;
+    case 0x34: cop->dispatch = pcr ? &&lbl_mem_ldrb_i_010_pcr : &&lbl_mem_ldrb_i_010; break;
+    case 0x36: cop->dispatch = pcr ? &&lbl_mem_ldrb_i_011_pcr : &&lbl_mem_ldrb_i_011; break;
+    case 0x38: cop->dispatch = pcr ? &&lbl_mem_ldrb_i_100_pcr : &&lbl_mem_ldrb_i_100; break;
+    case 0x3a: cop->dispatch = pcr ? &&lbl_mem_ldrb_i_101_pcr : &&lbl_mem_ldrb_i_101; break;
+    case 0x3c: cop->dispatch = pcr ? &&lbl_mem_ldrb_i_110_pcr : &&lbl_mem_ldrb_i_110; break;
+    case 0x3e: cop->dispatch = pcr ? &&lbl_mem_ldrb_i_111_pcr : &&lbl_mem_ldrb_i_111; break;
     case 0x01:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_str_rlsl_000; break;
-      case 1: cop->dispatch = &&lbl_mem_str_rlsr_000; break;
-      case 2: cop->dispatch = &&lbl_mem_str_rasr_000; break;
-      case 3: cop->dispatch = &&lbl_mem_str_rror_000; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_str_rlsl_000_pcr : &&lbl_mem_str_rlsl_000; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_str_rlsr_000_pcr : &&lbl_mem_str_rlsr_000; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_str_rasr_000_pcr : &&lbl_mem_str_rasr_000; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_str_rror_000_pcr : &&lbl_mem_str_rror_000; break;
       }
       break;
     case 0x03:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_str_rlsl_001; break;
-      case 1: cop->dispatch = &&lbl_mem_str_rlsr_001; break;
-      case 2: cop->dispatch = &&lbl_mem_str_rasr_001; break;
-      case 3: cop->dispatch = &&lbl_mem_str_rror_001; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_str_rlsl_001_pcr : &&lbl_mem_str_rlsl_001; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_str_rlsr_001_pcr : &&lbl_mem_str_rlsr_001; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_str_rasr_001_pcr : &&lbl_mem_str_rasr_001; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_str_rror_001_pcr : &&lbl_mem_str_rror_001; break;
       }
       break;
     case 0x05:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_str_rlsl_010; break;
-      case 1: cop->dispatch = &&lbl_mem_str_rlsr_010; break;
-      case 2: cop->dispatch = &&lbl_mem_str_rasr_010; break;
-      case 3: cop->dispatch = &&lbl_mem_str_rror_010; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_str_rlsl_010_pcr : &&lbl_mem_str_rlsl_010; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_str_rlsr_010_pcr : &&lbl_mem_str_rlsr_010; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_str_rasr_010_pcr : &&lbl_mem_str_rasr_010; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_str_rror_010_pcr : &&lbl_mem_str_rror_010; break;
       }
       break;
     case 0x07:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_str_rlsl_011; break;
-      case 1: cop->dispatch = &&lbl_mem_str_rlsr_011; break;
-      case 2: cop->dispatch = &&lbl_mem_str_rasr_011; break;
-      case 3: cop->dispatch = &&lbl_mem_str_rror_011; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_str_rlsl_011_pcr : &&lbl_mem_str_rlsl_011; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_str_rlsr_011_pcr : &&lbl_mem_str_rlsr_011; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_str_rasr_011_pcr : &&lbl_mem_str_rasr_011; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_str_rror_011_pcr : &&lbl_mem_str_rror_011; break;
       }
       break;
     case 0x09:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_str_rlsl_100; break;
-      case 1: cop->dispatch = &&lbl_mem_str_rlsr_100; break;
-      case 2: cop->dispatch = &&lbl_mem_str_rasr_100; break;
-      case 3: cop->dispatch = &&lbl_mem_str_rror_100; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_str_rlsl_100_pcr : &&lbl_mem_str_rlsl_100; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_str_rlsr_100_pcr : &&lbl_mem_str_rlsr_100; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_str_rasr_100_pcr : &&lbl_mem_str_rasr_100; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_str_rror_100_pcr : &&lbl_mem_str_rror_100; break;
       }
       break;
     case 0x0b:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_str_rlsl_101; break;
-      case 1: cop->dispatch = &&lbl_mem_str_rlsr_101; break;
-      case 2: cop->dispatch = &&lbl_mem_str_rasr_101; break;
-      case 3: cop->dispatch = &&lbl_mem_str_rror_101; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_str_rlsl_101_pcr : &&lbl_mem_str_rlsl_101; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_str_rlsr_101_pcr : &&lbl_mem_str_rlsr_101; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_str_rasr_101_pcr : &&lbl_mem_str_rasr_101; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_str_rror_101_pcr : &&lbl_mem_str_rror_101; break;
       }
       break;
     case 0x0d:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_str_rlsl_110; break;
-      case 1: cop->dispatch = &&lbl_mem_str_rlsr_110; break;
-      case 2: cop->dispatch = &&lbl_mem_str_rasr_110; break;
-      case 3: cop->dispatch = &&lbl_mem_str_rror_110; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_str_rlsl_110_pcr : &&lbl_mem_str_rlsl_110; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_str_rlsr_110_pcr : &&lbl_mem_str_rlsr_110; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_str_rasr_110_pcr : &&lbl_mem_str_rasr_110; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_str_rror_110_pcr : &&lbl_mem_str_rror_110; break;
       }
       break;
     case 0x0f:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_str_rlsl_111; break;
-      case 1: cop->dispatch = &&lbl_mem_str_rlsr_111; break;
-      case 2: cop->dispatch = &&lbl_mem_str_rasr_111; break;
-      case 3: cop->dispatch = &&lbl_mem_str_rror_111; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_str_rlsl_111_pcr : &&lbl_mem_str_rlsl_111; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_str_rlsr_111_pcr : &&lbl_mem_str_rlsr_111; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_str_rasr_111_pcr : &&lbl_mem_str_rasr_111; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_str_rror_111_pcr : &&lbl_mem_str_rror_111; break;
       }
       break;
     case 0x11:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_strb_rlsl_000; break;
-      case 1: cop->dispatch = &&lbl_mem_strb_rlsr_000; break;
-      case 2: cop->dispatch = &&lbl_mem_strb_rasr_000; break;
-      case 3: cop->dispatch = &&lbl_mem_strb_rror_000; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_strb_rlsl_000_pcr : &&lbl_mem_strb_rlsl_000; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_strb_rlsr_000_pcr : &&lbl_mem_strb_rlsr_000; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_strb_rasr_000_pcr : &&lbl_mem_strb_rasr_000; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_strb_rror_000_pcr : &&lbl_mem_strb_rror_000; break;
       }
       break;
     case 0x13:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_strb_rlsl_001; break;
-      case 1: cop->dispatch = &&lbl_mem_strb_rlsr_001; break;
-      case 2: cop->dispatch = &&lbl_mem_strb_rasr_001; break;
-      case 3: cop->dispatch = &&lbl_mem_strb_rror_001; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_strb_rlsl_001_pcr : &&lbl_mem_strb_rlsl_001; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_strb_rlsr_001_pcr : &&lbl_mem_strb_rlsr_001; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_strb_rasr_001_pcr : &&lbl_mem_strb_rasr_001; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_strb_rror_001_pcr : &&lbl_mem_strb_rror_001; break;
       }
       break;
     case 0x15:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_strb_rlsl_010; break;
-      case 1: cop->dispatch = &&lbl_mem_strb_rlsr_010; break;
-      case 2: cop->dispatch = &&lbl_mem_strb_rasr_010; break;
-      case 3: cop->dispatch = &&lbl_mem_strb_rror_010; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_strb_rlsl_010_pcr : &&lbl_mem_strb_rlsl_010; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_strb_rlsr_010_pcr : &&lbl_mem_strb_rlsr_010; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_strb_rasr_010_pcr : &&lbl_mem_strb_rasr_010; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_strb_rror_010_pcr : &&lbl_mem_strb_rror_010; break;
       }
       break;
     case 0x17:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_strb_rlsl_011; break;
-      case 1: cop->dispatch = &&lbl_mem_strb_rlsr_011; break;
-      case 2: cop->dispatch = &&lbl_mem_strb_rasr_011; break;
-      case 3: cop->dispatch = &&lbl_mem_strb_rror_011; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_strb_rlsl_011_pcr : &&lbl_mem_strb_rlsl_011; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_strb_rlsr_011_pcr : &&lbl_mem_strb_rlsr_011; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_strb_rasr_011_pcr : &&lbl_mem_strb_rasr_011; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_strb_rror_011_pcr : &&lbl_mem_strb_rror_011; break;
       }
       break;
     case 0x19:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_strb_rlsl_100; break;
-      case 1: cop->dispatch = &&lbl_mem_strb_rlsr_100; break;
-      case 2: cop->dispatch = &&lbl_mem_strb_rasr_100; break;
-      case 3: cop->dispatch = &&lbl_mem_strb_rror_100; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_strb_rlsl_100_pcr : &&lbl_mem_strb_rlsl_100; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_strb_rlsr_100_pcr : &&lbl_mem_strb_rlsr_100; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_strb_rasr_100_pcr : &&lbl_mem_strb_rasr_100; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_strb_rror_100_pcr : &&lbl_mem_strb_rror_100; break;
       }
       break;
     case 0x1b:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_strb_rlsl_101; break;
-      case 1: cop->dispatch = &&lbl_mem_strb_rlsr_101; break;
-      case 2: cop->dispatch = &&lbl_mem_strb_rasr_101; break;
-      case 3: cop->dispatch = &&lbl_mem_strb_rror_101; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_strb_rlsl_101_pcr : &&lbl_mem_strb_rlsl_101; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_strb_rlsr_101_pcr : &&lbl_mem_strb_rlsr_101; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_strb_rasr_101_pcr : &&lbl_mem_strb_rasr_101; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_strb_rror_101_pcr : &&lbl_mem_strb_rror_101; break;
       }
       break;
     case 0x1d:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_strb_rlsl_110; break;
-      case 1: cop->dispatch = &&lbl_mem_strb_rlsr_110; break;
-      case 2: cop->dispatch = &&lbl_mem_strb_rasr_110; break;
-      case 3: cop->dispatch = &&lbl_mem_strb_rror_110; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_strb_rlsl_110_pcr : &&lbl_mem_strb_rlsl_110; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_strb_rlsr_110_pcr : &&lbl_mem_strb_rlsr_110; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_strb_rasr_110_pcr : &&lbl_mem_strb_rasr_110; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_strb_rror_110_pcr : &&lbl_mem_strb_rror_110; break;
       }
       break;
     case 0x1f:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_strb_rlsl_111; break;
-      case 1: cop->dispatch = &&lbl_mem_strb_rlsr_111; break;
-      case 2: cop->dispatch = &&lbl_mem_strb_rasr_111; break;
-      case 3: cop->dispatch = &&lbl_mem_strb_rror_111; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_strb_rlsl_111_pcr : &&lbl_mem_strb_rlsl_111; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_strb_rlsr_111_pcr : &&lbl_mem_strb_rlsr_111; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_strb_rasr_111_pcr : &&lbl_mem_strb_rasr_111; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_strb_rror_111_pcr : &&lbl_mem_strb_rror_111; break;
       }
       break;
     case 0x21:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldr_rlsl_000; break;
-      case 1: cop->dispatch = &&lbl_mem_ldr_rlsr_000; break;
-      case 2: cop->dispatch = &&lbl_mem_ldr_rasr_000; break;
-      case 3: cop->dispatch = &&lbl_mem_ldr_rror_000; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsl_000_pcr : &&lbl_mem_ldr_rlsl_000; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsr_000_pcr : &&lbl_mem_ldr_rlsr_000; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldr_rasr_000_pcr : &&lbl_mem_ldr_rasr_000; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldr_rror_000_pcr : &&lbl_mem_ldr_rror_000; break;
       }
       break;
     case 0x23:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldr_rlsl_001; break;
-      case 1: cop->dispatch = &&lbl_mem_ldr_rlsr_001; break;
-      case 2: cop->dispatch = &&lbl_mem_ldr_rasr_001; break;
-      case 3: cop->dispatch = &&lbl_mem_ldr_rror_001; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsl_001_pcr : &&lbl_mem_ldr_rlsl_001; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsr_001_pcr : &&lbl_mem_ldr_rlsr_001; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldr_rasr_001_pcr : &&lbl_mem_ldr_rasr_001; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldr_rror_001_pcr : &&lbl_mem_ldr_rror_001; break;
       }
       break;
     case 0x25:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldr_rlsl_010; break;
-      case 1: cop->dispatch = &&lbl_mem_ldr_rlsr_010; break;
-      case 2: cop->dispatch = &&lbl_mem_ldr_rasr_010; break;
-      case 3: cop->dispatch = &&lbl_mem_ldr_rror_010; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsl_010_pcr : &&lbl_mem_ldr_rlsl_010; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsr_010_pcr : &&lbl_mem_ldr_rlsr_010; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldr_rasr_010_pcr : &&lbl_mem_ldr_rasr_010; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldr_rror_010_pcr : &&lbl_mem_ldr_rror_010; break;
       }
       break;
     case 0x27:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldr_rlsl_011; break;
-      case 1: cop->dispatch = &&lbl_mem_ldr_rlsr_011; break;
-      case 2: cop->dispatch = &&lbl_mem_ldr_rasr_011; break;
-      case 3: cop->dispatch = &&lbl_mem_ldr_rror_011; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsl_011_pcr : &&lbl_mem_ldr_rlsl_011; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsr_011_pcr : &&lbl_mem_ldr_rlsr_011; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldr_rasr_011_pcr : &&lbl_mem_ldr_rasr_011; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldr_rror_011_pcr : &&lbl_mem_ldr_rror_011; break;
       }
       break;
     case 0x29:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldr_rlsl_100; break;
-      case 1: cop->dispatch = &&lbl_mem_ldr_rlsr_100; break;
-      case 2: cop->dispatch = &&lbl_mem_ldr_rasr_100; break;
-      case 3: cop->dispatch = &&lbl_mem_ldr_rror_100; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsl_100_pcr : &&lbl_mem_ldr_rlsl_100; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsr_100_pcr : &&lbl_mem_ldr_rlsr_100; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldr_rasr_100_pcr : &&lbl_mem_ldr_rasr_100; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldr_rror_100_pcr : &&lbl_mem_ldr_rror_100; break;
       }
       break;
     case 0x2b:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldr_rlsl_101; break;
-      case 1: cop->dispatch = &&lbl_mem_ldr_rlsr_101; break;
-      case 2: cop->dispatch = &&lbl_mem_ldr_rasr_101; break;
-      case 3: cop->dispatch = &&lbl_mem_ldr_rror_101; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsl_101_pcr : &&lbl_mem_ldr_rlsl_101; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsr_101_pcr : &&lbl_mem_ldr_rlsr_101; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldr_rasr_101_pcr : &&lbl_mem_ldr_rasr_101; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldr_rror_101_pcr : &&lbl_mem_ldr_rror_101; break;
       }
       break;
     case 0x2d:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldr_rlsl_110; break;
-      case 1: cop->dispatch = &&lbl_mem_ldr_rlsr_110; break;
-      case 2: cop->dispatch = &&lbl_mem_ldr_rasr_110; break;
-      case 3: cop->dispatch = &&lbl_mem_ldr_rror_110; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsl_110_pcr : &&lbl_mem_ldr_rlsl_110; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsr_110_pcr : &&lbl_mem_ldr_rlsr_110; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldr_rasr_110_pcr : &&lbl_mem_ldr_rasr_110; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldr_rror_110_pcr : &&lbl_mem_ldr_rror_110; break;
       }
       break;
     case 0x2f:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldr_rlsl_111; break;
-      case 1: cop->dispatch = &&lbl_mem_ldr_rlsr_111; break;
-      case 2: cop->dispatch = &&lbl_mem_ldr_rasr_111; break;
-      case 3: cop->dispatch = &&lbl_mem_ldr_rror_111; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsl_111_pcr : &&lbl_mem_ldr_rlsl_111; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldr_rlsr_111_pcr : &&lbl_mem_ldr_rlsr_111; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldr_rasr_111_pcr : &&lbl_mem_ldr_rasr_111; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldr_rror_111_pcr : &&lbl_mem_ldr_rror_111; break;
       }
       break;
     case 0x31:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldrb_rlsl_000; break;
-      case 1: cop->dispatch = &&lbl_mem_ldrb_rlsr_000; break;
-      case 2: cop->dispatch = &&lbl_mem_ldrb_rasr_000; break;
-      case 3: cop->dispatch = &&lbl_mem_ldrb_rror_000; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsl_000_pcr : &&lbl_mem_ldrb_rlsl_000; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsr_000_pcr : &&lbl_mem_ldrb_rlsr_000; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldrb_rasr_000_pcr : &&lbl_mem_ldrb_rasr_000; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldrb_rror_000_pcr : &&lbl_mem_ldrb_rror_000; break;
       }
       break;
     case 0x33:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldrb_rlsl_001; break;
-      case 1: cop->dispatch = &&lbl_mem_ldrb_rlsr_001; break;
-      case 2: cop->dispatch = &&lbl_mem_ldrb_rasr_001; break;
-      case 3: cop->dispatch = &&lbl_mem_ldrb_rror_001; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsl_001_pcr : &&lbl_mem_ldrb_rlsl_001; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsr_001_pcr : &&lbl_mem_ldrb_rlsr_001; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldrb_rasr_001_pcr : &&lbl_mem_ldrb_rasr_001; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldrb_rror_001_pcr : &&lbl_mem_ldrb_rror_001; break;
       }
       break;
     case 0x35:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldrb_rlsl_010; break;
-      case 1: cop->dispatch = &&lbl_mem_ldrb_rlsr_010; break;
-      case 2: cop->dispatch = &&lbl_mem_ldrb_rasr_010; break;
-      case 3: cop->dispatch = &&lbl_mem_ldrb_rror_010; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsl_010_pcr : &&lbl_mem_ldrb_rlsl_010; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsr_010_pcr : &&lbl_mem_ldrb_rlsr_010; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldrb_rasr_010_pcr : &&lbl_mem_ldrb_rasr_010; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldrb_rror_010_pcr : &&lbl_mem_ldrb_rror_010; break;
       }
       break;
     case 0x37:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldrb_rlsl_011; break;
-      case 1: cop->dispatch = &&lbl_mem_ldrb_rlsr_011; break;
-      case 2: cop->dispatch = &&lbl_mem_ldrb_rasr_011; break;
-      case 3: cop->dispatch = &&lbl_mem_ldrb_rror_011; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsl_011_pcr : &&lbl_mem_ldrb_rlsl_011; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsr_011_pcr : &&lbl_mem_ldrb_rlsr_011; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldrb_rasr_011_pcr : &&lbl_mem_ldrb_rasr_011; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldrb_rror_011_pcr : &&lbl_mem_ldrb_rror_011; break;
       }
       break;
     case 0x39:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldrb_rlsl_100; break;
-      case 1: cop->dispatch = &&lbl_mem_ldrb_rlsr_100; break;
-      case 2: cop->dispatch = &&lbl_mem_ldrb_rasr_100; break;
-      case 3: cop->dispatch = &&lbl_mem_ldrb_rror_100; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsl_100_pcr : &&lbl_mem_ldrb_rlsl_100; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsr_100_pcr : &&lbl_mem_ldrb_rlsr_100; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldrb_rasr_100_pcr : &&lbl_mem_ldrb_rasr_100; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldrb_rror_100_pcr : &&lbl_mem_ldrb_rror_100; break;
       }
       break;
     case 0x3b:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldrb_rlsl_101; break;
-      case 1: cop->dispatch = &&lbl_mem_ldrb_rlsr_101; break;
-      case 2: cop->dispatch = &&lbl_mem_ldrb_rasr_101; break;
-      case 3: cop->dispatch = &&lbl_mem_ldrb_rror_101; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsl_101_pcr : &&lbl_mem_ldrb_rlsl_101; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsr_101_pcr : &&lbl_mem_ldrb_rlsr_101; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldrb_rasr_101_pcr : &&lbl_mem_ldrb_rasr_101; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldrb_rror_101_pcr : &&lbl_mem_ldrb_rror_101; break;
       }
       break;
     case 0x3d:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldrb_rlsl_110; break;
-      case 1: cop->dispatch = &&lbl_mem_ldrb_rlsr_110; break;
-      case 2: cop->dispatch = &&lbl_mem_ldrb_rasr_110; break;
-      case 3: cop->dispatch = &&lbl_mem_ldrb_rror_110; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsl_110_pcr : &&lbl_mem_ldrb_rlsl_110; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsr_110_pcr : &&lbl_mem_ldrb_rlsr_110; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldrb_rasr_110_pcr : &&lbl_mem_ldrb_rasr_110; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldrb_rror_110_pcr : &&lbl_mem_ldrb_rror_110; break;
       }
       break;
     case 0x3f:
       switch (mShtype) {
-      case 0: cop->dispatch = &&lbl_mem_ldrb_rlsl_111; break;
-      case 1: cop->dispatch = &&lbl_mem_ldrb_rlsr_111; break;
-      case 2: cop->dispatch = &&lbl_mem_ldrb_rasr_111; break;
-      case 3: cop->dispatch = &&lbl_mem_ldrb_rror_111; break;
+      case 0: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsl_111_pcr : &&lbl_mem_ldrb_rlsl_111; break;
+      case 1: cop->dispatch = pcr ? &&lbl_mem_ldrb_rlsr_111_pcr : &&lbl_mem_ldrb_rlsr_111; break;
+      case 2: cop->dispatch = pcr ? &&lbl_mem_ldrb_rasr_111_pcr : &&lbl_mem_ldrb_rasr_111; break;
+      case 3: cop->dispatch = pcr ? &&lbl_mem_ldrb_rror_111_pcr : &&lbl_mem_ldrb_rror_111; break;
       }
       break;
     default: cop->dispatch = &&lbl_undefined; break;

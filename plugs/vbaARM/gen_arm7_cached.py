@@ -73,47 +73,53 @@ FORMS = [
 
 
 def emit_dp_labels(out):
-    """Label bodies for every (operation x form) data-processing variant."""
+    """Label bodies for every (operation x form) data-processing variant.
+
+    Two variants per (op, form):
+      lbl_dp_<op>_<form>      plain: never touches reg[15]
+      lbl_dp_<op>_<form>_pcr  pc-read: materializes reg[15]=dispatch_pc+8 first
+                              (used when Rn==15 or Rm==15)
+    The rare dest==15 (PC write) case is handled inline in BOTH variants: it
+    writes the new PC into dispatch_pc and re-dispatches via dp_pc_done.
+    """
     for (name, do, _op4, sets_flags, writes_rd) in DP:
         for (fname, form) in FORMS:
-            label = f"dp_{name}_{fname}"
-            # `dest` (Rd) is referenced only by ops that write Rd (and the
-            # dest==15 PC path); the compare ops do not. `base` (Rn) is read by
-            # every op except MOV/MVN (which ignore operand1). Declare each only
-            # where used, to avoid -Wunused-variable on the generated code.
-            uses_base = name not in ("mov", "movs", "mvn", "mvns")
-            out.append(f"lbl_{label}:")
-            out.append("  COND_GUARD();")
-            out.append("  {")
-            out.append("    ARM7CACHEOP* op = pc_op;")
-            if writes_rd:
-                out.append("    int dest = op->r0;")
-            if uses_base:
-                out.append("    int base = op->r1;")
-            out.append("    u32 value;")
-            out.append("    C_OUT = C_FLAG;")
-            out.append(f"    {form}")
-            if writes_rd:
-                # dest==15 is a decoded constant; route the rare PC-write through
-                # the shared epilogue. The S-with-PC (mode restore) case mirrors
-                # arm-new.h's `opcode & 0x00100000` handling.
-                out.append("    if (dest == 15) {")
-                out.append(f"      {do}")
-                if sets_flags:
-                    out.append("      clockTicks++;")
-                    out.append("      CPUSwitchMode(reg[17].I & 0x1f, false);")
-                out.append("      reg[15].I &= 0xFFFFFFFC;")
-                out.append("      armNextPC = reg[15].I;")
-                out.append("      reg[15].I += 4;")
-                out.append("      goto dp_pc_done;")
-                out.append("    } else {")
-                out.append(f"      {do}")
-                out.append("    }")
-            else:
-                out.append(f"    {do}")
-            out.append("  }")
-            out.append("  ADVANCE();")
-    # shared PC-write continuation (re-dispatch at the new armNextPC)
+            for pcread in (False, True):
+                label = f"dp_{name}_{fname}" + ("_pcr" if pcread else "")
+                # `dest` (Rd) only referenced by ops that write Rd (+ the dest==15
+                # path); compare ops don't. `base` (Rn) read by all but MOV/MVN.
+                uses_base = name not in ("mov", "movs", "mvn", "mvns")
+                out.append(f"lbl_{label}:")
+                out.append("  COND_GUARD();")
+                if pcread:
+                    # Rn/Rm reference r15 -> need the ARM prefetch value.
+                    out.append("  SET_PC_READ();")
+                out.append("  {")
+                out.append("    ARM7CACHEOP* op = pc_op;")
+                if writes_rd:
+                    out.append("    int dest = op->r0;")
+                if uses_base:
+                    out.append("    int base = op->r1;")
+                out.append("    u32 value;")
+                out.append("    C_OUT = C_FLAG;")
+                out.append(f"    {form}")
+                if writes_rd:
+                    # dest==15 PC write: compute, place the new PC into dispatch_pc.
+                    out.append("    if (dest == 15) {")
+                    out.append(f"      {do}")
+                    if sets_flags:
+                        out.append("      clockTicks++;")
+                        out.append("      CPUSwitchMode(reg[17].I & 0x1f, false);")
+                    out.append("      dispatch_pc = reg[15].I & 0xFFFFFFFC;")
+                    out.append("      goto dp_pc_done;")
+                    out.append("    } else {")
+                    out.append(f"      {do}")
+                    out.append("    }")
+                else:
+                    out.append(f"    {do}")
+                out.append("  }")
+                out.append("  ADVANCE();")
+    # shared PC-write continuation: dispatch_pc already holds the new PC.
     out.append("dp_pc_done:")
     out.append("  DISPATCH_PC();")
 
@@ -128,17 +134,23 @@ def emit_dp_decode(out):
     out.append("    cop->r0 = (opcode >> 12) & 0xF;   /* Rd */")
     out.append("    cop->r1 = (opcode >> 16) & 0xF;   /* Rn */")
     out.append("    cop->r2 = opcode & 0xF;           /* Rm */")
+    # pcr = does this op READ r15? imm form: only Rn (operand1). reg form: Rn or Rm.
+    # When true we route to the _pcr label variant that materializes reg[15].
+    out.append("    int rn15 = (((opcode >> 16) & 0xF) == 15);")
+    out.append("    int rm15 = ((opcode & 0xF) == 15);")
     out.append("    if (opcode & 0x02000000) {")
     out.append("      /* immediate operand2 */")
     out.append("      u32 imm8 = opcode & 0xFF;")
     out.append("      u32 rot  = ((opcode >> 8) & 0xF) * 2;")
     out.append("      cop->imm = rot ? ((imm8 >> rot) | (imm8 << (32 - rot))) : imm8;")
     out.append("      int rotn = rot != 0;")
+    out.append("      int pcr = rn15;   /* immediate form: only Rn can be r15 */")
     out.append("      switch ((op4 << 1) | sbit) {")
     for (name, do, op4, sets_flags, writes_rd) in DP:
         key = (op4 << 1) | (1 if sets_flags else 0)
-        out.append(f"      case 0x{key:02x}: cop->dispatch = "
-                   f"rotn ? &&lbl_dp_{name}_immn : &&lbl_dp_{name}_imm0; break;")
+        out.append(f"      case 0x{key:02x}: cop->dispatch = pcr")
+        out.append(f"        ? (rotn ? &&lbl_dp_{name}_immn_pcr : &&lbl_dp_{name}_imm0_pcr)")
+        out.append(f"        : (rotn ? &&lbl_dp_{name}_immn     : &&lbl_dp_{name}_imm0); break;")
     out.append("      default: cop->dispatch = &&lbl_undefined; break;")
     out.append("      }")
     out.append("    } else {")
@@ -151,14 +163,16 @@ def emit_dp_decode(out):
     out.append("        cop->imm = (opcode >> 7) & 0x1F;  /* shift amount */")
     out.append("      }")
     out.append("      int fsel = (byreg << 2) | shtype;  /* 0..3 imm, 4..7 reg */")
+    out.append("      int pcr = rn15 || rm15;   /* reg form: Rn or Rm can be r15 */")
     out.append("      switch ((op4 << 1) | sbit) {")
+    regforms = ["lsli", "lsri", "asri", "rori", "lslr", "lsrr", "asrr", "rorr"]
     for (name, do, op4, sets_flags, writes_rd) in DP:
         key = (op4 << 1) | (1 if sets_flags else 0)
         out.append(f"      case 0x{key:02x}:")
         out.append("        switch (fsel) {")
-        regforms = ["lsli", "lsri", "asri", "rori", "lslr", "lsrr", "asrr", "rorr"]
         for i, ff in enumerate(regforms):
-            out.append(f"        case {i}: cop->dispatch = &&lbl_dp_{name}_{ff}; break;")
+            out.append(f"        case {i}: cop->dispatch = pcr ? "
+                       f"&&lbl_dp_{name}_{ff}_pcr : &&lbl_dp_{name}_{ff}; break;")
         out.append("        }")
         out.append("        break;")
     out.append("      default: cop->dispatch = &&lbl_undefined; break;")
@@ -217,51 +231,56 @@ def emit_mem_offset(out, ireg, shtype):
 
 
 def emit_mem_labels(out):
+    # Two variants per LDR/STR form: plain and _pcr (materializes reg[15] when
+    # Rn==15 (literal-pool / pc-relative) or Rm==15 (register offset)).
     for (nm, L, B, P, U, W, ireg, shtype) in ldr_variants():
-        out.append(f"lbl_{nm}:")
-        out.append("  COND_GUARD();")
-        out.append("  {")
-        out.append("    ARM7CACHEOP* op = pc_op;")
-        out.append("    int dest = op->r0;")
-        out.append("    int base = op->r1;")
-        emit_mem_offset(out, ireg, shtype)
-        out.append("    u32 rn = reg[base].I;")
-        if P:  # pre-indexed: apply offset before access
-            out.append(f"    u32 address = rn {'+' if U else '-'} offset;")
-        else:  # post-indexed: access at rn
-            out.append("    u32 address = rn;")
-        if L:  # load
-            if B:
-                out.append("    u32 data = CPUReadByte(address);")
-            else:
-                out.append("    u32 data = CPUReadMemory(address);")
-            # writeback / post-index base update
-            if not P:  # post: always writeback (unless dest==base)
-                out.append("    if (dest != base) reg[base].I = "
-                           f"rn {'+' if U else '-'} offset;")
-            elif W:    # pre with writeback
-                out.append("    if (dest != base) reg[base].I = address;")
-            out.append("    reg[dest].I = data;")
-            out.append(f"    clockTicks += 3 + CPUUpdateTicksAccess{'16' if B else '32'}(address);")
-            out.append("    if (dest == 15) {")
-            out.append("      clockTicks += 2;")
-            out.append("      reg[15].I &= 0xFFFFFFFC;")
-            out.append("      armNextPC = reg[15].I;")
-            out.append("      reg[15].I += 4;")
-            out.append("      goto dp_pc_done;")
-            out.append("    }")
-        else:  # store
-            if P and W:  # pre with writeback updates base before the store
-                out.append("    reg[base].I = address;")
-            if B:
-                out.append("    CPUWriteByte(address, reg[dest].I & 0xFF);")
-            else:
-                out.append("    CPUWriteMemory(address, reg[dest].I);")
-            if not P:  # post: writeback
-                out.append(f"    reg[base].I = rn {'+' if U else '-'} offset;")
-            out.append(f"    clockTicks += 2 + CPUUpdateTicksAccess{'16' if B else '32'}(address);")
-        out.append("  }")
-        out.append("  ADVANCE();")
+        for pcread in (False, True):
+            label = nm + ("_pcr" if pcread else "")
+            out.append(f"lbl_{label}:")
+            out.append("  COND_GUARD();")
+            if pcread:
+                out.append("  SET_PC_READ();")
+            out.append("  {")
+            out.append("    ARM7CACHEOP* op = pc_op;")
+            out.append("    int dest = op->r0;")
+            out.append("    int base = op->r1;")
+            emit_mem_offset(out, ireg, shtype)
+            out.append("    u32 rn = reg[base].I;")
+            if P:  # pre-indexed: apply offset before access
+                out.append(f"    u32 address = rn {'+' if U else '-'} offset;")
+            else:  # post-indexed: access at rn
+                out.append("    u32 address = rn;")
+            if L:  # load
+                if B:
+                    out.append("    u32 data = CPUReadByte(address);")
+                else:
+                    out.append("    u32 data = CPUReadMemory(address);")
+                # writeback / post-index base update
+                if not P:  # post: always writeback (unless dest==base)
+                    out.append("    if (dest != base) reg[base].I = "
+                               f"rn {'+' if U else '-'} offset;")
+                elif W:    # pre with writeback
+                    out.append("    if (dest != base) reg[base].I = address;")
+                out.append("    reg[dest].I = data;")
+                out.append(f"    clockTicks += 3 + CPUUpdateTicksAccess{'16' if B else '32'}(address);")
+                # LDR to PC: place the loaded value into dispatch_pc and re-dispatch.
+                out.append("    if (dest == 15) {")
+                out.append("      clockTicks += 2;")
+                out.append("      dispatch_pc = reg[15].I & 0xFFFFFFFC;")
+                out.append("      goto dp_pc_done;")
+                out.append("    }")
+            else:  # store
+                if P and W:  # pre with writeback updates base before the store
+                    out.append("    reg[base].I = address;")
+                if B:
+                    out.append("    CPUWriteByte(address, reg[dest].I & 0xFF);")
+                else:
+                    out.append("    CPUWriteMemory(address, reg[dest].I);")
+                if not P:  # post: writeback
+                    out.append(f"    reg[base].I = rn {'+' if U else '-'} offset;")
+                out.append(f"    clockTicks += 2 + CPUUpdateTicksAccess{'16' if B else '32'}(address);")
+            out.append("  }")
+            out.append("  ADVANCE();")
 
 
 def emit_mem_decode(out):
@@ -292,16 +311,23 @@ def emit_mem_decode(out):
     out.append("    u32 mI = (opcode >> 25) & 1;")
     out.append("    u32 mShtype = (opcode >> 5) & 3;")
     out.append("    u32 mKey6 = (mL<<5)|(mB<<4)|(mP<<3)|(mU<<2)|(mW<<1)|mI;")
+    # pcr: imm form reads Rn only; register-offset form reads Rn or Rm.
+    out.append("    int rn15 = (((opcode >> 16) & 0xF) == 15);")
+    out.append("    int rm15 = ((opcode & 0xF) == 15);")
+    out.append("    int pcr = mI ? (rn15 || rm15) : rn15;")
     out.append("    switch (mKey6) {")
     for key6 in sorted(imm_map):
-        out.append(f"    case 0x{key6:02x}: cop->dispatch = &&lbl_{imm_map[key6]}; break;")
+        nm = imm_map[key6]
+        out.append(f"    case 0x{key6:02x}: cop->dispatch = pcr ? "
+                   f"&&lbl_{nm}_pcr : &&lbl_{nm}; break;")
     for key6 in sorted(reg_map):
         out.append(f"    case 0x{key6:02x}:")
         out.append("      switch (mShtype) {")
         for sh in range(4):
             lbl = reg_map[key6].get(sh)
             if lbl:
-                out.append(f"      case {sh}: cop->dispatch = &&lbl_{lbl}; break;")
+                out.append(f"      case {sh}: cop->dispatch = pcr ? "
+                           f"&&lbl_{lbl}_pcr : &&lbl_{lbl}; break;")
         out.append("      }")
         out.append("      break;")
     out.append("    default: cop->dispatch = &&lbl_undefined; break;")
