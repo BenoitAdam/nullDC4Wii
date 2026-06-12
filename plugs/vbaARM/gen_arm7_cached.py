@@ -55,126 +55,303 @@ DP = [
     ("mvns", "DO_MVNS", 0xF, True,  True),
 ]
 
-# ── Shifter forms (operand2) ────────────────────────────────────────────────
-# (name, FORM_macro). Register forms vs immediate-operand form. imm-rotate is
-# split into rot0/rotn so the carry path is branch-free.
-FORMS = [
-    ("lsli", "FORM_LSL_IMM"),
-    ("lsri", "FORM_LSR_IMM"),
-    ("asri", "FORM_ASR_IMM"),
-    ("rori", "FORM_ROR_IMM"),
-    ("lslr", "FORM_LSL_REG"),
-    ("lsrr", "FORM_LSR_REG"),
-    ("asrr", "FORM_ASR_REG"),
-    ("rorr", "FORM_ROR_REG"),
-    ("imm0", "FORM_IMM_ROT0"),
-    ("immn", "FORM_IMM_ROTN"),
-]
+# Which DP ops are LOGICAL (their *S form takes C from the shifter carry-out)
+# vs ARITHMETIC (their *S form derives C from the ALU and ignores shifter carry).
+LOGICAL = {"and","ands","eor","eors","tst","teq","orr","orrs",
+           "mov","movs","bic","bics","mvn","mvns"}
+
+# Register shifter forms (operand2 = Rm shifted). Split shift/rotate into its own
+# uop (lbl_sh_<form> value-only, lbl_shc_<form> value + carry into reg[R_COUT]).
+# `byreg` forms take the amount from Rs (reg[op->imm]); imm forms from op->imm.
+SHIFT_FORMS = ["lsli", "lsri", "asri", "rori", "lslr", "lsrr", "asrr", "rorr"]
+
+
+def shift_body(out, form, indent, writes_carry):
+    """Emit the shifter computation for `form` into reg[R_SHIFT] (+reg[R_COUT]
+    when writes_carry). Reads Rm = reg[op->r2]; amount from op->imm (imm forms)
+    or reg[op->imm] (reg forms). Mirrors the original FORM_* macros exactly."""
+    p = indent
+    out.append(p + "u32 v = reg[op->r2].I;")
+    byreg = form.endswith("r") and not form.endswith("i")  # *r vs *i
+    # form names: lsli/lsri/asri/rori (imm), lslr/lsrr/asrr/rorr (reg)
+    is_reg = form[-1] == "r"
+    base = form[:-1]   # lsl/lsr/asr/ror
+    cw = (lambda e: out.append(p + f"reg[R_COUT].I = ({e}) ? 1 : 0;")) if writes_carry \
+         else (lambda e: None)
+    if not is_reg:
+        out.append(p + "u32 s = op->imm;")
+        if base == "lsl":
+            out.append(p + "if (s) {"); cw("(v >> (32 - s)) & 1")
+            out.append(p + "  reg[R_SHIFT].I = v << s;")
+            out.append(p + "} else { reg[R_SHIFT].I = v;" + ("" if writes_carry else "") + " }")
+        elif base == "lsr":
+            out.append(p + "if (s) {"); cw("(v >> (s - 1)) & 1")
+            out.append(p + "  reg[R_SHIFT].I = v >> s;")
+            out.append(p + "} else {"); cw("v & 0x80000000")
+            out.append(p + "  reg[R_SHIFT].I = 0; }")
+        elif base == "asr":
+            out.append(p + "if (s) {"); cw("((s32)v >> (int)(s - 1)) & 1")
+            out.append(p + "  reg[R_SHIFT].I = (u32)((s32)v >> (int)s);")
+            out.append(p + "} else if (v & 0x80000000) {"); cw("1")
+            out.append(p + "  reg[R_SHIFT].I = 0xFFFFFFFF;")
+            out.append(p + "} else {"); cw("0")
+            out.append(p + "  reg[R_SHIFT].I = 0; }")
+        else:  # ror (s!=0) / rrx (s==0)
+            out.append(p + "if (s) {"); cw("(v >> (s - 1)) & 1")
+            out.append(p + "  reg[R_SHIFT].I = (v << (32 - s)) | (v >> s);")
+            out.append(p + "} else { u32 cc = (u32)C_FLAG;"); cw("v & 1")
+            out.append(p + "  reg[R_SHIFT].I = (v >> 1) | (cc << 31); }")
+    else:
+        out.append(p + "u32 s = reg[op->imm].I & 0xFF;")
+        if base == "lsl":
+            out.append(p + "if (s) {")
+            out.append(p + "  if (s == 32) {"); cw("v & 1"); out.append(p + "    reg[R_SHIFT].I = 0;")
+            out.append(p + "  } else if (s < 32) {"); cw("(v >> (32 - s)) & 1"); out.append(p + "    reg[R_SHIFT].I = v << s;")
+            out.append(p + "  } else {"); cw("0"); out.append(p + "    reg[R_SHIFT].I = 0; }")
+            out.append(p + "} else { reg[R_SHIFT].I = v; }")
+        elif base == "lsr":
+            out.append(p + "if (s) {")
+            out.append(p + "  if (s == 32) {"); cw("v & 0x80000000"); out.append(p + "    reg[R_SHIFT].I = 0;")
+            out.append(p + "  } else if (s < 32) {"); cw("(v >> (s - 1)) & 1"); out.append(p + "    reg[R_SHIFT].I = v >> s;")
+            out.append(p + "  } else {"); cw("0"); out.append(p + "    reg[R_SHIFT].I = 0; }")
+            out.append(p + "} else { reg[R_SHIFT].I = v; }")
+        elif base == "asr":
+            out.append(p + "if (s < 32) {")
+            out.append(p + "  if (s) {"); cw("((s32)v >> (int)(s - 1)) & 1"); out.append(p + "    reg[R_SHIFT].I = (u32)((s32)v >> (int)s);")
+            out.append(p + "  } else { reg[R_SHIFT].I = v; }")
+            out.append(p + "} else if (v & 0x80000000) {"); cw("1"); out.append(p + "  reg[R_SHIFT].I = 0xFFFFFFFF;")
+            out.append(p + "} else {"); cw("0"); out.append(p + "  reg[R_SHIFT].I = 0; }")
+        else:  # ror
+            out.append(p + "if (s) {")
+            out.append(p + "  s &= 0x1f;")
+            out.append(p + "  if (s) {"); cw("(v >> (s - 1)) & 1"); out.append(p + "    reg[R_SHIFT].I = (v << (32 - s)) | (v >> s);")
+            out.append(p + "  } else {"); cw("v & 0x80000000"); out.append(p + "    reg[R_SHIFT].I = v; }")
+            out.append(p + "} else {"); cw("v & 0x80000000"); out.append(p + "  reg[R_SHIFT].I = v; }")
+
+
+def emit_shift_labels(out):
+    """Shift uops: compute operand2 into reg[R_SHIFT] (+ carry into reg[R_COUT]
+    for the _shc variant), then fall through (pc_op++) to the op uop. Two carry
+    flavors x two pcr flavors per form."""
+    for form in SHIFT_FORMS:
+        for carry in (False, True):
+            for pcr in (False, True):
+                nm = ("shc_" if carry else "sh_") + form + ("_pcr" if pcr else "")
+                out.append(f"lbl_{nm}:")
+                out.append("  {")
+                out.append("    ARM7CACHEOP* op = pc_op;")
+                if pcr:
+                    out.append("    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */")
+                shift_body(out, form, "    ", carry)
+                out.append("  }")
+                # Fall through to the op uop (same instruction): no charge/advance.
+                out.append("  pc_op++; goto *pc_op->dispatch;")
+
+
+def emit_op_body(out, name, do, sets_flags, writes_rd, *,
+                 op2, cout, pcr, pcwrite):
+    """Emit one data-processing op-uop body.
+      op2     : C expression for operand2 ('reg[op->r2].I' or 'op->imm')
+      cout    : C expression for shifter carry, or None (arith / non-flag ops)
+      pcr     : materialize reg[15]=dispatch_pc+8 (Rn==r15) before the op
+      pcwrite : this is the Rd==15 variant -> set dispatch_pc + re-dispatch
+    """
+    uses_base = name not in ("mov", "movs", "mvn", "mvns")
+    # PC-write variants always materialize reg[15]: an operand may be Rm/Rn==15
+    # (e.g. MOV pc,pc-relative) and these are rare, so unconditional is fine.
+    if pcr or pcwrite:
+        out.append("  SET_PC_READ();")
+    out.append("  {")
+    out.append("    ARM7CACHEOP* op = pc_op;")
+    if writes_rd and not pcwrite:
+        out.append("    int dest = op->r0;")
+    if uses_base:
+        out.append("    int base = op->r1;")
+    out.append(f"    u32 value = {op2};")
+    if cout is not None:
+        out.append(f"    bool C_OUT = {cout};")
+    if pcwrite:
+        # Rd is r15 by construction; write into reg[15] then dispatch_pc.
+        out.append("    int dest = 15;")
+        out.append(f"    {do}")
+        if sets_flags:
+            out.append("    clockTicks++;")
+            out.append("    CPUSwitchMode(reg[17].I & 0x1f, false);")
+        out.append("    dispatch_pc = reg[15].I & 0xFFFFFFFC;")
+        out.append("  }")
+        out.append("  DISPATCH_PC();")
+    else:
+        out.append(f"    {do}")
+        out.append("  }")
+        out.append("  ADVANCE();")
 
 
 def emit_dp_labels(out):
-    """Label bodies for every (operation x form) data-processing variant.
+    """Data-processing op uops. operand2 is read from reg[op->r2] (the decoder
+    sets r2 = Rm, or R_SHIFT(46) when a shift uop precedes) or from op->imm.
 
-    Two variants per (op, form):
-      lbl_dp_<op>_<form>      plain: never touches reg[15]
-      lbl_dp_<op>_<form>_pcr  pc-read: materializes reg[15]=dispatch_pc+8 first
-                              (used when Rn==15 or Rm==15)
-    The rare dest==15 (PC write) case is handled inline in BOTH variants: it
-    writes the new PC into dispatch_pc and re-dispatches via dp_pc_done.
+    Variants per op:
+      _reg            register operand2 (reg[op->r2])
+      _imm0 / _immn   immediate operand2 (rot==0 / rot!=0)
+      LOGICAL *S ops also split the register form into:
+         _reg_creg    C_OUT from reg[R_COUT]  (a shift uop ran)
+         _reg_cflag   C_OUT from C_FLAG       (plain Rm, no shift)
+      each optionally suffixed _pcr (Rn==r15) and, for writes_rd ops, a
+      separate _pc / _pcs (Rd==r15) PC-write variant.
     """
     for (name, do, _op4, sets_flags, writes_rd) in DP:
-        for (fname, form) in FORMS:
-            for pcread in (False, True):
-                label = f"dp_{name}_{fname}" + ("_pcr" if pcread else "")
-                # `dest` (Rd) only referenced by ops that write Rd (+ the dest==15
-                # path); compare ops don't. `base` (Rn) read by all but MOV/MVN.
-                uses_base = name not in ("mov", "movs", "mvn", "mvns")
-                out.append(f"lbl_{label}:")
-                if pcread:
-                    # Rn/Rm reference r15 -> need the ARM prefetch value.
-                    out.append("  SET_PC_READ();")
-                out.append("  {")
-                out.append("    ARM7CACHEOP* op = pc_op;")
-                if writes_rd:
-                    out.append("    int dest = op->r0;")
-                if uses_base:
-                    out.append("    int base = op->r1;")
-                out.append("    u32 value;")
-                out.append("    C_OUT = C_FLAG;")
-                out.append(f"    {form}")
-                if writes_rd:
-                    # dest==15 PC write: compute, place the new PC into dispatch_pc.
-                    out.append("    if (dest == 15) {")
-                    out.append(f"      {do}")
-                    if sets_flags:
-                        out.append("      clockTicks++;")
-                        out.append("      CPUSwitchMode(reg[17].I & 0x1f, false);")
-                    out.append("      dispatch_pc = reg[15].I & 0xFFFFFFFC;")
-                    out.append("      goto dp_pc_done;")
-                    out.append("    } else {")
-                    out.append(f"      {do}")
-                    out.append("    }")
-                else:
-                    out.append(f"    {do}")
-                out.append("  }")
-                out.append("  ADVANCE();")
-    # shared PC-write continuation: dispatch_pc already holds the new PC.
+        is_logical_flags = sets_flags and name in LOGICAL
+        for pcr in (False, True):
+            sfx = "_pcr" if pcr else ""
+            # ---- register-operand variants ----
+            if is_logical_flags:
+                out.append(f"lbl_dp_{name}_reg_creg{sfx}:")
+                emit_op_body(out, name, do, sets_flags, writes_rd,
+                             op2="reg[op->r2].I", cout="reg[R_COUT].I != 0",
+                             pcr=pcr, pcwrite=False)
+                out.append(f"lbl_dp_{name}_reg_cflag{sfx}:")
+                emit_op_body(out, name, do, sets_flags, writes_rd,
+                             op2="reg[op->r2].I", cout="C_FLAG",
+                             pcr=pcr, pcwrite=False)
+            else:
+                # Non-logical ops (incl. arithmetic-S) derive C from the ALU,
+                # not the shifter -> their DO_ macro never reads C_OUT.
+                out.append(f"lbl_dp_{name}_reg{sfx}:")
+                emit_op_body(out, name, do, sets_flags, writes_rd,
+                             op2="reg[op->r2].I", cout=None,
+                             pcr=pcr, pcwrite=False)
+            # ---- immediate-operand variants (carry: rot0=C_FLAG, rotn=bit31) ----
+            if sets_flags and name in LOGICAL:
+                out.append(f"lbl_dp_{name}_imm0{sfx}:")
+                emit_op_body(out, name, do, sets_flags, writes_rd,
+                             op2="op->imm", cout="C_FLAG", pcr=pcr, pcwrite=False)
+                out.append(f"lbl_dp_{name}_immn{sfx}:")
+                emit_op_body(out, name, do, sets_flags, writes_rd,
+                             op2="op->imm", cout="(op->imm & 0x80000000) != 0",
+                             pcr=pcr, pcwrite=False)
+            else:
+                out.append(f"lbl_dp_{name}_imm0{sfx}:")
+                out.append(f"lbl_dp_{name}_immn{sfx}:")
+                emit_op_body(out, name, do, sets_flags, writes_rd,
+                             op2="op->imm", cout=None, pcr=pcr, pcwrite=False)
+        # ---- PC-write variants (Rd==r15): one plain, one S (mode restore) ----
+        # Only logical-flag ops' DO_*S macro reads C_OUT; everything else derives
+        # C from the ALU (or doesn't set flags), so leave cout=None to avoid an
+        # unused-variable. (For S-with-PC the flags are reloaded from SPSR by
+        # CPUSwitchMode anyway, so the value is moot -- this just silences the warning.)
+        pc_cout = "C_FLAG" if is_logical_flags else None
+        if writes_rd:
+            out.append(f"lbl_dp_{name}_pc:")
+            emit_op_body(out, name, do, sets_flags, writes_rd,
+                         op2="reg[op->r2].I", cout=pc_cout, pcr=False, pcwrite=True)
+            out.append(f"lbl_dp_{name}_pc_imm:")
+            emit_op_body(out, name, do, sets_flags, writes_rd,
+                         op2="op->imm", cout=pc_cout, pcr=False, pcwrite=True)
+    # Shared PC-write continuation used by the LDR-to-PC path (emit_mem_labels):
+    # dispatch_pc already holds the loaded/computed PC.
     out.append("dp_pc_done:")
     out.append("  DISPATCH_PC();")
 
 
 def emit_dp_decode(out):
-    """Decoder: map a data-processing opcode to its label + operands."""
-    # form selection happens at decode time from opcode bits.
+    """Decoder: map a data-processing opcode to its uop chain.
+
+    Immediate operand2 -> a single op uop (_imm0/_immn, or _pc_imm for Rd==15).
+    Register operand2:
+      * plain Rm (LSL #0, no register shift) -> a single op uop reading reg[Rm].
+      * any real shift/rotate -> a SHIFT uop (which the entrypoint/cond-guard
+        falls through to) that writes reg[R_SHIFT], then an op uop reading
+        reg[R_SHIFT]. The shift uop occupies `cop`; the op uop is the next slot
+        and ARM7_CACHE_LAST_OP is bumped by one extra.
+    Rd==15 routes to the _pc / _pc_imm PC-write op variants.
+    """
+    regforms = ["lsli", "lsri", "asri", "rori", "lslr", "lsrr", "asrr", "rorr"]
     out.append("  /* data processing: cond 00 I opcode4 S Rn Rd operand2 */")
     out.append("  {")
     out.append("    u32 op4 = (opcode >> 21) & 0xF;")
     out.append("    u32 sbit = (opcode >> 20) & 1;")
-    out.append("    cop->r0 = (opcode >> 12) & 0xF;   /* Rd */")
-    out.append("    cop->r1 = (opcode >> 16) & 0xF;   /* Rn */")
-    out.append("    cop->r2 = opcode & 0xF;           /* Rm */")
-    # pcr = does this op READ r15? imm form: only Rn (operand1). reg form: Rn or Rm.
-    # When true we route to the _pcr label variant that materializes reg[15].
-    out.append("    int rn15 = (((opcode >> 16) & 0xF) == 15);")
-    out.append("    int rm15 = ((opcode & 0xF) == 15);")
+    out.append("    u32 rd = (opcode >> 12) & 0xF;")
+    out.append("    u32 rn = (opcode >> 16) & 0xF;")
+    out.append("    u32 rm = opcode & 0xF;")
+    out.append("    int rn15 = (rn == 15);")
+    out.append("    int rm15 = (rm == 15);")
+    out.append("    int pcwrite = (rd == 15);")
+    out.append("    u32 key = (op4 << 1) | sbit;")
+    out.append("")
     out.append("    if (opcode & 0x02000000) {")
-    out.append("      /* immediate operand2 */")
+    out.append("      /* ---- immediate operand2 (single op uop) ---- */")
     out.append("      u32 imm8 = opcode & 0xFF;")
     out.append("      u32 rot  = ((opcode >> 8) & 0xF) * 2;")
+    out.append("      cop->r0 = rd; cop->r1 = rn;")
     out.append("      cop->imm = rot ? ((imm8 >> rot) | (imm8 << (32 - rot))) : imm8;")
     out.append("      int rotn = rot != 0;")
-    out.append("      int pcr = rn15;   /* immediate form: only Rn can be r15 */")
-    out.append("      switch ((op4 << 1) | sbit) {")
+    out.append("      switch (key) {")
     for (name, do, op4, sets_flags, writes_rd) in DP:
-        key = (op4 << 1) | (1 if sets_flags else 0)
-        out.append(f"      case 0x{key:02x}: cop->dispatch = pcr")
-        out.append(f"        ? (rotn ? &&lbl_dp_{name}_immn_pcr : &&lbl_dp_{name}_imm0_pcr)")
-        out.append(f"        : (rotn ? &&lbl_dp_{name}_immn     : &&lbl_dp_{name}_imm0); break;")
+        k = (op4 << 1) | (1 if sets_flags else 0)
+        if writes_rd:
+            out.append(f"      case 0x{k:02x}: cop->dispatch = pcwrite ? &&lbl_dp_{name}_pc_imm")
+            out.append(f"        : rn15 ? (rotn ? &&lbl_dp_{name}_immn_pcr : &&lbl_dp_{name}_imm0_pcr)")
+            out.append(f"        :        (rotn ? &&lbl_dp_{name}_immn     : &&lbl_dp_{name}_imm0); break;")
+        else:
+            out.append(f"      case 0x{k:02x}: cop->dispatch =")
+            out.append(f"        rn15 ? (rotn ? &&lbl_dp_{name}_immn_pcr : &&lbl_dp_{name}_imm0_pcr)")
+            out.append(f"        :      (rotn ? &&lbl_dp_{name}_immn     : &&lbl_dp_{name}_imm0); break;")
     out.append("      default: cop->dispatch = &&lbl_undefined; break;")
     out.append("      }")
     out.append("    } else {")
-    out.append("      /* register operand2 */")
+    out.append("      /* ---- register operand2 ---- */")
     out.append("      u32 shtype = (opcode >> 5) & 3;   /* 0 LSL 1 LSR 2 ASR 3 ROR */")
     out.append("      u32 byreg  = (opcode >> 4) & 1;   /* shift by register */")
-    out.append("      if (byreg) {")
-    out.append("        cop->imm = (opcode >> 8) & 0xF;   /* Rs */")
-    out.append("      } else {")
-    out.append("        cop->imm = (opcode >> 7) & 0x1F;  /* shift amount */")
-    out.append("      }")
-    out.append("      int fsel = (byreg << 2) | shtype;  /* 0..3 imm, 4..7 reg */")
-    out.append("      int pcr = rn15 || rm15;   /* reg form: Rn or Rm can be r15 */")
-    out.append("      switch ((op4 << 1) | sbit) {")
-    regforms = ["lsli", "lsri", "asri", "rori", "lslr", "lsrr", "asrr", "rorr"]
+    out.append("      u32 samt   = (opcode >> 7) & 0x1F;")
+    out.append("      /* 'plain Rm': LSL #0 with no register shift -> no shift uop. */")
+    out.append("      int plain = (!byreg && shtype == 0 && samt == 0);")
+    out.append("      int fsel = (byreg << 2) | shtype;  /* 0..7 index into regforms */")
+    out.append("      if (plain) {")
+    out.append("        /* op uop reads reg[Rm] directly; carry (logical-S) from C_FLAG. */")
+    out.append("        /* pcr if EITHER operand reads r15 (Rm is read directly here). */")
+    out.append("        int pcr = rn15 || rm15;")
+    out.append("        cop->r0 = rd; cop->r1 = rn; cop->r2 = rm;")
+    out.append("        switch (key) {")
     for (name, do, op4, sets_flags, writes_rd) in DP:
-        key = (op4 << 1) | (1 if sets_flags else 0)
-        out.append(f"      case 0x{key:02x}:")
-        out.append("        switch (fsel) {")
+        k = (op4 << 1) | (1 if sets_flags else 0)
+        logical = sets_flags and name in LOGICAL
+        reg_lbl = (f"lbl_dp_{name}_reg_cflag" if logical else f"lbl_dp_{name}_reg")
+        if writes_rd:
+            out.append(f"        case 0x{k:02x}: cop->dispatch = pcwrite ? &&lbl_dp_{name}_pc")
+            out.append(f"          : pcr ? &&{reg_lbl}_pcr : &&{reg_lbl}; break;")
+        else:
+            out.append(f"        case 0x{k:02x}: cop->dispatch = pcr ? &&{reg_lbl}_pcr : &&{reg_lbl}; break;")
+    out.append("        default: cop->dispatch = &&lbl_undefined; break;")
+    out.append("        }")
+    out.append("      } else {")
+    out.append("        /* SHIFT uop in `cop`, op uop in the next slot. */")
+    out.append("        ARM7CACHEOP* opu = &ARM7_CACHE[ARM7_CACHE_LAST_OP + 1];")
+    out.append("        ARM7_CACHE_LAST_OP++;   /* extra slot for the op uop */")
+    out.append("        opu->cond = cop->cond;")
+    out.append("        opu->r0 = rd; opu->r1 = rn; opu->r2 = R_SHIFT;")
+    out.append("        cop->r2 = rm;")
+    out.append("        cop->imm = byreg ? ((opcode >> 8) & 0xF) : samt;  /* Rs | amount */")
+    out.append("        /* select shift uop (carry-writing iff op is logical-S) and op uop */")
+    out.append("        switch (key) {")
+    for (name, do, op4, sets_flags, writes_rd) in DP:
+        k = (op4 << 1) | (1 if sets_flags else 0)
+        logical = sets_flags and name in LOGICAL
+        shpfx = "shc_" if logical else "sh_"
+        op_lbl = (f"lbl_dp_{name}_reg_creg" if logical else f"lbl_dp_{name}_reg")
+        out.append(f"        case 0x{k:02x}:")
+        # shift uop: pick form (+_pcr if Rm==15); op uop: op_lbl (+_pcr if Rn==15)
+        out.append("          switch (fsel) {")
         for i, ff in enumerate(regforms):
-            out.append(f"        case {i}: cop->dispatch = pcr ? "
-                       f"&&lbl_dp_{name}_{ff}_pcr : &&lbl_dp_{name}_{ff}; break;")
-        out.append("        }")
-        out.append("        break;")
-    out.append("      default: cop->dispatch = &&lbl_undefined; break;")
+            out.append(f"          case {i}: cop->dispatch = rm15 ? &&lbl_{shpfx}{ff}_pcr : &&lbl_{shpfx}{ff}; break;")
+        out.append("          }")
+        if writes_rd:
+            out.append(f"          opu->dispatch = pcwrite ? &&lbl_dp_{name}_pc")
+            out.append(f"            : rn15 ? &&{op_lbl}_pcr : &&{op_lbl};")
+        else:
+            out.append(f"          opu->dispatch = rn15 ? &&{op_lbl}_pcr : &&{op_lbl};")
+        out.append("          break;")
+    out.append("        default: cop->dispatch = &&lbl_undefined; ARM7_CACHE_LAST_OP--; break;")
+    out.append("        }")
     out.append("      }")
     out.append("    }")
     out.append("  }")
@@ -339,6 +516,7 @@ def main():
     out.append("// Regenerate: python3 gen_arm7_cached.py > arm7_cached_gen.inc")
     out.append("")
     out.append("#if defined(GEN_LABELS)")
+    emit_shift_labels(out)
     emit_dp_labels(out)
     emit_mem_labels(out)
     out.append("#endif // GEN_LABELS")

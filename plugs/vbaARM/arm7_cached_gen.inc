@@ -2,666 +2,562 @@
 // Regenerate: python3 gen_arm7_cached.py > arm7_cached_gen.inc
 
 #if defined(GEN_LABELS)
-lbl_dp_and_lsli:
+lbl_sh_lsli:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+      reg[R_SHIFT].I = v << s;
+    } else { reg[R_SHIFT].I = v; }
   }
-  ADVANCE();
-lbl_dp_and_lsli_pcr:
-  SET_PC_READ();
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_lsli_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+      reg[R_SHIFT].I = v << s;
+    } else { reg[R_SHIFT].I = v; }
   }
-  ADVANCE();
-lbl_dp_and_lsri:
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_lsli:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+    reg[R_COUT].I = ((v >> (32 - s)) & 1) ? 1 : 0;
+      reg[R_SHIFT].I = v << s;
+    } else { reg[R_SHIFT].I = v; }
   }
-  ADVANCE();
-lbl_dp_and_lsri_pcr:
-  SET_PC_READ();
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_lsli_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+    reg[R_COUT].I = ((v >> (32 - s)) & 1) ? 1 : 0;
+      reg[R_SHIFT].I = v << s;
+    } else { reg[R_SHIFT].I = v; }
   }
-  ADVANCE();
-lbl_dp_and_asri:
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_lsri:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+      reg[R_SHIFT].I = v >> s;
     } else {
-      DO_AND
-    }
+      reg[R_SHIFT].I = 0; }
   }
-  ADVANCE();
-lbl_dp_and_asri_pcr:
-  SET_PC_READ();
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_lsri_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+      reg[R_SHIFT].I = v >> s;
     } else {
-      DO_AND
-    }
+      reg[R_SHIFT].I = 0; }
   }
-  ADVANCE();
-lbl_dp_and_rori:
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_lsri:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+    reg[R_COUT].I = ((v >> (s - 1)) & 1) ? 1 : 0;
+      reg[R_SHIFT].I = v >> s;
     } else {
-      DO_AND
-    }
+    reg[R_COUT].I = (v & 0x80000000) ? 1 : 0;
+      reg[R_SHIFT].I = 0; }
   }
-  ADVANCE();
-lbl_dp_and_rori_pcr:
-  SET_PC_READ();
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_lsri_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+    reg[R_COUT].I = ((v >> (s - 1)) & 1) ? 1 : 0;
+      reg[R_SHIFT].I = v >> s;
     } else {
-      DO_AND
-    }
+    reg[R_COUT].I = (v & 0x80000000) ? 1 : 0;
+      reg[R_SHIFT].I = 0; }
   }
-  ADVANCE();
-lbl_dp_and_lslr:
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_asri:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+      reg[R_SHIFT].I = (u32)((s32)v >> (int)s);
+    } else if (v & 0x80000000) {
+      reg[R_SHIFT].I = 0xFFFFFFFF;
     } else {
-      DO_AND
-    }
+      reg[R_SHIFT].I = 0; }
   }
-  ADVANCE();
-lbl_dp_and_lslr_pcr:
-  SET_PC_READ();
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_asri_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+      reg[R_SHIFT].I = (u32)((s32)v >> (int)s);
+    } else if (v & 0x80000000) {
+      reg[R_SHIFT].I = 0xFFFFFFFF;
     } else {
-      DO_AND
-    }
+      reg[R_SHIFT].I = 0; }
   }
-  ADVANCE();
-lbl_dp_and_lsrr:
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_asri:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+    reg[R_COUT].I = (((s32)v >> (int)(s - 1)) & 1) ? 1 : 0;
+      reg[R_SHIFT].I = (u32)((s32)v >> (int)s);
+    } else if (v & 0x80000000) {
+    reg[R_COUT].I = (1) ? 1 : 0;
+      reg[R_SHIFT].I = 0xFFFFFFFF;
     } else {
-      DO_AND
-    }
+    reg[R_COUT].I = (0) ? 1 : 0;
+      reg[R_SHIFT].I = 0; }
   }
-  ADVANCE();
-lbl_dp_and_lsrr_pcr:
-  SET_PC_READ();
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_asri_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+    reg[R_COUT].I = (((s32)v >> (int)(s - 1)) & 1) ? 1 : 0;
+      reg[R_SHIFT].I = (u32)((s32)v >> (int)s);
+    } else if (v & 0x80000000) {
+    reg[R_COUT].I = (1) ? 1 : 0;
+      reg[R_SHIFT].I = 0xFFFFFFFF;
     } else {
-      DO_AND
-    }
+    reg[R_COUT].I = (0) ? 1 : 0;
+      reg[R_SHIFT].I = 0; }
   }
-  ADVANCE();
-lbl_dp_and_asrr:
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_rori:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+      reg[R_SHIFT].I = (v << (32 - s)) | (v >> s);
+    } else { u32 cc = (u32)C_FLAG;
+      reg[R_SHIFT].I = (v >> 1) | (cc << 31); }
   }
-  ADVANCE();
-lbl_dp_and_asrr_pcr:
-  SET_PC_READ();
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_rori_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+      reg[R_SHIFT].I = (v << (32 - s)) | (v >> s);
+    } else { u32 cc = (u32)C_FLAG;
+      reg[R_SHIFT].I = (v >> 1) | (cc << 31); }
   }
-  ADVANCE();
-lbl_dp_and_rorr:
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_rori:
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+    reg[R_COUT].I = ((v >> (s - 1)) & 1) ? 1 : 0;
+      reg[R_SHIFT].I = (v << (32 - s)) | (v >> s);
+    } else { u32 cc = (u32)C_FLAG;
+    reg[R_COUT].I = (v & 1) ? 1 : 0;
+      reg[R_SHIFT].I = (v >> 1) | (cc << 31); }
   }
-  ADVANCE();
-lbl_dp_and_rorr_pcr:
-  SET_PC_READ();
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_rori_pcr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = op->imm;
+    if (s) {
+    reg[R_COUT].I = ((v >> (s - 1)) & 1) ? 1 : 0;
+      reg[R_SHIFT].I = (v << (32 - s)) | (v >> s);
+    } else { u32 cc = (u32)C_FLAG;
+    reg[R_COUT].I = (v & 1) ? 1 : 0;
+      reg[R_SHIFT].I = (v >> 1) | (cc << 31); }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_lslr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      if (s == 32) {
+        reg[R_SHIFT].I = 0;
+      } else if (s < 32) {
+        reg[R_SHIFT].I = v << s;
+      } else {
+        reg[R_SHIFT].I = 0; }
+    } else { reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_lslr_pcr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      if (s == 32) {
+        reg[R_SHIFT].I = 0;
+      } else if (s < 32) {
+        reg[R_SHIFT].I = v << s;
+      } else {
+        reg[R_SHIFT].I = 0; }
+    } else { reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_lslr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      if (s == 32) {
+    reg[R_COUT].I = (v & 1) ? 1 : 0;
+        reg[R_SHIFT].I = 0;
+      } else if (s < 32) {
+    reg[R_COUT].I = ((v >> (32 - s)) & 1) ? 1 : 0;
+        reg[R_SHIFT].I = v << s;
+      } else {
+    reg[R_COUT].I = (0) ? 1 : 0;
+        reg[R_SHIFT].I = 0; }
+    } else { reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_lslr_pcr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      if (s == 32) {
+    reg[R_COUT].I = (v & 1) ? 1 : 0;
+        reg[R_SHIFT].I = 0;
+      } else if (s < 32) {
+    reg[R_COUT].I = ((v >> (32 - s)) & 1) ? 1 : 0;
+        reg[R_SHIFT].I = v << s;
+      } else {
+    reg[R_COUT].I = (0) ? 1 : 0;
+        reg[R_SHIFT].I = 0; }
+    } else { reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_lsrr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      if (s == 32) {
+        reg[R_SHIFT].I = 0;
+      } else if (s < 32) {
+        reg[R_SHIFT].I = v >> s;
+      } else {
+        reg[R_SHIFT].I = 0; }
+    } else { reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_lsrr_pcr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      if (s == 32) {
+        reg[R_SHIFT].I = 0;
+      } else if (s < 32) {
+        reg[R_SHIFT].I = v >> s;
+      } else {
+        reg[R_SHIFT].I = 0; }
+    } else { reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_lsrr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      if (s == 32) {
+    reg[R_COUT].I = (v & 0x80000000) ? 1 : 0;
+        reg[R_SHIFT].I = 0;
+      } else if (s < 32) {
+    reg[R_COUT].I = ((v >> (s - 1)) & 1) ? 1 : 0;
+        reg[R_SHIFT].I = v >> s;
+      } else {
+    reg[R_COUT].I = (0) ? 1 : 0;
+        reg[R_SHIFT].I = 0; }
+    } else { reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_lsrr_pcr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      if (s == 32) {
+    reg[R_COUT].I = (v & 0x80000000) ? 1 : 0;
+        reg[R_SHIFT].I = 0;
+      } else if (s < 32) {
+    reg[R_COUT].I = ((v >> (s - 1)) & 1) ? 1 : 0;
+        reg[R_SHIFT].I = v >> s;
+      } else {
+    reg[R_COUT].I = (0) ? 1 : 0;
+        reg[R_SHIFT].I = 0; }
+    } else { reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_asrr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s < 32) {
+      if (s) {
+        reg[R_SHIFT].I = (u32)((s32)v >> (int)s);
+      } else { reg[R_SHIFT].I = v; }
+    } else if (v & 0x80000000) {
+      reg[R_SHIFT].I = 0xFFFFFFFF;
+    } else {
+      reg[R_SHIFT].I = 0; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_asrr_pcr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s < 32) {
+      if (s) {
+        reg[R_SHIFT].I = (u32)((s32)v >> (int)s);
+      } else { reg[R_SHIFT].I = v; }
+    } else if (v & 0x80000000) {
+      reg[R_SHIFT].I = 0xFFFFFFFF;
+    } else {
+      reg[R_SHIFT].I = 0; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_asrr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s < 32) {
+      if (s) {
+    reg[R_COUT].I = (((s32)v >> (int)(s - 1)) & 1) ? 1 : 0;
+        reg[R_SHIFT].I = (u32)((s32)v >> (int)s);
+      } else { reg[R_SHIFT].I = v; }
+    } else if (v & 0x80000000) {
+    reg[R_COUT].I = (1) ? 1 : 0;
+      reg[R_SHIFT].I = 0xFFFFFFFF;
+    } else {
+    reg[R_COUT].I = (0) ? 1 : 0;
+      reg[R_SHIFT].I = 0; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_asrr_pcr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s < 32) {
+      if (s) {
+    reg[R_COUT].I = (((s32)v >> (int)(s - 1)) & 1) ? 1 : 0;
+        reg[R_SHIFT].I = (u32)((s32)v >> (int)s);
+      } else { reg[R_SHIFT].I = v; }
+    } else if (v & 0x80000000) {
+    reg[R_COUT].I = (1) ? 1 : 0;
+      reg[R_SHIFT].I = 0xFFFFFFFF;
+    } else {
+    reg[R_COUT].I = (0) ? 1 : 0;
+      reg[R_SHIFT].I = 0; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_rorr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      s &= 0x1f;
+      if (s) {
+        reg[R_SHIFT].I = (v << (32 - s)) | (v >> s);
+      } else {
+        reg[R_SHIFT].I = v; }
+    } else {
+      reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_sh_rorr_pcr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      s &= 0x1f;
+      if (s) {
+        reg[R_SHIFT].I = (v << (32 - s)) | (v >> s);
+      } else {
+        reg[R_SHIFT].I = v; }
+    } else {
+      reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_rorr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      s &= 0x1f;
+      if (s) {
+    reg[R_COUT].I = ((v >> (s - 1)) & 1) ? 1 : 0;
+        reg[R_SHIFT].I = (v << (32 - s)) | (v >> s);
+      } else {
+    reg[R_COUT].I = (v & 0x80000000) ? 1 : 0;
+        reg[R_SHIFT].I = v; }
+    } else {
+    reg[R_COUT].I = (v & 0x80000000) ? 1 : 0;
+      reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_shc_rorr_pcr:
+  {
+    ARM7CACHEOP* op = pc_op;
+    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    u32 v = reg[op->r2].I;
+    u32 s = reg[op->imm].I & 0xFF;
+    if (s) {
+      s &= 0x1f;
+      if (s) {
+    reg[R_COUT].I = ((v >> (s - 1)) & 1) ? 1 : 0;
+        reg[R_SHIFT].I = (v << (32 - s)) | (v >> s);
+      } else {
+    reg[R_COUT].I = (v & 0x80000000) ? 1 : 0;
+        reg[R_SHIFT].I = v; }
+    } else {
+    reg[R_COUT].I = (v & 0x80000000) ? 1 : 0;
+      reg[R_SHIFT].I = v; }
+  }
+  pc_op++; goto *pc_op->dispatch;
+lbl_dp_and_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
+    u32 value = reg[op->r2].I;
+    DO_AND
   }
   ADVANCE();
 lbl_dp_and_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
-  }
-  ADVANCE();
-lbl_dp_and_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
-  }
-  ADVANCE();
 lbl_dp_and_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
+    u32 value = op->imm;
+    DO_AND
   }
   ADVANCE();
+lbl_dp_and_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_AND
+  }
+  ADVANCE();
+lbl_dp_and_imm0_pcr:
 lbl_dp_and_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_AND
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_AND
-    }
+    u32 value = op->imm;
+    DO_AND
   }
   ADVANCE();
-lbl_dp_ands_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_lsli_pcr:
+lbl_dp_and_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_AND
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_ands_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_and_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_AND
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_ands_asri:
+  DISPATCH_PC();
+lbl_dp_ands_reg_creg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_ANDS
   }
   ADVANCE();
-lbl_dp_ands_asri_pcr:
-  SET_PC_READ();
+lbl_dp_ands_reg_cflag:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_ANDS
   }
   ADVANCE();
 lbl_dp_ands_imm0:
@@ -669,18 +565,41 @@ lbl_dp_ands_imm0:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_ANDS
+  }
+  ADVANCE();
+lbl_dp_ands_immn:
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_ANDS
+  }
+  ADVANCE();
+lbl_dp_ands_reg_creg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_ANDS
+  }
+  ADVANCE();
+lbl_dp_ands_reg_cflag_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_ANDS
   }
   ADVANCE();
 lbl_dp_ands_imm0_pcr:
@@ -689,37 +608,9 @@ lbl_dp_ands_imm0_pcr:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
-  }
-  ADVANCE();
-lbl_dp_ands_immn:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_ANDS
   }
   ADVANCE();
 lbl_dp_ands_immn_pcr:
@@ -728,680 +619,119 @@ lbl_dp_ands_immn_pcr:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ANDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ANDS
-    }
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_ANDS
   }
   ADVANCE();
-lbl_dp_eor_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_lsli_pcr:
+lbl_dp_ands_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_ANDS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_eor_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_ands_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_ANDS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_eor_asri:
+  DISPATCH_PC();
+lbl_dp_eor_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
+    u32 value = reg[op->r2].I;
+    DO_EOR
   }
   ADVANCE();
 lbl_dp_eor_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
-lbl_dp_eor_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
-  }
-  ADVANCE();
 lbl_dp_eor_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
+    u32 value = op->imm;
+    DO_EOR
   }
   ADVANCE();
+lbl_dp_eor_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_EOR
+  }
+  ADVANCE();
+lbl_dp_eor_imm0_pcr:
 lbl_dp_eor_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_EOR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EOR
-    }
+    u32 value = op->imm;
+    DO_EOR
   }
   ADVANCE();
-lbl_dp_eors_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_lsli_pcr:
+lbl_dp_eor_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_EOR
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_eors_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_eor_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_EOR
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_eors_asri:
+  DISPATCH_PC();
+lbl_dp_eors_reg_creg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_EORS
   }
   ADVANCE();
-lbl_dp_eors_asri_pcr:
-  SET_PC_READ();
+lbl_dp_eors_reg_cflag:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_EORS
   }
   ADVANCE();
 lbl_dp_eors_imm0:
@@ -1409,18 +739,41 @@ lbl_dp_eors_imm0:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_EORS
+  }
+  ADVANCE();
+lbl_dp_eors_immn:
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_EORS
+  }
+  ADVANCE();
+lbl_dp_eors_reg_creg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_EORS
+  }
+  ADVANCE();
+lbl_dp_eors_reg_cflag_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_EORS
   }
   ADVANCE();
 lbl_dp_eors_imm0_pcr:
@@ -1429,37 +782,9 @@ lbl_dp_eors_imm0_pcr:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
-  }
-  ADVANCE();
-lbl_dp_eors_immn:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_EORS
   }
   ADVANCE();
 lbl_dp_eors_immn_pcr:
@@ -1468,4625 +793,822 @@ lbl_dp_eors_immn_pcr:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_EORS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_EORS
-    }
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_EORS
   }
   ADVANCE();
-lbl_dp_sub_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_lsli_pcr:
+lbl_dp_eors_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_EORS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_sub_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_eors_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_EORS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_sub_asri:
+  DISPATCH_PC();
+lbl_dp_sub_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
+    u32 value = reg[op->r2].I;
+    DO_SUB
   }
   ADVANCE();
 lbl_dp_sub_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
-lbl_dp_sub_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
-  }
-  ADVANCE();
 lbl_dp_sub_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
+    u32 value = op->imm;
+    DO_SUB
   }
   ADVANCE();
+lbl_dp_sub_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_SUB
+  }
+  ADVANCE();
+lbl_dp_sub_imm0_pcr:
 lbl_dp_sub_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_SUB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUB
-    }
+    u32 value = op->imm;
+    DO_SUB
   }
   ADVANCE();
-lbl_dp_subs_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_lsli_pcr:
+lbl_dp_sub_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_SUB
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_subs_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_sub_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_SUB
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_subs_asri:
+  DISPATCH_PC();
+lbl_dp_subs_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
+    u32 value = reg[op->r2].I;
+    DO_SUBS
   }
   ADVANCE();
 lbl_dp_subs_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
-lbl_dp_subs_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
-  }
-  ADVANCE();
 lbl_dp_subs_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
+    u32 value = op->imm;
+    DO_SUBS
   }
   ADVANCE();
+lbl_dp_subs_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_SUBS
+  }
+  ADVANCE();
+lbl_dp_subs_imm0_pcr:
 lbl_dp_subs_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_SUBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SUBS
-    }
+    u32 value = op->imm;
+    DO_SUBS
   }
   ADVANCE();
-lbl_dp_rsb_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_lsli_pcr:
+lbl_dp_subs_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_SUBS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_rsb_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_subs_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_SUBS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_rsb_asri:
+  DISPATCH_PC();
+lbl_dp_rsb_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
+    u32 value = reg[op->r2].I;
+    DO_RSB
   }
   ADVANCE();
 lbl_dp_rsb_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
-lbl_dp_rsb_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
-  }
-  ADVANCE();
 lbl_dp_rsb_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
+    u32 value = op->imm;
+    DO_RSB
   }
   ADVANCE();
+lbl_dp_rsb_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_RSB
+  }
+  ADVANCE();
+lbl_dp_rsb_imm0_pcr:
 lbl_dp_rsb_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_RSB
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSB
-    }
+    u32 value = op->imm;
+    DO_RSB
   }
   ADVANCE();
-lbl_dp_rsbs_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_lsli_pcr:
+lbl_dp_rsb_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_RSB
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_rsbs_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_rsb_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_RSB
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_rsbs_asri:
+  DISPATCH_PC();
+lbl_dp_rsbs_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
+    u32 value = reg[op->r2].I;
+    DO_RSBS
   }
   ADVANCE();
 lbl_dp_rsbs_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
-lbl_dp_rsbs_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
-  }
-  ADVANCE();
 lbl_dp_rsbs_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
+    u32 value = op->imm;
+    DO_RSBS
   }
   ADVANCE();
+lbl_dp_rsbs_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_RSBS
+  }
+  ADVANCE();
+lbl_dp_rsbs_imm0_pcr:
 lbl_dp_rsbs_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_RSBS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSBS
-    }
+    u32 value = op->imm;
+    DO_RSBS
   }
   ADVANCE();
-lbl_dp_add_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_lsli_pcr:
+lbl_dp_rsbs_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_RSBS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_add_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_rsbs_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_RSBS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_add_asri:
+  DISPATCH_PC();
+lbl_dp_add_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
+    u32 value = reg[op->r2].I;
+    DO_ADD
   }
   ADVANCE();
 lbl_dp_add_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
-lbl_dp_add_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
-  }
-  ADVANCE();
 lbl_dp_add_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
+    u32 value = op->imm;
+    DO_ADD
   }
   ADVANCE();
+lbl_dp_add_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_ADD
+  }
+  ADVANCE();
+lbl_dp_add_imm0_pcr:
 lbl_dp_add_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ADD
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADD
-    }
+    u32 value = op->imm;
+    DO_ADD
   }
   ADVANCE();
-lbl_dp_adds_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_lsli_pcr:
+lbl_dp_add_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_ADD
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_adds_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_add_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_ADD
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_adds_asri:
+  DISPATCH_PC();
+lbl_dp_adds_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
+    u32 value = reg[op->r2].I;
+    DO_ADDS
   }
   ADVANCE();
 lbl_dp_adds_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
-lbl_dp_adds_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
-  }
-  ADVANCE();
 lbl_dp_adds_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
+    u32 value = op->imm;
+    DO_ADDS
   }
   ADVANCE();
+lbl_dp_adds_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_ADDS
+  }
+  ADVANCE();
+lbl_dp_adds_imm0_pcr:
 lbl_dp_adds_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ADDS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADDS
-    }
+    u32 value = op->imm;
+    DO_ADDS
   }
   ADVANCE();
-lbl_dp_adc_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_lsli_pcr:
+lbl_dp_adds_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_ADDS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_adc_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_adds_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_ADDS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_adc_asri:
+  DISPATCH_PC();
+lbl_dp_adc_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
+    u32 value = reg[op->r2].I;
+    DO_ADC
   }
   ADVANCE();
 lbl_dp_adc_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
-lbl_dp_adc_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
-  }
-  ADVANCE();
 lbl_dp_adc_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
+    u32 value = op->imm;
+    DO_ADC
   }
   ADVANCE();
+lbl_dp_adc_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_ADC
+  }
+  ADVANCE();
+lbl_dp_adc_imm0_pcr:
 lbl_dp_adc_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ADC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADC
-    }
+    u32 value = op->imm;
+    DO_ADC
   }
   ADVANCE();
-lbl_dp_adcs_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_lsli_pcr:
+lbl_dp_adc_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_ADC
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_adcs_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_adc_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_ADC
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_adcs_asri:
+  DISPATCH_PC();
+lbl_dp_adcs_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
+    u32 value = reg[op->r2].I;
+    DO_ADCS
   }
   ADVANCE();
 lbl_dp_adcs_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
-lbl_dp_adcs_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
-  }
-  ADVANCE();
 lbl_dp_adcs_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
+    u32 value = op->imm;
+    DO_ADCS
   }
   ADVANCE();
+lbl_dp_adcs_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_ADCS
+  }
+  ADVANCE();
+lbl_dp_adcs_imm0_pcr:
 lbl_dp_adcs_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ADCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ADCS
-    }
+    u32 value = op->imm;
+    DO_ADCS
   }
   ADVANCE();
-lbl_dp_sbc_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_lsli_pcr:
+lbl_dp_adcs_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_ADCS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_sbc_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_adcs_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_ADCS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_sbc_asri:
+  DISPATCH_PC();
+lbl_dp_sbc_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
+    u32 value = reg[op->r2].I;
+    DO_SBC
   }
   ADVANCE();
 lbl_dp_sbc_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
-lbl_dp_sbc_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
-  }
-  ADVANCE();
 lbl_dp_sbc_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
+    u32 value = op->imm;
+    DO_SBC
   }
   ADVANCE();
+lbl_dp_sbc_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_SBC
+  }
+  ADVANCE();
+lbl_dp_sbc_imm0_pcr:
 lbl_dp_sbc_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_SBC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBC
-    }
+    u32 value = op->imm;
+    DO_SBC
   }
   ADVANCE();
-lbl_dp_sbcs_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_lsli_pcr:
+lbl_dp_sbc_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_SBC
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_sbcs_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_sbc_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_SBC
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_sbcs_asri:
+  DISPATCH_PC();
+lbl_dp_sbcs_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
+    u32 value = reg[op->r2].I;
+    DO_SBCS
   }
   ADVANCE();
 lbl_dp_sbcs_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
-lbl_dp_sbcs_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
-  }
-  ADVANCE();
 lbl_dp_sbcs_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
+    u32 value = op->imm;
+    DO_SBCS
   }
   ADVANCE();
+lbl_dp_sbcs_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_SBCS
+  }
+  ADVANCE();
+lbl_dp_sbcs_imm0_pcr:
 lbl_dp_sbcs_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_SBCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_SBCS
-    }
+    u32 value = op->imm;
+    DO_SBCS
   }
   ADVANCE();
-lbl_dp_rsc_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_lsli_pcr:
+lbl_dp_sbcs_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_SBCS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_rsc_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_sbcs_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_SBCS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_rsc_asri:
+  DISPATCH_PC();
+lbl_dp_rsc_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
+    u32 value = reg[op->r2].I;
+    DO_RSC
   }
   ADVANCE();
 lbl_dp_rsc_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
-lbl_dp_rsc_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
-  }
-  ADVANCE();
 lbl_dp_rsc_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
+    u32 value = op->imm;
+    DO_RSC
   }
   ADVANCE();
+lbl_dp_rsc_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_RSC
+  }
+  ADVANCE();
+lbl_dp_rsc_imm0_pcr:
 lbl_dp_rsc_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_RSC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSC
-    }
+    u32 value = op->imm;
+    DO_RSC
   }
   ADVANCE();
-lbl_dp_rscs_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_lsli_pcr:
+lbl_dp_rsc_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_RSC
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_rscs_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_rsc_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_RSC
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_rscs_asri:
+  DISPATCH_PC();
+lbl_dp_rscs_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
+    u32 value = reg[op->r2].I;
+    DO_RSCS
   }
   ADVANCE();
 lbl_dp_rscs_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
-lbl_dp_rscs_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
-  }
-  ADVANCE();
 lbl_dp_rscs_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
+    u32 value = op->imm;
+    DO_RSCS
   }
   ADVANCE();
+lbl_dp_rscs_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_RSCS
+  }
+  ADVANCE();
+lbl_dp_rscs_imm0_pcr:
 lbl_dp_rscs_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_RSCS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_RSCS
-    }
+    u32 value = op->imm;
+    DO_RSCS
   }
   ADVANCE();
-lbl_dp_tst_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_lsli_pcr:
+lbl_dp_rscs_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    DO_TST
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_RSCS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_tst_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_rscs_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    DO_TST
+    u32 value = op->imm;
+    int dest = 15;
+    DO_RSCS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_tst_asri:
+  DISPATCH_PC();
+lbl_dp_tst_reg_creg:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
     DO_TST
   }
   ADVANCE();
-lbl_dp_tst_asri_pcr:
-  SET_PC_READ();
+lbl_dp_tst_reg_cflag:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
     DO_TST
   }
   ADVANCE();
@@ -6094,9 +1616,37 @@ lbl_dp_tst_imm0:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_TST
+  }
+  ADVANCE();
+lbl_dp_tst_immn:
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_TST
+  }
+  ADVANCE();
+lbl_dp_tst_reg_creg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_TST
+  }
+  ADVANCE();
+lbl_dp_tst_reg_cflag_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
     DO_TST
   }
   ADVANCE();
@@ -6105,19 +1655,8 @@ lbl_dp_tst_imm0_pcr:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    DO_TST
-  }
-  ADVANCE();
-lbl_dp_tst_immn:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
     DO_TST
   }
   ADVANCE();
@@ -6126,177 +1665,26 @@ lbl_dp_tst_immn_pcr:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
     DO_TST
   }
   ADVANCE();
-lbl_dp_teq_lsli:
+lbl_dp_teq_reg_creg:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
     DO_TEQ
   }
   ADVANCE();
-lbl_dp_teq_lsli_pcr:
-  SET_PC_READ();
+lbl_dp_teq_reg_cflag:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_lsri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_asri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
     DO_TEQ
   }
   ADVANCE();
@@ -6304,9 +1692,37 @@ lbl_dp_teq_imm0:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_TEQ
+  }
+  ADVANCE();
+lbl_dp_teq_immn:
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_TEQ
+  }
+  ADVANCE();
+lbl_dp_teq_reg_creg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_TEQ
+  }
+  ADVANCE();
+lbl_dp_teq_reg_cflag_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
     DO_TEQ
   }
   ADVANCE();
@@ -6315,19 +1731,8 @@ lbl_dp_teq_imm0_pcr:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    DO_TEQ
-  }
-  ADVANCE();
-lbl_dp_teq_immn:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
     DO_TEQ
   }
   ADVANCE();
@@ -6336,1092 +1741,163 @@ lbl_dp_teq_immn_pcr:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
     DO_TEQ
   }
   ADVANCE();
-lbl_dp_cmp_lsli:
+lbl_dp_cmp_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_lsli_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_lsri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_asri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
+    u32 value = reg[op->r2].I;
     DO_CMP
   }
   ADVANCE();
 lbl_dp_cmp_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    DO_CMP
-  }
-  ADVANCE();
-lbl_dp_cmp_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    DO_CMP
-  }
-  ADVANCE();
 lbl_dp_cmp_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
+    u32 value = op->imm;
     DO_CMP
   }
   ADVANCE();
+lbl_dp_cmp_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_CMP
+  }
+  ADVANCE();
+lbl_dp_cmp_imm0_pcr:
 lbl_dp_cmp_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
+    u32 value = op->imm;
     DO_CMP
   }
   ADVANCE();
-lbl_dp_cmn_lsli:
+lbl_dp_cmn_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_lsli_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_lsri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_asri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
+    u32 value = reg[op->r2].I;
     DO_CMN
   }
   ADVANCE();
 lbl_dp_cmn_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    DO_CMN
-  }
-  ADVANCE();
-lbl_dp_cmn_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    DO_CMN
-  }
-  ADVANCE();
 lbl_dp_cmn_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
+    u32 value = op->imm;
     DO_CMN
   }
   ADVANCE();
+lbl_dp_cmn_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_CMN
+  }
+  ADVANCE();
+lbl_dp_cmn_imm0_pcr:
 lbl_dp_cmn_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
+    u32 value = op->imm;
     DO_CMN
   }
   ADVANCE();
-lbl_dp_orr_lsli:
+lbl_dp_orr_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_lsli_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_lsri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_asri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
+    u32 value = reg[op->r2].I;
+    DO_ORR
   }
   ADVANCE();
 lbl_dp_orr_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
-lbl_dp_orr_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
-  }
-  ADVANCE();
 lbl_dp_orr_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
+    u32 value = op->imm;
+    DO_ORR
   }
   ADVANCE();
+lbl_dp_orr_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_ORR
+  }
+  ADVANCE();
+lbl_dp_orr_imm0_pcr:
 lbl_dp_orr_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ORR
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORR
-    }
+    u32 value = op->imm;
+    DO_ORR
   }
   ADVANCE();
-lbl_dp_orrs_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_lsli_pcr:
+lbl_dp_orr_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_ORR
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_orrs_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_orr_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_ORR
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_orrs_asri:
+  DISPATCH_PC();
+lbl_dp_orrs_reg_creg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_ORRS
   }
   ADVANCE();
-lbl_dp_orrs_asri_pcr:
-  SET_PC_READ();
+lbl_dp_orrs_reg_cflag:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_ORRS
   }
   ADVANCE();
 lbl_dp_orrs_imm0:
@@ -7429,18 +1905,41 @@ lbl_dp_orrs_imm0:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_ORRS
+  }
+  ADVANCE();
+lbl_dp_orrs_immn:
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_ORRS
+  }
+  ADVANCE();
+lbl_dp_orrs_reg_creg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_ORRS
+  }
+  ADVANCE();
+lbl_dp_orrs_reg_cflag_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_ORRS
   }
   ADVANCE();
 lbl_dp_orrs_imm0_pcr:
@@ -7449,37 +1948,9 @@ lbl_dp_orrs_imm0_pcr:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
-  }
-  ADVANCE();
-lbl_dp_orrs_immn:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_ORRS
   }
   ADVANCE();
 lbl_dp_orrs_immn_pcr:
@@ -7488,662 +1959,149 @@ lbl_dp_orrs_immn_pcr:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_ORRS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_ORRS
-    }
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_ORRS
   }
   ADVANCE();
-lbl_dp_mov_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_lsli_pcr:
+lbl_dp_orrs_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_ORRS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_mov_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_orrs_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
+    int base = op->r1;
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_ORRS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_mov_asri:
+  DISPATCH_PC();
+lbl_dp_mov_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
+    u32 value = reg[op->r2].I;
+    DO_MOV
   }
   ADVANCE();
 lbl_dp_mov_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
-lbl_dp_mov_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
-  }
-  ADVANCE();
 lbl_dp_mov_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
+    u32 value = op->imm;
+    DO_MOV
   }
   ADVANCE();
+lbl_dp_mov_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value = reg[op->r2].I;
+    DO_MOV
+  }
+  ADVANCE();
+lbl_dp_mov_imm0_pcr:
 lbl_dp_mov_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_MOV
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOV
-    }
+    u32 value = op->imm;
+    DO_MOV
   }
   ADVANCE();
-lbl_dp_movs_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_lsli_pcr:
+lbl_dp_mov_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_MOV
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_movs_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_mov_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_MOV
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_movs_asri:
+  DISPATCH_PC();
+lbl_dp_movs_reg_creg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_MOVS
   }
   ADVANCE();
-lbl_dp_movs_asri_pcr:
-  SET_PC_READ();
+lbl_dp_movs_reg_cflag:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_MOVS
   }
   ADVANCE();
 lbl_dp_movs_imm0:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_MOVS
+  }
+  ADVANCE();
+lbl_dp_movs_immn:
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_MOVS
+  }
+  ADVANCE();
+lbl_dp_movs_reg_creg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_MOVS
+  }
+  ADVANCE();
+lbl_dp_movs_reg_cflag_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_MOVS
   }
   ADVANCE();
 lbl_dp_movs_imm0_pcr:
@@ -8151,36 +2109,9 @@ lbl_dp_movs_imm0_pcr:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
-  }
-  ADVANCE();
-lbl_dp_movs_immn:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_MOVS
   }
   ADVANCE();
 lbl_dp_movs_immn_pcr:
@@ -8188,680 +2119,117 @@ lbl_dp_movs_immn_pcr:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_MOVS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MOVS
-    }
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_MOVS
   }
   ADVANCE();
-lbl_dp_bic_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_lsli_pcr:
+lbl_dp_movs_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_MOVS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_bic_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_movs_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_MOVS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_bic_asri:
+  DISPATCH_PC();
+lbl_dp_bic_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
+    u32 value = reg[op->r2].I;
+    DO_BIC
   }
   ADVANCE();
 lbl_dp_bic_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
-lbl_dp_bic_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
-  }
-  ADVANCE();
 lbl_dp_bic_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
+    u32 value = op->imm;
+    DO_BIC
   }
   ADVANCE();
+lbl_dp_bic_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    DO_BIC
+  }
+  ADVANCE();
+lbl_dp_bic_imm0_pcr:
 lbl_dp_bic_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_BIC
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BIC
-    }
+    u32 value = op->imm;
+    DO_BIC
   }
   ADVANCE();
-lbl_dp_bics_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_lsli_pcr:
+lbl_dp_bic_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_BIC
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_bics_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_bic_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_BIC
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_bics_asri:
+  DISPATCH_PC();
+lbl_dp_bics_reg_creg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_BICS
   }
   ADVANCE();
-lbl_dp_bics_asri_pcr:
-  SET_PC_READ();
+lbl_dp_bics_reg_cflag:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_BICS
   }
   ADVANCE();
 lbl_dp_bics_imm0:
@@ -8869,18 +2237,41 @@ lbl_dp_bics_imm0:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_BICS
+  }
+  ADVANCE();
+lbl_dp_bics_immn:
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_BICS
+  }
+  ADVANCE();
+lbl_dp_bics_reg_creg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_BICS
+  }
+  ADVANCE();
+lbl_dp_bics_reg_cflag_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_BICS
   }
   ADVANCE();
 lbl_dp_bics_imm0_pcr:
@@ -8889,37 +2280,9 @@ lbl_dp_bics_imm0_pcr:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
-  }
-  ADVANCE();
-lbl_dp_bics_immn:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_BICS
   }
   ADVANCE();
 lbl_dp_bics_immn_pcr:
@@ -8928,662 +2291,149 @@ lbl_dp_bics_immn_pcr:
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
     int base = op->r1;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_BICS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_BICS
-    }
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_BICS
   }
   ADVANCE();
-lbl_dp_mvn_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_lsli_pcr:
+lbl_dp_bics_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
+    int base = op->r1;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_BICS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_mvn_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_bics_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
+    int base = op->r1;
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_BICS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_mvn_asri:
+  DISPATCH_PC();
+lbl_dp_mvn_reg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_asri_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
+    u32 value = reg[op->r2].I;
+    DO_MVN
   }
   ADVANCE();
 lbl_dp_mvn_imm0:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
-lbl_dp_mvn_imm0_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
-  }
-  ADVANCE();
 lbl_dp_mvn_immn:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
+    u32 value = op->imm;
+    DO_MVN
   }
   ADVANCE();
+lbl_dp_mvn_reg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value = reg[op->r2].I;
+    DO_MVN
+  }
+  ADVANCE();
+lbl_dp_mvn_imm0_pcr:
 lbl_dp_mvn_immn_pcr:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_MVN
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVN
-    }
+    u32 value = op->imm;
+    DO_MVN
   }
   ADVANCE();
-lbl_dp_mvns_lsli:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_lsli_pcr:
+lbl_dp_mvn_pc:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_IMM
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
+    u32 value = reg[op->r2].I;
+    int dest = 15;
+    DO_MVN
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_mvns_lsri:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_lsri_pcr:
+  DISPATCH_PC();
+lbl_dp_mvn_pc_imm:
   SET_PC_READ();
   {
     ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_IMM
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
+    u32 value = op->imm;
+    int dest = 15;
+    DO_MVN
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
   }
-  ADVANCE();
-lbl_dp_mvns_asri:
+  DISPATCH_PC();
+lbl_dp_mvns_reg_creg:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_MVNS
   }
   ADVANCE();
-lbl_dp_mvns_asri_pcr:
-  SET_PC_READ();
+lbl_dp_mvns_reg_cflag:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_IMM
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_rori:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_rori_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_IMM
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_lslr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_lslr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSL_REG
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_lsrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_lsrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_LSR_REG
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_asrr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_asrr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ASR_REG
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_rorr:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_rorr_pcr:
-  SET_PC_READ();
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_ROR_REG
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_MVNS
   }
   ADVANCE();
 lbl_dp_mvns_imm0:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_MVNS
+  }
+  ADVANCE();
+lbl_dp_mvns_immn:
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_MVNS
+  }
+  ADVANCE();
+lbl_dp_mvns_reg_creg_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = reg[R_COUT].I != 0;
+    DO_MVNS
+  }
+  ADVANCE();
+lbl_dp_mvns_reg_cflag_pcr:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    int dest = op->r0;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    DO_MVNS
   }
   ADVANCE();
 lbl_dp_mvns_imm0_pcr:
@@ -9591,36 +2441,9 @@ lbl_dp_mvns_imm0_pcr:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROT0
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
-  }
-  ADVANCE();
-lbl_dp_mvns_immn:
-  {
-    ARM7CACHEOP* op = pc_op;
-    int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    DO_MVNS
   }
   ADVANCE();
 lbl_dp_mvns_immn_pcr:
@@ -9628,20 +2451,37 @@ lbl_dp_mvns_immn_pcr:
   {
     ARM7CACHEOP* op = pc_op;
     int dest = op->r0;
-    u32 value;
-    C_OUT = C_FLAG;
-    FORM_IMM_ROTN
-    if (dest == 15) {
-      DO_MVNS
-      clockTicks++;
-      CPUSwitchMode(reg[17].I & 0x1f, false);
-      dispatch_pc = reg[15].I & 0xFFFFFFFC;
-      goto dp_pc_done;
-    } else {
-      DO_MVNS
-    }
+    u32 value = op->imm;
+    bool C_OUT = (op->imm & 0x80000000) != 0;
+    DO_MVNS
   }
   ADVANCE();
+lbl_dp_mvns_pc:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    u32 value = reg[op->r2].I;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_MVNS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
+  }
+  DISPATCH_PC();
+lbl_dp_mvns_pc_imm:
+  SET_PC_READ();
+  {
+    ARM7CACHEOP* op = pc_op;
+    u32 value = op->imm;
+    bool C_OUT = C_FLAG;
+    int dest = 15;
+    DO_MVNS
+    clockTicks++;
+    CPUSwitchMode(reg[17].I & 0x1f, false);
+    dispatch_pc = reg[15].I & 0xFFFFFFFC;
+  }
+  DISPATCH_PC();
 dp_pc_done:
   DISPATCH_PC();
 lbl_mem_str_i_000:
@@ -15363,454 +8203,576 @@ lbl_mem_ldrb_rror_111_pcr:
   {
     u32 op4 = (opcode >> 21) & 0xF;
     u32 sbit = (opcode >> 20) & 1;
-    cop->r0 = (opcode >> 12) & 0xF;   /* Rd */
-    cop->r1 = (opcode >> 16) & 0xF;   /* Rn */
-    cop->r2 = opcode & 0xF;           /* Rm */
-    int rn15 = (((opcode >> 16) & 0xF) == 15);
-    int rm15 = ((opcode & 0xF) == 15);
+    u32 rd = (opcode >> 12) & 0xF;
+    u32 rn = (opcode >> 16) & 0xF;
+    u32 rm = opcode & 0xF;
+    int rn15 = (rn == 15);
+    int rm15 = (rm == 15);
+    int pcwrite = (rd == 15);
+    u32 key = (op4 << 1) | sbit;
+
     if (opcode & 0x02000000) {
-      /* immediate operand2 */
+      /* ---- immediate operand2 (single op uop) ---- */
       u32 imm8 = opcode & 0xFF;
       u32 rot  = ((opcode >> 8) & 0xF) * 2;
+      cop->r0 = rd; cop->r1 = rn;
       cop->imm = rot ? ((imm8 >> rot) | (imm8 << (32 - rot))) : imm8;
       int rotn = rot != 0;
-      int pcr = rn15;   /* immediate form: only Rn can be r15 */
-      switch ((op4 << 1) | sbit) {
-      case 0x00: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_and_immn_pcr : &&lbl_dp_and_imm0_pcr)
-        : (rotn ? &&lbl_dp_and_immn     : &&lbl_dp_and_imm0); break;
-      case 0x01: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_ands_immn_pcr : &&lbl_dp_ands_imm0_pcr)
-        : (rotn ? &&lbl_dp_ands_immn     : &&lbl_dp_ands_imm0); break;
-      case 0x02: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_eor_immn_pcr : &&lbl_dp_eor_imm0_pcr)
-        : (rotn ? &&lbl_dp_eor_immn     : &&lbl_dp_eor_imm0); break;
-      case 0x03: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_eors_immn_pcr : &&lbl_dp_eors_imm0_pcr)
-        : (rotn ? &&lbl_dp_eors_immn     : &&lbl_dp_eors_imm0); break;
-      case 0x04: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_sub_immn_pcr : &&lbl_dp_sub_imm0_pcr)
-        : (rotn ? &&lbl_dp_sub_immn     : &&lbl_dp_sub_imm0); break;
-      case 0x05: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_subs_immn_pcr : &&lbl_dp_subs_imm0_pcr)
-        : (rotn ? &&lbl_dp_subs_immn     : &&lbl_dp_subs_imm0); break;
-      case 0x06: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_rsb_immn_pcr : &&lbl_dp_rsb_imm0_pcr)
-        : (rotn ? &&lbl_dp_rsb_immn     : &&lbl_dp_rsb_imm0); break;
-      case 0x07: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_rsbs_immn_pcr : &&lbl_dp_rsbs_imm0_pcr)
-        : (rotn ? &&lbl_dp_rsbs_immn     : &&lbl_dp_rsbs_imm0); break;
-      case 0x08: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_add_immn_pcr : &&lbl_dp_add_imm0_pcr)
-        : (rotn ? &&lbl_dp_add_immn     : &&lbl_dp_add_imm0); break;
-      case 0x09: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_adds_immn_pcr : &&lbl_dp_adds_imm0_pcr)
-        : (rotn ? &&lbl_dp_adds_immn     : &&lbl_dp_adds_imm0); break;
-      case 0x0a: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_adc_immn_pcr : &&lbl_dp_adc_imm0_pcr)
-        : (rotn ? &&lbl_dp_adc_immn     : &&lbl_dp_adc_imm0); break;
-      case 0x0b: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_adcs_immn_pcr : &&lbl_dp_adcs_imm0_pcr)
-        : (rotn ? &&lbl_dp_adcs_immn     : &&lbl_dp_adcs_imm0); break;
-      case 0x0c: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_sbc_immn_pcr : &&lbl_dp_sbc_imm0_pcr)
-        : (rotn ? &&lbl_dp_sbc_immn     : &&lbl_dp_sbc_imm0); break;
-      case 0x0d: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_sbcs_immn_pcr : &&lbl_dp_sbcs_imm0_pcr)
-        : (rotn ? &&lbl_dp_sbcs_immn     : &&lbl_dp_sbcs_imm0); break;
-      case 0x0e: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_rsc_immn_pcr : &&lbl_dp_rsc_imm0_pcr)
-        : (rotn ? &&lbl_dp_rsc_immn     : &&lbl_dp_rsc_imm0); break;
-      case 0x0f: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_rscs_immn_pcr : &&lbl_dp_rscs_imm0_pcr)
-        : (rotn ? &&lbl_dp_rscs_immn     : &&lbl_dp_rscs_imm0); break;
-      case 0x11: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_tst_immn_pcr : &&lbl_dp_tst_imm0_pcr)
-        : (rotn ? &&lbl_dp_tst_immn     : &&lbl_dp_tst_imm0); break;
-      case 0x13: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_teq_immn_pcr : &&lbl_dp_teq_imm0_pcr)
-        : (rotn ? &&lbl_dp_teq_immn     : &&lbl_dp_teq_imm0); break;
-      case 0x15: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_cmp_immn_pcr : &&lbl_dp_cmp_imm0_pcr)
-        : (rotn ? &&lbl_dp_cmp_immn     : &&lbl_dp_cmp_imm0); break;
-      case 0x17: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_cmn_immn_pcr : &&lbl_dp_cmn_imm0_pcr)
-        : (rotn ? &&lbl_dp_cmn_immn     : &&lbl_dp_cmn_imm0); break;
-      case 0x18: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_orr_immn_pcr : &&lbl_dp_orr_imm0_pcr)
-        : (rotn ? &&lbl_dp_orr_immn     : &&lbl_dp_orr_imm0); break;
-      case 0x19: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_orrs_immn_pcr : &&lbl_dp_orrs_imm0_pcr)
-        : (rotn ? &&lbl_dp_orrs_immn     : &&lbl_dp_orrs_imm0); break;
-      case 0x1a: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_mov_immn_pcr : &&lbl_dp_mov_imm0_pcr)
-        : (rotn ? &&lbl_dp_mov_immn     : &&lbl_dp_mov_imm0); break;
-      case 0x1b: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_movs_immn_pcr : &&lbl_dp_movs_imm0_pcr)
-        : (rotn ? &&lbl_dp_movs_immn     : &&lbl_dp_movs_imm0); break;
-      case 0x1c: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_bic_immn_pcr : &&lbl_dp_bic_imm0_pcr)
-        : (rotn ? &&lbl_dp_bic_immn     : &&lbl_dp_bic_imm0); break;
-      case 0x1d: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_bics_immn_pcr : &&lbl_dp_bics_imm0_pcr)
-        : (rotn ? &&lbl_dp_bics_immn     : &&lbl_dp_bics_imm0); break;
-      case 0x1e: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_mvn_immn_pcr : &&lbl_dp_mvn_imm0_pcr)
-        : (rotn ? &&lbl_dp_mvn_immn     : &&lbl_dp_mvn_imm0); break;
-      case 0x1f: cop->dispatch = pcr
-        ? (rotn ? &&lbl_dp_mvns_immn_pcr : &&lbl_dp_mvns_imm0_pcr)
-        : (rotn ? &&lbl_dp_mvns_immn     : &&lbl_dp_mvns_imm0); break;
+      switch (key) {
+      case 0x00: cop->dispatch = pcwrite ? &&lbl_dp_and_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_and_immn_pcr : &&lbl_dp_and_imm0_pcr)
+        :        (rotn ? &&lbl_dp_and_immn     : &&lbl_dp_and_imm0); break;
+      case 0x01: cop->dispatch = pcwrite ? &&lbl_dp_ands_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_ands_immn_pcr : &&lbl_dp_ands_imm0_pcr)
+        :        (rotn ? &&lbl_dp_ands_immn     : &&lbl_dp_ands_imm0); break;
+      case 0x02: cop->dispatch = pcwrite ? &&lbl_dp_eor_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_eor_immn_pcr : &&lbl_dp_eor_imm0_pcr)
+        :        (rotn ? &&lbl_dp_eor_immn     : &&lbl_dp_eor_imm0); break;
+      case 0x03: cop->dispatch = pcwrite ? &&lbl_dp_eors_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_eors_immn_pcr : &&lbl_dp_eors_imm0_pcr)
+        :        (rotn ? &&lbl_dp_eors_immn     : &&lbl_dp_eors_imm0); break;
+      case 0x04: cop->dispatch = pcwrite ? &&lbl_dp_sub_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_sub_immn_pcr : &&lbl_dp_sub_imm0_pcr)
+        :        (rotn ? &&lbl_dp_sub_immn     : &&lbl_dp_sub_imm0); break;
+      case 0x05: cop->dispatch = pcwrite ? &&lbl_dp_subs_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_subs_immn_pcr : &&lbl_dp_subs_imm0_pcr)
+        :        (rotn ? &&lbl_dp_subs_immn     : &&lbl_dp_subs_imm0); break;
+      case 0x06: cop->dispatch = pcwrite ? &&lbl_dp_rsb_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_rsb_immn_pcr : &&lbl_dp_rsb_imm0_pcr)
+        :        (rotn ? &&lbl_dp_rsb_immn     : &&lbl_dp_rsb_imm0); break;
+      case 0x07: cop->dispatch = pcwrite ? &&lbl_dp_rsbs_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_rsbs_immn_pcr : &&lbl_dp_rsbs_imm0_pcr)
+        :        (rotn ? &&lbl_dp_rsbs_immn     : &&lbl_dp_rsbs_imm0); break;
+      case 0x08: cop->dispatch = pcwrite ? &&lbl_dp_add_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_add_immn_pcr : &&lbl_dp_add_imm0_pcr)
+        :        (rotn ? &&lbl_dp_add_immn     : &&lbl_dp_add_imm0); break;
+      case 0x09: cop->dispatch = pcwrite ? &&lbl_dp_adds_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_adds_immn_pcr : &&lbl_dp_adds_imm0_pcr)
+        :        (rotn ? &&lbl_dp_adds_immn     : &&lbl_dp_adds_imm0); break;
+      case 0x0a: cop->dispatch = pcwrite ? &&lbl_dp_adc_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_adc_immn_pcr : &&lbl_dp_adc_imm0_pcr)
+        :        (rotn ? &&lbl_dp_adc_immn     : &&lbl_dp_adc_imm0); break;
+      case 0x0b: cop->dispatch = pcwrite ? &&lbl_dp_adcs_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_adcs_immn_pcr : &&lbl_dp_adcs_imm0_pcr)
+        :        (rotn ? &&lbl_dp_adcs_immn     : &&lbl_dp_adcs_imm0); break;
+      case 0x0c: cop->dispatch = pcwrite ? &&lbl_dp_sbc_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_sbc_immn_pcr : &&lbl_dp_sbc_imm0_pcr)
+        :        (rotn ? &&lbl_dp_sbc_immn     : &&lbl_dp_sbc_imm0); break;
+      case 0x0d: cop->dispatch = pcwrite ? &&lbl_dp_sbcs_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_sbcs_immn_pcr : &&lbl_dp_sbcs_imm0_pcr)
+        :        (rotn ? &&lbl_dp_sbcs_immn     : &&lbl_dp_sbcs_imm0); break;
+      case 0x0e: cop->dispatch = pcwrite ? &&lbl_dp_rsc_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_rsc_immn_pcr : &&lbl_dp_rsc_imm0_pcr)
+        :        (rotn ? &&lbl_dp_rsc_immn     : &&lbl_dp_rsc_imm0); break;
+      case 0x0f: cop->dispatch = pcwrite ? &&lbl_dp_rscs_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_rscs_immn_pcr : &&lbl_dp_rscs_imm0_pcr)
+        :        (rotn ? &&lbl_dp_rscs_immn     : &&lbl_dp_rscs_imm0); break;
+      case 0x11: cop->dispatch =
+        rn15 ? (rotn ? &&lbl_dp_tst_immn_pcr : &&lbl_dp_tst_imm0_pcr)
+        :      (rotn ? &&lbl_dp_tst_immn     : &&lbl_dp_tst_imm0); break;
+      case 0x13: cop->dispatch =
+        rn15 ? (rotn ? &&lbl_dp_teq_immn_pcr : &&lbl_dp_teq_imm0_pcr)
+        :      (rotn ? &&lbl_dp_teq_immn     : &&lbl_dp_teq_imm0); break;
+      case 0x15: cop->dispatch =
+        rn15 ? (rotn ? &&lbl_dp_cmp_immn_pcr : &&lbl_dp_cmp_imm0_pcr)
+        :      (rotn ? &&lbl_dp_cmp_immn     : &&lbl_dp_cmp_imm0); break;
+      case 0x17: cop->dispatch =
+        rn15 ? (rotn ? &&lbl_dp_cmn_immn_pcr : &&lbl_dp_cmn_imm0_pcr)
+        :      (rotn ? &&lbl_dp_cmn_immn     : &&lbl_dp_cmn_imm0); break;
+      case 0x18: cop->dispatch = pcwrite ? &&lbl_dp_orr_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_orr_immn_pcr : &&lbl_dp_orr_imm0_pcr)
+        :        (rotn ? &&lbl_dp_orr_immn     : &&lbl_dp_orr_imm0); break;
+      case 0x19: cop->dispatch = pcwrite ? &&lbl_dp_orrs_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_orrs_immn_pcr : &&lbl_dp_orrs_imm0_pcr)
+        :        (rotn ? &&lbl_dp_orrs_immn     : &&lbl_dp_orrs_imm0); break;
+      case 0x1a: cop->dispatch = pcwrite ? &&lbl_dp_mov_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_mov_immn_pcr : &&lbl_dp_mov_imm0_pcr)
+        :        (rotn ? &&lbl_dp_mov_immn     : &&lbl_dp_mov_imm0); break;
+      case 0x1b: cop->dispatch = pcwrite ? &&lbl_dp_movs_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_movs_immn_pcr : &&lbl_dp_movs_imm0_pcr)
+        :        (rotn ? &&lbl_dp_movs_immn     : &&lbl_dp_movs_imm0); break;
+      case 0x1c: cop->dispatch = pcwrite ? &&lbl_dp_bic_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_bic_immn_pcr : &&lbl_dp_bic_imm0_pcr)
+        :        (rotn ? &&lbl_dp_bic_immn     : &&lbl_dp_bic_imm0); break;
+      case 0x1d: cop->dispatch = pcwrite ? &&lbl_dp_bics_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_bics_immn_pcr : &&lbl_dp_bics_imm0_pcr)
+        :        (rotn ? &&lbl_dp_bics_immn     : &&lbl_dp_bics_imm0); break;
+      case 0x1e: cop->dispatch = pcwrite ? &&lbl_dp_mvn_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_mvn_immn_pcr : &&lbl_dp_mvn_imm0_pcr)
+        :        (rotn ? &&lbl_dp_mvn_immn     : &&lbl_dp_mvn_imm0); break;
+      case 0x1f: cop->dispatch = pcwrite ? &&lbl_dp_mvns_pc_imm
+        : rn15 ? (rotn ? &&lbl_dp_mvns_immn_pcr : &&lbl_dp_mvns_imm0_pcr)
+        :        (rotn ? &&lbl_dp_mvns_immn     : &&lbl_dp_mvns_imm0); break;
       default: cop->dispatch = &&lbl_undefined; break;
       }
     } else {
-      /* register operand2 */
+      /* ---- register operand2 ---- */
       u32 shtype = (opcode >> 5) & 3;   /* 0 LSL 1 LSR 2 ASR 3 ROR */
       u32 byreg  = (opcode >> 4) & 1;   /* shift by register */
-      if (byreg) {
-        cop->imm = (opcode >> 8) & 0xF;   /* Rs */
+      u32 samt   = (opcode >> 7) & 0x1F;
+      /* 'plain Rm': LSL #0 with no register shift -> no shift uop. */
+      int plain = (!byreg && shtype == 0 && samt == 0);
+      int fsel = (byreg << 2) | shtype;  /* 0..7 index into regforms */
+      if (plain) {
+        /* op uop reads reg[Rm] directly; carry (logical-S) from C_FLAG. */
+        /* pcr if EITHER operand reads r15 (Rm is read directly here). */
+        int pcr = rn15 || rm15;
+        cop->r0 = rd; cop->r1 = rn; cop->r2 = rm;
+        switch (key) {
+        case 0x00: cop->dispatch = pcwrite ? &&lbl_dp_and_pc
+          : pcr ? &&lbl_dp_and_reg_pcr : &&lbl_dp_and_reg; break;
+        case 0x01: cop->dispatch = pcwrite ? &&lbl_dp_ands_pc
+          : pcr ? &&lbl_dp_ands_reg_cflag_pcr : &&lbl_dp_ands_reg_cflag; break;
+        case 0x02: cop->dispatch = pcwrite ? &&lbl_dp_eor_pc
+          : pcr ? &&lbl_dp_eor_reg_pcr : &&lbl_dp_eor_reg; break;
+        case 0x03: cop->dispatch = pcwrite ? &&lbl_dp_eors_pc
+          : pcr ? &&lbl_dp_eors_reg_cflag_pcr : &&lbl_dp_eors_reg_cflag; break;
+        case 0x04: cop->dispatch = pcwrite ? &&lbl_dp_sub_pc
+          : pcr ? &&lbl_dp_sub_reg_pcr : &&lbl_dp_sub_reg; break;
+        case 0x05: cop->dispatch = pcwrite ? &&lbl_dp_subs_pc
+          : pcr ? &&lbl_dp_subs_reg_pcr : &&lbl_dp_subs_reg; break;
+        case 0x06: cop->dispatch = pcwrite ? &&lbl_dp_rsb_pc
+          : pcr ? &&lbl_dp_rsb_reg_pcr : &&lbl_dp_rsb_reg; break;
+        case 0x07: cop->dispatch = pcwrite ? &&lbl_dp_rsbs_pc
+          : pcr ? &&lbl_dp_rsbs_reg_pcr : &&lbl_dp_rsbs_reg; break;
+        case 0x08: cop->dispatch = pcwrite ? &&lbl_dp_add_pc
+          : pcr ? &&lbl_dp_add_reg_pcr : &&lbl_dp_add_reg; break;
+        case 0x09: cop->dispatch = pcwrite ? &&lbl_dp_adds_pc
+          : pcr ? &&lbl_dp_adds_reg_pcr : &&lbl_dp_adds_reg; break;
+        case 0x0a: cop->dispatch = pcwrite ? &&lbl_dp_adc_pc
+          : pcr ? &&lbl_dp_adc_reg_pcr : &&lbl_dp_adc_reg; break;
+        case 0x0b: cop->dispatch = pcwrite ? &&lbl_dp_adcs_pc
+          : pcr ? &&lbl_dp_adcs_reg_pcr : &&lbl_dp_adcs_reg; break;
+        case 0x0c: cop->dispatch = pcwrite ? &&lbl_dp_sbc_pc
+          : pcr ? &&lbl_dp_sbc_reg_pcr : &&lbl_dp_sbc_reg; break;
+        case 0x0d: cop->dispatch = pcwrite ? &&lbl_dp_sbcs_pc
+          : pcr ? &&lbl_dp_sbcs_reg_pcr : &&lbl_dp_sbcs_reg; break;
+        case 0x0e: cop->dispatch = pcwrite ? &&lbl_dp_rsc_pc
+          : pcr ? &&lbl_dp_rsc_reg_pcr : &&lbl_dp_rsc_reg; break;
+        case 0x0f: cop->dispatch = pcwrite ? &&lbl_dp_rscs_pc
+          : pcr ? &&lbl_dp_rscs_reg_pcr : &&lbl_dp_rscs_reg; break;
+        case 0x11: cop->dispatch = pcr ? &&lbl_dp_tst_reg_cflag_pcr : &&lbl_dp_tst_reg_cflag; break;
+        case 0x13: cop->dispatch = pcr ? &&lbl_dp_teq_reg_cflag_pcr : &&lbl_dp_teq_reg_cflag; break;
+        case 0x15: cop->dispatch = pcr ? &&lbl_dp_cmp_reg_pcr : &&lbl_dp_cmp_reg; break;
+        case 0x17: cop->dispatch = pcr ? &&lbl_dp_cmn_reg_pcr : &&lbl_dp_cmn_reg; break;
+        case 0x18: cop->dispatch = pcwrite ? &&lbl_dp_orr_pc
+          : pcr ? &&lbl_dp_orr_reg_pcr : &&lbl_dp_orr_reg; break;
+        case 0x19: cop->dispatch = pcwrite ? &&lbl_dp_orrs_pc
+          : pcr ? &&lbl_dp_orrs_reg_cflag_pcr : &&lbl_dp_orrs_reg_cflag; break;
+        case 0x1a: cop->dispatch = pcwrite ? &&lbl_dp_mov_pc
+          : pcr ? &&lbl_dp_mov_reg_pcr : &&lbl_dp_mov_reg; break;
+        case 0x1b: cop->dispatch = pcwrite ? &&lbl_dp_movs_pc
+          : pcr ? &&lbl_dp_movs_reg_cflag_pcr : &&lbl_dp_movs_reg_cflag; break;
+        case 0x1c: cop->dispatch = pcwrite ? &&lbl_dp_bic_pc
+          : pcr ? &&lbl_dp_bic_reg_pcr : &&lbl_dp_bic_reg; break;
+        case 0x1d: cop->dispatch = pcwrite ? &&lbl_dp_bics_pc
+          : pcr ? &&lbl_dp_bics_reg_cflag_pcr : &&lbl_dp_bics_reg_cflag; break;
+        case 0x1e: cop->dispatch = pcwrite ? &&lbl_dp_mvn_pc
+          : pcr ? &&lbl_dp_mvn_reg_pcr : &&lbl_dp_mvn_reg; break;
+        case 0x1f: cop->dispatch = pcwrite ? &&lbl_dp_mvns_pc
+          : pcr ? &&lbl_dp_mvns_reg_cflag_pcr : &&lbl_dp_mvns_reg_cflag; break;
+        default: cop->dispatch = &&lbl_undefined; break;
+        }
       } else {
-        cop->imm = (opcode >> 7) & 0x1F;  /* shift amount */
-      }
-      int fsel = (byreg << 2) | shtype;  /* 0..3 imm, 4..7 reg */
-      int pcr = rn15 || rm15;   /* reg form: Rn or Rm can be r15 */
-      switch ((op4 << 1) | sbit) {
-      case 0x00:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_and_lsli_pcr : &&lbl_dp_and_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_and_lsri_pcr : &&lbl_dp_and_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_and_asri_pcr : &&lbl_dp_and_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_and_rori_pcr : &&lbl_dp_and_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_and_lslr_pcr : &&lbl_dp_and_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_and_lsrr_pcr : &&lbl_dp_and_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_and_asrr_pcr : &&lbl_dp_and_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_and_rorr_pcr : &&lbl_dp_and_rorr; break;
+        /* SHIFT uop in `cop`, op uop in the next slot. */
+        ARM7CACHEOP* opu = &ARM7_CACHE[ARM7_CACHE_LAST_OP + 1];
+        ARM7_CACHE_LAST_OP++;   /* extra slot for the op uop */
+        opu->cond = cop->cond;
+        opu->r0 = rd; opu->r1 = rn; opu->r2 = R_SHIFT;
+        cop->r2 = rm;
+        cop->imm = byreg ? ((opcode >> 8) & 0xF) : samt;  /* Rs | amount */
+        /* select shift uop (carry-writing iff op is logical-S) and op uop */
+        switch (key) {
+        case 0x00:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_and_pc
+            : rn15 ? &&lbl_dp_and_reg_pcr : &&lbl_dp_and_reg;
+          break;
+        case 0x01:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_shc_lsli_pcr : &&lbl_shc_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_shc_lsri_pcr : &&lbl_shc_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_shc_asri_pcr : &&lbl_shc_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_shc_rori_pcr : &&lbl_shc_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_shc_lslr_pcr : &&lbl_shc_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_shc_lsrr_pcr : &&lbl_shc_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_shc_asrr_pcr : &&lbl_shc_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_shc_rorr_pcr : &&lbl_shc_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_ands_pc
+            : rn15 ? &&lbl_dp_ands_reg_creg_pcr : &&lbl_dp_ands_reg_creg;
+          break;
+        case 0x02:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_eor_pc
+            : rn15 ? &&lbl_dp_eor_reg_pcr : &&lbl_dp_eor_reg;
+          break;
+        case 0x03:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_shc_lsli_pcr : &&lbl_shc_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_shc_lsri_pcr : &&lbl_shc_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_shc_asri_pcr : &&lbl_shc_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_shc_rori_pcr : &&lbl_shc_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_shc_lslr_pcr : &&lbl_shc_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_shc_lsrr_pcr : &&lbl_shc_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_shc_asrr_pcr : &&lbl_shc_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_shc_rorr_pcr : &&lbl_shc_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_eors_pc
+            : rn15 ? &&lbl_dp_eors_reg_creg_pcr : &&lbl_dp_eors_reg_creg;
+          break;
+        case 0x04:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_sub_pc
+            : rn15 ? &&lbl_dp_sub_reg_pcr : &&lbl_dp_sub_reg;
+          break;
+        case 0x05:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_subs_pc
+            : rn15 ? &&lbl_dp_subs_reg_pcr : &&lbl_dp_subs_reg;
+          break;
+        case 0x06:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_rsb_pc
+            : rn15 ? &&lbl_dp_rsb_reg_pcr : &&lbl_dp_rsb_reg;
+          break;
+        case 0x07:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_rsbs_pc
+            : rn15 ? &&lbl_dp_rsbs_reg_pcr : &&lbl_dp_rsbs_reg;
+          break;
+        case 0x08:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_add_pc
+            : rn15 ? &&lbl_dp_add_reg_pcr : &&lbl_dp_add_reg;
+          break;
+        case 0x09:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_adds_pc
+            : rn15 ? &&lbl_dp_adds_reg_pcr : &&lbl_dp_adds_reg;
+          break;
+        case 0x0a:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_adc_pc
+            : rn15 ? &&lbl_dp_adc_reg_pcr : &&lbl_dp_adc_reg;
+          break;
+        case 0x0b:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_adcs_pc
+            : rn15 ? &&lbl_dp_adcs_reg_pcr : &&lbl_dp_adcs_reg;
+          break;
+        case 0x0c:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_sbc_pc
+            : rn15 ? &&lbl_dp_sbc_reg_pcr : &&lbl_dp_sbc_reg;
+          break;
+        case 0x0d:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_sbcs_pc
+            : rn15 ? &&lbl_dp_sbcs_reg_pcr : &&lbl_dp_sbcs_reg;
+          break;
+        case 0x0e:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_rsc_pc
+            : rn15 ? &&lbl_dp_rsc_reg_pcr : &&lbl_dp_rsc_reg;
+          break;
+        case 0x0f:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_rscs_pc
+            : rn15 ? &&lbl_dp_rscs_reg_pcr : &&lbl_dp_rscs_reg;
+          break;
+        case 0x11:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_shc_lsli_pcr : &&lbl_shc_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_shc_lsri_pcr : &&lbl_shc_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_shc_asri_pcr : &&lbl_shc_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_shc_rori_pcr : &&lbl_shc_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_shc_lslr_pcr : &&lbl_shc_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_shc_lsrr_pcr : &&lbl_shc_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_shc_asrr_pcr : &&lbl_shc_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_shc_rorr_pcr : &&lbl_shc_rorr; break;
+          }
+          opu->dispatch = rn15 ? &&lbl_dp_tst_reg_creg_pcr : &&lbl_dp_tst_reg_creg;
+          break;
+        case 0x13:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_shc_lsli_pcr : &&lbl_shc_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_shc_lsri_pcr : &&lbl_shc_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_shc_asri_pcr : &&lbl_shc_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_shc_rori_pcr : &&lbl_shc_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_shc_lslr_pcr : &&lbl_shc_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_shc_lsrr_pcr : &&lbl_shc_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_shc_asrr_pcr : &&lbl_shc_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_shc_rorr_pcr : &&lbl_shc_rorr; break;
+          }
+          opu->dispatch = rn15 ? &&lbl_dp_teq_reg_creg_pcr : &&lbl_dp_teq_reg_creg;
+          break;
+        case 0x15:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = rn15 ? &&lbl_dp_cmp_reg_pcr : &&lbl_dp_cmp_reg;
+          break;
+        case 0x17:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = rn15 ? &&lbl_dp_cmn_reg_pcr : &&lbl_dp_cmn_reg;
+          break;
+        case 0x18:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_orr_pc
+            : rn15 ? &&lbl_dp_orr_reg_pcr : &&lbl_dp_orr_reg;
+          break;
+        case 0x19:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_shc_lsli_pcr : &&lbl_shc_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_shc_lsri_pcr : &&lbl_shc_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_shc_asri_pcr : &&lbl_shc_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_shc_rori_pcr : &&lbl_shc_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_shc_lslr_pcr : &&lbl_shc_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_shc_lsrr_pcr : &&lbl_shc_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_shc_asrr_pcr : &&lbl_shc_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_shc_rorr_pcr : &&lbl_shc_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_orrs_pc
+            : rn15 ? &&lbl_dp_orrs_reg_creg_pcr : &&lbl_dp_orrs_reg_creg;
+          break;
+        case 0x1a:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_mov_pc
+            : rn15 ? &&lbl_dp_mov_reg_pcr : &&lbl_dp_mov_reg;
+          break;
+        case 0x1b:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_shc_lsli_pcr : &&lbl_shc_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_shc_lsri_pcr : &&lbl_shc_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_shc_asri_pcr : &&lbl_shc_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_shc_rori_pcr : &&lbl_shc_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_shc_lslr_pcr : &&lbl_shc_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_shc_lsrr_pcr : &&lbl_shc_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_shc_asrr_pcr : &&lbl_shc_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_shc_rorr_pcr : &&lbl_shc_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_movs_pc
+            : rn15 ? &&lbl_dp_movs_reg_creg_pcr : &&lbl_dp_movs_reg_creg;
+          break;
+        case 0x1c:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_bic_pc
+            : rn15 ? &&lbl_dp_bic_reg_pcr : &&lbl_dp_bic_reg;
+          break;
+        case 0x1d:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_shc_lsli_pcr : &&lbl_shc_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_shc_lsri_pcr : &&lbl_shc_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_shc_asri_pcr : &&lbl_shc_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_shc_rori_pcr : &&lbl_shc_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_shc_lslr_pcr : &&lbl_shc_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_shc_lsrr_pcr : &&lbl_shc_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_shc_asrr_pcr : &&lbl_shc_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_shc_rorr_pcr : &&lbl_shc_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_bics_pc
+            : rn15 ? &&lbl_dp_bics_reg_creg_pcr : &&lbl_dp_bics_reg_creg;
+          break;
+        case 0x1e:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_sh_lsli_pcr : &&lbl_sh_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_sh_lsri_pcr : &&lbl_sh_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_sh_asri_pcr : &&lbl_sh_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_sh_rori_pcr : &&lbl_sh_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_sh_lslr_pcr : &&lbl_sh_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_sh_lsrr_pcr : &&lbl_sh_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_sh_asrr_pcr : &&lbl_sh_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_sh_rorr_pcr : &&lbl_sh_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_mvn_pc
+            : rn15 ? &&lbl_dp_mvn_reg_pcr : &&lbl_dp_mvn_reg;
+          break;
+        case 0x1f:
+          switch (fsel) {
+          case 0: cop->dispatch = rm15 ? &&lbl_shc_lsli_pcr : &&lbl_shc_lsli; break;
+          case 1: cop->dispatch = rm15 ? &&lbl_shc_lsri_pcr : &&lbl_shc_lsri; break;
+          case 2: cop->dispatch = rm15 ? &&lbl_shc_asri_pcr : &&lbl_shc_asri; break;
+          case 3: cop->dispatch = rm15 ? &&lbl_shc_rori_pcr : &&lbl_shc_rori; break;
+          case 4: cop->dispatch = rm15 ? &&lbl_shc_lslr_pcr : &&lbl_shc_lslr; break;
+          case 5: cop->dispatch = rm15 ? &&lbl_shc_lsrr_pcr : &&lbl_shc_lsrr; break;
+          case 6: cop->dispatch = rm15 ? &&lbl_shc_asrr_pcr : &&lbl_shc_asrr; break;
+          case 7: cop->dispatch = rm15 ? &&lbl_shc_rorr_pcr : &&lbl_shc_rorr; break;
+          }
+          opu->dispatch = pcwrite ? &&lbl_dp_mvns_pc
+            : rn15 ? &&lbl_dp_mvns_reg_creg_pcr : &&lbl_dp_mvns_reg_creg;
+          break;
+        default: cop->dispatch = &&lbl_undefined; ARM7_CACHE_LAST_OP--; break;
         }
-        break;
-      case 0x01:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_ands_lsli_pcr : &&lbl_dp_ands_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_ands_lsri_pcr : &&lbl_dp_ands_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_ands_asri_pcr : &&lbl_dp_ands_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_ands_rori_pcr : &&lbl_dp_ands_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_ands_lslr_pcr : &&lbl_dp_ands_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_ands_lsrr_pcr : &&lbl_dp_ands_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_ands_asrr_pcr : &&lbl_dp_ands_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_ands_rorr_pcr : &&lbl_dp_ands_rorr; break;
-        }
-        break;
-      case 0x02:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_eor_lsli_pcr : &&lbl_dp_eor_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_eor_lsri_pcr : &&lbl_dp_eor_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_eor_asri_pcr : &&lbl_dp_eor_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_eor_rori_pcr : &&lbl_dp_eor_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_eor_lslr_pcr : &&lbl_dp_eor_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_eor_lsrr_pcr : &&lbl_dp_eor_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_eor_asrr_pcr : &&lbl_dp_eor_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_eor_rorr_pcr : &&lbl_dp_eor_rorr; break;
-        }
-        break;
-      case 0x03:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_eors_lsli_pcr : &&lbl_dp_eors_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_eors_lsri_pcr : &&lbl_dp_eors_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_eors_asri_pcr : &&lbl_dp_eors_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_eors_rori_pcr : &&lbl_dp_eors_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_eors_lslr_pcr : &&lbl_dp_eors_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_eors_lsrr_pcr : &&lbl_dp_eors_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_eors_asrr_pcr : &&lbl_dp_eors_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_eors_rorr_pcr : &&lbl_dp_eors_rorr; break;
-        }
-        break;
-      case 0x04:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_sub_lsli_pcr : &&lbl_dp_sub_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_sub_lsri_pcr : &&lbl_dp_sub_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_sub_asri_pcr : &&lbl_dp_sub_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_sub_rori_pcr : &&lbl_dp_sub_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_sub_lslr_pcr : &&lbl_dp_sub_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_sub_lsrr_pcr : &&lbl_dp_sub_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_sub_asrr_pcr : &&lbl_dp_sub_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_sub_rorr_pcr : &&lbl_dp_sub_rorr; break;
-        }
-        break;
-      case 0x05:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_subs_lsli_pcr : &&lbl_dp_subs_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_subs_lsri_pcr : &&lbl_dp_subs_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_subs_asri_pcr : &&lbl_dp_subs_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_subs_rori_pcr : &&lbl_dp_subs_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_subs_lslr_pcr : &&lbl_dp_subs_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_subs_lsrr_pcr : &&lbl_dp_subs_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_subs_asrr_pcr : &&lbl_dp_subs_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_subs_rorr_pcr : &&lbl_dp_subs_rorr; break;
-        }
-        break;
-      case 0x06:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_rsb_lsli_pcr : &&lbl_dp_rsb_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_rsb_lsri_pcr : &&lbl_dp_rsb_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_rsb_asri_pcr : &&lbl_dp_rsb_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_rsb_rori_pcr : &&lbl_dp_rsb_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_rsb_lslr_pcr : &&lbl_dp_rsb_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_rsb_lsrr_pcr : &&lbl_dp_rsb_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_rsb_asrr_pcr : &&lbl_dp_rsb_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_rsb_rorr_pcr : &&lbl_dp_rsb_rorr; break;
-        }
-        break;
-      case 0x07:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_rsbs_lsli_pcr : &&lbl_dp_rsbs_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_rsbs_lsri_pcr : &&lbl_dp_rsbs_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_rsbs_asri_pcr : &&lbl_dp_rsbs_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_rsbs_rori_pcr : &&lbl_dp_rsbs_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_rsbs_lslr_pcr : &&lbl_dp_rsbs_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_rsbs_lsrr_pcr : &&lbl_dp_rsbs_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_rsbs_asrr_pcr : &&lbl_dp_rsbs_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_rsbs_rorr_pcr : &&lbl_dp_rsbs_rorr; break;
-        }
-        break;
-      case 0x08:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_add_lsli_pcr : &&lbl_dp_add_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_add_lsri_pcr : &&lbl_dp_add_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_add_asri_pcr : &&lbl_dp_add_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_add_rori_pcr : &&lbl_dp_add_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_add_lslr_pcr : &&lbl_dp_add_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_add_lsrr_pcr : &&lbl_dp_add_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_add_asrr_pcr : &&lbl_dp_add_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_add_rorr_pcr : &&lbl_dp_add_rorr; break;
-        }
-        break;
-      case 0x09:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_adds_lsli_pcr : &&lbl_dp_adds_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_adds_lsri_pcr : &&lbl_dp_adds_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_adds_asri_pcr : &&lbl_dp_adds_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_adds_rori_pcr : &&lbl_dp_adds_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_adds_lslr_pcr : &&lbl_dp_adds_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_adds_lsrr_pcr : &&lbl_dp_adds_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_adds_asrr_pcr : &&lbl_dp_adds_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_adds_rorr_pcr : &&lbl_dp_adds_rorr; break;
-        }
-        break;
-      case 0x0a:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_adc_lsli_pcr : &&lbl_dp_adc_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_adc_lsri_pcr : &&lbl_dp_adc_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_adc_asri_pcr : &&lbl_dp_adc_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_adc_rori_pcr : &&lbl_dp_adc_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_adc_lslr_pcr : &&lbl_dp_adc_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_adc_lsrr_pcr : &&lbl_dp_adc_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_adc_asrr_pcr : &&lbl_dp_adc_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_adc_rorr_pcr : &&lbl_dp_adc_rorr; break;
-        }
-        break;
-      case 0x0b:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_adcs_lsli_pcr : &&lbl_dp_adcs_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_adcs_lsri_pcr : &&lbl_dp_adcs_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_adcs_asri_pcr : &&lbl_dp_adcs_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_adcs_rori_pcr : &&lbl_dp_adcs_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_adcs_lslr_pcr : &&lbl_dp_adcs_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_adcs_lsrr_pcr : &&lbl_dp_adcs_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_adcs_asrr_pcr : &&lbl_dp_adcs_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_adcs_rorr_pcr : &&lbl_dp_adcs_rorr; break;
-        }
-        break;
-      case 0x0c:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_sbc_lsli_pcr : &&lbl_dp_sbc_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_sbc_lsri_pcr : &&lbl_dp_sbc_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_sbc_asri_pcr : &&lbl_dp_sbc_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_sbc_rori_pcr : &&lbl_dp_sbc_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_sbc_lslr_pcr : &&lbl_dp_sbc_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_sbc_lsrr_pcr : &&lbl_dp_sbc_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_sbc_asrr_pcr : &&lbl_dp_sbc_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_sbc_rorr_pcr : &&lbl_dp_sbc_rorr; break;
-        }
-        break;
-      case 0x0d:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_sbcs_lsli_pcr : &&lbl_dp_sbcs_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_sbcs_lsri_pcr : &&lbl_dp_sbcs_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_sbcs_asri_pcr : &&lbl_dp_sbcs_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_sbcs_rori_pcr : &&lbl_dp_sbcs_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_sbcs_lslr_pcr : &&lbl_dp_sbcs_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_sbcs_lsrr_pcr : &&lbl_dp_sbcs_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_sbcs_asrr_pcr : &&lbl_dp_sbcs_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_sbcs_rorr_pcr : &&lbl_dp_sbcs_rorr; break;
-        }
-        break;
-      case 0x0e:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_rsc_lsli_pcr : &&lbl_dp_rsc_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_rsc_lsri_pcr : &&lbl_dp_rsc_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_rsc_asri_pcr : &&lbl_dp_rsc_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_rsc_rori_pcr : &&lbl_dp_rsc_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_rsc_lslr_pcr : &&lbl_dp_rsc_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_rsc_lsrr_pcr : &&lbl_dp_rsc_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_rsc_asrr_pcr : &&lbl_dp_rsc_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_rsc_rorr_pcr : &&lbl_dp_rsc_rorr; break;
-        }
-        break;
-      case 0x0f:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_rscs_lsli_pcr : &&lbl_dp_rscs_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_rscs_lsri_pcr : &&lbl_dp_rscs_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_rscs_asri_pcr : &&lbl_dp_rscs_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_rscs_rori_pcr : &&lbl_dp_rscs_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_rscs_lslr_pcr : &&lbl_dp_rscs_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_rscs_lsrr_pcr : &&lbl_dp_rscs_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_rscs_asrr_pcr : &&lbl_dp_rscs_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_rscs_rorr_pcr : &&lbl_dp_rscs_rorr; break;
-        }
-        break;
-      case 0x11:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_tst_lsli_pcr : &&lbl_dp_tst_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_tst_lsri_pcr : &&lbl_dp_tst_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_tst_asri_pcr : &&lbl_dp_tst_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_tst_rori_pcr : &&lbl_dp_tst_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_tst_lslr_pcr : &&lbl_dp_tst_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_tst_lsrr_pcr : &&lbl_dp_tst_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_tst_asrr_pcr : &&lbl_dp_tst_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_tst_rorr_pcr : &&lbl_dp_tst_rorr; break;
-        }
-        break;
-      case 0x13:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_teq_lsli_pcr : &&lbl_dp_teq_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_teq_lsri_pcr : &&lbl_dp_teq_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_teq_asri_pcr : &&lbl_dp_teq_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_teq_rori_pcr : &&lbl_dp_teq_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_teq_lslr_pcr : &&lbl_dp_teq_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_teq_lsrr_pcr : &&lbl_dp_teq_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_teq_asrr_pcr : &&lbl_dp_teq_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_teq_rorr_pcr : &&lbl_dp_teq_rorr; break;
-        }
-        break;
-      case 0x15:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_cmp_lsli_pcr : &&lbl_dp_cmp_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_cmp_lsri_pcr : &&lbl_dp_cmp_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_cmp_asri_pcr : &&lbl_dp_cmp_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_cmp_rori_pcr : &&lbl_dp_cmp_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_cmp_lslr_pcr : &&lbl_dp_cmp_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_cmp_lsrr_pcr : &&lbl_dp_cmp_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_cmp_asrr_pcr : &&lbl_dp_cmp_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_cmp_rorr_pcr : &&lbl_dp_cmp_rorr; break;
-        }
-        break;
-      case 0x17:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_cmn_lsli_pcr : &&lbl_dp_cmn_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_cmn_lsri_pcr : &&lbl_dp_cmn_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_cmn_asri_pcr : &&lbl_dp_cmn_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_cmn_rori_pcr : &&lbl_dp_cmn_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_cmn_lslr_pcr : &&lbl_dp_cmn_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_cmn_lsrr_pcr : &&lbl_dp_cmn_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_cmn_asrr_pcr : &&lbl_dp_cmn_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_cmn_rorr_pcr : &&lbl_dp_cmn_rorr; break;
-        }
-        break;
-      case 0x18:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_orr_lsli_pcr : &&lbl_dp_orr_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_orr_lsri_pcr : &&lbl_dp_orr_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_orr_asri_pcr : &&lbl_dp_orr_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_orr_rori_pcr : &&lbl_dp_orr_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_orr_lslr_pcr : &&lbl_dp_orr_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_orr_lsrr_pcr : &&lbl_dp_orr_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_orr_asrr_pcr : &&lbl_dp_orr_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_orr_rorr_pcr : &&lbl_dp_orr_rorr; break;
-        }
-        break;
-      case 0x19:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_orrs_lsli_pcr : &&lbl_dp_orrs_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_orrs_lsri_pcr : &&lbl_dp_orrs_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_orrs_asri_pcr : &&lbl_dp_orrs_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_orrs_rori_pcr : &&lbl_dp_orrs_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_orrs_lslr_pcr : &&lbl_dp_orrs_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_orrs_lsrr_pcr : &&lbl_dp_orrs_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_orrs_asrr_pcr : &&lbl_dp_orrs_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_orrs_rorr_pcr : &&lbl_dp_orrs_rorr; break;
-        }
-        break;
-      case 0x1a:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_mov_lsli_pcr : &&lbl_dp_mov_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_mov_lsri_pcr : &&lbl_dp_mov_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_mov_asri_pcr : &&lbl_dp_mov_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_mov_rori_pcr : &&lbl_dp_mov_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_mov_lslr_pcr : &&lbl_dp_mov_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_mov_lsrr_pcr : &&lbl_dp_mov_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_mov_asrr_pcr : &&lbl_dp_mov_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_mov_rorr_pcr : &&lbl_dp_mov_rorr; break;
-        }
-        break;
-      case 0x1b:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_movs_lsli_pcr : &&lbl_dp_movs_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_movs_lsri_pcr : &&lbl_dp_movs_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_movs_asri_pcr : &&lbl_dp_movs_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_movs_rori_pcr : &&lbl_dp_movs_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_movs_lslr_pcr : &&lbl_dp_movs_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_movs_lsrr_pcr : &&lbl_dp_movs_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_movs_asrr_pcr : &&lbl_dp_movs_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_movs_rorr_pcr : &&lbl_dp_movs_rorr; break;
-        }
-        break;
-      case 0x1c:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_bic_lsli_pcr : &&lbl_dp_bic_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_bic_lsri_pcr : &&lbl_dp_bic_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_bic_asri_pcr : &&lbl_dp_bic_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_bic_rori_pcr : &&lbl_dp_bic_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_bic_lslr_pcr : &&lbl_dp_bic_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_bic_lsrr_pcr : &&lbl_dp_bic_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_bic_asrr_pcr : &&lbl_dp_bic_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_bic_rorr_pcr : &&lbl_dp_bic_rorr; break;
-        }
-        break;
-      case 0x1d:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_bics_lsli_pcr : &&lbl_dp_bics_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_bics_lsri_pcr : &&lbl_dp_bics_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_bics_asri_pcr : &&lbl_dp_bics_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_bics_rori_pcr : &&lbl_dp_bics_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_bics_lslr_pcr : &&lbl_dp_bics_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_bics_lsrr_pcr : &&lbl_dp_bics_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_bics_asrr_pcr : &&lbl_dp_bics_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_bics_rorr_pcr : &&lbl_dp_bics_rorr; break;
-        }
-        break;
-      case 0x1e:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_mvn_lsli_pcr : &&lbl_dp_mvn_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_mvn_lsri_pcr : &&lbl_dp_mvn_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_mvn_asri_pcr : &&lbl_dp_mvn_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_mvn_rori_pcr : &&lbl_dp_mvn_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_mvn_lslr_pcr : &&lbl_dp_mvn_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_mvn_lsrr_pcr : &&lbl_dp_mvn_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_mvn_asrr_pcr : &&lbl_dp_mvn_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_mvn_rorr_pcr : &&lbl_dp_mvn_rorr; break;
-        }
-        break;
-      case 0x1f:
-        switch (fsel) {
-        case 0: cop->dispatch = pcr ? &&lbl_dp_mvns_lsli_pcr : &&lbl_dp_mvns_lsli; break;
-        case 1: cop->dispatch = pcr ? &&lbl_dp_mvns_lsri_pcr : &&lbl_dp_mvns_lsri; break;
-        case 2: cop->dispatch = pcr ? &&lbl_dp_mvns_asri_pcr : &&lbl_dp_mvns_asri; break;
-        case 3: cop->dispatch = pcr ? &&lbl_dp_mvns_rori_pcr : &&lbl_dp_mvns_rori; break;
-        case 4: cop->dispatch = pcr ? &&lbl_dp_mvns_lslr_pcr : &&lbl_dp_mvns_lslr; break;
-        case 5: cop->dispatch = pcr ? &&lbl_dp_mvns_lsrr_pcr : &&lbl_dp_mvns_lsrr; break;
-        case 6: cop->dispatch = pcr ? &&lbl_dp_mvns_asrr_pcr : &&lbl_dp_mvns_asrr; break;
-        case 7: cop->dispatch = pcr ? &&lbl_dp_mvns_rorr_pcr : &&lbl_dp_mvns_rorr; break;
-        }
-        break;
-      default: cop->dispatch = &&lbl_undefined; break;
       }
     }
   }

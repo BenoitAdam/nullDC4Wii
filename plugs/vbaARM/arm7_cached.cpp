@@ -59,7 +59,15 @@ enum
 typedef union { u32 I; } reg_pair;
 
 extern u32 arm_ArmNextPC;
-extern reg_pair arm_Reg[45];
+extern reg_pair arm_Reg[47];
+
+// Scratch pseudo-registers for the split shift uops:
+//   reg[R_COUT]  -- shifter carry-out (C_OUT) produced by carry-writing shifts
+//   reg[R_SHIFT] -- the shifted operand2 value (SHIFT_OUT)
+// A shift uop writes these; the following data-proc op uop reads them when its
+// operand2 came from a shift (the _s / carry-from-reg[45] variants).
+#define R_COUT   45
+#define R_SHIFT  46
 
 extern bool C_OUT, N_FLAG, Z_FLAG, C_FLAG, V_FLAG;
 extern bool armIrqEnable, armFiqEnable;
@@ -308,44 +316,15 @@ void arm_Run(u32 CycleCount);
 //             | pre-rotated 32-bit immediate (immediate operand2 form)
 // C_OUT defaults to C_FLAG at the top of every data-proc label.
 
-// Register, shift by immediate amount (amount already masked into op->imm).
-#define FORM_LSL_IMM  { u32 v=reg[op->r2].I; u32 s=op->imm; \
-    if(s){ C_OUT=(v>>(32-s))&1; value=v<<s; } else { value=v; } }
-#define FORM_LSR_IMM  { u32 v=reg[op->r2].I; u32 s=op->imm; \
-    if(s){ C_OUT=(v>>(s-1))&1; value=v>>s; } else { value=0; C_OUT=(v&0x80000000)?true:false; } }
-#define FORM_ASR_IMM  { u32 v=reg[op->r2].I; u32 s=op->imm; \
-    if(s){ C_OUT=((s32)v>>(int)(s-1))&1; value=(s32)v>>(int)s; } \
-    else { if(v&0x80000000){ value=0xFFFFFFFF; C_OUT=true; } else { value=0; C_OUT=false; } } }
-#define FORM_ROR_IMM  { u32 v=reg[op->r2].I; u32 s=op->imm; \
-    if(s){ C_OUT=(v>>(s-1))&1; value=((v<<(32-s))|(v>>s)); } \
-    else { /* RRX */ u32 cc=(u32)C_FLAG; C_OUT=(v&1)?true:false; value=((v>>1)|(cc<<31)); } }
+// The operand2 shifter is now its own uop (lbl_sh_/lbl_shc_ in the generated
+// label block): it computes the shifted value into reg[R_SHIFT] (and the carry
+// into reg[R_COUT] for the carry-writing variant), then falls through to the
+// data-processing op uop. The op uop reads operand2 from reg[op->r2] (which the
+// decoder sets to R_SHIFT when a shift uop ran, or the real Rm otherwise) or
+// from op->imm for the immediate forms. The old inline FORM_* macros are gone.
 
-// Register, shift by register amount (Rs = op->imm), full ARM7 width handling.
-#define FORM_LSL_REG  { u32 v=reg[op->r2].I; u32 s=reg[op->imm].I & 0xFF; \
-    if(s){ if(s==32){ value=0; C_OUT=(v&1)?true:false; } \
-           else if(s<32){ C_OUT=(v>>(32-s))&1; value=v<<s; } \
-           else { value=0; C_OUT=false; } } else { value=v; } }
-#define FORM_LSR_REG  { u32 v=reg[op->r2].I; u32 s=reg[op->imm].I & 0xFF; \
-    if(s){ if(s==32){ value=0; C_OUT=(v&0x80000000)?true:false; } \
-           else if(s<32){ C_OUT=(v>>(s-1))&1; value=v>>s; } \
-           else { value=0; C_OUT=false; } } else { value=v; } }
-#define FORM_ASR_REG  { u32 v=reg[op->r2].I; u32 s=reg[op->imm].I & 0xFF; \
-    if(s<32){ if(s){ C_OUT=((s32)v>>(int)(s-1))&1; value=(s32)v>>(int)s; } else { value=v; } } \
-    else { if(v&0x80000000){ value=0xFFFFFFFF; C_OUT=true; } else { value=0; C_OUT=false; } } }
-#define FORM_ROR_REG  { u32 v=reg[op->r2].I; u32 s=reg[op->imm].I & 0xFF; \
-    if(s){ s&=0x1f; if(s){ C_OUT=(v>>(s-1))&1; value=((v<<(32-s))|(v>>s)); } \
-           else { value=v; C_OUT=(v&0x80000000)?true:false; } } \
-    else { value=v; C_OUT=(v&0x80000000)?true:false; } }
-
-// Immediate operand2: op->imm already holds the rotated 32-bit constant.
-// For rotate==0 the shifter carry is unaffected (stays C_FLAG); for rotate!=0
-// it is bit 31 of the rotated value. We split these at decode time into two
-// labels so neither path needs a runtime branch on the rotate amount.
-#define FORM_IMM_ROT0 { value=op->imm; }                       // C_OUT stays C_FLAG
-#define FORM_IMM_ROTN { value=op->imm; C_OUT=(value&0x80000000)?true:false; }
-
-// (The data-processing and LDR/STR label bodies + their decode tables are
-//  generated mechanically from these same FORM_*/DO_* macros by
+// (The data-processing / shift / LDR/STR label bodies + their decode tables are
+//  generated mechanically from the DO_* macros + shift_body() by
 //  gen_arm7_cached.py and pulled in via arm7_cached_gen.inc below.)
 
 #if !defined(__GNUC__)
@@ -726,9 +705,9 @@ lbl_unknown_block:
 
 		bool last = false;
 		do {
-			// Each instruction needs up to 3 slots (cond guard + op + cap
-			// terminator), so keep a margin of 4 before flushing the pool.
-			if (ARM7_CACHE_LAST_OP >= ARM7_CACHE_SIZE - 4) {
+			// Each instruction needs up to 4 slots (cond guard + shift uop + op +
+			// cap terminator), so keep a margin of 5 before flushing the pool.
+			if (ARM7_CACHE_LAST_OP >= ARM7_CACHE_SIZE - 5) {
 				// Pool exhausted: flush and restart decoding this block.
 				for (u32 i = 0; i < ARM7_EP_SIZE; i++)
 					ARM7_ENTRYPOINTS[i] = &ARM7_CACHE[0];

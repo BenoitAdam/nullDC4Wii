@@ -77,7 +77,10 @@ typedef union {
 
 u32 arm_ArmNextPC;
 
-reg_pair arm_Reg[45];
+// 45 architectural/banked registers, plus two scratch pseudo-registers used
+// only by the cached interpreter's split shift uops: [45]=C_OUT (shifter carry),
+// [46]=SHIFT_OUT (computed operand2). Harmless to the inline interpreter.
+reg_pair arm_Reg[47];
 
 void CPUSwap(u32 *a, u32 *b)
 {
