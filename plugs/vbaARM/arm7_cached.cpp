@@ -27,6 +27,73 @@
 #define C_CORE
 #define DEV_VERSION
 
+// Define to profile block execution: counts each block entry (keyed by start
+// PC) and prints the top 10 hottest blocks roughly once per wall-clock second.
+// Off by default -- zero cost in the hot path when undefined.
+//#define ARM7_PROFILE_BLOCKS
+
+#ifdef ARM7_PROFILE_BLOCKS
+#include <map>
+#include <vector>
+#include <algorithm>
+double os_GetSeconds();   // platform wall-clock (wii/main.cpp); seconds as double
+static std::map<u32, unsigned long long> s_blockHits;
+static double s_profLast = 0.0;
+
+// Count one entry of the block at `pc` (called from DISPATCH()).
+static inline void prof_hit(u32 pc) { s_blockHits[pc]++; }
+
+// Once-per-slice: if >=1s elapsed, print the top 10 hottest blocks and reset.
+static void prof_tick()
+{
+	double now = os_GetSeconds();
+	if (s_profLast == 0.0) { s_profLast = now; return; }
+	if (now - s_profLast < 1.0) return;
+	s_profLast = now;
+
+	std::vector<std::pair<u32, unsigned long long>> v(s_blockHits.begin(), s_blockHits.end());
+	std::sort(v.begin(), v.end(),
+	          [](const std::pair<u32, unsigned long long>& a,
+	             const std::pair<u32, unsigned long long>& b) { return a.second > b.second; });
+	int shown = (int)(v.size() < 10 ? v.size() : 10);
+	printf("[ARM7 hot blocks] top %d of %d:\n", shown, (int)v.size());
+	// NOTE: devkitPPC/newlib printf does not support %zu/%llu -> use %d/%u with
+	// explicit casts (mismatched specifiers desync varargs and print garbage).
+	for (int i = 0; i < shown; i++) {
+		u32 pc = v[i].first;
+		printf("  #%d  pc=%08X  hits=%u\n", i + 1, (unsigned)pc, (unsigned)v[i].second);
+		// Dump the block's opcodes (up to 32), stopping after a block-ender
+		// (branch / PC-write LDR/LDM{pc} / SWI / data-proc to r15).
+		u32 a = pc;
+		for (int n = 0; n < 32; n++) {
+			u32 op = arm_ReadMem32(a & ARAM_MASK);
+			printf("      %08X: %08X\n", (unsigned)a, (unsigned)op);
+			u32 fam = (op >> 26) & 3;
+			bool ender = false;
+			if (fam == 2) {                       // LDM/STM or branch
+				if ((op >> 25) & 1) ender = true;                 // branch (B/BL)
+				else if (((op >> 20) & 1) && (op & 0x8000)) ender = true; // LDM{pc}
+			} else if (fam == 3 && ((op >> 24) & 0xF) == 0xF) {
+				ender = true;                     // SWI
+			} else if (fam == 1) {                // LDR/STR
+				if (((op >> 20) & 1) && (((op >> 12) & 0xF) == 15)) ender = true; // LDR pc
+			} else if (fam == 0) {                // data-proc (+ mul/swp/psr)
+				u32 op4 = (op >> 21) & 0xF;
+				if (((op >> 12) & 0xF) == 15 && !(op4 >= 0x8 && op4 <= 0xB)) ender = true; // dp ->pc
+			}
+			a += 4;
+			if (ender) break;
+		}
+	}
+	s_blockHits.clear();
+}
+#define PROF_HIT(pc)  prof_hit(pc)
+#define PROF_TICK()   prof_tick()
+#else
+#define PROF_HIT(pc)  ((void)0)
+#define PROF_TICK()   ((void)0)
+#endif
+
 // ── Glue identical to arm7.cpp ──────────────────────────────────────────────
 #define CPUReadMemoryQuick(addr) arm_ReadMem32((addr) & ARAM_MASK)
 #define CPUReadByte arm_ReadMem8
@@ -391,6 +458,9 @@ void arm_Run_Cached(u32 CycleCount, bool reset)
 
 	clockTicks = 0;
 
+	// Hot-block profiler: once per slice, dump the top 10 if >=1s has elapsed.
+	PROF_TICK();
+
 	// ── dispatch_pc execution model ────────────────────────────────────────────
 	// A single running program counter, dispatch_pc, drives dispatch. The common
 	// uops (no r15) never touch reg[15] / armNextPC: they do their work, advance
@@ -423,6 +493,7 @@ void arm_Run_Cached(u32 CycleCount, bool reset)
 			}                                             \
 			if ((u32)clockTicks >= CycleCount) goto lbl_exit; \
 			clockTicks += 6;                              \
+			PROF_HIT(dispatch_pc);                        \
 			pc_op = ARM7_ENTRYPOINTS[dispatch_pc & ARM7_EP_MASK]; \
 			goto *pc_op->dispatch;                        \
 		} while(0)
@@ -855,14 +926,21 @@ lbl_unknown_block:
 					if (opcode & 0x01000000) {
 						cop->dispatch = &&lbl_bl;   // BL writes lr -> not an idle wait
 					} else {
-						// Idle-loop: an unconditional BACKWARD branch that stays
-						// within the current all-read-only block is an interrupt-wait
-						// spin (the looped body has no store / PC-write / mode change,
-						// so nothing it does can change the branch outcome; only an
-						// IRQ/FIQ, sampled at block ends, can break it). Route it to
-						// the cycle-skipping branch. Target = (B_addr + 8) + offset.
+						// Idle-loop: a BACKWARD branch (conditional OR unconditional)
+						// that stays within the current all-read-only block is an
+						// interrupt/memory wait spin. The body has no store / PC-write
+						// / mode change, so nothing it does can change the branch
+						// outcome -- only an IRQ/FIQ or a memory-mapped value written
+						// by the SH4/AICA can, and both only happen at slice
+						// boundaries. So the loop's per-iteration result is fixed
+						// within a slice: route it to lbl_b_idle, which charges +100
+						// on the loop-continuing (taken) path so an idle slice ends
+						// ~15x sooner. For a conditional branch the cond-guard uop
+						// (already inserted before this op uop) handles the exit edge;
+						// lbl_b_idle is only reached when the branch is TAKEN.
+						// Target = (B_addr + 8) + offset.
 						u32 target = decode_pc + 8 + (u32)offset;
-						bool selfLoop = (cond == 0xE) && blockSafe &&
+						bool selfLoop = blockSafe &&
 						                target >= blockStart && target <= decode_pc;
 						cop->dispatch = selfLoop ? &&lbl_b_idle : &&lbl_b;
 					}

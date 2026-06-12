@@ -23,7 +23,7 @@ SHELL   := /bin/bash
 # nativetest dir (.) is searched first for "" includes via -iquote, then ..
 CXXFLAGS := -std=c++17 -O1 -g -fno-strict-aliasing -Wall -Wno-unused -iquote . -I ..
 
-SRC := ../arm7.cpp ../arm7_cached.cpp nt_main.cpp
+SRC := ../arm7.cpp ../arm7_cached.cpp nt_main.cpp nt_stub.cpp
 
 .PHONY: all run ref run-ref clean
 
