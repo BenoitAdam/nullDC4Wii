@@ -645,6 +645,21 @@ lbl_b:
 	}
 	DISPATCH_PC();
 
+lbl_b_idle:
+	// Idle-loop closing branch: an unconditional B back to a read-only block's
+	// own start (an interrupt-wait spin). Charge a large chunk so a slice spent
+	// idling reaches its CycleCount budget in ~15x fewer iterations and exits to
+	// let the SH4/AICA advance (which is the only thing that can break the loop).
+	// DISPATCH_PC() re-samples FIQ on the way out, so an interrupt that arrives
+	// is still serviced promptly. dispatch_pc is unchanged (target == this block).
+	clockTicks += 100;
+	{
+		s32 offset = pc_op->imm;
+		dispatch_pc = dispatch_pc + 8 + (u32)offset;
+		clockTicks += 3;
+	}
+	DISPATCH_PC();
+
 lbl_bl:
 	{
 		// lr = address of next instruction = A+4 = dispatch_pc+4.
@@ -703,6 +718,15 @@ lbl_unknown_block:
 		const u32 MAX_BLOCK_UOPS = 128;
 		u32 blockUops = 0;
 
+		// Idle-loop detection: a block whose body is ONLY loads + data-processing
+		// (no stores / PC-writes / mode changes / block-transfers) and which ends
+		// in an UNCONDITIONAL branch back to its own start is an interrupt-wait
+		// spin loop -- it can only exit via FIQ/IRQ, which is sampled at slice
+		// boundaries. Such a loop's outcome cannot change within the slice, so the
+		// closing branch is routed to lbl_b_idle which charges a large cycle chunk
+		// (+100) per iteration, ending the idle slice ~15x sooner than spinning.
+		bool blockSafe = true;
+
 		bool last = false;
 		do {
 			// Each instruction needs up to 4 slots (cond guard + shift uop + op +
@@ -755,6 +779,10 @@ lbl_unknown_block:
 					#define GEN_DECODE_MEM
 					#include "arm7_cached_gen.inc"
 					#undef GEN_DECODE_MEM
+					// A store (L==0) makes the block ineligible for idle-skip; a
+					// load is safe (read-only) and leaves blockSafe alone.
+					if (!((opcode >> 20) & 1))
+						blockSafe = false;
 					// LDR to PC ends the block (it re-dispatches via dp_pc_done).
 					if (((opcode >> 20) & 1) && (((opcode >> 12) & 0xF) == 15))
 						last = true;
@@ -780,6 +808,7 @@ lbl_unknown_block:
 						cop->r1 = (opcode >> 16) & 0xF;   // Rn
 						cop->r2 = opcode & 0xF;           // Rm
 						cop->dispatch = (opcode & 0x00400000) ? &&lbl_swpb : &&lbl_swp;
+						blockSafe = false;            // SWP writes memory
 					} else if (isMrsMsr) {
 						// Distinguish MRS vs MSR and CPSR vs SPSR.
 						bool toPSR = (opcode >> 21) & 1;  // 0 = MRS, 1 = MSR
@@ -787,8 +816,10 @@ lbl_unknown_block:
 						if (!toPSR) {
 							cop->r0 = (opcode >> 12) & 0xF;
 							cop->dispatch = spsr ? &&lbl_mrs_spsr : &&lbl_mrs_cpsr;
+							// MRS is read-only -> safe.
 						} else {
 							cop->dispatch = spsr ? &&lbl_msr_spsr : &&lbl_msr_cpsr;
+							blockSafe = false;       // MSR changes CPSR/mode
 						}
 					} else {
 						// Data processing. Generated decode picks the (op,form) label.
@@ -808,19 +839,33 @@ lbl_unknown_block:
 			} else if (fam == 2) {
 				// bits[27:26]==10: block data transfer (bit25==0) or branch (bit25==1)
 				if (!((opcode >> 25) & 1)) {
-					// 100: block data transfer (LDM/STM)
+					// 100: block data transfer (LDM/STM) -- not idle-skip safe.
 					bool load = (opcode >> 20) & 1;
 					bool hasPC = (opcode & 0x8000) != 0;
 					if (!load)         cop->dispatch = &&lbl_stm;
 					else if (hasPC)  { cop->dispatch = &&lbl_ldm_pc;   last = true; }
 					else               cop->dispatch = &&lbl_ldm_nopc;
+					blockSafe = false;
 				} else {
 					// 101: branch. Pre-extract the sign-extended, shifted offset.
 					s32 offset = opcode & 0x00FFFFFF;
 					if (offset & 0x00800000) offset |= 0xFF000000;
 					offset <<= 2;
 					cop->imm = (u32)offset;
-					cop->dispatch = (opcode & 0x01000000) ? &&lbl_bl : &&lbl_b;
+					if (opcode & 0x01000000) {
+						cop->dispatch = &&lbl_bl;   // BL writes lr -> not an idle wait
+					} else {
+						// Idle-loop: an unconditional BACKWARD branch that stays
+						// within the current all-read-only block is an interrupt-wait
+						// spin (the looped body has no store / PC-write / mode change,
+						// so nothing it does can change the branch outcome; only an
+						// IRQ/FIQ, sampled at block ends, can break it). Route it to
+						// the cycle-skipping branch. Target = (B_addr + 8) + offset.
+						u32 target = decode_pc + 8 + (u32)offset;
+						bool selfLoop = (cond == 0xE) && blockSafe &&
+						                target >= blockStart && target <= decode_pc;
+						cop->dispatch = selfLoop ? &&lbl_b_idle : &&lbl_b;
+					}
 					last = true;        // branch ends the block
 				}
 			} else {
