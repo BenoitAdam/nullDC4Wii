@@ -1324,13 +1324,12 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
 					if (lo) ppc_addi(ppc_rarg1,ppc_rarg1,lo);
 					ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
-					// MMIO test on iirf (iirf<0x20 <=> ptr==0) BEFORE masking iirf to
-					// ptr in place. (Pair path has no spare reg to keep iirf for the
-					// shift, so the andi stays here; only the compare is folded.)
-					ppc_cmpli(ppc_cr0,ppc_rarg1,0x20,0);		// iirf < 0x20 ?
-					// Extract shift BEFORE masking iirf in place to ptr.
-					ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// r0 = shift
-					ppc_rlwinmx(ppc_rarg1,ppc_rarg1,0,0,26,0);	// rarg1 = ptr (≠r0)
+					// Extract shift first. NOTE: ppc_andi is the RECORD form (andi.)
+					// and clobbers CR0, so the MMIO compare MUST come AFTER it (and
+					// before the rlwinm overwrites iirf in rarg1).
+					ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// r0 = shift (clobbers CR0)
+					ppc_cmpli(ppc_cr0,ppc_rarg1,0x20,0);		// iirf < 0x20 ? (sets CR0 last)
+					ppc_rlwinmx(ppc_rarg1,ppc_rarg1,0,0,26,0);	// rarg1 = ptr (≠r0; Rc=0)
 
 					// blt -> cold (forward, not-taken: fast path falls through).
 					ppc_label* cold=ppc_CreateLabel();
