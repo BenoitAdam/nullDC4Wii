@@ -362,7 +362,7 @@ sh4_opcodelistentry opcodes[]=
 	{0							,i1111_nnnn_0001_1101	,Mask_n			,0xF01D,Normal			,"flds <FREG_N>,FPUL"					,1,0,LS,fix_none	,dec_Fill(DM_UnaryOp,PRM_FPUL,PRM_FRN,shop_mov32)},	//flds <FREG_N>,FPUL
 	{0							,i1111_nnnn_0010_1101	,Mask_n			,0xF02D,Normal			,"float FPUL,<FREG_N_SD_F>"				,1,3,FE,fix_none	,dec_Fill(DM_UnaryOp,PRM_FRN,PRM_FPUL,shop_cvt_i2f_n)},	//float FPUL,<FREG_N>
 	{0							,i1111_nnnn_0100_1101	,Mask_n			,0xF04D,Normal			,"fneg <FREG_N_SD_F> "					,1,0,LS,fix_none	,dec_Un_frNfrN(shop_fneg)},	//fneg <FREG_N>
-	{0							,i1111_1011_1111_1101	,Mask_none		,0xFBFD,WritesFPSCR		,"frchg"								,1,2,FE,fix_none},	//frchg
+	{dec_i1111_1011_1111_1101	,i1111_1011_1111_1101	,Mask_none		,0xFBFD,WritesFPSCR		,"frchg"								,1,2,FE,fix_none},	//frchg
 	{dec_i1111_0011_1111_1101   ,i1111_0011_1111_1101	,Mask_none		,0xF3FD,WritesFPSCR		,"fschg"								,1,2,FE,fix_none},	//fschg
 	{0							,i1111_nnnn_0110_1101	,Mask_n			,0xF06D,Normal			,"fsqrt <FREG_N>"						,1,12,FE,fix_none	,dec_Un_frNfrN(shop_fsqrt)},//fsqrt <FREG_N>
 	{0							,i1111_nnnn_0011_1101	,Mask_n			,0xF03D,Normal			,"ftrc <FREG_N>, FPUL"					,1,4,FE,fix_none	,dec_Fill(DM_UnaryOp,PRM_FPUL,PRM_FRN,shop_cvt_f2i_t)},  //ftrc <FREG_N>, FPUL	//	,dec_Fill(DM_UnaryOp,PRM_FPUL,PRM_FRN,shop_cvt)
