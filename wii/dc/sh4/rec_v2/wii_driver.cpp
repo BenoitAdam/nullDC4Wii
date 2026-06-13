@@ -260,6 +260,27 @@ void ppc_sh_load(u32 D,shil_param prm)
 	verify(prm.is_reg());
 	ppc_sh_load(D,prm._reg);
 }
+// Resolve a register source to the PPC reg an instruction can read directly:
+// the pinned reg if `prm` is statically allocated, else load it into scratch
+// `D` and return D. Lets single-instruction ops (cmp, and, add, ...) read
+// pinned sources in place and skip the redundant `mr D,pinned` move. ONLY for
+// ops whose dest is a scratch reg (or that don't write the source) — never when
+// the op would clobber the pinned reg it just read.
+static u32 src_or_load(u32 sh4_reg,u32 D)
+{
+#if STATIC_GPR_ALLOC
+	ppc_ireg ri=GetIntReg(sh4_reg);
+	if (ri!=ppc_rinvalid)
+		return (u32)ri;
+#endif
+	ppc_sh_load(D,sh4_reg);
+	return D;
+}
+static u32 src_or_load(shil_param prm,u32 D)
+{
+	verify(prm.is_reg());
+	return src_or_load(prm._reg,D);
+}
 void ppc_sh_load_f32(u32 D,u32 sh4_reg)
 {
 	ppc_lfs(D,ppc_contex,Sh4cntx.offset(sh4_reg));
@@ -639,33 +660,40 @@ static void emit_cr0_bit_to_rarg0(u32 cr0_bit_index)
 	ppc_rlwinmx(ppc_rarg0,ppc_rarg0,cr0_bit_index+1,31,31,0);
 }
 
-// Load rs1 into rarg0, then compare against rs2 into CR0. Folds a small
-// immediate rs2 into cmpi/cmpli (signed uses cmpi+s16, unsigned cmpli+u16),
-// otherwise loads rs2 into rarg1 and uses the register cmp/cmpl. Used by the
-// set*/test helpers below. rarg0 is left holding rs1 (clobbered by the
-// following mfcr in emit_cr0_bit_to_rarg0, which is fine).
+// Compare rs1 against rs2 into CR0. cmp/cmpl/cmpi/cmpli can read ANY register,
+// so when an operand already lives in a pinned PPC reg we compare it in place
+// and skip the move into rarg0/rarg1 — only spilled operands (or immediates
+// that don't fit the cmp-immediate forms) need a scratch load. Folds a small
+// immediate rs2 into cmpi/cmpli (signed uses cmpi+s16, unsigned cmpli+u16).
+//
+// The follow-on emit_cr0_bit_to_rarg0 does mfcr rarg0, which clobbers ONLY
+// rarg0 (scratch) and never the pinned source regs, so comparing in place is
+// safe regardless of which operands were elided.
 static void emit_cmp_into_cr0(shil_opcode* op,bool is_signed)
 {
-	ppc_sh_load(ppc_rarg0,op->rs1);
+	// rs1 in a pinned reg -> use it directly; else load into rarg0 scratch.
+	u32 a=src_or_load(op->rs1,ppc_rarg0);
 
 	if (op->rs2.is_imm() && (is_signed ? op->rs2.is_imm_s16() : op->rs2.is_imm_u16()))
 	{
 		if (is_signed)
-			ppc_cmpi(ppc_cr0,ppc_rarg0,op->rs2._imm,0);
+			ppc_cmpi(ppc_cr0,a,op->rs2._imm,0);
 		else
-			ppc_cmpli(ppc_cr0,ppc_rarg0,op->rs2._imm,0);
+			ppc_cmpli(ppc_cr0,a,op->rs2._imm,0);
 		return;
 	}
 
+	// rs2 in a pinned reg -> use directly; immediate -> li into rarg1; else load.
+	u32 b;
 	if (op->rs2.is_imm())
-		ppc_li(ppc_rarg1,op->rs2._imm);
+		{ ppc_li(ppc_rarg1,op->rs2._imm); b=ppc_rarg1; }
 	else
-		ppc_sh_load(ppc_rarg1,op->rs2);
+		b=src_or_load(op->rs2,ppc_rarg1);
 
 	if (is_signed)
-		ppc_cmp(ppc_cr0,ppc_rarg0,ppc_rarg1,0);
+		ppc_cmp(ppc_cr0,a,b,0);
 	else
-		ppc_cmpl(ppc_cr0,ppc_rarg0,ppc_rarg1,0);
+		ppc_cmpl(ppc_cr0,a,b,0);
 }
 
 // rd = (signed) rs1 <cond> rs2  -> 0/1
@@ -726,10 +754,10 @@ void ngen_End(DecodedBlock* block)
 			}
 			else
 			{
-				reg=ppc_rarg0;
-				ppc_sh_load(ppc_rarg0,reg_sr_T);
+				// cmpi reads any reg: if T is pinned, compare it in place.
+				reg=src_or_load(reg_sr_T,ppc_rarg0);
 			}
-			
+
 			ppc_cmpi(ppc_cr0,reg,block->BlockType&1,0);
 	
 			ppc_label* jtrue=ppc_CreateLabel();
@@ -1095,14 +1123,17 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					if (op->rs3.is_imm())
 					{
 						verify(op->rs3.is_imm_s16());
-						ppc_sh_load(ppc_rarg0,op->rs1);
-						ppc_addi(ppc_rarg0,ppc_rarg0,op->rs3._imm);
+						// addr = rs1 + imm -> addi can read pinned rs1 in place and
+						// write scratch rarg0, skipping the `mr rarg0,rs1` load.
+						u32 a1=src_or_load(op->rs1,ppc_rarg0);
+						ppc_addi(ppc_rarg0,a1,op->rs3._imm);
 					}
 					else if (op->rs3.is_r32i())
 					{
-						ppc_sh_load(ppc_rarg0,op->rs1);
-						ppc_sh_load(ppc_rarg1,op->rs3);
-						ppc_addx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0,0);
+						// addr = rs1 + rs3 -> add reads both sources in place.
+						u32 a1=src_or_load(op->rs1,ppc_rarg0);
+						u32 a3=src_or_load(op->rs3,ppc_rarg1);
+						ppc_addx(ppc_rarg0,a1,a3,0,0);
 					}
 					else if (op->rs3.is_null())
 					{
@@ -1251,14 +1282,16 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				if (op->rs3.is_imm())
 				{
 					verify(op->rs3.is_imm_s16());
-					ppc_sh_load(ppc_rarg0,op->rs1);
-					ppc_addi(ppc_rarg0,ppc_rarg0,op->rs3._imm);
+					// addr = rs1 + imm: addi reads pinned rs1 in place -> rarg0.
+					u32 a1=src_or_load(op->rs1,ppc_rarg0);
+					ppc_addi(ppc_rarg0,a1,op->rs3._imm);
 				}
 				else if (op->rs3.is_r32i())
 				{
-					ppc_sh_load(ppc_rarg0,op->rs1);
-					ppc_sh_load(ppc_rarg3,op->rs3);
-					ppc_addx(ppc_rarg0,ppc_rarg0,ppc_rarg3,0,0);
+					// addr = rs1 + rs3: add reads both sources in place -> rarg0.
+					u32 a1=src_or_load(op->rs1,ppc_rarg0);
+					u32 a3=src_or_load(op->rs3,ppc_rarg3);
+					ppc_addx(ppc_rarg0,a1,a3,0,0);
 				}
 				else if (op->rs3.is_null())
 				{
@@ -1410,19 +1443,25 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			
 		case shop_jdyn:
 			{
-				ppc_sh_load(ppc_djump,op->rs1);
-				
 				if (op->rs2.is_imm())
 				{
+					// djump = rs1 + imm: read pinned rs1 in place into the addi/add,
+					// so the `mr djump,rs1` load is folded into the arithmetic.
+					u32 a1=src_or_load(op->rs1,ppc_djump);
 					if (op->rs2.is_imm_s16())
 					{
-						ppc_addi(ppc_djump,ppc_djump,op->rs2._imm);
+						ppc_addi(ppc_djump,a1,op->rs2._imm);
 					}
 					else
 					{
 						ppc_li(ppc_rarg0,op->rs2._imm);
-						ppc_addx(ppc_djump,ppc_djump,ppc_rarg0,0,0);
+						ppc_addx(ppc_djump,a1,ppc_rarg0,0,0);
 					}
+				}
+				else
+				{
+					// djump = rs1 (no offset): a plain move is unavoidable.
+					ppc_sh_load(ppc_djump,op->rs1);
 				}
 			}
 			break;
@@ -1725,19 +1764,25 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		// --- Integer comparisons / test ---------------------------------------
 		// (set*/test do their own operand load + immediate folding internally.)
 		case shop_test:	// rd = (r1 & r2) == 0
-			ppc_sh_load(ppc_rarg0,op->rs1);
-			if (op->rs2.is_imm_u16())
-				ppc_andi(ppc_rarg0,ppc_rarg0,op->rs2._imm);	// andi. sets CR0
-			else
 			{
-				if (op->rs2.is_imm())
-					ppc_li(ppc_rarg1,op->rs2._imm);
+				// and./andi. read any reg and write a scratch dest (rarg0), so we
+				// can source pinned rs1/rs2 in place and skip the loading mr's. The
+				// result (CR0) goes through mfcr->rarg0; rarg0 as the and dest is
+				// dead-on-arrival so clobbering a pinned source is impossible.
+				u32 a1=src_or_load(op->rs1,ppc_rarg0);
+
+				if (op->rs2.is_imm_u16())
+					ppc_andi(ppc_rarg0,a1,op->rs2._imm);		// andi. sets CR0
 				else
-					ppc_sh_load(ppc_rarg1,op->rs2);
-				ppc_andx(ppc_rarg0,ppc_rarg0,ppc_rarg1,1);	// and. sets CR0
+				{
+					u32 b;
+					if (op->rs2.is_imm()) { ppc_li(ppc_rarg1,op->rs2._imm); b=ppc_rarg1; }
+					else b=src_or_load(op->rs2,ppc_rarg1);
+					ppc_andx(ppc_rarg0,a1,b,1);			// and. sets CR0
+				}
+				emit_cr0_bit_to_rarg0(BI_CR0_EQ);
+				binop_end(op);
 			}
-			emit_cr0_bit_to_rarg0(BI_CR0_EQ);
-			binop_end(op);
 			break;
 		case shop_seteq: emit_setcc_signed(op,BI_CR0_EQ,false); break;
 		case shop_setgt: emit_setcc_signed(op,BI_CR0_GT,false); break;
@@ -1871,8 +1916,9 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		// idx = rs1 & 0xFFFF. Table entries are f32 (4 bytes).
 		case shop_fsca:
 			{
-				ppc_sh_load(ppc_rarg0,op->rs1);			// rarg0 = fpul value
-				ppc_rlwinmx(ppc_rarg0,ppc_rarg0,2,14,29,0);	// rarg0 = (idx & 0xFFFF) * 4
+				// idx*4 = (fpul & 0xFFFF)*4: rlwinm reads pinned rs1 in place -> rarg0.
+				u32 fp=src_or_load(op->rs1,ppc_rarg0);
+				ppc_rlwinmx(ppc_rarg0,fp,2,14,29,0);		// rarg0 = (idx & 0xFFFF) * 4
 				// rarg1 = &sin_table  (split hi/lo via lis+addi pattern)
 				u32 lo=ppc_addr_high(ppc_rarg1,(void*)&sin_table[0]);
 				ppc_addi(ppc_rarg1,ppc_rarg1,lo);		// rarg1 = base of sin_table
