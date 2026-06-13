@@ -1148,16 +1148,17 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						if (lo) ppc_addi(ppc_rarg1,ppc_rarg1,lo);
 						ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
 						ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,0,26,0);	// ptr (≠r0)
-						ppc_cmpi(ppc_cr0,ppc_rarg2,0,0);		// ptr == 0 ?
+						ppc_cmpli(ppc_cr0,ppc_rarg1,0x20,0);		// iirf < 0x20 ? (MMIO)
 
-						// beq -> cold (forward, not-taken: fast path falls through).
+						// blt -> cold (forward, not-taken: fast path falls through).
 						ppc_label* cold=ppc_CreateLabel();
-						ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq cold (MMIO)
+						ppc_bcx(BO_TRUE,BI_CR0_LT,0,0,0);		// blt cold (MMIO)
 
 						// --- fast direct path (fall-through) ---
-						ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// shift (iirf dead after)
-						ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
-						ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);	// mirror mask
+						// shift count = iirf directly (ptr >=0x40-aligned -> iirf's
+						// low 6 bits, which slw/srw use, equal the 5-bit shift field).
+						ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0);
+						ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0);	// mirror mask
 						ppc_lwzx(ppc_rarg3,ppc_rarg2,ppc_rarg0);	// word[addr]
 						ppc_addi(ppc_rarg0,ppc_rarg0,4);
 						ppc_lwzx(ppc_rrv1,ppc_rarg2,ppc_rarg0);	// word[addr+4] -> r4
@@ -1185,17 +1186,22 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						// NOTE: ptr goes in rarg2 (NOT r0) — load-indexed treats a
 						// base of r0 as literal zero, which would drop the pointer.
 						ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,0,26,0);
-						ppc_cmpi(ppc_cr0,ppc_rarg2,0,0);		// ptr == 0 ?
+						// MMIO test: ptr==0 <=> iirf<0x20 (the only set bits would be
+						// the low-5 shift field). Compare iirf directly so this doesn't
+						// depend on the ptr mask above.
+						ppc_cmpli(ppc_cr0,ppc_rarg1,0x20,0);		// iirf < 0x20 ? (UIMM=0x20,L=0)
 
-						// beq -> cold (forward, not-taken: fast path falls through).
+						// blt -> cold (forward, not-taken: fast path falls through).
 						ppc_label* cold=ppc_CreateLabel();
-						ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq cold (MMIO)
+						ppc_bcx(BO_TRUE,BI_CR0_LT,0,0,0);		// blt cold (MMIO)
 
 						// --- fast direct path (fall-through) ---
-						// shift = iirf & 0x1F ; eff = (addr<<sh)>>sh  (into rarg0)
-						ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// r0 = shift (0..31)
-						ppc_slwx(ppc_rarg0,areg,ppc_r0,0);		// reads areg -> rarg0
-						ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
+						// eff = (addr<<sh)>>sh. The shift count is iirf's low bits:
+						// ptr is >=0x40-aligned so iirf[26:31] (the 6 bits slw/srw use)
+						// equal the 5-bit shift field exactly -> feed iirf directly,
+						// no andi 0x1F needed.
+						ppc_slwx(ppc_rarg0,areg,ppc_rarg1,0);		// reads areg -> rarg0
+						ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0);
 						// big-endian sub-word swizzle
 						if (sz<4)
 							ppc_xori(ppc_rarg0,ppc_rarg0,4-sz);
@@ -1318,14 +1324,17 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
 					if (lo) ppc_addi(ppc_rarg1,ppc_rarg1,lo);
 					ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
+					// MMIO test on iirf (iirf<0x20 <=> ptr==0) BEFORE masking iirf to
+					// ptr in place. (Pair path has no spare reg to keep iirf for the
+					// shift, so the andi stays here; only the compare is folded.)
+					ppc_cmpli(ppc_cr0,ppc_rarg1,0x20,0);		// iirf < 0x20 ?
 					// Extract shift BEFORE masking iirf in place to ptr.
 					ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// r0 = shift
 					ppc_rlwinmx(ppc_rarg1,ppc_rarg1,0,0,26,0);	// rarg1 = ptr (≠r0)
-					ppc_cmpi(ppc_cr0,ppc_rarg1,0,0);		// ptr == 0 ?
 
-					// beq -> cold (forward, not-taken: fast path falls through).
+					// blt -> cold (forward, not-taken: fast path falls through).
 					ppc_label* cold=ppc_CreateLabel();
-					ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq cold (MMIO)
+					ppc_bcx(BO_TRUE,BI_CR0_LT,0,0,0);		// blt cold (MMIO)
 
 					// --- fast direct path (fall-through; addr masked here only) ---
 					ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
@@ -1354,27 +1363,30 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					// rarg3 = ptr = iirf & ~0x1F  (ptr NOT in r0: store-indexed
 					// treats base r0 as literal zero, dropping the pointer)
 					ppc_rlwinmx(ppc_rarg3,ppc_rarg2,0,0,26,0);
-					ppc_cmpi(ppc_cr0,ppc_rarg3,0,0);		// ptr == 0 ?
+					// MMIO test on iirf directly (iirf<0x20 <=> ptr==0); keeps iirf
+					// in rarg2 alive as the shift count below.
+					ppc_cmpli(ppc_cr0,ppc_rarg2,0x20,0);		// iirf < 0x20 ?
 
-					// beq -> cold (forward, not-taken: fast path falls through).
+					// blt -> cold (forward, not-taken: fast path falls through).
 					ppc_label* cold=ppc_CreateLabel();
-					ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq cold (MMIO)
+					ppc_bcx(BO_TRUE,BI_CR0_LT,0,0,0);		// blt cold (MMIO)
 
 					// --- fast direct path (fall-through) ---
-					// shift = iirf & 0x1F ; eff = (addr<<sh)>>sh  (in rarg2 scratch)
-					ppc_andi(ppc_r0,ppc_rarg2,0x1F);		// r0 = shift (iirf still in rarg2)
-					ppc_slwx(ppc_rarg2,areg,ppc_r0,0);		// rarg2 = addr<<sh (reads areg; overwrites iirf, no longer needed)
-					ppc_srwx(ppc_rarg2,ppc_rarg2,ppc_r0,0);		// rarg2 = (addr<<sh)>>sh
+					// eff = (addr<<sh)>>sh into r0 (free after the index above);
+					// shift count is iirf in rarg2 directly (ptr >=0x40-aligned ->
+					// iirf's low 6 bits == the 5-bit field, no andi needed).
+					ppc_slwx(ppc_r0,areg,ppc_rarg2,0);		// r0 = addr<<sh (reads areg)
+					ppc_srwx(ppc_r0,ppc_r0,ppc_rarg2,0);		// r0 = (addr<<sh)>>sh
 					if (sz<4)
-						ppc_xori(ppc_rarg2,ppc_rarg2,4-sz);	// big-endian sub-word swizzle
-					// *(T*)(ptr+eff) = data  (ptr=rarg3, eff=rarg2, data=datareg).
+						ppc_xori(ppc_r0,ppc_r0,4-sz);		// big-endian sub-word swizzle
+					// *(T*)(ptr+eff) = data  (ptr=rarg3, eff=r0, data=datareg).
 					// datareg is rs2's pinned reg (read-only here) or rarg1.
 					if (sz==1)
-						ppc_stbx(datareg,ppc_rarg3,ppc_rarg2);
+						ppc_stbx(datareg,ppc_rarg3,ppc_r0);
 					else if (sz==2)
-						ppc_sthx(datareg,ppc_rarg3,ppc_rarg2);
+						ppc_sthx(datareg,ppc_rarg3,ppc_r0);
 					else
-						ppc_stwx(datareg,ppc_rarg3,ppc_rarg2);
+						ppc_stwx(datareg,ppc_rarg3,ppc_r0);
 
 					ColdFrag& c=s_cold[s_cold_n++];
 					c.beq=cold; c.done=emit_GetCCPtr();
