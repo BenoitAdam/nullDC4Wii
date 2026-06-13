@@ -930,6 +930,90 @@ static f32 rec_fsrra(f32 x)  { return 1.0f / sqrtf(x); }
 // OPERATION COMPILATION
 // =====================
 
+// ── Cold-out-of-line slow paths for memory ops ──────────────────────────────
+// The mem fast path is the common case (direct RAM/VRAM access). To keep it a
+// straight fall-through with a SINGLE not-taken branch, we emit:
+//
+//     <addr/ptr setup>
+//     cmpi ptr,0
+//     beq  cold        ; forward, PREDICTED NOT-TAKEN -> fast path falls through
+//     <fast access>
+//   done:              ; (next op continues here, no branch on the fast path)
+//     ...rest of block...
+//   ngen_End
+//   cold:              ; emitted out-of-line, AFTER the block tail (never
+//     <slow MMIO call>   ;  fall-through reached; only via the beq)
+//     b done           ; backward unconditional, jumps into the normal stream
+//
+// Each fast path registers a ColdFrag describing its slow body; FlushCold()
+// emits them after ngen_End and back-patches the forward beq (16-bit) to the
+// cold entry. The `b done` is a backward branch with a known target, emitted
+// directly via ppc_bx(void*,LK) (no patch needed).
+struct ColdFrag
+{
+	ppc_label* beq;     // the forward beq site to patch to the cold entry
+	void*      done;    // join point in the main stream (backward target)
+	u8         kind;    // 0=read scalar, 1=read pair(64), 2=write scalar, 3=write pair
+	u8         sz;      // 1/2/4 (scalar)
+	u8         rdreg;   // read: destination reg (rrv0 or pinned)
+	u8         datareg; // write: data reg (rarg1 or pinned)
+	u8         areg;    // address source reg (rarg0 or pinned)
+	void*      fuct;    // slow C function (ReadMem*/WriteMem*); 0 -> default by sz
+};
+// Sized so it cannot overflow within one block: ngen_Compile bails when
+// emit_FreeSpace() < 16KB, so a block emits < 4096 PPC insns; each mem op's
+// fast path is >=~8 insns, capping mem ops well under 1024.
+static ColdFrag s_cold[1024];
+static u32      s_cold_n;
+
+static void ColdReset() { s_cold_n = 0; }
+
+static void FlushCold()
+{
+	for (u32 i = 0; i < s_cold_n; i++)
+	{
+		ColdFrag& c = s_cold[i];
+		// The forward beq uses a 16-bit (B-form) displacement. Cold fragments sit
+		// after the block tail; for a normal (<32KB) block this is in range, but
+		// guard against silent truncation -> wrong target on a pathologically
+		// large block. (ngen_Compile bails blocks needing >16KB, so this holds.)
+		snat beq_disp = (u8*)emit_GetCCPtr() - (u8*)c.beq;
+		verify(beq_disp >= 0 && beq_disp < 32768);
+		c.beq->MarkLabel();              // patch the forward beq -> here (cold entry)
+
+		if (c.kind==0)                   // --- read scalar: ReadMem(addr)->rrv0 ---
+		{
+			if (c.areg!=ppc_rarg0) ppc_ori(ppc_rarg0,c.areg,0);   // mr rarg0,areg
+			void* f=c.fuct;
+			if (!f) f=(c.sz==1)?(void*)ReadMem8:(c.sz==2)?(void*)ReadMem16:(void*)ReadMem32;
+			ppc_call(f);
+			if (c.sz==1)      ppc_extsbx(c.rdreg,ppc_rrv0,0);
+			else if (c.sz==2) ppc_extshx(c.rdreg,ppc_rrv0,0);
+			else if (c.rdreg!=ppc_rrv0) ppc_ori(c.rdreg,ppc_rrv0,0);
+		}
+		else if (c.kind==1)              // --- read pair (64): ReadMem64 -> rrv0:rrv1 ---
+		{
+			void* f=c.fuct? c.fuct : (void*)ReadMem64;
+			ppc_call(f);
+		}
+		else if (c.kind==2)              // --- write scalar: WriteMem(addr,data) ---
+		{
+			if (c.areg!=ppc_rarg0)    ppc_ori(ppc_rarg0,c.areg,0);
+			if (c.datareg!=ppc_rarg1) ppc_ori(ppc_rarg1,c.datareg,0);
+			if (c.sz==1)      { ppc_andi(ppc_rarg1,ppc_rarg1,0xFF);   ppc_call(&WriteMem8); }
+			else if (c.sz==2) { ppc_andi(ppc_rarg1,ppc_rarg1,0xFFFF); ppc_call(&WriteMem16); }
+			else                ppc_call(&WriteMem32);
+		}
+		else                             // --- write pair (64): WriteMem64 ---
+		{
+			ppc_call(&WriteMem64);
+		}
+
+		ppc_bx(c.done,0);                // backward unconditional b -> done (join)
+	}
+	s_cold_n = 0;
+}
+
 // ngen_CompileBlock: Main Block Compilation Loop
 DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 {
@@ -938,7 +1022,8 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		return 0;
 	
 	DynarecCodeEntry* rv=(DynarecCodeEntry*)emit_GetCCPtr();
-	
+
+	ColdReset();          // mem-op cold (slow) fragments deferred to block end
 	ngen_Begin(block,force_checks);
 
 	for (size_t i = 0; i < block->oplist.size(); i++)
@@ -1063,10 +1148,11 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,0,26,0);	// ptr (≠r0)
 						ppc_cmpi(ppc_cr0,ppc_rarg2,0,0);		// ptr == 0 ?
 
-						ppc_label* slow=ppc_CreateLabel();
-						ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq slow (MMIO)
+						// beq -> cold (forward, not-taken: fast path falls through).
+						ppc_label* cold=ppc_CreateLabel();
+						ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq cold (MMIO)
 
-						// --- fast direct path ---
+						// --- fast direct path (fall-through) ---
 						ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// shift (iirf dead after)
 						ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
 						ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);	// mirror mask
@@ -1075,14 +1161,9 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_lwzx(ppc_rrv1,ppc_rarg2,ppc_rarg0);	// word[addr+4] -> r4
 						ppc_ori(ppc_rrv0,ppc_rarg3,0);			// r3 = word[addr]
 
-						ppc_label* done=ppc_CreateLabel();
-						ppc_bx(0,0,0);		// b done (unconditional I-form, patched below)
-
-						// --- slow MMIO path (addr in rarg0 untouched) ---
-						slow->MarkLabel();
-						if (!fuct) fuct=(void*)ReadMem64;
-						ppc_call(fuct);
-						done->MarkLabelLong();	// 26-bit patch for the ppc_b I-form skip
+						ColdFrag& c=s_cold[s_cold_n++];
+						c.beq=cold; c.done=emit_GetCCPtr();
+						c.kind=1; c.fuct=fuct;
 					}
 					else
 					{
@@ -1104,10 +1185,11 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,0,26,0);
 						ppc_cmpi(ppc_cr0,ppc_rarg2,0,0);		// ptr == 0 ?
 
-						ppc_label* slow=ppc_CreateLabel();
-						ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq slow (MMIO)
+						// beq -> cold (forward, not-taken: fast path falls through).
+						ppc_label* cold=ppc_CreateLabel();
+						ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq cold (MMIO)
 
-						// --- fast direct path ---
+						// --- fast direct path (fall-through) ---
 						// shift = iirf & 0x1F ; eff = (addr<<sh)>>sh  (into rarg0)
 						ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// r0 = shift (0..31)
 						ppc_slwx(ppc_rarg0,areg,ppc_r0,0);		// reads areg -> rarg0
@@ -1116,8 +1198,6 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						if (sz<4)
 							ppc_xori(ppc_rarg0,ppc_rarg0,4-sz);
 						// load rdreg = *(T*)(ptr + addr)  (ptr in rarg2, addr in rarg0)
-						// rdreg is rd's pinned reg (callee-saved, distinct from the
-						// rarg*/r0 scratch used above), or rrv0 if rd isn't pinned.
 						if (sz==1)
 						{
 							ppc_lbzx(rdreg,ppc_rarg2,ppc_rarg0);
@@ -1131,28 +1211,11 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						else
 							ppc_lwzx(rdreg,ppc_rarg2,ppc_rarg0);
 
-						ppc_label* done=ppc_CreateLabel();
-						ppc_bx(0,0,0);		// b done (unconditional I-form, patched below)
-
-						// --- slow MMIO path: ReadMem(addr in rarg0) returns in rrv0 ---
-						slow->MarkLabel();
-						// The fast path may have sourced the address from a pinned
-						// reg (areg); ReadMem needs it in rarg0. (rarg0 is otherwise
-						// untouched on the slow side -- the mask wrote it only past
-						// the slow branch.)
-						if (areg!=ppc_rarg0)
-							ppc_ori(ppc_rarg0,areg,0);			// mr rarg0, areg
-						if (!fuct)
-							fuct=(sz==1)?(void*)ReadMem8:(sz==2)?(void*)ReadMem16:(void*)ReadMem32;
-						ppc_call(fuct);
-						if (sz==1)
-							ppc_extsbx(rdreg,ppc_rrv0,0);
-						else if (sz==2)
-							ppc_extshx(rdreg,ppc_rrv0,0);
-						else if (rdreg!=ppc_rrv0)
-							ppc_ori(rdreg,ppc_rrv0,0);			// mr rdreg, rrv0
-
-						done->MarkLabelLong();	// 26-bit patch for the ppc_b I-form skip
+						// done = join point; slow path (registered below) bounces here.
+						ColdFrag& c=s_cold[s_cold_n++];
+						c.beq=cold; c.done=emit_GetCCPtr();
+						c.kind=0; c.sz=(u8)sz; c.rdreg=(u8)rdreg;
+						c.areg=(u8)areg; c.fuct=fuct;
 					}
 				}
 
@@ -1258,23 +1321,20 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					ppc_rlwinmx(ppc_rarg1,ppc_rarg1,0,0,26,0);	// rarg1 = ptr (≠r0)
 					ppc_cmpi(ppc_cr0,ppc_rarg1,0,0);		// ptr == 0 ?
 
-					ppc_label* slow=ppc_CreateLabel();
-					ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq slow (MMIO)
+					// beq -> cold (forward, not-taken: fast path falls through).
+					ppc_label* cold=ppc_CreateLabel();
+					ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq cold (MMIO)
 
-					// --- fast direct path (addr masked only on this side) ---
+					// --- fast direct path (fall-through; addr masked here only) ---
 					ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
 					ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);	// mirror mask
 					ppc_stwx(ppc_rarg2,ppc_rarg1,ppc_rarg0);	// word[addr]   = high
 					ppc_addi(ppc_rarg0,ppc_rarg0,4);
 					ppc_stwx(ppc_rarg3,ppc_rarg1,ppc_rarg0);	// word[addr+4] = low
 
-					ppc_label* done=ppc_CreateLabel();
-					ppc_bx(0,0,0);		// b done (unconditional I-form, patched below)
-
-					// --- slow MMIO path (addr/data untouched) ---
-					slow->MarkLabel();
-					ppc_call(&WriteMem64);
-					done->MarkLabelLong();	// 26-bit patch for the ppc_b I-form skip
+					ColdFrag& c=s_cold[s_cold_n++];
+					c.beq=cold; c.done=emit_GetCCPtr();
+					c.kind=3;
 				}
 				else
 				{
@@ -1294,10 +1354,11 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					ppc_rlwinmx(ppc_rarg3,ppc_rarg2,0,0,26,0);
 					ppc_cmpi(ppc_cr0,ppc_rarg3,0,0);		// ptr == 0 ?
 
-					ppc_label* slow=ppc_CreateLabel();
-					ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq slow (MMIO)
+					// beq -> cold (forward, not-taken: fast path falls through).
+					ppc_label* cold=ppc_CreateLabel();
+					ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq cold (MMIO)
 
-					// --- fast direct path ---
+					// --- fast direct path (fall-through) ---
 					// shift = iirf & 0x1F ; eff = (addr<<sh)>>sh  (in rarg2 scratch)
 					ppc_andi(ppc_r0,ppc_rarg2,0x1F);		// r0 = shift (iirf still in rarg2)
 					ppc_slwx(ppc_rarg2,areg,ppc_r0,0);		// rarg2 = addr<<sh (reads areg; overwrites iirf, no longer needed)
@@ -1313,34 +1374,9 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					else
 						ppc_stwx(datareg,ppc_rarg3,ppc_rarg2);
 
-					ppc_label* done=ppc_CreateLabel();
-					ppc_bx(0,0,0);		// b done (unconditional I-form, patched below)
-
-					// --- slow MMIO path: WriteMem<sz>(addr=rarg0, data=rarg1) ---
-					slow->MarkLabel();
-					// Materialize the ABI registers the WriteMem call expects:
-					// addr in rarg0 (may have been sourced from a pinned areg) and
-					// data in rarg1 (may have been kept in a pinned datareg). Order
-					// matters only if they alias -- they can't (distinct SH4 regs,
-					// distinct pinned PPC regs), so either order is safe.
-					if (areg!=ppc_rarg0)
-						ppc_ori(ppc_rarg0,areg,0);	// mr rarg0, areg
-					if (datareg!=ppc_rarg1)
-						ppc_ori(ppc_rarg1,datareg,0);	// mr rarg1, datareg
-					if (sz==1)
-					{
-						ppc_andi(ppc_rarg1,ppc_rarg1,0xFF);
-						ppc_call(&WriteMem8);
-					}
-					else if (sz==2)
-					{
-						ppc_andi(ppc_rarg1,ppc_rarg1,0xFFFF);
-						ppc_call(&WriteMem16);
-					}
-					else
-						ppc_call(&WriteMem32);
-
-					done->MarkLabelLong();	// 26-bit patch for the ppc_b I-form skip
+					ColdFrag& c=s_cold[s_cold_n++];
+					c.beq=cold; c.done=emit_GetCCPtr();
+					c.kind=2; c.sz=(u8)sz; c.datareg=(u8)datareg; c.areg=(u8)areg;
 				}
 			}
 			break;
@@ -1913,6 +1949,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 	ngen_End(block);
 
+	FlushCold();          // emit the out-of-line mem slow paths after the block tail
 	make_address_range_executable((u8*)rv, (u8*)emit_GetCCPtr()-(u8*)rv);
 	return rv;
 }
