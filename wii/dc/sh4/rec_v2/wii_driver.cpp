@@ -113,7 +113,9 @@ void ppc_li(u32 D,u32 imm)
 	else
 	{
 		ppc_addis(D,0,imm>>16);
-		ppc_ori(D,D,(u16)imm);
+		if ((u16)imm != 0) {
+			ppc_ori(D,D,(u16)imm);
+		}
 	}
 }
 
@@ -1143,7 +1145,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						// the ReadMem64 slow path register-for-register.
 						ppc_rlwinmx(ppc_r0,ppc_rarg0,10,22,29,0);	// (addr>>24)*4
 						u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
-						ppc_addi(ppc_rarg1,ppc_rarg1,lo);
+						if (lo) ppc_addi(ppc_rarg1,ppc_rarg1,lo);
 						ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
 						ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,0,26,0);	// ptr (≠r0)
 						ppc_cmpi(ppc_cr0,ppc_rarg2,0,0);		// ptr == 0 ?
@@ -1177,7 +1179,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_rlwinmx(ppc_r0,areg,10,22,29,0);
 						// rarg1 = &_vmem_MemInfo_ptr
 						u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
-						ppc_addi(ppc_rarg1,ppc_rarg1,lo);
+						if (lo) ppc_addi(ppc_rarg1,ppc_rarg1,lo);
 						ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
 						// rarg2 = ptr = iirf & ~0x1F  (clear low 5 bits: ME=26)
 						// NOTE: ptr goes in rarg2 (NOT r0) — load-indexed treats a
@@ -1314,7 +1316,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					// Lookup may only use r0/rarg1 as scratch.
 					ppc_rlwinmx(ppc_r0,ppc_rarg0,10,22,29,0);	// (addr>>24)*4
 					u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
-					ppc_addi(ppc_rarg1,ppc_rarg1,lo);
+					if (lo) ppc_addi(ppc_rarg1,ppc_rarg1,lo);
 					ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
 					// Extract shift BEFORE masking iirf in place to ptr.
 					ppc_andi(ppc_r0,ppc_rarg1,0x1F);		// r0 = shift
@@ -1347,7 +1349,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					ppc_rlwinmx(ppc_r0,areg,10,22,29,0);
 					// rarg2 = &_vmem_MemInfo_ptr
 					u32 lo=ppc_addr_high(ppc_rarg2,(void*)&_vmem_MemInfo_ptr[0]);
-					ppc_addi(ppc_rarg2,ppc_rarg2,lo);
+					if (lo) ppc_addi(ppc_rarg2,ppc_rarg2,lo);
 					ppc_lwzx(ppc_rarg2,ppc_rarg2,ppc_r0);		// rarg2 = iirf
 					// rarg3 = ptr = iirf & ~0x1F  (ptr NOT in r0: store-indexed
 					// treats base r0 as literal zero, dropping the pointer)
