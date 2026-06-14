@@ -4,10 +4,21 @@ wii/bootu.dol
 wii/boot.elf
 wii/boot_dol/
 repomix/
-apps/
-!apps/nulldc4wii/data/game_presets.cfg
-!apps/nulldc4wii/data/meta.xml
 build/
 listfile.bat
 tmp
 .claude/
+# Ignore everything inside apps
+apps/*
+
+# But allow Git to look inside the subfolders so it can find your exceptions
+!apps/nulldc4wii/
+!apps/nulldc4wii/data/
+
+# Whitelist the specific files you want to keep
+!apps/nulldc4wii/data/game_presets.cfg
+!apps/nulldc4wii/data/meta.xml
+
+# Ignore dol/elf file
+apps/nulldc4wii/boot.dol
+apps/nulldc4wii/boot.elf
