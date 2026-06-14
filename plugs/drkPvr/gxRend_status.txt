@@ -48,7 +48,7 @@ colour conversion during decompression.
 | ARGB1555  | 1   | RGB5A3            | closest 16-bit equivalent | yes     | Shenmue Menu & Tree + SEGA logo in Sega Tetris |
 | ARGB4444  | 4   | RGB5A3 or RGBA8   | RGB5A3 loses precision    | yes     | DC letters - Castlevania : Sonia / HUD / Big wall - Bios Background |
 | ARGB8888  | 8   | RGBA8             | perfect match             | no ?    | Guilty Gear X2, Capcom vs SNK 2, jojo ? |
-| YUV422    | 0   | CMPR or RGA8      | CMPR or RGA8              | ?       | Code Veronica FMV |
+| YUV422    | 0   | CMPR or RGA8      | CMPR or RGA8              | ?       | FMV : RE:CV / Demolition Racer / Evil Dead / THPS |
 | 4BPP      | Var | CI4 or RGB565     | CI4 partially work        | yes     | Jojo's health bar, SEGA above Tetris |
 | 8BPP      | Var | CI8 or RGB565     | CI8 partially work        | yes     | Crazy Taxi : "Total Earned" |
 | VQ*       | Var | CMPR              | Best compression low VRAM | ?       | Skyboxes, ground textures |
