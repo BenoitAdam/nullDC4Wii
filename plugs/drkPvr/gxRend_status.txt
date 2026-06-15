@@ -80,6 +80,21 @@ fmt=5 → 4BPP palette
 fmt=6 → 8BPP palette
 fmt=7 → Reserved/Bump map on DC hardware. Not a real pixel format for normal textures.
 
+
+SrcInstr:
+0 = Zero
+1 = One  
+2 = Other Color (DST color)
+3 = Inverse Other Color
+4 = SRC Alpha
+5 = Inverse SRC Alpha
+6 = DST Alpha
+7 = Inverse DST Alpha
+
+DstInstr: same mapping
+
+
+
 Dreamcast Intro boot logo :
 [RAWBYTES] addr=53C000 fmt=2 vq=0 scan=0 raw[0..7]=0B32 0B32 0B32 0B32
 [RAWBYTES] addr=52C000 fmt=2 vq=0 scan=0 raw[0..7]=0000 0000 0000 0000
