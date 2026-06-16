@@ -16,7 +16,7 @@ a fork from https://github.com/skmp/nullDCe
 
 ### Developer (Easy)
 
-- Controller correct layout, for pro pad and for gamecube pas
+- Controller correct layout, for pro pad and for gamecube pad
 - User custom Preset
 - printf for when there is no bios
 - Player 3/4 Gamecube/Wiimote
@@ -29,8 +29,7 @@ a fork from https://github.com/skmp/nullDCe
 - 4/3 support (implemented, need fix on some games like Shenmue)
 - Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
 - Wii U Gamepad, Dualshock 3 and Wii U Pro Controller support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
-- Support for CDI/CHD/ELF game file
-- AICA ARM7 handshake
+- Support for CHD/ELF game file
 
 ### Developer (Hard)
 
@@ -38,10 +37,8 @@ a fork from https://github.com/skmp/nullDCe
 - Splitting gxRend.cpp in multiple files ? (beware this is more tricky than it look)
 - Fix alpha/transparent stuff (may be costly in term of performances)
 - Table convertion between SH4 Opcodes of SH4 and the WiiPPC ?
-- Use LLVM to port code for PowerPC ?
+- Use LLVM to port code for PowerPC ? (skmp says its not a good idea in this case)
 - Full Dynarec implementation (AI seems to know about this)
-- Sound implementation step 1 : NullAICA
-- Sound implementation step 2 : AICA ARM7
 - WinCE Games support https://github.com/BenoitAdam94/nullDC4Wii/issues/37
 
 
@@ -66,11 +63,9 @@ vmu_default.bin
 
 #### Game file in SD:/discs/ or USB:/dreamcast/
 
-**Test with castlevania Resurrection and Sega Tetris to begin**
+**Test with castlevania Resurrection and Sega Tetris to begin with**
 
-Put your folders with GDI in this directory
-
-CDI doesn't work now
+Put your folders with GDI in this directory. CDI also works
 
 Might work for ISO / BIN / CUE / NRG / MDS
 
@@ -186,7 +181,7 @@ Cache setting (starting alpha 0.21)
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
-| **CACHE_VERY_FAST** | skmp original algorythm. very fast but buggy  | Max FPS |
+| **CACHE_VERY_FAST** | skmp original algorythm (magic numbers). Very fast but buggy  | Max FPS |
 | **CACHE_FAST** | Fast and more accurate cache. Buggy in some games  | Good FPS |
 | **CACHE_NORMAL** | Best accuracy. Display mostly correctly | Mid FPS |
 | **CACHE_QUALITY** | Best accuracy. Display mostly correctly | Mid FPS |
