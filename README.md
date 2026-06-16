@@ -63,11 +63,9 @@ vmu_default.bin
 
 #### Game file in SD:/discs/ or USB:/dreamcast/
 
-**Test with castlevania Resurrection and Sega Tetris to begin**
+**Test with castlevania Resurrection and Sega Tetris to begin with**
 
-Put your folders with GDI in this directory
-
-CDI doesn't work now
+Put your folders with GDI in this directory. CDI also works
 
 Might work for ISO / BIN / CUE / NRG / MDS
 
