@@ -181,7 +181,7 @@ Cache setting (starting alpha 0.21)
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
-| **CACHE_VERY_FAST** | skmp original algorythm. very fast but buggy  | Max FPS |
+| **CACHE_VERY_FAST** | skmp original algorythm (magic numbers). Very fast but buggy  | Max FPS |
 | **CACHE_FAST** | Fast and more accurate cache. Buggy in some games  | Good FPS |
 | **CACHE_NORMAL** | Best accuracy. Display mostly correctly | Mid FPS |
 | **CACHE_QUALITY** | Best accuracy. Display mostly correctly | Mid FPS |
