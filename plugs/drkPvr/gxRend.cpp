@@ -982,28 +982,72 @@ void SetupPaletteForTexture(u32 palette_index, u32 sz)
     // sceGuClutLoad(sz/8,&palette_lut[palette_index]);
 }
 
-// PVR Mipmap offsets (Dreamcast specific).
-const u32 MipPoint[8] =
-    {
-        0x00006, // 8
-        0x00016, // 16
-        0x00056, // 32
-        0x00156, // 64
-        0x00556, // 128
-        0x01556, // 256
-        0x05556, // 512
-        0x15556  // 1024
+// PVR Mipmap offsets (Dreamcast specific) — §3.6.2.4
+//
+// DC stores mipmaps small→large: TCW Texture Address = start of the 1×1 level.
+// To reach the full-size level we must SKIP all the smaller levels.
+//
+// OtherMipPoint[n]: byte offset to add to tex_addr to reach the full-size level
+//   for a texture whose log2(width) = n  (n = TexU + 3, width = 8 << TexU).
+//   Index 0..2 (1x1,2x2,4x4) included for completeness; real DC textures use idx 3..10.
+//   Closed form: OtherMipPoint[n] = (3 + (4^n - 1)/3) * bpp/8
+//   where the "+3" accounts for the 3-texel reserved header before the 1x1 level.
+//   The table below gives the TEXEL count (multiply by bpp/8 to get bytes).
+//   Values: 0x3, 0x4, 0x8, 0x18, 0x58, 0x158, 0x558, 0x1558, 0x5558, 0x15558, 0x55558
+static const u32 OtherMipPoint[11] = {
+    0x00003, // idx 0:  1×1   (never used for real textures)
+    0x00004, // idx 1:  2×2
+    0x00008, // idx 2:  4×4
+    0x00018, // idx 3:  8×8
+    0x00058, // idx 4:  16×16
+    0x00158, // idx 5:  32×32
+    0x00558, // idx 6:  64×64
+    0x01558, // idx 7:  128×128
+    0x05558, // idx 8:  256×256
+    0x15558, // idx 9:  512×512
+    0x55558  // idx 10: 1024×1024
+};
+
+// VQMipPoint[n]: byte offset FROM tex_addr (= codebook base) to reach the full-size
+//   VQ index map. Codebook is always 2048 bytes; index maps then follow small→large.
+//   VQMipPoint[n] = 2048 + index-map offset to the full-size level.
+static const u32 VQMipPoint[11] = {
+    2048 + 0x00000, // idx 0:  1×1
+    2048 + 0x00001, // idx 1:  2×2
+    2048 + 0x00002, // idx 2:  4×4
+    2048 + 0x00006, // idx 3:  8×8
+    2048 + 0x00016, // idx 4:  16×16
+    2048 + 0x00056, // idx 5:  32×32
+    2048 + 0x00156, // idx 6:  64×64
+    2048 + 0x00556, // idx 7:  128×128
+    2048 + 0x01556, // idx 8:  256×256
+    2048 + 0x05556, // idx 9:  512×512
+    2048 + 0x15556  // idx 10: 1024×1024
 };
 
 // Macro to encapsulate the logic for twiddled textures (VQ or standard).
+//
+// MIPMAP note (§3.6.2.4): TCW Texture Address = start of the 1×1 level (smallest).
+// Levels are packed small→large. We must offset forward to the full-size level.
+// For VQ the codebook base is NEVER offset; only the index map base moves.
+// For non-VQ: add OtherMipPoint[idx] * bpp/8 bytes (16bpp → *2).
+// MipMapped textures are always square → height = width (ignore TexV).
 #define twidle_tex(format)                                                                \
   if (mod->tcw.NO_PAL.VQ_Comp)                                                            \
   {                                                                                       \
+    /* Codebook always at tex_addr — do NOT move this for mipmaps */                      \
     vq_codebook = (u8 *)&params.vram[tex_addr];                                           \
-    tex_addr += 2048; /* 256 * 4 * 2 */                                                         \
     if (mod->tcw.NO_PAL.MipMapped)                                                        \
-    { /*int* p=0;*p=4;*/                                                                  \
-      tex_addr += MipPoint[mod->tsp.TexU];                                                  \
+    {                                                                                     \
+      /* Jump to full-size VQ index map (codebook + small-level indices) */               \
+      u32 mip_idx = mod->tsp.TexU + 3; /* log2(width): TexU 0..7 → idx 3..10 */         \
+      tex_addr += VQMipPoint[mip_idx];                                                    \
+      /* MipMapped = square: ignore TexV, use TexU for both dimensions */                 \
+      h = w;                                                                              \
+    }                                                                                     \
+    else                                                                                  \
+    {                                                                                     \
+      tex_addr += 2048; /* skip codebook to reach index map */                            \
     }                                                                                     \
     if(DEBUG_MESSAGE()) { printf("[VQ] codebook=..."); }                                  \
     texture_VQ<conv##format##_VQ> /**/ ((u8 *)&params.vram[tex_addr], w, h, vq_codebook); \
@@ -1012,7 +1056,13 @@ const u32 MipPoint[8] =
   else                                                                                    \
   {                                                                                       \
     if (mod->tcw.NO_PAL.MipMapped)                                                        \
-      tex_addr += MipPoint[mod->tsp.TexU] << 3;                                           \
+    {                                                                                     \
+      /* Skip all smaller mip levels to reach the full-size level (16bpp → ×2 bytes) */  \
+      u32 mip_idx = mod->tsp.TexU + 3; /* log2(width): TexU 0..7 → idx 3..10 */         \
+      tex_addr += OtherMipPoint[mip_idx] * 2; /* 16bpp: texels × 2 bytes */              \
+      /* MipMapped = square: ignore TexV, use TexU for both dimensions */                 \
+      h = w;                                                                              \
+    }                                                                                     \
     texture_TW<conv##format##_TW> /*TW*/ ((u8 *)&params.vram[tex_addr], w, h);            \
   }
 
@@ -1177,7 +1227,7 @@ static void SetTextureParams(PolyParam *mod)
     {
       u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
       if (mod->tcw.NO_PAL.MipMapped)
-        idx_addr = (idx_addr + MipPoint[mod->tsp.TexU]) & VRAM_MASK;
+        idx_addr = (orig_tex_addr + VQMipPoint[mod->tsp.TexU + 3]) & VRAM_MASK;
       u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
       u32 idx_w0 = *(u32*)&params.vram[idx_addr];
       u32 fp = cb_w0 ^ idx_w0;
@@ -1198,7 +1248,7 @@ static void SetTextureParams(PolyParam *mod)
     {
       u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
       if (mod->tcw.NO_PAL.MipMapped)
-        idx_addr = (idx_addr + MipPoint[mod->tsp.TexU]) & VRAM_MASK;
+        idx_addr = (orig_tex_addr + VQMipPoint[mod->tsp.TexU + 3]) & VRAM_MASK;
       u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
       u32 idx_w0 = *(u32*)&params.vram[idx_addr];
       u32 fp = cb_w0 ^ idx_w0;
@@ -1225,7 +1275,7 @@ static void SetTextureParams(PolyParam *mod)
     {
       u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
       if (mod->tcw.NO_PAL.MipMapped)
-        idx_addr = (idx_addr + MipPoint[mod->tsp.TexU]) & VRAM_MASK;
+        idx_addr = (orig_tex_addr + VQMipPoint[mod->tsp.TexU + 3]) & VRAM_MASK;
       u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
       u32 idx_w0 = *(u32*)&params.vram[idx_addr];
       pbuff->vq_codebook_w0 = cb_w0 ^ idx_w0;
@@ -1314,7 +1364,7 @@ static void SetTextureParams(PolyParam *mod)
         // 5	4 BPP Palette	Palette texture with 4 bits/pixel
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 1;
+          tex_addr += OtherMipPoint[mod->tsp.TexU + 3] / 2; // 4bpp: texels/2 bytes
 
         SetupPaletteForTexture(mod->tcw.PAL.PalSelect << 4, 16);
 
@@ -1343,7 +1393,7 @@ static void SetTextureParams(PolyParam *mod)
 
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 1;
+          tex_addr += OtherMipPoint[mod->tsp.TexU + 3] / 2; // 4bpp: texels/2 bytes
 
         {
           u8 *src  = (u8 *)&params.vram[tex_addr];
@@ -1435,7 +1485,7 @@ static void SetTextureParams(PolyParam *mod)
 
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 1;
+          tex_addr += OtherMipPoint[mod->tsp.TexU + 3] / 2; // 4bpp: texels/2 bytes
 
         {
           u8 *src  = (u8 *)&params.vram[tex_addr];
@@ -1513,7 +1563,7 @@ static void SetTextureParams(PolyParam *mod)
         // convention the VQ path uses for its index byte reads (^ 3).
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 1;
+          tex_addr += OtherMipPoint[mod->tsp.TexU + 3] / 2; // 4bpp: texels/2 bytes
 
         {
           u8 *src  = (u8 *)&params.vram[tex_addr];
@@ -1556,7 +1606,7 @@ static void SetTextureParams(PolyParam *mod)
       else if (TEXTURE_4BPP_RGB565()) {
           verify(mod->tcw.PAL.VQ_Comp == 0);
           if (mod->tcw.NO_PAL.MipMapped)
-              tex_addr += MipPoint[mod->tsp.TexU] << 1;
+              tex_addr += OtherMipPoint[mod->tsp.TexU + 3] / 2; // 4bpp: texels/2 bytes
 
           u32  pal_fmt  = PAL_RAM_CTRL & 3;
           u32  pal_base = mod->tcw.PAL.PalSelect & ~15u;
@@ -1627,7 +1677,7 @@ static void SetTextureParams(PolyParam *mod)
         // 8 BPP Palette	Palette texture with 8 bits/pixel
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 2;
+          tex_addr += OtherMipPoint[mod->tsp.TexU + 3]; // 8bpp: texels == bytes
 
         SetupPaletteForTexture(mod->tcw.PAL.PalSelect << 4, 256);
 
@@ -1642,7 +1692,7 @@ static void SetTextureParams(PolyParam *mod)
         // No palette lookup, no TLUT upload — extremely fast.
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 2;
+          tex_addr += OtherMipPoint[mod->tsp.TexU + 3]; // 8bpp: texels == bytes
 
         {
           u8 *src  = (u8 *)&params.vram[tex_addr];
@@ -1694,7 +1744,7 @@ static void SetTextureParams(PolyParam *mod)
         //   once per scanline, cutting the per-pixel address math in half.
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 2;
+          tex_addr += OtherMipPoint[mod->tsp.TexU + 3]; // 8bpp: texels == bytes
 
         {
           u8 *src  = (u8 *)&params.vram[tex_addr];
@@ -1765,7 +1815,7 @@ static void SetTextureParams(PolyParam *mod)
         // This gives sharper, correctly-indexed characters vs the ^1 fast path.
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 2;
+          tex_addr += OtherMipPoint[mod->tsp.TexU + 3]; // 8bpp: texels == bytes
 
         {
           u8 *src  = (u8 *)&params.vram[tex_addr];
@@ -1802,7 +1852,7 @@ static void SetTextureParams(PolyParam *mod)
         // Fully decode each indexed pixel into a GX 16bpp pixel.
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
-          tex_addr += MipPoint[mod->tsp.TexU] << 2;
+          tex_addr += OtherMipPoint[mod->tsp.TexU + 3]; // 8bpp: texels == bytes
 
         {
           u32  pal_fmt  = PAL_RAM_CTRL & 3;
@@ -1878,11 +1928,15 @@ static void SetTextureParams(PolyParam *mod)
     }
     else
     {
-      bool use_mips = (!texVQ && mod->tcw.NO_PAL.MipMapped && get_graphism_preset() >= 2)
-                ? GX_TRUE : GX_FALSE;
+      // GX_TRUE for mip maps would require ALL mip levels (base down to 1x1)
+      // packed sequentially in GX block format in gx_pixels. We only decoded
+      // the base level (skipping smaller mips via MipPoint offset), so passing
+      // GX_TRUE causes GX to read garbage data → corrupted / checkerboard texture.
+      // Always pass GX_FALSE: the DC mip offset already selected the correct
+      // (largest) level, and GX filtering handles the rest without mip data.
       GX_InitTexObj(&pbuff->tex, gx_pixels, w, h, FMT,
                     TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
-                    TexUV(mod->tsp.FlipV, mod->tsp.ClampV), use_mips);
+                    TexUV(mod->tsp.FlipV, mod->tsp.ClampV), GX_FALSE);
     }
 
     GX_InitTexObjLOD(&pbuff->tex, min_filt, mag_filt,
