@@ -93,6 +93,39 @@ SrcInstr:
 
 DstInstr: same mapping
 
+Format    | Bits/Pixel | Bytes for 256x256 | Quality
+----------|------------|-------------------|---------
+I4        | 4          | 32 KB             | Very low
+I8        | 8          | 64 KB             | Low
+IA4       | 8          | 64 KB             | Low+Alpha
+IA8       | 16         | 128 KB            | High+Alpha
+RGB565    | 16         | 128 KB            | Good
+RGB5A3    | 16         | 128 KB            | Good+Alpha
+RGBA8     | 32         | 256 KB            | Excellent
+C4        | 4          | 32 KB + 64B TLUT  | Variable
+C8        | 8          | 64 KB + 512B TLUT | Variable
+C14X2     | 16         | 128 KB + 32KB TLUT| Excellent+Palette
+CMPR      | 4 (avg)    | 32 KB             | Good (compressed)
+XFB       | 16         | 128 KB            | Video Quality
+
+
+Alpha 0.28 implementation :
+
+Dolphin Format    | GX Value | Your Equivalent
+------------------|----------|----------------
+I4                | 0x0      | GX_TF_I4 (your TEXTURE_4BPP_I4_*)
+I8                | 0x1      | GX_TF_I8 (your TEXTURE_8BPP_I8_*)
+IA4               | 0x2      | (not directly used)
+IA8               | 0x3      | (not directly used)
+RGB565            | 0x4      | GX_TF_RGB565
+RGB5A3            | 0x5      | GX_TF_RGB5A3
+RGBA8             | 0x6      | (not supported as texture)
+C4                | 0x8      | GX_TF_CI4 (your TEXTURE_4BPP_CI4_*)
+C8                | 0x9      | GX_TF_CI8 (your TEXTURE_8BPP_CI8_*)
+C14X2             | 0xA      | (not used)
+CMPR              | 0xE      | (not used)
+XFB               | 0xF      | PresentFramebuffer() YUV path
+
 
 
 Dreamcast Intro boot logo :
