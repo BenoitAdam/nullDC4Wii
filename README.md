@@ -16,7 +16,7 @@ a fork from https://github.com/skmp/nullDCe
 
 ### Developer (Easy)
 
-- Controller correct layout, for pro pad and for gamecube pas
+- Controller correct layout, for pro pad and for gamecube pad
 - User custom Preset
 - printf for when there is no bios
 - Player 3/4 Gamecube/Wiimote
@@ -29,8 +29,7 @@ a fork from https://github.com/skmp/nullDCe
 - 4/3 support (implemented, need fix on some games like Shenmue)
 - Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
 - Wii U Gamepad, Dualshock 3 and Wii U Pro Controller support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
-- Support for CDI/CHD/ELF game file
-- AICA ARM7 handshake
+- Support for CHD/ELF game file
 
 ### Developer (Hard)
 
@@ -38,10 +37,8 @@ a fork from https://github.com/skmp/nullDCe
 - Splitting gxRend.cpp in multiple files ? (beware this is more tricky than it look)
 - Fix alpha/transparent stuff (may be costly in term of performances)
 - Table convertion between SH4 Opcodes of SH4 and the WiiPPC ?
-- Use LLVM to port code for PowerPC ?
+- Use LLVM to port code for PowerPC ? (skmp says its not a good idea in this case)
 - Full Dynarec implementation (AI seems to know about this)
-- Sound implementation step 1 : NullAICA
-- Sound implementation step 2 : AICA ARM7
 - WinCE Games support https://github.com/BenoitAdam94/nullDC4Wii/issues/37
 
 
