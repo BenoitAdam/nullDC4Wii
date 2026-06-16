@@ -1090,6 +1090,241 @@ int TexUV(u32 flip, u32 clamp)
 }
 
 // =================================
+// FMV Format Selection
+// =================================
+// Controls the Wii GX texture format used for YUV422 FMV decoding.
+//   fmv_format == 0  =>  GX_TF_CMPR  (DXT1, 4bpp  — best bandwidth, slight quality loss)
+//   fmv_format == 1  =>  GX_TF_RGBA8 (32bpp        — best quality, higher memory cost)
+// Define this as a global int in your main/config code; we declare it extern here.
+extern int fmv_format;
+
+int fmv_format = 0;
+
+// -----------------------------------------------------------------
+// CMPR (DXT1) block encoder
+// -----------------------------------------------------------------
+// GX CMPR layout: 8x8 super-tile of four 4x4 DXT1 sub-blocks: [TL][TR][BL][BR]
+// Each 4x4 DXT1 block = 8 bytes:
+//   [0-1] color0 RGB565 big-endian   (must be > color1 for 4-color opaque mode)
+//   [2-3] color1 RGB565 big-endian
+//   [4-7] 16x 2-bit selectors, row-major, MSB-first (pixel0=bits[31:30])
+//         index 0=color0, 1=color1, 2=(2c0+c1)/3, 3=(c0+2c1)/3
+// Strategy: min/max luma anchor selection + nearest-palette assignment per pixel.
+static void encode_cmpr_block(const u16 *src, u8 *dst)
+{
+  u32 best_min = 0xFFFFFFFF, best_max = 0;
+  int idx_min = 0, idx_max = 0;
+  for (int i = 0; i < 16; i++)
+  {
+    u16 p  = src[i];
+    u32 r  = (p >> 11) & 0x1F;
+    u32 g  = (p >>  5) & 0x3F;
+    u32 b  = (p      ) & 0x1F;
+    u32 lm = r * 2 + g + b * 2;
+    if (lm < best_min) { best_min = lm; idx_min = i; }
+    if (lm > best_max) { best_max = lm; idx_max = i; }
+  }
+
+  u16 c0 = src[idx_max]; // brightest  -> color0 (must be >= color1)
+  u16 c1 = src[idx_min]; // darkest    -> color1
+
+  // Solid-color block: nudge c0 up so GX stays in 4-color mode (c0 > c1).
+  if (c0 == c1)
+  {
+    u32 r = (c0 >> 11) & 0x1F;
+    u32 g = (c0 >>  5) & 0x3F;
+    u32 b = (c0      ) & 0x1F;
+    if (r < 0x1F) r++; else if (g < 0x3F) g++; else if (b < 0x1F) b++;
+    c0 = (u16)((r << 11) | (g << 5) | b);
+  }
+
+  u32 r0 = (c0 >> 11) & 0x1F, g0 = (c0 >> 5) & 0x3F, b0 = c0 & 0x1F;
+  u32 r1 = (c1 >> 11) & 0x1F, g1 = (c1 >> 5) & 0x3F, b1 = c1 & 0x1F;
+  u32 r2 = (2*r0+r1)/3, g2 = (2*g0+g1)/3, b2 = (2*b0+b1)/3;
+  u32 r3 = (r0+2*r1)/3, g3 = (g0+2*g1)/3, b3 = (b0+2*b1)/3;
+
+  u32 selectors = 0;
+  for (int i = 0; i < 16; i++)
+  {
+    u16 p   = src[i];
+    s32 pr6 = ((p >> 11) & 0x1F) << 1; // scale R/B to 6-bit for fair distance
+    s32 pg  = (p >>  5) & 0x3F;
+    s32 pb6 = ((p      ) & 0x1F) << 1;
+
+    s32 dr0=pr6-(s32)(r0<<1), dg0=pg-(s32)g0, db0=pb6-(s32)(b0<<1);
+    s32 dr1=pr6-(s32)(r1<<1), dg1=pg-(s32)g1, db1=pb6-(s32)(b1<<1);
+    s32 dr2=pr6-(s32)(r2<<1), dg2=pg-(s32)g2, db2=pb6-(s32)(b2<<1);
+    s32 dr3=pr6-(s32)(r3<<1), dg3=pg-(s32)g3, db3=pb6-(s32)(b3<<1);
+
+    u32 d0=(u32)(dr0*dr0+dg0*dg0+db0*db0);
+    u32 d1=(u32)(dr1*dr1+dg1*dg1+db1*db1);
+    u32 d2=(u32)(dr2*dr2+dg2*dg2+db2*db2);
+    u32 d3=(u32)(dr3*dr3+dg3*dg3+db3*db3);
+
+    u32 best_d=d0, best_idx=0;
+    if (d1<best_d){best_d=d1;best_idx=1;}
+    if (d2<best_d){best_d=d2;best_idx=2;}
+    if (d3<best_d){best_d=d3;best_idx=3;}
+
+    selectors |= (best_idx << (30 - i * 2));
+  }
+
+  dst[0]=(u8)(c0>>8); dst[1]=(u8)(c0&0xFF);
+  dst[2]=(u8)(c1>>8); dst[3]=(u8)(c1&0xFF);
+  dst[4]=(u8)(selectors>>24); dst[5]=(u8)(selectors>>16);
+  dst[6]=(u8)(selectors>> 8); dst[7]=(u8)(selectors    );
+}
+
+// YUV422 planar -> GX_TF_CMPR
+// DC planar YUV422: each u32 = UYVY (byte0=U, byte1=Y0, byte2=V, byte3=Y1)
+static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
+{
+  u32 *src32 = (u32 *)src_vram;
+  static const u32 sub_ox[4] = {0,4,0,4};
+  static const u32 sub_oy[4] = {0,0,4,4};
+
+  for (u32 ty = 0; ty < h; ty += 8)
+  for (u32 tx = 0; tx < w; tx += 8)
+  {
+    u8 *super_dst = dst + ((ty/8)*(w/8) + (tx/8)) * 32;
+    for (int sub = 0; sub < 4; sub++)
+    {
+      u32 bx=tx+sub_ox[sub], by=ty+sub_oy[sub];
+      u16 block_pixels[16];
+      for (u32 row = 0; row < 4; row++)
+      {
+        u32 y = by + row;
+        if (y >= h) { for (int c=0;c<4;c++) block_pixels[row*4+c]=0; continue; }
+        for (u32 col = 0; col < 4; col += 2)
+        {
+          u32 word = src32[(y*w + bx+col) / 2];
+          s32 Yu=(word>> 0)&255, Y0=(word>> 8)&255;
+          s32 Yv=(word>>16)&255, Y1=(word>>24)&255;
+          block_pixels[row*4+col  ] = (u16)YUV422(Y0,Yu,Yv);
+          block_pixels[row*4+col+1] = (u16)YUV422(Y1,Yu,Yv);
+        }
+      }
+      encode_cmpr_block(block_pixels, super_dst + sub*8);
+    }
+  }
+}
+
+// YUV422 twiddled -> GX_TF_CMPR
+static void YUV422_to_CMPR_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
+{
+  static const u32 sub_ox[4] = {0,4,0,4};
+  static const u32 sub_oy[4] = {0,0,4,4};
+
+  for (u32 ty = 0; ty < h; ty += 8)
+  for (u32 tx = 0; tx < w; tx += 8)
+  {
+    u8 *super_dst = dst + ((ty/8)*(w/8) + (tx/8)) * 32;
+    for (int sub = 0; sub < 4; sub++)
+    {
+      u32 bx=tx+sub_ox[sub], by=ty+sub_oy[sub];
+      u16 block_pixels[16];
+      for (u32 row = 0; row < 4; row++)
+      {
+        u32 y = by + row;
+        if (y >= h) { for (int c=0;c<4;c++) block_pixels[row*4+c]=0; continue; }
+        for (u32 col = 0; col < 4; col += 2)
+        {
+          u32 x  = bx + col;
+          u32 tw = twop(x/2, y, w/2, h);
+          u16 *p = (u16*)&src_vram[tw * 4];
+          s32 Yu=p[0]&255, Y0=(p[0]>>8)&255;
+          s32 Yv=p[1]&255, Y1=(p[1]>>8)&255;
+          block_pixels[row*4+col  ] = (u16)YUV422(Y0,Yu,Yv);
+          block_pixels[row*4+col+1] = (u16)YUV422(Y1,Yu,Yv);
+        }
+      }
+      encode_cmpr_block(block_pixels, super_dst + sub*8);
+    }
+  }
+}
+
+// -----------------------------------------------------------------
+// RGBA8 encoder
+// -----------------------------------------------------------------
+// GX RGBA8 tile layout: 4x4 tile = 64 bytes, split into two 32-byte sub-tiles:
+//   Sub-tile 0 [0-31] : AR pairs  (A0,R0, A1,R1 ... A15,R15)
+//   Sub-tile 1 [32-63]: GB pairs  (G0,B0, G1,B1 ... G15,B15)
+// Pixels in row-major order within each sub-tile.
+
+// Inline RGB565 -> RGB888 expansion (replicates MSBs into LSBs for full range).
+#define RGB565_R8(p) ((u8)((((p)>>11)&0x1F)<<3|(((p)>>13)&0x7)))
+#define RGB565_G8(p) ((u8)((((p)>> 5)&0x3F)<<2|(((p)>> 9)&0x3)))
+#define RGB565_B8(p) ((u8)((((p)    )&0x1F)<<3|(((p)>> 2)&0x7)))
+
+// YUV422 planar -> GX_TF_RGBA8
+static void YUV422_to_RGBA8_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
+{
+  u32 *src32  = (u32 *)src_vram;
+  u32 tiles_x = w / 4, tiles_y = h / 4;
+  for (u32 ty = 0; ty < tiles_y; ty++)
+  for (u32 tx = 0; tx < tiles_x; tx++)
+  {
+    u8 *tile = dst + (ty*tiles_x + tx) * 64;
+    u8 *ar   = tile;
+    u8 *gb   = tile + 32;
+    for (u32 row = 0; row < 4; row++)
+    {
+      u32 y = ty*4 + row;
+      for (u32 col = 0; col < 4; col += 2)
+      {
+        u32 x    = tx*4 + col;
+        u32 word = src32[(y*w + x) / 2];
+        s32 Yu=(word>> 0)&255, Y0=(word>> 8)&255;
+        s32 Yv=(word>>16)&255, Y1=(word>>24)&255;
+        u16 c0 = (u16)YUV422(Y0,Yu,Yv);
+        u16 c1 = (u16)YUV422(Y1,Yu,Yv);
+        u32 p0 = row*4+col, p1 = row*4+col+1;
+        ar[p0*2  ]=0xFF; ar[p0*2+1]=RGB565_R8(c0);
+        ar[p1*2  ]=0xFF; ar[p1*2+1]=RGB565_R8(c1);
+        gb[p0*2  ]=RGB565_G8(c0); gb[p0*2+1]=RGB565_B8(c0);
+        gb[p1*2  ]=RGB565_G8(c1); gb[p1*2+1]=RGB565_B8(c1);
+      }
+    }
+  }
+}
+
+// YUV422 twiddled -> GX_TF_RGBA8
+static void YUV422_to_RGBA8_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
+{
+  u32 tiles_x = w / 4, tiles_y = h / 4;
+  for (u32 ty = 0; ty < tiles_y; ty++)
+  for (u32 tx = 0; tx < tiles_x; tx++)
+  {
+    u8 *tile = dst + (ty*tiles_x + tx) * 64;
+    u8 *ar   = tile;
+    u8 *gb   = tile + 32;
+    for (u32 row = 0; row < 4; row++)
+    {
+      u32 y = ty*4 + row;
+      for (u32 col = 0; col < 4; col += 2)
+      {
+        u32 x  = tx*4 + col;
+        u32 tw = twop(x/2, y, w/2, h);
+        u16 *p = (u16*)&src_vram[tw * 4];
+        s32 Yu=p[0]&255, Y0=(p[0]>>8)&255;
+        s32 Yv=p[1]&255, Y1=(p[1]>>8)&255;
+        u16 c0 = (u16)YUV422(Y0,Yu,Yv);
+        u16 c1 = (u16)YUV422(Y1,Yu,Yv);
+        u32 p0 = row*4+col, p1 = row*4+col+1;
+        ar[p0*2  ]=0xFF; ar[p0*2+1]=RGB565_R8(c0);
+        ar[p1*2  ]=0xFF; ar[p1*2+1]=RGB565_R8(c1);
+        gb[p0*2  ]=RGB565_G8(c0); gb[p0*2+1]=RGB565_B8(c0);
+        gb[p1*2  ]=RGB565_G8(c1); gb[p1*2+1]=RGB565_B8(c1);
+      }
+    }
+  }
+}
+
+#undef RGB565_R8
+#undef RGB565_G8
+#undef RGB565_B8
+
+// =================================
 // Dreamcast Texture => Wii textures
 // =================================
 // Processes the Dreamcast's TCW (Texture Control Word) to initialize Wii TexObjects.
@@ -1114,7 +1349,20 @@ static void SetTextureParams(PolyParam *mod)
 
   //// 1. Memory Management ////
 
-  u32 decode_bytes = (u32)w * h * 2; // 16bpp worst-case
+  // Worst-case allocation:
+  //   RGBA8  (YUV fmv_format=1) : w*h*4 bytes (32bpp)
+  //   CMPR   (YUV fmv_format=0) : w*h/2 bytes (4bpp DXT1)
+  //   All other formats          : w*h*2 bytes (16bpp)
+  // We check the pixel format (tcw.PixelFmt==3 => YUV422) here so the bump
+  // allocator always gets enough room before any conversion runs.
+  u32 decode_bytes;
+  {
+    bool is_yuv422 = (mod->tcw.NO_PAL.PixelFmt == 3);
+    if (is_yuv422 && fmv_format == 1)
+      decode_bytes = (u32)w * h * 4; // RGBA8: 4 bytes/pixel
+    else
+      decode_bytes = (u32)w * h * 2; // 16bpp worst-case (covers CMPR: w*h/2 fits easily)
+  }
   u32 *pixel_buf   = nullptr;
   TextureCacheDesc *pbuff = nullptr;
   bool already_decoded_this_frame = false;
@@ -1342,21 +1590,60 @@ static void SetTextureParams(PolyParam *mod)
       break;
       
     case 3:
-      // YUV422 Format 32 bits per 2 pixels; YUYV values: 8 bits each
-      if (mod->tcw.NO_PAL.ScanOrder)
+    {
+      // YUV422: 32 bits per 2 pixels (UYVY — U, Y0, V, Y1, 8 bits each).
+      // The Dreamcast PVR has no native YUV texture support on the Wii GX side,
+      // so we decode YUV->RGB ourselves and upload in one of two GX formats
+      // controlled by the global 'fmv_format':
+      //
+      //   fmv_format == 0  =>  GX_TF_CMPR  (DXT1 block compression)
+      //                        - 4bpp, best bandwidth / memory usage
+      //                        - minor quality loss from block quantisation
+      //                        - ideal for large FMV frames on Wii's limited ARAM
+      //
+      //   fmv_format == 1  =>  GX_TF_RGBA8 (full 32bpp ARGB)
+      //                        - highest quality, no compression artefacts
+      //                        - 4× memory cost vs CMPR
+      //                        - use when quality matters more than memory
+      //
+      // Note: docs say YUV cannot be VQ-compressed on the DC PVR, but hardware
+      // reportedly supports it anyway (see original comment).  We do NOT handle
+      // the VQ+YUV combination here — it falls through unchanged.
+
+      u8 *yuv_src = &params.vram[tex_addr];
+
+      if (fmv_format == 1)
       {
-        norm_text(422);
-        // norm_text(ANYtoRAW);
+        // ---- RGBA8 path ----
+        if (mod->tcw.NO_PAL.ScanOrder)
+        {
+          // Planar (linear scan-order) source.
+          YUV422_to_RGBA8_Planar(yuv_src, w, h, VramWork);
+        }
+        else
+        {
+          // Twiddled source.
+          YUV422_to_RGBA8_Twiddled(yuv_src, w, h, VramWork);
+        }
+        FMT = GX_TF_RGBA8;
       }
       else
       {
-        // it cant be VQ , can it ?
-        // docs say that yuv can't be VQ ...
-        // HW seems to support it ;p
-        twidle_tex(YUV422);
+        // ---- CMPR (DXT1) path — default (fmv_format == 0) ----
+        if (mod->tcw.NO_PAL.ScanOrder)
+        {
+          // Planar (linear scan-order) source.
+          YUV422_to_CMPR_Planar(yuv_src, w, h, VramWork);
+        }
+        else
+        {
+          // Twiddled source.
+          YUV422_to_CMPR_Twiddled(yuv_src, w, h, VramWork);
+        }
+        FMT = GX_TF_CMPR;
       }
-      FMT = GX_TF_RGB565; // wha?
       break;
+    }
       // 4	Bump Map	16 bits/pixel; S value: 8 bits; R value: 8 bits
     case 5: 
     {
