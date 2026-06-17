@@ -951,12 +951,15 @@ void Plannar(u8 *praw, u32 w, u32 h)
         break;
       case 422:
       {
-        // DC YUV422 UYVY: one u32 word = [U][Y0][V][Y1] in DC byte order.
-        // As a correct DC u32 value: bits[7:0]=U, [15:8]=Y0, [23:16]=V, [31:24]=Y1.
-        s32 Yu = (word >>  0) & 255;  // U (Cb)
-        s32 Y0 = (word >>  8) & 255;  // Y0
-        s32 Yv = (word >> 16) & 255;  // V (Cr)
-        s32 Y1 = (word >> 24) & 255;  // Y1
+        // DC YUV422 real layout confirmed via hardware docs: per u32 word,
+        // bytes are [Y0][U][Y1][V] (low to high) — i.e. "Y0U" + "Y1V" pairs,
+        // NOT [U][Y0][V][Y1] as previously assumed. That earlier assumption
+        // fed near-zero chroma into YUV422() for neutral-gray pixels, which
+        // produced a strong green-dominant decode (confirmed via debug logs).
+        s32 Y0 = (word >>  0) & 255;  // Y0
+        s32 Yu = (word >>  8) & 255;  // U (Cb)
+        s32 Y1 = (word >> 16) & 255;  // Y1
+        s32 Yv = (word >> 24) & 255;  // V (Cr)
         dst[GX_TexOffs(x + 0, y, w)] = YUV422(Y0, Yu, Yv);
         dst[GX_TexOffs(x + 1, y, w)] = YUV422(Y1, Yu, Yv);
       }
@@ -1095,7 +1098,6 @@ int TexUV(u32 flip, u32 clamp)
 // Controls the Wii GX texture format used for YUV422 FMV decoding.
 //   fmv_format == 0  =>  GX_TF_CMPR  (DXT1, 4bpp  — best bandwidth, slight quality loss)
 //   fmv_format == 1  =>  GX_TF_RGBA8 (32bpp        — best quality, higher memory cost)
-// Define this as a global int in your main/config code; we declare it extern here.
 extern int fmv_format;
 
 int fmv_format = 0;
@@ -1198,8 +1200,10 @@ static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
         for (u32 col = 0; col < 4; col += 2)
         {
           u32 word = src32[(y*w + bx+col) / 2];
-          s32 Yu=(word>> 0)&255, Y0=(word>> 8)&255;
-          s32 Yv=(word>>16)&255, Y1=(word>>24)&255;
+          // Confirmed via hardware docs + debug logs: per u32 word, byte order
+          // is [Y0][U][Y1][V] (low to high), i.e. "Y0U"+"Y1V" pairs.
+          s32 Y0=(word>> 0)&255, Yu=(word>> 8)&255;
+          s32 Y1=(word>>16)&255, Yv=(word>>24)&255;
           block_pixels[row*4+col  ] = (u16)YUV422(Y0,Yu,Yv);
           block_pixels[row*4+col+1] = (u16)YUV422(Y1,Yu,Yv);
         }
@@ -1210,6 +1214,19 @@ static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
 }
 
 // YUV422 twiddled -> GX_TF_CMPR
+//
+// Twiddled YUV422 stores pixels in 2x2 blocks (xpp=2, ypp=2). Each 8-byte chunk
+// (4x u16, after host_ptr_xor byte-swap) holds one 2x2 block, matching the
+// original convYUV422_TW logic:
+//   buf[0]: Y(row0,col0) high byte, U low byte
+//   buf[1]: Y(row1,col0) high byte, U low byte  (same U as buf[0])
+//   buf[2]: Y(row0,col1) high byte, V low byte
+//   buf[3]: Y(row1,col1) high byte, V low byte  (same V as buf[2])
+// host_ptr_xor for u16 is ^2 (swaps the two u16 halves within each u32 on Wii BE):
+//   *host_ptr_xor((u16*)&p[0]) reads bytes [2,3] of the u32 at p[0..3]
+//   *host_ptr_xor((u16*)&p[2]) reads bytes [0,1] of the u32 at p[0..3]
+// So per 8-byte chunk: w0 = *(u32*)&p[0] gives buf0=(w0>>16), buf1=(w0&0xFFFF);
+//                       w1 = *(u32*)&p[4] gives buf2=(w1>>16), buf3=(w1&0xFFFF).
 static void YUV422_to_CMPR_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
   static const u32 sub_ox[4] = {0,4,0,4};
@@ -1223,20 +1240,29 @@ static void YUV422_to_CMPR_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
     {
       u32 bx=tx+sub_ox[sub], by=ty+sub_oy[sub];
       u16 block_pixels[16];
-      for (u32 row = 0; row < 4; row++)
+      for (u32 row = 0; row < 4; row += 2)
+      for (u32 col = 0; col < 4; col += 2)
       {
-        u32 y = by + row;
-        if (y >= h) { for (int c=0;c<4;c++) block_pixels[row*4+c]=0; continue; }
-        for (u32 col = 0; col < 4; col += 2)
-        {
-          u32 x  = bx + col;
-          u32 tw = twop(x/2, y, w/2, h);
-          u16 *p = (u16*)&src_vram[tw * 4];
-          s32 Yu=p[0]&255, Y0=(p[0]>>8)&255;
-          s32 Yv=p[1]&255, Y1=(p[1]>>8)&255;
-          block_pixels[row*4+col  ] = (u16)YUV422(Y0,Yu,Yv);
-          block_pixels[row*4+col+1] = (u16)YUV422(Y1,Yu,Yv);
-        }
+        u32 x   = bx + col;
+        u32 y   = by + row;
+        u32 tw  = twop(x, y, w, h) / 4; // 2x2 block index (divider = xpp*ypp = 4)
+        u8 *p   = &src_vram[tw * 8];
+        u32 w0  = *(u32*)&p[0];
+        u32 w1  = *(u32*)&p[4];
+        u16 buf0 = (u16)(w0 >> 16);
+        u16 buf1 = (u16)(w0      );
+        u16 buf2 = (u16)(w1 >> 16);
+        u16 buf3 = (u16)(w1      );
+
+        s32 Y00 = buf0 & 255; s32 Yu = (buf0 >> 8) & 255;
+        s32 Y10 = buf1 & 255;
+        s32 Y01 = buf2 & 255; s32 Yv = (buf2 >> 8) & 255;
+        s32 Y11 = buf3 & 255;
+
+        block_pixels[row*4+col    ] = (u16)YUV422(Y00, Yu, Yv);
+        block_pixels[row*4+col+1  ] = (u16)YUV422(Y01, Yu, Yv);
+        block_pixels[(row+1)*4+col  ] = (u16)YUV422(Y10, Yu, Yv);
+        block_pixels[(row+1)*4+col+1] = (u16)YUV422(Y11, Yu, Yv);
       }
       encode_cmpr_block(block_pixels, super_dst + sub*8);
     }
@@ -1274,8 +1300,9 @@ static void YUV422_to_RGBA8_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
       {
         u32 x    = tx*4 + col;
         u32 word = src32[(y*w + x) / 2];
-        s32 Yu=(word>> 0)&255, Y0=(word>> 8)&255;
-        s32 Yv=(word>>16)&255, Y1=(word>>24)&255;
+        // Confirmed layout: [Y0][U][Y1][V] low to high.
+        s32 Y0=(word>> 0)&255, Yu=(word>> 8)&255;
+        s32 Y1=(word>>16)&255, Yv=(word>>24)&255;
         u16 c0 = (u16)YUV422(Y0,Yu,Yv);
         u16 c1 = (u16)YUV422(Y1,Yu,Yv);
         u32 p0 = row*4+col, p1 = row*4+col+1;
@@ -1289,6 +1316,8 @@ static void YUV422_to_RGBA8_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
 }
 
 // YUV422 twiddled -> GX_TF_RGBA8
+// See YUV422_to_CMPR_Twiddled for full explanation of the 2x2 twiddled YUV layout
+// and the host_ptr_xor (^2) byte-swap replication via raw u32 reads.
 static void YUV422_to_RGBA8_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
   u32 tiles_x = w / 4, tiles_y = h / 4;
@@ -1298,24 +1327,42 @@ static void YUV422_to_RGBA8_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
     u8 *tile = dst + (ty*tiles_x + tx) * 64;
     u8 *ar   = tile;
     u8 *gb   = tile + 32;
-    for (u32 row = 0; row < 4; row++)
+    for (u32 row = 0; row < 4; row += 2)
+    for (u32 col = 0; col < 4; col += 2)
     {
-      u32 y = ty*4 + row;
-      for (u32 col = 0; col < 4; col += 2)
-      {
-        u32 x  = tx*4 + col;
-        u32 tw = twop(x/2, y, w/2, h);
-        u16 *p = (u16*)&src_vram[tw * 4];
-        s32 Yu=p[0]&255, Y0=(p[0]>>8)&255;
-        s32 Yv=p[1]&255, Y1=(p[1]>>8)&255;
-        u16 c0 = (u16)YUV422(Y0,Yu,Yv);
-        u16 c1 = (u16)YUV422(Y1,Yu,Yv);
-        u32 p0 = row*4+col, p1 = row*4+col+1;
-        ar[p0*2  ]=0xFF; ar[p0*2+1]=RGB565_R8(c0);
-        ar[p1*2  ]=0xFF; ar[p1*2+1]=RGB565_R8(c1);
-        gb[p0*2  ]=RGB565_G8(c0); gb[p0*2+1]=RGB565_B8(c0);
-        gb[p1*2  ]=RGB565_G8(c1); gb[p1*2+1]=RGB565_B8(c1);
-      }
+      u32 x  = tx*4 + col;
+      u32 y  = ty*4 + row;
+      u32 tw = twop(x, y, w, h) / 4;
+      u8 *p  = &src_vram[tw * 8];
+      u32 w0 = *(u32*)&p[0];
+      u32 w1 = *(u32*)&p[4];
+      u16 buf0 = (u16)(w0 >> 16);
+      u16 buf1 = (u16)(w0      );
+      u16 buf2 = (u16)(w1 >> 16);
+      u16 buf3 = (u16)(w1      );
+
+      s32 Y00 = buf0 & 255; s32 Yu = (buf0 >> 8) & 255;
+      s32 Y10 = buf1 & 255;
+      s32 Y01 = buf2 & 255; s32 Yv = (buf2 >> 8) & 255;
+      s32 Y11 = buf3 & 255;
+
+      u16 c00 = (u16)YUV422(Y00, Yu, Yv);
+      u16 c01 = (u16)YUV422(Y01, Yu, Yv);
+      u16 c10 = (u16)YUV422(Y10, Yu, Yv);
+      u16 c11 = (u16)YUV422(Y11, Yu, Yv);
+
+      u32 idx00 = row*4+col,         idx01 = row*4+col+1;
+      u32 idx10 = (row+1)*4+col,     idx11 = (row+1)*4+col+1;
+
+      ar[idx00*2  ]=0xFF; ar[idx00*2+1]=RGB565_R8(c00);
+      ar[idx01*2  ]=0xFF; ar[idx01*2+1]=RGB565_R8(c01);
+      ar[idx10*2  ]=0xFF; ar[idx10*2+1]=RGB565_R8(c10);
+      ar[idx11*2  ]=0xFF; ar[idx11*2+1]=RGB565_R8(c11);
+
+      gb[idx00*2  ]=RGB565_G8(c00); gb[idx00*2+1]=RGB565_B8(c00);
+      gb[idx01*2  ]=RGB565_G8(c01); gb[idx01*2+1]=RGB565_B8(c01);
+      gb[idx10*2  ]=RGB565_G8(c10); gb[idx10*2+1]=RGB565_B8(c10);
+      gb[idx11*2  ]=RGB565_G8(c11); gb[idx11*2+1]=RGB565_B8(c11);
     }
   }
 }
@@ -1612,6 +1659,54 @@ static void SetTextureParams(PolyParam *mod)
 
       u8 *yuv_src = &params.vram[tex_addr];
 
+      if (DEBUG_MESSAGE())
+      {
+        printf("[YUV] ---- new YUV422 texture ----\n");
+        printf("[YUV] tex_addr=%06X w=%u h=%u scan=%u mip=%u fmv_format=%d\n",
+               tex_addr, w, h, (unsigned)mod->tcw.NO_PAL.ScanOrder,
+               (unsigned)mod->tcw.NO_PAL.MipMapped, fmv_format);
+
+        // Dump raw bytes at the start of the source (first 16 bytes = 4 u32 words).
+        u32 *raw32 = (u32*)yuv_src;
+        printf("[YUV] raw words: %08X %08X %08X %08X\n",
+               raw32[0], raw32[1], raw32[2], raw32[3]);
+
+        // Decode the first 2 pixels exactly the way the planar path does,
+        // so we can see if U/V/Y extraction and the YUV422() formula look sane.
+        {
+          u32 word = raw32[0];
+          s32 Y0 = (word >>  0) & 255;
+          s32 Yu = (word >>  8) & 255;
+          s32 Y1 = (word >> 16) & 255;
+          s32 Yv = (word >> 24) & 255;
+          u16 c0 = (u16)YUV422(Y0, Yu, Yv);
+          u16 c1 = (u16)YUV422(Y1, Yu, Yv);
+          printf("[YUV] planar-style decode word0: Y0=%d Y1=%d U=%d V=%d\n", Y0, Y1, Yu, Yv);
+          printf("[YUV]   -> RGB565 c0=%04X (R=%d G=%d B=%d)  c1=%04X (R=%d G=%d B=%d)\n",
+                 c0, (c0>>11)&0x1F, (c0>>5)&0x3F, c0&0x1F,
+                 c1, (c1>>11)&0x1F, (c1>>5)&0x3F, c1&0x1F);
+        }
+
+        // Decode the first 2x2 block exactly the way the twiddled path does,
+        // so we can compare against the planar interpretation above.
+        {
+          u32 tw = twop(0, 0, w, h) / 4;
+          u8 *p  = &yuv_src[tw * 8];
+          u32 tw0 = *(u32*)&p[0];
+          u32 tw1 = *(u32*)&p[4];
+          u16 buf0 = (u16)(tw0 >> 16);
+          u16 buf1 = (u16)(tw0      );
+          u16 buf2 = (u16)(tw1 >> 16);
+          u16 buf3 = (u16)(tw1      );
+          s32 Y00 = buf0 & 255; s32 Yu = (buf0 >> 8) & 255;
+          s32 Y10 = buf1 & 255;
+          s32 Y01 = buf2 & 255; s32 Yv = (buf2 >> 8) & 255;
+          s32 Y11 = buf3 & 255;
+          printf("[YUV] twiddled-style decode block0: tw_idx=%u raw=%08X %08X\n", tw, tw0, tw1);
+          printf("[YUV]   Y00=%d Y10=%d Y01=%d Y11=%d U=%d V=%d\n", Y00, Y10, Y01, Y11, Yu, Yv);
+        }
+      }
+
       if (fmv_format == 1)
       {
         // ---- RGBA8 path ----
@@ -1641,6 +1736,25 @@ static void SetTextureParams(PolyParam *mod)
           YUV422_to_CMPR_Twiddled(yuv_src, w, h, VramWork);
         }
         FMT = GX_TF_CMPR;
+      }
+
+      if (DEBUG_MESSAGE())
+      {
+        // Dump the first few bytes of the ENCODED output too, so we can see
+        // if the CMPR/RGBA8 packing itself produced something sane.
+        u8 *out = (u8*)VramWork;
+        if (FMT == GX_TF_CMPR)
+        {
+          printf("[YUV] CMPR block0 bytes: %02X%02X %02X%02X  sel=%02X%02X%02X%02X\n",
+                 out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[7]);
+        }
+        else // GX_TF_RGBA8
+        {
+          printf("[YUV] RGBA8 tile0 AR bytes: %02X%02X %02X%02X %02X%02X %02X%02X\n",
+                 out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[7]);
+          printf("[YUV] RGBA8 tile0 GB bytes: %02X%02X %02X%02X %02X%02X %02X%02X\n",
+                 out[32], out[33], out[34], out[35], out[36], out[37], out[38], out[39]);
+        }
       }
       break;
     }
@@ -2202,7 +2316,9 @@ static void SetTextureParams(PolyParam *mod)
       u32 flush_sz;
       if      (FMT == GX_TF_CI4 || FMT == GX_TF_I4) flush_sz = w * h / 2;
       else if (FMT == GX_TF_CI8 || FMT == GX_TF_I8) flush_sz = w * h;
-      else                                            flush_sz = w * h * 2;
+      else if (FMT == GX_TF_RGBA8)                   flush_sz = w * h * 4; // 32bpp
+      else if (FMT == GX_TF_CMPR)                    flush_sz = w * h / 2; // DXT1 4bpp
+      else                                            flush_sz = w * h * 2; // 16bpp default
       DCFlushRange(gx_pixels, (flush_sz + 31) & ~31u);
     }
 
