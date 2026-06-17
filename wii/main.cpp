@@ -17,6 +17,7 @@
 #include "wii/wii_audio.h"
 #include <sdcard/wiisd_io.h>
 #include <ogc/usbstorage.h>
+#include "stdclass.h"   // for GetEmuPath()
 
 // *** GAME PRESETS ***
 #include "wii/game_presets.h"
@@ -307,6 +308,70 @@ void listFilesInDirectory(const char *dirPath)
     strcpy(fileList[0].fullPath, "");
     fileList[0].isDirectory = false;
     fileCount = 1;
+  }
+}
+
+// ============================================================================
+// BIOS PRESENCE CHECK
+// ============================================================================
+//
+// Checks for the presence of dc_boot.bin and dc_flash.bin in the data/
+// folder (same location used by GetEmuPath()/LoadBiosFiles() in dc.cpp).
+// Prints "missing BIOS file <name>" for each missing file, then pauses
+// and waits for a button press so the message is actually seen before
+// the file browser clears the screen.
+// ============================================================================
+
+void checkBiosFiles()
+{
+  const char* kBiosFiles[] = { "dc_boot.bin", "dc_flash.bin" };
+  const int kBiosFileCount = 2;
+  bool anyMissing = false;
+
+  printf("\033[2J\033[H");
+
+  for (int i = 0; i < kBiosFileCount; i++)
+  {
+    char subpath[64];
+    snprintf(subpath, sizeof(subpath), "data/%s", kBiosFiles[i]);
+
+    char* fullPath = GetEmuPath(subpath);
+    if (!fullPath)
+      continue;
+
+    FILE* f = fopen(fullPath, "rb");
+    if (!f)
+    {
+      printf("missing BIOS file %s\n", kBiosFiles[i]);
+      anyMissing = true;
+    }
+    else
+    {
+      fclose(f);
+    }
+
+    free(fullPath);
+  }
+
+  if (anyMissing)
+  {
+    printf("\nPlace the missing file(s) in the data/ folder.\n");
+    printf("Press any button to continue...\n");
+
+    VIDEO_SetNextFramebuffer(xfb[fb]);
+    VIDEO_Flush();
+    VIDEO_WaitVSync();
+    fb ^= 1;
+    console_init(xfb[fb], 20, 20, rmode->fbWidth, rmode->xfbHeight,
+                 rmode->fbWidth * VI_DISPLAY_PIX_SZ);
+
+    while (true)
+    {
+      WPAD_ScanPads();
+      if (WPAD_ButtonsDown(0) != 0)
+        break;
+      VIDEO_WaitVSync();
+    }
   }
 }
 
@@ -897,6 +962,13 @@ int main(int argc, wchar *argv[])
   game_presets_load("sd:/data/game_presets.cfg");
 
   void SetApplicationPath(const wchar *path);
+
+  // ---------------------------------------------------------------------------
+  // Check for required BIOS files before showing the file browser.
+  // Prints "missing BIOS file dc_boot.bin" / "missing BIOS file dc_flash.bin"
+  // and pauses (waits for a button press) if either file is absent.
+  // ---------------------------------------------------------------------------
+  checkBiosFiles();
 
   listFilesInDirectory(currentPath);
 
