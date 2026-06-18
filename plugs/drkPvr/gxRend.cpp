@@ -74,6 +74,7 @@ extern "C" int get_texture_cache_preset();
 #define CACHE_EXTRA()       (get_texture_cache_preset() == 4) // For Debug only
   
 int frame_counter;
+int per_polygon_z_write = 0; // Untested for now
 
 #include "config.h"
 #include "gxRend.h"
@@ -2690,6 +2691,8 @@ void DoRender()
   int last_textured = -1;  // track texture state to skip redundant GX calls
   int last_alpha_fmt = -1; // -1 = unset
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
+  bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
+  
 
   // Process opaque and then translucent lists.
   for (; drawLST != crLST; drawLST++)
@@ -2701,7 +2704,8 @@ void DoRender()
 
       // TODO: per-polygon ISP state (isp.ZWriteDis, isp.CullMode, isp.DepthMode)
       // is not yet emulated. Translucent polys may incorrectly stamp the Z-buffer.
-      // Tryed with ClaudeAI, hurts Performance 
+      // See below
+
     }
 
     s32 count = drawLST->count;
@@ -2738,14 +2742,20 @@ void DoRender()
         // texture alpha untouched.
         {
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
-          force_vtx_alpha_opaque = (fmt == 0 || fmt == 1 || fmt == 2 || fmt == 7);
+          force_vtx_alpha_opaque = (fmt == 0 || fmt == 1); // fmt == 2 make BIOS bug. AI suggest adding fmt == 7 also
         }
 
         // This is more accurate for alpha. May cost CPU cycles
         if (ADVANCED_ALPHA())
         {
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
-          int alpha_fmt = (fmt == 0 || fmt == 1 || fmt == 2 || fmt == 7) ? 1 : 0;
+          int alpha_fmt;
+          // ALL alpha formats (0, 1, 2, 7) must trigger this for proper transparency alpha testing ?
+          if (fmt == 0 || fmt == 1 || fmt == 2 || fmt == 7) { // fmt == 2 needed for CrazyTaxiGO! & Dreamcast spiral
+            alpha_fmt = 1;
+          } else {
+            alpha_fmt = 0;
+          }
           if (alpha_fmt != last_alpha_fmt)
           {
             if (alpha_fmt)
@@ -2766,6 +2776,19 @@ void DoRender()
       {
         // Untextured polygon — vertex alpha is meaningful as-is, never override it.
         force_vtx_alpha_opaque = false;
+      }
+
+      // ── Per-polygon Z write (ISP.ZWriteDis) ──────────────────────────────
+      // Real DC hardware honors ZWriteDis per polygon. Without this, sprites
+      // with ZWriteDis=1 stamp the Z-buffer and leave visible trails.
+      if(per_polygon_z_write == 1)
+      {
+        bool z_write = !drawMod->isp.ZWriteDis;
+        if (z_write != last_z_write)
+        {
+          GX_SetZMode(GX_TRUE, GX_GEQUAL, z_write ? GX_TRUE : GX_FALSE);
+          last_z_write = z_write;
+        }
       }
 
       drawMod++;
@@ -2794,7 +2817,7 @@ void DoRender()
     // sceGuDrawArray(GU_TRIANGLE_STRIP,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,count,0,drawVTX);
 
     //			drawVTX+=count;
-  }
+  } 
 
   reset_vtx_state();
 
