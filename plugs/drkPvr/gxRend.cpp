@@ -2738,7 +2738,7 @@ void DoRender()
         // texture alpha untouched.
         {
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
-          force_vtx_alpha_opaque = (fmt == 0);
+          force_vtx_alpha_opaque = (fmt == 0 || fmt == 1 || fmt == 7);
         }
 
         // Test - Claude say this is more accurate for alpha ?
