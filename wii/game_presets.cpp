@@ -272,7 +272,7 @@ void game_presets_load(const char* cfg_path)
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
             str_tolower_inplace(cur->keyword);   // lowercase once at load time
 
-            printf("[game_presets]   Registered: [%s]\n", cur->keyword);
+            // printf("[game_presets]   Registered: [%s]\n", cur->keyword);
             continue;
         }
 
