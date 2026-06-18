@@ -257,7 +257,7 @@ https://wiibrew.org/wiki/DevkitPPC
 Activate :
 - SD Card
 - Display FPS
-- Advanced > Debug > Texture Info Format
+- Advanced > Debug > Texture Format Overlay
 
 <img width="1366" height="728" alt="image" src="https://github.com/user-attachments/assets/4e1e3f65-2638-40c6-85a0-bcca3e4f43da" />
 
@@ -273,6 +273,7 @@ NullDC for PSP : https://github.com/PSP-Archive/nulldce-psp
 NullDC for Xbox360 https://github.com/gligli/nulldc-360  
 Reicast : https://github.com/skmp/reicast-emulator  
 Flycast : https://github.com/flyinghead/flycast  
+Deecy : https://github.com/Senryoku/Deecy
 
 ### Devkitpro
  
@@ -313,6 +314,7 @@ All together, let's Cast the Dream.
 ### Special thanks
 
 - skmp because he's the god
+- Senryoku, develloper of Deecy emulator
 - All testers and all futur testers
 - People actually helping me on the wiibrew wiki
 
