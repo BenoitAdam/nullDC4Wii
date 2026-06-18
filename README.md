@@ -18,7 +18,6 @@ a fork from https://github.com/skmp/nullDCe
 
 - Controller correct layout, for pro pad and for gamecube pad
 - User custom Preset
-- printf for when there is no bios
 - Player 3/4 Gamecube/Wiimote
 - Fishing Rod/USB Keyboard/Lightgun/Maracas support (probably unsupported now)
 - Put external config file for controllers (controls.cfg)
