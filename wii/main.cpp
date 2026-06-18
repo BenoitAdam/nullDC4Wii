@@ -12,12 +12,12 @@
 #include <gccore.h>
 #include <ogc/lwp_watchdog.h>	// gettime() / ticks_to_microsecs() for os_GetSeconds()
 #include <asndlib.h>
-#include <mp3player.h>
-#include "sample_mp3.h"
+#include <mp3player.h> // Was for testing playing an MP3 on menu. 
+#include "sample_mp3.h" // Was for testing playing an MP3 on menu. 
 #include "wii/wii_audio.h"
 #include <sdcard/wiisd_io.h>
 #include <ogc/usbstorage.h>
-#include "stdclass.h"   // for GetEmuPath()
+#include "stdclass.h"   // for GetEmuPath() for bios check
 
 // *** GAME PRESETS ***
 #include "wii/game_presets.h"
@@ -490,7 +490,7 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H");
 
-    printf("NullDC4Wii - Alpha 0.28   OPTIONS\n");
+    printf("NullDC4Wii - Alpha 0.29   OPTIONS\n");
     printf("===================================\n\n");
 
     // --- Row 0: Launch ---
@@ -700,7 +700,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - Alpha 0.28   ");
+    printf("\nNullDC4Wii - Alpha 0.29   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("(-) GRAPHICS: ");
@@ -965,8 +965,6 @@ int main(int argc, wchar *argv[])
 
   // ---------------------------------------------------------------------------
   // Check for required BIOS files before showing the file browser.
-  // Prints "missing BIOS file dc_boot.bin" / "missing BIOS file dc_flash.bin"
-  // and pauses (waits for a button press) if either file is absent.
   // ---------------------------------------------------------------------------
   checkBiosFiles();
 
