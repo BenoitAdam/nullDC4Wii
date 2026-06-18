@@ -2738,14 +2738,14 @@ void DoRender()
         // texture alpha untouched.
         {
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
-          force_vtx_alpha_opaque = (fmt == 0 || fmt == 1 || fmt == 7);
+          force_vtx_alpha_opaque = (fmt == 0 || fmt == 1 || fmt == 2 || fmt == 7);
         }
 
-        // Test - Claude say this is more accurate for alpha ?
+        // This is more accurate for alpha. May cost CPU cycles
         if (ADVANCED_ALPHA())
         {
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
-          int alpha_fmt = (fmt == 0 || fmt == 7) ? 1 : 0;
+          int alpha_fmt = (fmt == 0 || fmt == 1 || fmt == 2 || fmt == 7) ? 1 : 0;
           if (alpha_fmt != last_alpha_fmt)
           {
             if (alpha_fmt)
