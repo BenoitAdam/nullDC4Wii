@@ -2742,20 +2742,35 @@ void DoRender()
         // texture alpha untouched.
         {
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
-          force_vtx_alpha_opaque = (fmt == 0 || fmt == 1); // fmt == 2 make BIOS bug. AI suggest adding fmt == 7 also
+          // fmt == 0 needed for Ryo's head
+          // fmt == 1 needed for Ryo's eyes
+          // fmt == 2 make BIOS bug.
+          // fmt == 7 suggested by AI
+          force_vtx_alpha_opaque = (fmt == 0 || fmt == 1); 
         }
 
         // This is more accurate for alpha. May cost CPU cycles
         if (ADVANCED_ALPHA())
         {
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
+          // alpha_fmt value :
+          // fmt == 0 needed for Chuchu when placing an arrow
+          // fmt == 1 needed ?
+          // fmt == 2 needed for ChuChu logo / CrazyTaxiGO! & Dreamcast spiral
+          // fmt == 7 needed ?
+          // AI Suggest int alpha_fmt = (fmt == 0 || fmt == 1 || fmt == 2|| fmt == 7) ? 1 : 0;
+          int alpha_fmt = (fmt == 0 || fmt == 1 || fmt == 2|| fmt == 7) ? 1 : 0;
+          // We maybe could also put specific handling to avoid any FPS dropdown :
+          /*
           int alpha_fmt;
-          // ALL alpha formats (0, 1, 2, 7) must trigger this for proper transparency alpha testing ?
-          if (fmt == 0 || fmt == 1 || fmt == 2 || fmt == 7) { // fmt == 2 needed for CrazyTaxiGO! & Dreamcast spiral
-            alpha_fmt = 1;
+          if (fmt == 0) {
+              alpha_fmt = 1;
+          } else if (fmt == 2) {
+              alpha_fmt = 2; // Keep distinct so the state cache isn't constantly thrashing
           } else {
-            alpha_fmt = 0;
+              alpha_fmt = 0;
           }
+          */
           if (alpha_fmt != last_alpha_fmt)
           {
             if (alpha_fmt)
