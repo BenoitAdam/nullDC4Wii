@@ -145,6 +145,11 @@ void ApplyGraphismPreset() {
 #define ABGR1555_B(x) ((x) & 0x1F)
 #define MAKE_555A3
 
+// #define ABGR1555_VQ(x) (x)  // Keep the original 1555 value, alpha bit intact
+// or
+// #define ABGR1555_VQ(x) ((x) & 0x8000 ? (x) : 0x8000) // Make transparent pixels fully transparent (alpha=1, RGB=0)
+
+
 #define MAKE_565(r, g, b, a)
 #define MAKE_1555(r, g, b, a)
 #define MAKE_4444(r, g, b, a)
@@ -2744,7 +2749,7 @@ void DoRender()
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
           // fmt == 0 needed for Ryo's head
           // fmt == 1 needed for Ryo's eyes
-          // fmt == 2 make BIOS bug.
+          // fmt == 2 makes BIOS display buggy
           // fmt == 7 suggested by AI
           force_vtx_alpha_opaque = (fmt == 0 || fmt == 1); 
         }
@@ -2759,7 +2764,7 @@ void DoRender()
           // fmt == 2 needed for ChuChu logo / CrazyTaxiGO! & Dreamcast spiral
           // fmt == 7 needed ?
           // AI Suggest int alpha_fmt = (fmt == 0 || fmt == 1 || fmt == 2|| fmt == 7) ? 1 : 0;
-          int alpha_fmt = (fmt == 0 || fmt == 1 || fmt == 2|| fmt == 7) ? 1 : 0;
+          int alpha_fmt = (fmt == 0 || fmt == 1 || fmt == 2 || fmt == 7) ? 1 : 0;
           // We maybe could also put specific handling to avoid any FPS dropdown :
           /*
           int alpha_fmt;
