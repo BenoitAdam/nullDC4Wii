@@ -81,34 +81,70 @@ Check nullDC.cfg at root
 
 #### Wiimote :
 
-DC - Wii
+| Dreamcast | Wiimote |
+| --------- | ------- |
+| A | A |
+| B | B |
+| Y | 1 |
+| X | 2 |
+| START | Home |
+| D-PAD | D-PAD |
+| STICK | Nunchuck Stick |
+| L | - (and Nunchuck Z) |
+| R | + |
 
-- A = A  
-- B = B  
-- Y = 1  
-- X = 2  
-- START = Home
-- D-PAD = D-PAD  
-- STICK = Nunchuck Stick
-- L = - (and Nunchuck Z)
-- R = +  
+To Exit : - and +  
+
+#### Wiimote (Chuchu Rocket!)
+
+Not implemented yes, but soon ! :)
+
+| Dreamcast | Wiimote |
+| --------- | ------- |
+| A | down & A |
+| B | right & B |
+| Y | up |
+| X | left |
+| START | Home|
+| D-PAD | - no implementation - |
+| STICK | Nunchuck Stick |
+| L | - (and Nunchuck Z) |
+| R | + |
 
 To Exit : - and +  
 
 #### Gamecube controller :
 
-DC - Gamecube
+| Dreamcast | Gamecube |
+| --------- | -------- |
+| A | A |
+| B | B |
+| Y | Y |
+| X | X |
+| START | START |
+| D-PAD | D-PAD |
+| STICK | STICK |
+| L | L |
+| R | R |
 
-- A = A  
-- B = B  
-- Y = Y  
-- X = X  
-- START = START  
-- D-PAD = D-PAD
-- STICK = STICK
-- L = L  
-- R = R
+To exit : R + L + Z  
 
+#### Gamecube controller (Chuchu Rocket !) :
+
+Not implemented -
+Need to swap B and X
+
+| Dreamcast | Gamecube |
+| --------- | -------- |
+| A | A |
+| B | X |
+| Y | Y |
+| X | B |
+| START | START |
+| D-PAD | D-PAD |
+| STICK | STICK |
+| L | L |
+| R | R |
 
 To exit : R + L + Z  
 
@@ -172,7 +208,7 @@ While the emulator is still in alpha, the visual difference is limited for now.
 |------|----------| ------------------------- | 
 | **I4_STUB/I8_STUB** | Dummy algorythm  | Some element doesn't display at all, for max FPS |
 | **I4 (FAST)/I8 (FAST)** | Basic algorythm  | Display in grey Scale (Use for debug) |
-| **CI4 (FAST)/CI8 (FAST)** | Basic algorythm | Display mostly correctly (consume a bit of FPS) |
+| **CI4 (FAST)/CI8 (FAST)** | Basic algorythm | Display mostly correctly (consume a bit of FPS on some games) |
 | **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Should display better |
 | **RGB565** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
 
@@ -181,10 +217,18 @@ Cache setting (starting alpha 0.21)
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **CACHE_VERY_FAST** | skmp original algorythm (magic numbers). Very fast but buggy  | Max FPS |
-| **CACHE_FAST** | Fast and more accurate cache. Buggy in some games  | Good FPS |
+| **CACHE_FAST** | Fast and more accurate cache. Buggy in some games  | ??? FPS |
 | **CACHE_NORMAL** | Best accuracy. Display mostly correctly | Mid FPS |
 | **CACHE_QUALITY** | Best accuracy. Display mostly correctly | Mid FPS |
 | **CACHE_EXTRA** | Redraw every frame. Accurate (Only for dev & Debug) | Low FPS |
+
+ADVANCED_ALPHA
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO** | basic alpha threathment  | Not accurate |
+| **YES (default starting alpha 0.30)** | additionnal alpha threatment | Near perfect |
+
 
 See Compatiblity guide for hints depending of the games
 
