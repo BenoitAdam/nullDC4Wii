@@ -2643,11 +2643,12 @@ void DoRender()
   // Coordinate Projection Logic: Converts Dreamcast 1/W into Wii depth.
 
   // Allow W to be much smaller to push the far plane out for massive environments (like racing games)
-  if (vtx_min_Z <= 0.000001f)
-    vtx_min_Z = 0.000001f;
+  if (vtx_min_Z <= 0.001f)
+    vtx_min_Z = 0.001f;      // 0.001 is enough for most games
+    
+  if (vtx_max_Z < 0 || vtx_max_Z > 128 * 1024)      // Keep the 128*1024 check
+      vtx_max_Z = 10000.0f;                         // Reduced from 100,000 → 10,000
 
-  if (vtx_max_Z < 0 || vtx_max_Z > 128 * 1024) // or if (vtx_max_Z < 0 || vtx_max_Z > 1000000.0f) ?
-    vtx_max_Z = 100000.0f;
 
   // Extra guard: if EFB garbage or NaN slipped through...
   // Z range so that min >= max, the projection math below produces NaN/inf
@@ -2655,10 +2656,10 @@ void DoRender()
   // Reset to a safe default range so the frame renders without a crash.
   // Can be removed
   if (vtx_min_Z >= vtx_max_Z || vtx_max_Z != vtx_max_Z || vtx_min_Z != vtx_min_Z)
-  {
-    vtx_min_Z = 0.000001f;
-    vtx_max_Z = 100000.0f;  
-  }
+{
+    vtx_min_Z = 0.001f;
+    vtx_max_Z = 10000.0f;  
+}
 
   // extend range
   vtx_max_Z *= 1.001; // to not clip vtx_max verts
@@ -3211,15 +3212,13 @@ struct VertexDecoder
 // Clamping to 0.0001f keeps W finite and pushes the vertex safely to the far
 // plane where it is invisible but harmless.
 #define vert_base(dst, _x, _y, _z) /*VertexCount++;*/         \
-  float _safe_z = (_z < 0.000001f) ? 0.000001f : _z;         \
-  float W = 1.0f / _safe_z;                                   \
-  curVTX[dst].x = VTX_TFX(_x) * W;                           \
-  curVTX[dst].y = VTX_TFY(_y) * W;                           \
-  if (W > 0.0f && W < vtx_min_Z)                             \
-    vtx_min_Z = W;                                            \
-  if (W > 0.0f && W > vtx_max_Z)                             \
-    vtx_max_Z = W;                                            \
-  curVTX[dst].z = W; /*Linearly scaled later*/
+  float _safe_z = (_z < 0.001f) ? 0.001f : _z;                \
+  float W = 1.0f / _safe_z;                                    \
+  curVTX[dst].x = VTX_TFX(_x) * W;                             \
+  curVTX[dst].y = VTX_TFY(_y) * W;                             \
+  if (W > 0.0f && W < vtx_min_Z) vtx_min_Z = W;               \
+  if (W > 0.0f && W > vtx_max_Z) vtx_max_Z = W;               \
+  curVTX[dst].z = W;
 
   // Poly Vertex handlers
 #define vert_cvt_base vert_base(0, vtx->xyz[0], vtx->xyz[1], vtx->xyz[2])
