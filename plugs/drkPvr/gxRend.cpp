@@ -2642,7 +2642,7 @@ void DoRender()
   if (vtx_min_Z <= 0.000001f)
     vtx_min_Z = 0.000001f;
 
-  if (vtx_max_Z < 0 || vtx_max_Z > 128 * 1024)
+  if (vtx_max_Z < 0 || vtx_max_Z > 128 * 1024) // or if (vtx_max_Z < 0 || vtx_max_Z > 1000000.0f) ?
     vtx_max_Z = 100000.0f;
 
   // Extra guard: if EFB garbage or NaN slipped through...
@@ -3208,7 +3208,7 @@ struct VertexDecoder
 // Clamping to 0.0001f keeps W finite and pushes the vertex safely to the far
 // plane where it is invisible but harmless.
 #define vert_base(dst, _x, _y, _z) /*VertexCount++;*/         \
-  float _safe_z = (_z < 0.0001f) ? 0.0001f : _z;             \
+  float _safe_z = (_z < 0.000001f) ? 0.000001f : _z;         \
   float W = 1.0f / _safe_z;                                   \
   curVTX[dst].x = VTX_TFX(_x) * W;                           \
   curVTX[dst].y = VTX_TFY(_y) * W;                           \
