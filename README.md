@@ -365,7 +365,8 @@ All together, let's Cast the Dream.
 
 ### Special no thanks
 
-To all people not believing in this project
+- To all people not believing in this project
+- People constantly critisizing the fact AI is used in this project, being condescending or worse. Please Grow up.
 
 
 
