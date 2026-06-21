@@ -187,3 +187,18 @@ https://deepwiki.com/flyinghead/flycast/4.4-texture-management-and-caching
 VQ :
 
 Converting Dreamcast VQ (Vector Quantization) to Wii CMPR (DXT1/BC1) is the trickiest part of a port because they represent two fundamentally different ways of lying to the GPU to save space.The Technical Clash: VQ vs. CMPRDreamcast VQ (Vector Quantization):How it works: It uses a "Codebook." Think of it like a mosaic kit. The codebook contains 256 small $2 \times 2$ pixel tiles. The actual texture data is just a list of indices pointing to those tiles.Compression Ratio: It’s massive—roughly 8:1 or better.The Problem: Because it relies on a global codebook for the whole image, colors are shared across the entire texture.Wii CMPR (S3TC/DXT1):How it works: It divides the image into $4 \times 4$ pixel blocks. Each block has its own local 2-color palette, and the 16 pixels interpolate between those two colors.Compression Ratio: Always 6.4:1 (4 bits per pixel).The Conversion StrategySince you can't natively run a VQ codebook on the Wii's Hollywood GPU, you have two main paths:Option A: The "Safe" Route (VQ → RGB565/RGBA8)If you have enough MEM1/MEM2 space on the Wii, decompress the VQ texture entirely into a raw 16-bit or 32-bit format.Pros: Zero quality loss from the original DC asset.Cons: Uses significantly more VRAM than the original DC file.Option B: The "Efficient" Route (VQ → CMPR)This is what most professional "remasters" or homebrew ports do. You decompress the VQ to a raw bitmap in memory, then re-encode it using a Wii-specific CMPR encoder.The Trap: You are performing "Lossy to Lossy" conversion. The VQ already lost some detail; re-compressing to CMPR will introduce "blocky" artifacts, especially in gradients.Tip: If the original DC texture used 1-bit alpha (Punch-through), CMPR handles this perfectly. If it used 4-bit alpha (ARGB4444), CMPR will destroy the transparency quality, and you should use RGB5A3 instead.
+
+
+
+Optimisation opportunities in gxRend (to ask claude ) :
+
+======
+For Performance, do this : Fixed-depth projection optimization
+
+Replace dynamic per-vertex depth tracking with fixed near/far
+planes. Eliminates 2 branches per vertex for ~15-20% faster
+vertex processing. Daytona menu: 4→12 FPS.
+
+
+====
+Check twiddle algorythms, please optimiste
