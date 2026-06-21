@@ -79,7 +79,7 @@ extern "C" {
   int get_texture_cache_preset() { return g_texture_cache_preset; }
 }
 
-int g_ppz_write_preset = 0; // 1 for Test Drive / Demolition Racer
+int g_ppz_write_preset = 1; // 1 for Test Drive / Demolition Racer
 
 extern "C" {
   int get_ppz_write_preset() { return g_ppz_write_preset; }
@@ -473,15 +473,16 @@ void displayAccuracyMenu()
 #define OPT_GRAPHICS    4
 #define OPT_ACCURACY    5
 #define OPT_RATIO       6
-#define OPT_ADV_ALPHA   7
-#define OPT_FRAMESKIP   8
-#define OPT_TEX_CACHE   9
-#define OPT_4BPP        10
-#define OPT_8BPP        11
-#define OPT_PLAYERS     12
-#define OPT_CTRL_TYPE   13
-#define OPT_MORE_INFO   14
-#define OPT_ROW_COUNT   15
+#define OPT_PPZ_WRITE   7
+#define OPT_ADV_ALPHA   8
+#define OPT_FRAMESKIP   9
+#define OPT_TEX_CACHE   10
+#define OPT_4BPP        11
+#define OPT_8BPP        12
+#define OPT_PLAYERS     13
+#define OPT_CTRL_TYPE   14
+#define OPT_MORE_INFO   15
+#define OPT_ROW_COUNT   16
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -548,7 +549,15 @@ bool displayOptionsMenu()
     }
     printf("\n\n");
 
-    // --- Row 7: Advanced Alpha ---
+    // --- Row 7: PPZ Write ---
+    printf("%s PPZ_WRITE     : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
+    switch (g_ppz_write_preset) {
+      case 0: printf("[< NO  >]"); break;
+      case 1: printf("[< YES >]"); break;
+    }
+    printf("\n");
+
+    // --- Row 8: Advanced Alpha ---
     printf("%s ADVANCED ALPHA: ", (selectedRow == OPT_ADV_ALPHA) ? ">" : " ");
     switch (g_advanced_alpha_preset) {
       case 0: printf("[< NO            >]"); break;
@@ -649,6 +658,7 @@ bool displayOptionsMenu()
         case OPT_GRAPHICS:  g_graphism_preset      = (g_graphism_preset      + 3) % 4; break;
         case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 2) % 3; break;
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 2; break;
+        case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 3) % 4; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 3) % 4; break;
@@ -665,6 +675,7 @@ bool displayOptionsMenu()
         case OPT_GRAPHICS:  g_graphism_preset      = (g_graphism_preset      + 1) % 4; break;
         case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 1) % 3; break;
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 2; break;
+        case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 1) % 4; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 1) % 4; break;
@@ -1045,6 +1056,7 @@ int main(int argc, wchar *argv[])
       case 1: printf("FULLSCREEN\n"); break;
     }
     printf("Advanced Alpha : %s\n", g_advanced_alpha_preset ? "YES (DEBUG)" : "NO");
+    printf("PPZ_WRITE      : %s\n", g_ppz_write_preset ? "YES" : "NO");
     printf("Frameskipping  : ");
     switch(g_frameskip_preset) {
       case 0: printf("0\n");    break;

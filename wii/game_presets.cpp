@@ -31,6 +31,7 @@ extern int g_ratio_preset;
 extern int g_advanced_alpha_preset;
 extern int g_frameskip_preset;
 extern int g_texture_cache_preset;
+extern int g_ppz_write_preset;
 extern int g_4bpp_preset;
 extern int g_8bpp_preset;
 extern int g_player_count;
@@ -54,6 +55,7 @@ struct GamePreset
     int adv_alpha;
     int frameskip;
     int tex_cache;
+    int ppz_write;
     int bpp4;
     int bpp8;
     int players;
@@ -208,6 +210,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "adv_alpha"))  p->adv_alpha  = atoi(val);
     else if (key_eq(key, "frameskip"))  p->frameskip  = parse_frameskip(val);
     else if (key_eq(key, "tex_cache"))  p->tex_cache  = parse_tex_cache(val);
+    else if (key_eq(key, "ppz_write"))  p->ppz_write  = atoi(val);
     else if (key_eq(key, "4bpp"))       p->bpp4       = parse_bpp(val);
     else if (key_eq(key, "8bpp"))       p->bpp8       = parse_bpp(val);
     else if (key_eq(key, "players"))    p->players    = atoi(val);
@@ -267,6 +270,7 @@ void game_presets_load(const char* cfg_path)
             cur->accuracy = cur->graphics  = cur->ratio    = cur->adv_alpha = -1;
             cur->frameskip= cur->tex_cache = cur->bpp4     = cur->bpp8      = -1;
             cur->players  = cur->controller                                  = -1;
+            cur->ppz_write = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -340,6 +344,7 @@ void game_presets_apply(const char* filepath)
         if (p->adv_alpha  >= 0) { g_advanced_alpha_preset = p->adv_alpha;  printf("  adv_alpha  -> %d\n", p->adv_alpha);  }
         if (p->frameskip  >= 0) { g_frameskip_preset      = p->frameskip;  printf("  frameskip  -> %d\n", p->frameskip);  }
         if (p->tex_cache  >= 0) { g_texture_cache_preset  = p->tex_cache;  printf("  tex_cache  -> %d\n", p->tex_cache);  }
+        if (p->ppz_write  >= 0) { g_ppz_write_preset      = p->ppz_write;  printf("  ppz_write  -> %d\n", p->ppz_write);  }
         if (p->bpp4       >= 0) { g_4bpp_preset           = p->bpp4;       printf("  4bpp       -> %d\n", p->bpp4);       }
         if (p->bpp8       >= 0) { g_8bpp_preset           = p->bpp8;       printf("  8bpp       -> %d\n", p->bpp8);       }
         if (p->players    >= 0) { g_player_count          = p->players;    printf("  players    -> %d\n", p->players);    }
