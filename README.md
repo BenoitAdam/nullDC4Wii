@@ -21,6 +21,7 @@ a fork from https://github.com/skmp/nullDCe
 - Player 3/4 Gamecube/Wiimote
 - Fishing Rod/USB Keyboard/Lightgun/Maracas support (probably unsupported now)
 - Put external config file for controllers (controls.cfg)
+- User custom presets file
 
 ### Developer (Normal)
 
