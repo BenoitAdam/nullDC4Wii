@@ -2643,6 +2643,7 @@ void DoRender()
   // Coordinate Projection Logic: Converts Dreamcast 1/W into Wii depth.
 
   // Allow W to be much smaller to push the far plane out for massive environments (like racing games)
+  // Important : Keep 0.0001f ! 0.001f is not enough
   if (vtx_min_Z <= 0.0001f)
     vtx_min_Z = 0.0001f;
 
