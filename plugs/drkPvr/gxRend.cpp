@@ -2638,20 +2638,22 @@ void DoRender()
   // sanitise values
   // Coordinate Projection Logic: Converts Dreamcast 1/W into Wii depth.
 
-    if (vtx_min_Z <= 0.001)
-    vtx_min_Z = 0.001;
-  if (vtx_max_Z < 0 || vtx_max_Z > 128 * 1024)
-    vtx_max_Z = 1;
+  // Allow W to be much smaller to push the far plane out for massive environments (like racing games)
+  if (vtx_min_Z <= 0.000001f)
+    vtx_min_Z = 0.000001f;
 
-  // Extra guard: if EFB garbage or NaN slipped through and corrupted the
+  if (vtx_max_Z < 0 || vtx_max_Z > 128 * 1024)
+    vtx_max_Z = 100000.0f;
+
+  // Extra guard: if EFB garbage or NaN slipped through...
   // Z range so that min >= max, the projection math below produces NaN/inf
   // which desyncs the GX FIFO ("GFX Fifo Opcode unknown 0x64").
   // Reset to a safe default range so the frame renders without a crash.
   // Can be removed
   if (vtx_min_Z >= vtx_max_Z || vtx_max_Z != vtx_max_Z || vtx_min_Z != vtx_min_Z)
   {
-    vtx_min_Z = 0.001f;
-    vtx_max_Z = 100000.0f;  // was 1.0f -- caused flash by collapsing all geometry to near-plane
+    vtx_min_Z = 0.000001f;
+    vtx_max_Z = 100000.0f;  
   }
 
   // extend range
