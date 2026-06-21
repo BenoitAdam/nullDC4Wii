@@ -21,6 +21,7 @@ a fork from https://github.com/skmp/nullDCe
 - Player 3/4 Gamecube/Wiimote
 - Fishing Rod/USB Keyboard/Lightgun/Maracas support (probably unsupported now)
 - Put external config file for controllers (controls.cfg)
+- User custom presets file
 
 ### Developer (Normal)
 
@@ -217,7 +218,7 @@ Cache setting (starting alpha 0.21)
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **CACHE_VERY_FAST** | skmp original algorythm (magic numbers). Very fast but buggy  | Max FPS |
-| **CACHE_FAST** | Fast and more accurate cache. Buggy in some games  | ??? FPS |
+| **CACHE_FAST** | Broken for now, generally worse than VERY_FAST and NORMAL  | ??? FPS |
 | **CACHE_NORMAL** | Best accuracy. Display mostly correctly | Mid FPS |
 | **CACHE_QUALITY** | Best accuracy. Display mostly correctly | Mid FPS |
 | **CACHE_EXTRA** | Redraw every frame. Accurate (Only for dev & Debug) | Low FPS |
@@ -364,7 +365,8 @@ All together, let's Cast the Dream.
 
 ### Special no thanks
 
-To all people not believing in this project
+- To all people not believing in this project
+- People constantly critisizing the fact AI is used in this project, being condescending or worse. Please Grow up.
 
 
 
