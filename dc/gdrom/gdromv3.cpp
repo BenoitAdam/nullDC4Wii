@@ -507,7 +507,9 @@ void gd_process_spi_cmd()
 	switch(packet_cmd.data_8[0])
 	{
 	case SPI_TEST_UNIT	:
-		printf_spicmd("SPI_TEST_UNIT\n");
+    if(get_debug_loop() == 1){
+		  printf_spicmd("SPI_TEST_UNIT\n");
+    }
 
 		GDStatus.CHECK=SecNumber.Status==GD_BUSY;	//drive is ready ;)
 
