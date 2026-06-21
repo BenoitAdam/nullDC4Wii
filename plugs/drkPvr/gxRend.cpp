@@ -77,7 +77,7 @@ extern "C" int get_texture_cache_preset();
 extern "C" int get_ppz_write_preset();
 
 #define PER_POLYGON_Z_WRITE() (get_ppz_write_preset() == 1) // Fix Test-drive 6 draw distance
-
+  
 int frame_counter;
 
 #include "config.h"
@@ -382,6 +382,8 @@ VertexList *curLST = lists;
 VertexList *TransLST = 0;
 PolyParam *curMod = listModes;
 bool global_regd;
+float vtx_min_Z;
+float vtx_max_Z;
 
 char fps_text[512];
 
@@ -495,6 +497,8 @@ void reset_vtx_state()
   curLST = lists;
   curMod = listModes;
   global_regd = false;
+  vtx_min_Z = 131072;
+  vtx_max_Z = 0;
   tex_frame_reset(); // reset per-frame texture bump arena
 }
 
@@ -2638,17 +2642,31 @@ void DoRender()
   // sanitise values
   // Coordinate Projection Logic: Converts Dreamcast 1/W into Wii depth.
 
-   // ── Fixed projection planes (no per-vertex min/max tracking) ──
-  // This eliminates 2 branches per vertex → ~15-20% faster vertex processing.
-  const float NEAR = 0.001f;
-  const float FAR = 10000.0f;
+  // Allow W to be much smaller to push the far plane out for massive environments (like racing games)
+  if (vtx_min_Z <= 0.0001f)
+    vtx_min_Z = 0.0001f;
 
-  // extend range slightly to avoid clipping at the far plane
-  const float far_extended = FAR * 1.001f;
+  if (vtx_max_Z < 0 || vtx_max_Z > 128 * 1024)
+    vtx_max_Z = 100000.0f;
+
+  // Extra guard: if EFB garbage or NaN slipped through...
+  // Z range so that min >= max, the projection math below produces NaN/inf
+  // which desyncs the GX FIFO ("GFX Fifo Opcode unknown 0x64").
+  // Reset to a safe default range so the frame renders without a crash.
+  // Can be removed
+  if (vtx_min_Z >= vtx_max_Z || vtx_max_Z != vtx_max_Z || vtx_min_Z != vtx_min_Z)
+  {
+    vtx_min_Z = 0.0001f;
+    vtx_max_Z = 100000.0f;  
+  }
+
+  // extend range
+  vtx_max_Z *= 1.001; // to not clip vtx_max verts
+  // vtx_min_Z*=0.999;
 
   // convert to [-1 .. 0]
-  float p6 = -1.0f / (1.0f / far_extended - 1.0f / NEAR);
-  float p5 = p6 / NEAR;
+  float p6 = -1 / (1 / vtx_max_Z - 1 / vtx_min_Z);
+  float p5 = p6 / vtx_min_Z;
 
   // The projection matrix maps DC screen-space coords to GX clip space.
   // X aspect ratio is NOT corrected here — DC vertices are already in screen
@@ -3190,13 +3208,18 @@ struct VertexDecoder
 // the projection matrix in DoRender(), and ultimately desyncs the GX FIFO
 // producing "GFX Fifo Opcode unknown (0x64)".
 //
-// Clamping to 0.001f keeps W finite and pushes the vertex safely to the far
+// Clamping to 0.0001f keeps W finite and pushes the vertex safely to the far
 // plane where it is invisible but harmless.
 #define vert_base(dst, _x, _y, _z) /*VertexCount++;*/         \
-  float W = 1.0f / (_z < 0.001f ? 0.001f : _z);               \
-  curVTX[dst].x = VTX_TFX(_x) * W;                             \
-  curVTX[dst].y = VTX_TFY(_y) * W;                             \
-  curVTX[dst].z = W;
+  float _safe_z = (_z < 0.0001f) ? 0.0001f : _z;             \
+  float W = 1.0f / _safe_z;                                   \
+  curVTX[dst].x = VTX_TFX(_x) * W;                           \
+  curVTX[dst].y = VTX_TFY(_y) * W;                           \
+  if (W > 0.0f && W < vtx_min_Z)                             \
+    vtx_min_Z = W;                                            \
+  if (W > 0.0f && W > vtx_max_Z)                             \
+    vtx_max_Z = W;                                            \
+  curVTX[dst].z = W; /*Linearly scaled later*/
 
   // Poly Vertex handlers
 #define vert_cvt_base vert_base(0, vtx->xyz[0], vtx->xyz[1], vtx->xyz[2])
