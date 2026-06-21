@@ -47,7 +47,7 @@ extern "C" {
   int get_ratio_preset() { return g_ratio_preset; }
 }
 
-int g_advanced_alpha_preset = 0;
+int g_advanced_alpha_preset = 1;
 
 extern "C" {
   int get_advanced_alpha_preset() { return g_advanced_alpha_preset; }
@@ -490,7 +490,7 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H");
 
-    printf("NullDC4Wii - Alpha 0.29   OPTIONS\n");
+    printf("NullDC4Wii - Alpha 0.30   OPTIONS\n");
     printf("===================================\n\n");
 
     // --- Row 0: Launch ---
@@ -530,6 +530,7 @@ bool displayOptionsMenu()
       case 1: printf("[< BALANCED   >]"); break;
       case 2: printf("[< ACCURATE   >]"); break;
     }
+    printf(" (Tip: not much difference)");
     printf("\n");
 
     // --- Row 6: Ratio ---
@@ -543,8 +544,8 @@ bool displayOptionsMenu()
     // --- Row 7: Advanced Alpha ---
     printf("%s ADVANCED ALPHA: ", (selectedRow == OPT_ADV_ALPHA) ? ">" : " ");
     switch (g_advanced_alpha_preset) {
-      case 0: printf("[< NO  (DEFAULT) >]"); break;
-      case 1: printf("[< YES (DEBUG)   >]"); break;
+      case 0: printf("[< NO            >]"); break;
+      case 1: printf("[< YES (DEFAULT) >]"); break;
     }
     printf("\n");
 
@@ -700,7 +701,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - Alpha 0.29   ");
+    printf("\nNullDC4Wii - Alpha 0.30   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("(-) GRAPHICS: ");
@@ -721,7 +722,7 @@ int displayMenuAndSelectFile()
       case 0: printf("ORIGINAL  "); break;
       case 1: printf("FULLSCREEN"); break;
     }
-    printf("\nSelect a game file: (GDI works, see Github README for other formats)\n\n");
+    printf("\nSelect a game file: (GDI/CDI/BIN/CUE works)\n\n");
 
     int totalPages = (fileCount + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
     if (totalPages < 1) totalPages = 1;
