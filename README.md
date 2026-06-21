@@ -230,6 +230,15 @@ ADVANCED_ALPHA
 | **NO** | basic alpha threathment  | Not accurate |
 | **YES (default starting alpha 0.30)** | additionnal alpha threatment | Near perfect |
 
+PPZ_WRITE : PER POLYGON Z WRITE
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO** | No Per Polygon Z Write  | More compatible |
+| **YES (default)** | Per Polygon Z Write | More accurate |
+
+Try putting NO if you experience troubles, with HUD for example.
+
 
 See Compatiblity guide for hints depending of the games
 
