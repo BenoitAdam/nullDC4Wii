@@ -44,7 +44,7 @@ colour conversion during decompression.
 
 | DC format |Alpha| Best WiiGX format | More info                 | Works ? | Example texture using it |
 | --------- | --- | ----------------- | ------------------------- | ------- | --------------- |
-| RGB565    | 0   | RGB565            | identical format          | yes ?   |
+| RGB565    | 0   | RGB565            | identical format          | yes     | Ryo's Eyes |
 | ARGB1555  | 1   | RGB5A3            | closest 16-bit equivalent | yes     | Shenmue Menu & Tree + SEGA logo in Sega Tetris |
 | ARGB4444  | 4   | RGB5A3 or RGBA8   | RGB5A3 loses precision    | yes     | DC letters - Castlevania : Sonia / HUD / Big wall - Bios Background |
 | ARGB8888  | 8   | RGBA8             | perfect match             | no ?    | Guilty Gear X2, Capcom vs SNK 2, jojo ? |
