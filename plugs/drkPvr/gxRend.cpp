@@ -72,9 +72,13 @@ extern "C" int get_texture_cache_preset();
 #define CACHE_NORMAL()      (get_texture_cache_preset() == 2) // Perfect Result (to the cost of FPS)
 #define CACHE_QUALITY()     (get_texture_cache_preset() == 3) // 
 #define CACHE_EXTRA()       (get_texture_cache_preset() == 4) // For Debug only
-  
+
+// Per Polygon Z Write
+extern "C" int get_ppz_write_preset();
+
+#define PER_POLYGON_Z_WRITE() (get_ppz_write_preset() == 1) // Fix Test-drive 6 draw distance
+
 int frame_counter;
-int per_polygon_z_write = 0; // Untested for now
 
 #include "config.h"
 #include "gxRend.h"
@@ -2801,9 +2805,8 @@ void DoRender()
       }
 
       // ── Per-polygon Z write (ISP.ZWriteDis) ──────────────────────────────
-      // Real DC hardware honors ZWriteDis per polygon. Without this, sprites
-      // with ZWriteDis=1 stamp the Z-buffer and leave visible trails.
-      if(per_polygon_z_write == 1)
+      // Real DC hardware honors ZWriteDis per polygon. Fix sprites with ZWriteDis=1
+      if(PER_POLYGON_Z_WRITE())
       {
         bool z_write = !drawMod->isp.ZWriteDis;
         if (z_write != last_z_write)

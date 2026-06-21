@@ -79,6 +79,13 @@ extern "C" {
   int get_texture_cache_preset() { return g_texture_cache_preset; }
 }
 
+int g_ppz_write_preset = 0; // 1 for Test Drive / Demolition Racer
+
+extern "C" {
+  int get_ppz_write_preset() { return g_ppz_write_preset; }
+}
+
+
 int g_player_count = 2;
 
 extern "C" {
