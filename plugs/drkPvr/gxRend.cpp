@@ -130,7 +130,6 @@ void ApplyGraphismPreset() {
      8888 P      -> 8888 P
      565  DTP    -> 565 DP
      YUV  DT     -> ? 565 is possibe but LQ ...
-
 */
 
 // Macros for extracting color channels from Dreamcast-specific pixel formats.
@@ -748,7 +747,15 @@ pixelcvt_startVQ(conv565_VQ, 2, 2)
   return R | (G << 5) | (B << 11);
 }  // closes inner block
 }  // closes Convert
-  __forceinline static u16 ConvertPixel(u16 p) { return ABGR0565(p); }
+  // HACK: ConvertPixel now maps RGB565 to RGB5A3, treating black as transparent.
+  __forceinline static u16 ConvertPixel(u16 p) {
+      if (p == 0x0000) return 0x0000; // transparent in RGB5A3 (bit15=0)
+      u32 r = (p >> 11) & 0x1F;
+      u32 g = (p >> 5) & 0x3F;
+      u32 b = p & 0x1F;
+      // bit15 = 1 (opaque), bits 14-10 = R, 9-5 = G (drop LSB), 4-0 = B
+      return 0x8000 | (r << 10) | ((g >> 1) << 5) | b;
+  }
 };  // closes struct
 
 pixelcvt_startVQ(conv1555_VQ, 2, 2)
@@ -1628,7 +1635,12 @@ static void SetTextureParams(PolyParam *mod)
         // verify(tsp.TexU==tsp.TexV);
         twidle_tex(565);
       }
-      FMT = GX_TF_RGB565;
+      // HACK: For VQ-compressed RGB565, use RGB5A3 to allow alpha (black→transparent)
+      if (mod->tcw.NO_PAL.VQ_Comp) {
+          FMT = GX_TF_RGB5A3;
+      } else {
+          FMT = GX_TF_RGB565;
+      }
       break;
 
     case 2:
