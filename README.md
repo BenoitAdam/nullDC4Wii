@@ -357,6 +357,10 @@ That an additionnal ressources in CPU and we are limited. That may would make se
 
 Since I (BenoitAdam) digged the NullDC code, AI has been heavily used to make improvement to the emulator. The very first state of the emulator (alpha 0.02) is 99% hand written code by SKMP and NullDC contributors at the time. Only some few changes have been made to be able to recompile it and make it run. Various AI are used : MistalAI/ChatGPT/Codex/Claude and Deepseek. Claude is very convenient because of artifact. Gemini helped on some improvements, and Deepseek too.
 
+### I hate AI !
+
+It's ok, you have the right, but without AI this project wouldn't have been resurected. AI for code is really a big help, definitly not the same thing with AI generated images and videos. For information AI for image ask ~10x more power, AI for video ask ~100x more power.
+
 ## Ressources
 
 ### Dreamcast Emulators 
