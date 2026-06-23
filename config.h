@@ -225,6 +225,32 @@
 #define HOST_CPU CPU_X86
 #endif
 
+// ---- Sanity check: does HOST_ENDIAN actually match the real compiler/CPU? ----
+// See wii/config.h for the full explanation. Mirrored here because this is a
+// SEPARATE file from wii/config.h (same name, different folder) — anything
+// outside wii/ that does #include "config.h" falls through to this copy via
+// -I../, so it needs its own copy of the check, not just the wii one.
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && defined(__ORDER_LITTLE_ENDIAN__)
+	#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+		#if HOST_ENDIAN != ENDIAN_BIG
+			#error "Compiler reports BIG-ENDIAN target, but HOST_ENDIAN resolved to ENDIAN_LITTLE. Check that _WII (or your platform's macro) is actually defined in the Makefile/build flags."
+		#endif
+	#elif __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+		#if HOST_ENDIAN != ENDIAN_LITTLE
+			#error "Compiler reports LITTLE-ENDIAN target, but HOST_ENDIAN resolved to ENDIAN_BIG. Check your platform defines."
+		#endif
+	#endif
+#elif defined(__BIG_ENDIAN__)
+	#if HOST_ENDIAN != ENDIAN_BIG
+		#error "Compiler defines __BIG_ENDIAN__, but HOST_ENDIAN resolved to ENDIAN_LITTLE. Check that _WII (or your platform's macro) is actually defined in the Makefile/build flags."
+	#endif
+#elif defined(__LITTLE_ENDIAN__)
+	#if HOST_ENDIAN != ENDIAN_LITTLE
+		#error "Compiler defines __LITTLE_ENDIAN__, but HOST_ENDIAN resolved to ENDIAN_BIG. Check your platform defines."
+	#endif
+#endif
+// -------------------------------------------------------------------------------
+
 
 #if HOST_ARCH==ARCH_PPC && HOST_CPU!=CPU_PPC_BROADWAY
 #define USE_INTERP
