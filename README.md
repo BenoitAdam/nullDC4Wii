@@ -306,16 +306,68 @@ Leaving this link for now :
 
 https://wiibrew.org/wiki/DevkitPPC
 
-### Dolphin
+### Dolphin (for debug/testing)
 
 Activate :
 - SD Card
 - Display FPS
 - Advanced > Debug > Texture Format Overlay
+- VSync evenutally
 
 <img width="1366" height="728" alt="image" src="https://github.com/user-attachments/assets/4e1e3f65-2638-40c6-85a0-bcca3e4f43da" />
 
+## Questions and Answers (FAQ)
 
+
+### Why this emulator ?
+
+Because why not ? At first it was a POC (Proof Of Concept) but digging more and more, it seems somes games are achievable to 100% speed (in PAL50 mode). So yeah !
+
+### What games does work ?
+
+Please check the compatiblity Wiki : https://wiibrew.org/wiki/NullDC4Wii/Compatibility
+
+### Does it work on Wii U ?
+
+We have a Wii U fowarder that also use the speed boot of the Wii U (overcloack). A native port for Wii U could be done if someone wants to do port it.
+
+### Controls are messy / this doesn't work, etc...
+
+Working on it, this will need testing considering the amount of controller possibility existing.
+
+### Will THAT AMAZING ADVENTURE GAME be supported one day ?
+
+Probably not, this emulator prioritize multiplayer fun games to play friends with. Playing an adventure game like Shenmue or an RPG could be a very frustrating experience that I strongly do not recommand. Use Gamecube/Wii version (if it does exist) or a PC for emulation instead.
+
+### What can I do to help ?
+
+Try different games, parameters and report in the compatibility wiki : https://wiibrew.org/wiki/NullDC4Wii/Compatibility
+
+### Is 100% speed of the emulator achievable ?
+
+I think it could be achievable on some games. PAL50 helps in that case.
+
+Nonetheless, rewriting the emulator in pure assembly could definitly make the emulator way faster, but we don't have time to spend for this. Also, before doing that, it should be 100% functionnal in C.
+
+### Can it read Original games (GD-Rom) ?
+
+The Wii can't read those disc format. Maybe if you change the optical drive and with some code implementation, but that's not worth it.
+
+### Can it read CDI/Utopia disc ?
+
+Maybe it's possible, but we don't have time to focus on this. CDI Files on SD Card/USB are supported since alpha 0.28 anyway.
+
+### Will WinCE games be implemented ?
+
+That an additionnal ressources in CPU and we are limited. That may would make sense for a WiiU Port
+
+### How is AI involved in the project ?
+
+Since I (BenoitAdam) digged the NullDC code, AI has been heavily used to make improvement to the emulator. The very first state of the emulator (alpha 0.02) is 99% hand written code by SKMP and NullDC contributors at the time. Only some few changes have been made to be able to recompile it and make it run. Various AI are used : MistalAI/ChatGPT/Codex/Claude and Deepseek. Claude is very convenient because of artifact. Gemini helped on some improvements, and Deepseek too.
+
+### I hate AI !
+
+It's ok, you have the right, but without AI this project wouldn't have been resurected. AI for code is really a big help, definitly not the same thing with AI generated images and videos. For information AI for image ask ~10x more power, AI for video ask ~100x more power.
 
 ## Ressources
 
@@ -369,6 +421,7 @@ All together, let's Cast the Dream.
 
 - skmp because he's the god
 - Senryoku, develloper of Deecy emulator
+- Everyone on emuvdev/ discord
 - All testers and all futur testers
 - People actually helping me on the wiibrew wiki
 
