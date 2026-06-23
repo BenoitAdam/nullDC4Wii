@@ -349,6 +349,14 @@ I think it could be achievable on some games. PAL50 helps in that case.
 
 Nonetheless, rewriting the emulator in pure assembly could definitly make the emulator way faster, but we don't have time to spend for this. Also, before doing that, it should be 100% functionnal in C.
 
+### Can it read Original games (GD-Rom) ?
+
+The Wii can't read those disc format. Maybe if you change the optical drive and with some code implementation, but that's not worth it.
+
+### Can it read CDI/Utopia disc ?
+
+Maybe it's possible, but we don't have time to focus on this. CDI Files on SD Card/USB are supported since alpha 0.28 anyway.
+
 ### Will WinCE games be implemented ?
 
 That an additionnal ressources in CPU and we are limited. That may would make sense for a WiiU Port
