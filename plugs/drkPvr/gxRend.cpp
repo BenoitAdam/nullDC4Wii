@@ -749,12 +749,11 @@ pixelcvt_startVQ(conv565_VQ, 2, 2)
 }  // closes Convert
   // HACK: ConvertPixel now maps RGB565 to RGB5A3, treating black as transparent.
   __forceinline static u16 ConvertPixel(u16 p) {
-      if (p == 0x0000) return 0x0000; // transparent in RGB5A3 (bit15=0)
-      u32 r = (p >> 11) & 0x1F;
-      u32 g = (p >> 5) & 0x3F;
-      u32 b = p & 0x1F;
-      // bit15 = 1 (opaque), bits 14-10 = R, 9-5 = G (drop LSB), 4-0 = B
-      return 0x8000 | (r << 10) | ((g >> 1) << 5) | b;
+    if (p == 0x0000) return 0x8000; // opaque black (fixes depth write)
+    u32 r = (p >> 11) & 0x1F;
+    u32 g = (p >> 5) & 0x3F;
+    u32 b = p & 0x1F;
+    return 0x8000 | (r << 10) | ((g >> 1) << 5) | b;
   }
 };  // closes struct
 
@@ -2779,12 +2778,12 @@ void DoRender()
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
           // alpha_fmt value :
           // fmt == 0 needed for Chuchu when placing an arrow
-          // fmt == 1 bug : causes Ine-San and Ryo's hand to disapear
+          // fmt == 1 needed for keeping fast FPS in castlevania
           // fmt == 2 needed for ChuChu logo / CrazyTaxiGO! & Dreamcast spiral
           // fmt == 5 needed for Sega Tetris score
           // fmt == 6 needed ?
           // fmt == 7 needed ?
-          int alpha_fmt = (fmt == 0 || fmt == 2 || fmt == 5 || fmt == 6 || fmt == 7) ? 1 : 0;
+          int alpha_fmt = (fmt == 0 || fmt == 1 || fmt == 2 || fmt == 5 || fmt == 6 || fmt == 7) ? 1 : 0;
           // We maybe could also put specific handling to avoid any FPS dropdown :
           /*
           int alpha_fmt;
