@@ -167,8 +167,8 @@ union TCW
     {
 #if HOST_ENDIAN == ENDIAN_LITTLE
         u32 TexAddr     : 21;
-        u32 Reserved    : 4;
         u32 StrideSel   : 1;
+        u32 Reserved    : 4;
         u32 ScanOrder   : 1;
         u32 PixelFmt    : 3;
         u32 VQ_Comp     : 1;
@@ -178,8 +178,8 @@ union TCW
         u32 VQ_Comp     : 1;
         u32 PixelFmt    : 3;
         u32 ScanOrder   : 1;
-        u32 StrideSel   : 1;
         u32 Reserved    : 4;
+        u32 StrideSel   : 1;
         u32 TexAddr     : 21;
 #endif
     } NO_PAL;
