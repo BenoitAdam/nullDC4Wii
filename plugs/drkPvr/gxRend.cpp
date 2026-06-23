@@ -77,7 +77,13 @@ extern "C" int get_texture_cache_preset();
 extern "C" int get_ppz_write_preset();
 
 #define PER_POLYGON_Z_WRITE() (get_ppz_write_preset() == 1) // Fix Test-drive 6 draw distance
-  
+
+// 2D Framebuffer Rendering
+int framebuffer_2d = 0;
+
+// GX Accurate
+int gx_accurate = 0;
+
 int frame_counter;
 
 #include "config.h"
@@ -2532,11 +2538,20 @@ void DoRender()
   GX_InvVtxCache();
   GX_InvalidateTexAll();
 
+  if(gx_accurate) {
   // Single vertex format, always 24 bytes/vertex (POS+CLR0+TEX0).
   // VCD never changes mid-stream to avoid CP packet FIFO misalignment.
   GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS,  GX_POS_XYZ,  GX_F32,   0);
   GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
   GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST,   GX_F32,   0);
+  } else {
+  // Define the vertex format for the GX pipeline.
+  GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+  GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0);
+  GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+  }
+																	 
+  
 
   GX_SetNumChans(1);
   GX_SetNumTexGens(1);
@@ -3080,27 +3095,31 @@ void StartRender()
 
   if (FB_W_SOF1 & 0x1000000)
   {
-    if (s_did_3d_render)
-    {
-      if(DEBUG_MESSAGE()) printf("[PATH] 2D-after-3D: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
+    if(framebuffer_2d){
+      if (s_did_3d_render)
+      {
+        if(DEBUG_MESSAGE()) printf("[PATH] 2D-after-3D: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
+          FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
+        s_did_3d_render = false;
+        GX_DrawDone();
+        GX_CopyDisp(frameBuffer[fb], GX_TRUE);
+        VIDEO_SetNextFramebuffer(frameBuffer[fb]);
+        VIDEO_Flush();
+        wii_audio_frame();
+        // VIDEO_WaitVSync() // Not necessary here (don't block the SH4 thread)
+        FrameCount++;
+        return;
+      }
+
+      if(DEBUG_MESSAGE()) printf("[PATH] 2D-blit: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
         FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
-      s_did_3d_render = false;
-      GX_DrawDone();
-      GX_CopyDisp(frameBuffer[fb], GX_TRUE);
-      VIDEO_SetNextFramebuffer(frameBuffer[fb]);
-      VIDEO_Flush();
-      wii_audio_frame();
-      // VIDEO_WaitVSync() // Not necessary here (don't block the SH4 thread)
+
+      PresentFramebuffer();
       FrameCount++;
       return;
+    } else {
+      return; // just return
     }
-
-    if(DEBUG_MESSAGE()) printf("[PATH] 2D-blit: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
-      FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
-
-    PresentFramebuffer();
-    FrameCount++;
-    return;
   }
 
   if(DEBUG_MESSAGE()) printf("[PATH] 3D: FB_W_SOF1=%08X FB_R_SOF1=%08X VtxCnt=%d lists=%d\n",
