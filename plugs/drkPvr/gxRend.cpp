@@ -2781,8 +2781,10 @@ void DoRender()
           // fmt == 0 needed for Chuchu when placing an arrow
           // fmt == 1 bug : causes Ine-San and Ryo's hand to disapear
           // fmt == 2 needed for ChuChu logo / CrazyTaxiGO! & Dreamcast spiral
+          // fmt == 5 needed for Sega Tetris score
+          // fmt == 6 needed ?
           // fmt == 7 needed ?
-          int alpha_fmt = (fmt == 0 || fmt == 2 || fmt == 7) ? 1 : 0;
+          int alpha_fmt = (fmt == 0 || fmt == 2 || fmt == 5 || fmt == 6 || fmt == 7) ? 1 : 0;
           // We maybe could also put specific handling to avoid any FPS dropdown :
           /*
           int alpha_fmt;
