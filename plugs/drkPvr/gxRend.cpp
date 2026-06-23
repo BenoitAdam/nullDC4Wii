@@ -2779,11 +2779,10 @@ void DoRender()
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
           // alpha_fmt value :
           // fmt == 0 needed for Chuchu when placing an arrow
-          // fmt == 1 needed ?
+          // fmt == 1 bug : causes Ine-San and Ryo's hand to disapear
           // fmt == 2 needed for ChuChu logo / CrazyTaxiGO! & Dreamcast spiral
           // fmt == 7 needed ?
-          // AI Suggest int alpha_fmt = (fmt == 0 || fmt == 1 || fmt == 2|| fmt == 7) ? 1 : 0;
-          int alpha_fmt = (fmt == 0 || fmt == 1 || fmt == 2 || fmt == 7) ? 1 : 0;
+          int alpha_fmt = (fmt == 0 || fmt == 2 || fmt == 7) ? 1 : 0;
           // We maybe could also put specific handling to avoid any FPS dropdown :
           /*
           int alpha_fmt;
