@@ -28,9 +28,11 @@ extern "C" int get_ratio_preset();
 #define ORIGINAL() (get_ratio_preset() == 0)
 #define FULLSCREEN() (get_ratio_preset() == 1)
 
-// Advanced alpha (DEBUG - test)
+// Advanced alpha
 extern "C" int get_advanced_alpha_preset();
 #define ADVANCED_ALPHA() (get_advanced_alpha_preset() == 1)
+
+bool use_adv_alpha = ADVANCED_ALPHA(); // compute once
 
 // This is defined in main.cpp
 extern "C" int get_debug_message();
@@ -2726,7 +2728,6 @@ void DoRender()
   GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
 
-  int last_textured = -1;  // track texture state to skip redundant GX calls
   int last_alpha_fmt = -1; // -1 = unset
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
@@ -2758,9 +2759,7 @@ void DoRender()
       {
         GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
       }
-      if (1)
-      {
-        
+      
 
         // ARGB1555 (fmt 0/7) and ARGB4444 (fmt 2) carry their own alpha in the texture.
         // On real DC hardware the vertex alpha is ignored for these formats — the PVR
@@ -2780,7 +2779,8 @@ void DoRender()
         }
 
         // This is more accurate for alpha. May cost CPU cycles
-        if (ADVANCED_ALPHA())
+
+        if (use_adv_alpha)
         {
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
           // alpha_fmt value :
@@ -2817,12 +2817,6 @@ void DoRender()
             last_alpha_fmt = alpha_fmt;
           }
         }
-      }
-      else
-      {
-        // Untextured polygon — vertex alpha is meaningful as-is, never override it.
-        force_vtx_alpha_opaque = false;
-      }
 
       // ── Per-polygon Z write (ISP.ZWriteDis) ──────────────────────────────
       // Real DC hardware honors ZWriteDis per polygon. Fix sprites with ZWriteDis=1
