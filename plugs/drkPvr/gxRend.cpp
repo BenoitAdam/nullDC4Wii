@@ -2749,26 +2749,18 @@ void DoRender()
     s32 count = drawLST->count;
     if (count < 0)
     {
-      int is_textured = drawMod->pcw.Texture ? 1 : 0;
-      if (is_textured != last_textured)
+      if (drawMod->pcw.Texture)
       {
-        if (is_textured)
-        {
-          GX_SetNumTexGens(1);
-          GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
-          GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
-        }
-        else
-        {
-          GX_SetNumTexGens(0);
-          GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
-          GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
-        }
-        last_textured = is_textured;
-      }
-      if (is_textured)
-      {
+
         SetTextureParams(drawMod);
+      }
+      else
+      {
+        GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+      }
+      if (1)
+      {
+        
 
         // ARGB1555 (fmt 0/7) and ARGB4444 (fmt 2) carry their own alpha in the texture.
         // On real DC hardware the vertex alpha is ignored for these formats — the PVR
