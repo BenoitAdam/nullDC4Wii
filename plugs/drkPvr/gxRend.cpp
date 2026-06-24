@@ -1222,10 +1222,9 @@ static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
         for (u32 col = 0; col < 4; col += 2)
         {
           u32 word = src32[(y*w + bx+col) / 2];
-          // Confirmed via hardware docs + debug logs: per u32 word, byte order
-          // is [Y0][U][Y1][V] (low to high), i.e. "Y0U"+"Y1V" pairs.
-          s32 Y0=(word>> 0)&255, Yu=(word>> 8)&255;
-          s32 Y1=(word>>16)&255, Yv=(word>>24)&255;
+          // Byte order
+          s32 Y0=(word>> 0)&255, Yv=(word>> 8)&255;
+          s32 Y1=(word>>16)&255, Yu=(word>>24)&255;
           block_pixels[row*4+col  ] = (u16)YUV422(Y0,Yu,Yv);
           block_pixels[row*4+col+1] = (u16)YUV422(Y1,Yu,Yv);
         }
@@ -1276,9 +1275,9 @@ static void YUV422_to_CMPR_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
         u16 buf2 = (u16)(w1 >> 16);
         u16 buf3 = (u16)(w1      );
 
-        s32 Y00 = buf0 & 255; s32 Yu = (buf0 >> 8) & 255;
+        s32 Y00 = buf0 & 255; s32 Yv = (buf0 >> 8) & 255;
         s32 Y10 = buf1 & 255;
-        s32 Y01 = buf2 & 255; s32 Yv = (buf2 >> 8) & 255;
+        s32 Y01 = buf2 & 255; s32 Yu = (buf2 >> 8) & 255;
         s32 Y11 = buf3 & 255;
 
         block_pixels[row*4+col    ] = (u16)YUV422(Y00, Yu, Yv);
@@ -1322,9 +1321,9 @@ static void YUV422_to_RGBA8_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
       {
         u32 x    = tx*4 + col;
         u32 word = src32[(y*w + x) / 2];
-        // Confirmed layout: [Y0][U][Y1][V] low to high.
-        s32 Y0=(word>> 0)&255, Yu=(word>> 8)&255;
-        s32 Y1=(word>>16)&255, Yv=(word>>24)&255;
+        // Layout        
+        s32 Y0=(word>> 0)&255, Yv=(word>> 8)&255;
+        s32 Y1=(word>>16)&255, Yu=(word>>24)&255;
         u16 c0 = (u16)YUV422(Y0,Yu,Yv);
         u16 c1 = (u16)YUV422(Y1,Yu,Yv);
         u32 p0 = row*4+col, p1 = row*4+col+1;
@@ -1363,9 +1362,10 @@ static void YUV422_to_RGBA8_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
       u16 buf2 = (u16)(w1 >> 16);
       u16 buf3 = (u16)(w1      );
 
-      s32 Y00 = buf0 & 255; s32 Yu = (buf0 >> 8) & 255;
+      // FIX: swap Yu/Yv source halves (was crossing R<->B, e.g. orange -> blue)
+      s32 Y00 = buf0 & 255; s32 Yv = (buf0 >> 8) & 255;
       s32 Y10 = buf1 & 255;
-      s32 Y01 = buf2 & 255; s32 Yv = (buf2 >> 8) & 255;
+      s32 Y01 = buf2 & 255; s32 Yu = (buf2 >> 8) & 255;
       s32 Y11 = buf3 & 255;
 
       u16 c00 = (u16)YUV422(Y00, Yu, Yv);
@@ -1703,9 +1703,9 @@ static void SetTextureParams(PolyParam *mod)
         {
           u32 word = raw32[0];
           s32 Y0 = (word >>  0) & 255;
-          s32 Yu = (word >>  8) & 255;
+          s32 Yv = (word >>  8) & 255;
           s32 Y1 = (word >> 16) & 255;
-          s32 Yv = (word >> 24) & 255;
+          s32 Yu = (word >> 24) & 255;
           u16 c0 = (u16)YUV422(Y0, Yu, Yv);
           u16 c1 = (u16)YUV422(Y1, Yu, Yv);
           printf("[YUV] planar-style decode word0: Y0=%d Y1=%d U=%d V=%d\n", Y0, Y1, Yu, Yv);
@@ -1725,9 +1725,9 @@ static void SetTextureParams(PolyParam *mod)
           u16 buf1 = (u16)(tw0      );
           u16 buf2 = (u16)(tw1 >> 16);
           u16 buf3 = (u16)(tw1      );
-          s32 Y00 = buf0 & 255; s32 Yu = (buf0 >> 8) & 255;
+          s32 Y00 = buf0 & 255; s32 Yv = (buf0 >> 8) & 255;
           s32 Y10 = buf1 & 255;
-          s32 Y01 = buf2 & 255; s32 Yv = (buf2 >> 8) & 255;
+          s32 Y01 = buf2 & 255; s32 Yu = (buf2 >> 8) & 255;
           s32 Y11 = buf3 & 255;
           printf("[YUV] twiddled-style decode block0: tw_idx=%u raw=%08X %08X\n", tw, tw0, tw1);
           printf("[YUV]   Y00=%d Y10=%d Y01=%d Y11=%d U=%d V=%d\n", Y00, Y10, Y01, Y11, Yu, Yv);
