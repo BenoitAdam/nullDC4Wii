@@ -118,10 +118,10 @@ T FASTCALL ReadMem_area0(u32 addr)
 
 	// --- G2 Reserved: 0x600800 - 0x6FFFFF (pages 0x60-0x6F, high range) ---
 	if (base >= 0x60 && base <= 0x6F && addr >= 0x00600800)
-	{
-		EMUERROR2("Read from G2 (Reserved), addr=%x", addr);
-		return (T)0;
-	}
+{
+    // G2 devices (Modem, BBA, etc.) – not emulated; return 0
+    return (T)0;
+}
 
 	// --- AICA Sound Control: 0x700000 - 0x707FFF (page 0x70) ---
 	if (base == 0x70 && addr <= 0x00707FFF)
@@ -221,10 +221,10 @@ void FASTCALL WriteMem_area0(u32 addr, T data)
 
 	// --- G2 Reserved: 0x600800 - 0x6FFFFF ---
 	if (base >= 0x60 && base <= 0x6F && addr >= 0x00600800)
-	{
-		EMUERROR4("Write to G2 (Reserved), addr=%x, data=%x, sz=%d", addr, data, sz);
-		return;
-	}
+{
+    // Ignore writes to G2 devices
+    return;
+}
 
 	// --- AICA Sound Control: 0x700000 - 0x707FFF ---
 	if (base == 0x70 && addr <= 0x00707FFF)
