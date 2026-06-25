@@ -2732,6 +2732,7 @@ void DoRender()
   GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
 
+  int last_textured = -1;  // track texture state to skip redundant GX calls
   int last_alpha_fmt = -1; // -1 = unset
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
@@ -2754,16 +2755,26 @@ void DoRender()
     s32 count = drawLST->count;
     if (count < 0)
     {
-      if (drawMod->pcw.Texture)
+      int is_textured = drawMod->pcw.Texture ? 1 : 0;
+      if (is_textured != last_textured)
       {
-
+        if (is_textured)
+        {
+          GX_SetNumTexGens(1);
+          GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
+          GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
+        }
+        else
+        {
+          GX_SetNumTexGens(0);
+          GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+          GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+        }
+        last_textured = is_textured;
+      }
+      if (is_textured)
+      {
         SetTextureParams(drawMod);
-      }
-      else
-      {
-        GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
-      }
-      
 
         // ARGB1555 (fmt 0/7) and ARGB4444 (fmt 2) carry their own alpha in the texture.
         // On real DC hardware the vertex alpha is ignored for these formats — the PVR
@@ -2783,8 +2794,7 @@ void DoRender()
         }
 
         // This is more accurate for alpha. May cost CPU cycles
-
-        if (use_adv_alpha)
+        if (ADVANCED_ALPHA())
         {
           u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
           // alpha_fmt value :
@@ -2821,6 +2831,12 @@ void DoRender()
             last_alpha_fmt = alpha_fmt;
           }
         }
+      }
+      else
+      {
+        // Untextured polygon — vertex alpha is meaningful as-is, never override it.
+        force_vtx_alpha_opaque = false;
+      }
 
       // ── Per-polygon Z write (ISP.ZWriteDis) ──────────────────────────────
       // Real DC hardware honors ZWriteDis per polygon. Fix sprites with ZWriteDis=1
