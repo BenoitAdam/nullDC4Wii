@@ -3515,8 +3515,13 @@ struct VertexDecoder
 //
 // Clamping to 0.0001f keeps W finite and pushes the vertex safely to the far
 // plane where it is invisible but harmless.
+//
+// NOTE: the comparison below is intentionally "_z >= 0.0001f" (not "_z < 0.0001f")
+// so that NaN falls into the clamp. Per IEEE-754, every relational comparison
+// against NaN is false, so "NaN < 0.0001f" is false and a "<"-based ternary lets
+// NaN pass through unclamped, defeating the whole point of this guard.
 #define vert_base(dst, _x, _y, _z) /*VertexCount++;*/         \
-  float _safe_z = (_z < 0.0001f) ? 0.0001f : _z;             \
+  float _safe_z = (_z >= 0.0001f) ? _z : 0.0001f;            \
   float W = 1.0f / _safe_z;                                   \
   curVTX[dst].x = VTX_TFX(_x) * W;                           \
   curVTX[dst].y = VTX_TFY(_y) * W;                           \
