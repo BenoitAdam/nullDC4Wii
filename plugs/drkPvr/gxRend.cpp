@@ -81,10 +81,14 @@ extern "C" int get_ppz_write_preset();
 #define PER_POLYGON_Z_WRITE() (get_ppz_write_preset() == 1) // Fix Test-drive 6 draw distance
 
 // 2D Framebuffer Rendering
-int framebuffer_2d = 0;
+extern "C" int get_framebuffer_2d();
+
+#define FRAMEBUFFER_2D() (get_framebuffer_2d() == 1) // Can get worse or better fps/visuals
 
 // GX Accurate
-int gx_accurate = 0;
+extern "C" int get_gx_accurate();
+
+#define GX_ACCURATE() (get_gx_accurate() == 1)
 
 int frame_counter;
 
@@ -2540,7 +2544,7 @@ void DoRender()
   GX_InvVtxCache();
   GX_InvalidateTexAll();
 
-  if(gx_accurate) {
+  if(GX_ACCURATE()) {
   // Single vertex format, always 24 bytes/vertex (POS+CLR0+TEX0).
   // VCD never changes mid-stream to avoid CP packet FIFO misalignment.
   GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS,  GX_POS_XYZ,  GX_F32,   0);
@@ -3081,7 +3085,7 @@ void StartRender()
 
   if (FB_W_SOF1 & 0x1000000)
   {
-    if(framebuffer_2d){
+    if(FRAMEBUFFER_2D()){
       if (s_did_3d_render)
       {
         if(DEBUG_MESSAGE()) printf("[PATH] 2D-after-3D: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",

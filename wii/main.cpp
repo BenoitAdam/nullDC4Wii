@@ -85,6 +85,17 @@ extern "C" {
   int get_ppz_write_preset() { return g_ppz_write_preset; }
 }
 
+int g_framebuffer_2d = 0; // 1 to activate 2D Framebuffer
+
+extern "C" {
+  int get_framebuffer_2d() { return g_framebuffer_2d; }
+}
+
+int g_gx_accurate = 0; // 1 to activate GX_ACCURATE
+
+extern "C" {
+  int get_gx_accurate() { return g_gx_accurate; }
+}
 
 int g_player_count = 2;
 
@@ -475,14 +486,16 @@ void displayAccuracyMenu()
 #define OPT_RATIO       6
 #define OPT_PPZ_WRITE   7
 #define OPT_ADV_ALPHA   8
-#define OPT_FRAMESKIP   9
-#define OPT_TEX_CACHE   10
-#define OPT_4BPP        11
-#define OPT_8BPP        12
-#define OPT_PLAYERS     13
-#define OPT_CTRL_TYPE   14
-#define OPT_MORE_INFO   15
-#define OPT_ROW_COUNT   16
+#define OPT_FRAMEBUFFER_2D 9
+#define OPT_GX_ACCURATE 10
+#define OPT_FRAMESKIP   11
+#define OPT_TEX_CACHE   12
+#define OPT_4BPP        13
+#define OPT_8BPP        14
+#define OPT_PLAYERS     15
+#define OPT_CTRL_TYPE   16
+#define OPT_MORE_INFO   17
+#define OPT_ROW_COUNT   18
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -562,6 +575,23 @@ bool displayOptionsMenu()
     switch (g_advanced_alpha_preset) {
       case 0: printf("[< NO            >]"); break;
       case 1: printf("[< YES (DEFAULT) >]"); break;
+    }
+    printf("\n");
+
+    // --- Row 9: 2D Framebuffer ---
+    printf("%s 2D FRAMEBUFFER: ", (selectedRow == OPT_FRAMEBUFFER_2D) ? ">" : " ");
+    switch (g_framebuffer_2d) {
+      case 0: printf("[< NO  >]"); break;
+      case 1: printf("[< YES >]"); break;
+    }
+    printf(" (Tip: try for 2D games)");
+    printf("\n");
+
+    // --- Row 10: GX Accurate ---
+    printf("%s GX_ACCURATE   : ", (selectedRow == OPT_GX_ACCURATE) ? ">" : " ");
+    switch (g_gx_accurate) {
+      case 0: printf("[< NO  >]"); break;
+      case 1: printf("[< YES >]"); break;
     }
     printf("\n");
 
@@ -660,6 +690,8 @@ bool displayOptionsMenu()
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 2; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
+        case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
+        case OPT_GX_ACCURATE: g_gx_accurate         = (g_gx_accurate           + 1) % 2; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 3) % 4; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 3) % 4; break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 4) % 5; break;
@@ -677,6 +709,8 @@ bool displayOptionsMenu()
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 2; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
+        case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
+        case OPT_GX_ACCURATE: g_gx_accurate         = (g_gx_accurate           + 1) % 2; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 1) % 4; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 1) % 4; break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 1) % 5; break;
@@ -1056,6 +1090,8 @@ int main(int argc, wchar *argv[])
       case 1: printf("FULLSCREEN\n"); break;
     }
     printf("Advanced Alpha : %s\n", g_advanced_alpha_preset ? "YES (DEBUG)" : "NO");
+    printf("2D Framebuffer : %s\n", g_framebuffer_2d ? "YES" : "NO");
+    printf("GX_ACCURATE    : %s\n", g_gx_accurate ? "YES" : "NO");
     printf("PPZ_WRITE      : %s\n", g_ppz_write_preset ? "YES" : "NO");
     printf("Frameskipping  : ");
     switch(g_frameskip_preset) {

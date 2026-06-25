@@ -36,6 +36,8 @@ extern int g_4bpp_preset;
 extern int g_8bpp_preset;
 extern int g_player_count;
 extern int g_controller_type;
+extern int g_framebuffer_2d;
+extern int g_gx_accurate;
 
 // ---------------------------------------------------------------------------
 // Internal structures
@@ -60,6 +62,8 @@ struct GamePreset
     int bpp8;
     int players;
     int controller;
+    int framebuffer_2d;
+    int gx_accurate;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -215,6 +219,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "8bpp"))       p->bpp8       = parse_bpp(val);
     else if (key_eq(key, "players"))    p->players    = atoi(val);
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);
+    else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = atoi(val);
+    else if (key_eq(key, "gx_accurate"))    p->gx_accurate    = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -271,6 +277,7 @@ void game_presets_load(const char* cfg_path)
             cur->frameskip= cur->tex_cache = cur->bpp4     = cur->bpp8      = -1;
             cur->players  = cur->controller                                  = -1;
             cur->ppz_write = -1;
+            cur->framebuffer_2d = cur->gx_accurate = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -349,6 +356,8 @@ void game_presets_apply(const char* filepath)
         if (p->bpp8       >= 0) { g_8bpp_preset           = p->bpp8;       printf("  8bpp       -> %d\n", p->bpp8);       }
         if (p->players    >= 0) { g_player_count          = p->players;    printf("  players    -> %d\n", p->players);    }
         if (p->controller >= 0) { g_controller_type       = p->controller; printf("  controller -> %d\n", p->controller); }
+        if (p->framebuffer_2d >= 0) { g_framebuffer_2d    = p->framebuffer_2d; printf("  framebuffer_2d -> %d\n", p->framebuffer_2d); }
+        if (p->gx_accurate    >= 0) { g_gx_accurate       = p->gx_accurate;    printf("  gx_accurate    -> %d\n", p->gx_accurate);    }
 
         return; // First match only
     }
