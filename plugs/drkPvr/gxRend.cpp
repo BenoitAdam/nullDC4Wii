@@ -88,11 +88,6 @@ extern "C" int get_framebuffer_2d();
 
 #define FRAMEBUFFER_2D() (get_framebuffer_2d() == 1) // Can get worse or better fps/visuals
 
-// GX Accurate
-extern "C" int get_gx_accurate();
-
-#define GX_ACCURATE() (get_gx_accurate() == 1)
-
 // FMV Format Selection
 extern "C" int get_fmv_format_preset();
 
@@ -2777,18 +2772,20 @@ void DoRender()
   GX_InvVtxCache();
   GX_InvalidateTexAll();
 
-  if(GX_ACCURATE()) {
+  // GX ACCURATE
   // Single vertex format, always 24 bytes/vertex (POS+CLR0+TEX0).
   // VCD never changes mid-stream to avoid CP packet FIFO misalignment.
   GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS,  GX_POS_XYZ,  GX_F32,   0);
   GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
   GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST,   GX_F32,   0);
-  } else {
+
+  // OLD GX ACCURATE (better in some cases ?)
   // Define the vertex format for the GX pipeline.
-  GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
-  GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0);
-  GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
-  }
+  // GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+  // GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0);
+  // GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+
+  // Note : making an if/else statement here also cause FIFO (CPU desynchronisation)
 																	 
   
 
