@@ -40,6 +40,9 @@ extern "C" int get_debug_message();
 
 extern "C" int get_debug_loop();
 
+// Specific debug for FMV
+int fmv_debug = 0;
+
 // Frame skipping
 extern "C" int get_frameskip_preset();
 
@@ -1205,11 +1208,26 @@ static void encode_cmpr_block(const u16 *src, u8 *dst)
   dst[6]=(u8)(selectors>> 8); dst[7]=(u8)(selectors    );
 }
 
+// Real per-row pixel stride for the planar YUV422 source, independent of the
+// destination CMPR block width (which must stay == the declared GX texture
+// width). Recomputed every decode from TA_YUV_TEX_CTRL — see the case-3
+// YUV branch above where it's assigned — falling back to the declared width
+// when that register doesn't describe a smaller real size.
+int g_yuv_src_stride_override = 0;
+// Real source row COUNT (height), same idea as the stride above but for the
+// vertical axis (TA_YUV_TEX_CTRL bits[13:8]). 0 = no override, use declared h.
+// Rows at/after this are NOT real source data — treat them the same way
+// rows past the declared height already are (zero-fill), instead of reading
+// past the legitimately-written buffer.
+int g_yuv_src_real_h = 0;
+
 // YUV422 planar -> GX_TF_CMPR
 // DC planar YUV422: each u32 = UYVY (byte0=U, byte1=Y0, byte2=V, byte3=Y1)
 static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
   u32 *src32 = (u32 *)src_vram;
+  u32 src_stride = g_yuv_src_stride_override ? (u32)g_yuv_src_stride_override : w;
+  u32 real_h = g_yuv_src_real_h ? (u32)g_yuv_src_real_h : h;
   static const u32 sub_ox[4] = {0,4,0,4};
   static const u32 sub_oy[4] = {0,0,4,4};
 
@@ -1224,10 +1242,10 @@ static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
       for (u32 row = 0; row < 4; row++)
       {
         u32 y = by + row;
-        if (y >= h) { for (int c=0;c<4;c++) block_pixels[row*4+c]=0; continue; }
+        if (y >= h || y >= real_h) { for (int c=0;c<4;c++) block_pixels[row*4+c]=0; continue; }
         for (u32 col = 0; col < 4; col += 2)
         {
-          u32 word = src32[(y*w + bx+col) / 2];
+          u32 word = src32[(y*src_stride + bx+col) / 2];
           // Byte order
           s32 Y0=(word>> 0)&255, Yv=(word>> 8)&255;
           s32 Y1=(word>>16)&255, Yu=(word>>24)&255;
@@ -1313,6 +1331,8 @@ static void YUV422_to_CMPR_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
 static void YUV422_to_RGBA8_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
   u32 *src32  = (u32 *)src_vram;
+  u32 src_stride = g_yuv_src_stride_override ? (u32)g_yuv_src_stride_override : w;
+  u32 real_h  = g_yuv_src_real_h ? (u32)g_yuv_src_real_h : h;
   u32 tiles_x = w / 4, tiles_y = h / 4;
   for (u32 ty = 0; ty < tiles_y; ty++)
   for (u32 tx = 0; tx < tiles_x; tx++)
@@ -1325,14 +1345,20 @@ static void YUV422_to_RGBA8_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
       u32 y = ty*4 + row;
       for (u32 col = 0; col < 4; col += 2)
       {
+        u32 p0 = row*4+col, p1 = row*4+col+1;
+        if (y >= real_h)
+        {
+          ar[p0*2]=0xFF; ar[p0*2+1]=0; ar[p1*2]=0xFF; ar[p1*2+1]=0;
+          gb[p0*2]=0;    gb[p0*2+1]=0; gb[p1*2]=0;    gb[p1*2+1]=0;
+          continue;
+        }
         u32 x    = tx*4 + col;
-        u32 word = src32[(y*w + x) / 2];
-        // Layout        
+        u32 word = src32[(y*src_stride + x) / 2];
+        // Layout
         s32 Y0=(word>> 0)&255, Yv=(word>> 8)&255;
         s32 Y1=(word>>16)&255, Yu=(word>>24)&255;
         u16 c0 = (u16)YUV422(Y0,Yu,Yv);
         u16 c1 = (u16)YUV422(Y1,Yu,Yv);
-        u32 p0 = row*4+col, p1 = row*4+col+1;
         ar[p0*2  ]=0xFF; ar[p0*2+1]=RGB565_R8(c0);
         ar[p1*2  ]=0xFF; ar[p1*2+1]=RGB565_R8(c1);
         gb[p0*2  ]=RGB565_G8(c0); gb[p0*2+1]=RGB565_B8(c0);
@@ -1690,14 +1716,58 @@ static void SetTextureParams(PolyParam *mod)
       // reportedly supports it anyway (see original comment).  We do NOT handle
       // the VQ+YUV combination here — it falls through unchanged.
 
+      // Every other format branch in this switch applies these two address/
+      // width fixups (see e.g. the 4bpp/8bpp cases below and twidle_tex()).
+      // This YUV branch was the one exception with neither: a Mipmapped
+      // texture's TCW address points at the *1x1* mip level (DC packs mips
+      // small->large), and reading forward from there without skipping to
+      // the full-size level means the "source" is actually a sequence of
+      // progressively larger copies of the same image packed back-to-back —
+      // which reinterpreted as one flat w x h image looks exactly like the
+      // same picture repeating several times. StrideSel similarly means the
+      // real VRAM row pitch is fixed at 512, not the declared po2 width.
+      if (mod->tcw.NO_PAL.MipMapped)
+      {
+        tex_addr += OtherMipPoint[mod->tsp.TexU + 3] * 2; // YUV422: 2 bytes/pixel
+        h = w; // mipmapped textures are always square (ignore TexV), as elsewhere
+      }
+      if (mod->tcw.NO_PAL.StrideSel)
+        w = 512;
+
+      // The declared texture width 'w' (from TSP.TexU, power-of-two) is the
+      // padded GX texture size — it does NOT have to match the real per-row
+      // pixel pitch the game actually wrote into VRAM. For YUV422 specifically,
+      // real DC hardware exposes the *real* video width via the YUV converter
+      // unit's TA_YUV_TEX_CTRL register: bits[5:0] = (real_width/16 - 1) in
+      // 16-pixel "macroblock" units, regardless of whether the converter
+      // itself was used to write this data (games commonly still program it
+      // to describe their video's native size). Confirmed empirically: a
+      // hardcoded source stride of 640 (instead of the declared 1024) fixes
+      // one game's FMV; computing it from this register generalizes that
+      // fix instead of hardcoding a constant that breaks other textures.
+      u32 yuv_real_w = ((TA_YUV_TEX_CTRL & 0x3F) + 1) * 16;
+      if (yuv_real_w == 0 || yuv_real_w > w)
+        yuv_real_w = w; // sane fallback: register unset/irrelevant for this texture
+      g_yuv_src_stride_override = (int)yuv_real_w;
+
+      // Same idea, vertical axis: TA_YUV_TEX_CTRL bits[13:8] = (real_height/16 - 1).
+      u32 yuv_real_h = (((TA_YUV_TEX_CTRL >> 8) & 0x3F) + 1) * 16;
+      if (yuv_real_h == 0 || yuv_real_h > h)
+        yuv_real_h = h;
+      g_yuv_src_real_h = (int)yuv_real_h;
+
       u8 *yuv_src = &params.vram[tex_addr];
 
-      if (DEBUG_MESSAGE())
+      // FMV Debug
+      if (fmv_debug)
       {
         printf("[YUV] ---- new YUV422 texture ----\n");
-        printf("[YUV] tex_addr=%06X w=%u h=%u scan=%u mip=%u fmv_format=%d\n",
+        printf("[YUV] tex_addr=%06X w=%u h=%u scan=%u mip=%u stride=%u fmv_format=%d "
+               "TA_YUV_TEX_CTRL=%08X real_w=%u real_h=%u\n",
                tex_addr, w, h, (unsigned)mod->tcw.NO_PAL.ScanOrder,
-               (unsigned)mod->tcw.NO_PAL.MipMapped, fmv_format);
+               (unsigned)mod->tcw.NO_PAL.MipMapped,
+               (unsigned)mod->tcw.NO_PAL.StrideSel, fmv_format,
+               (u32)TA_YUV_TEX_CTRL, yuv_real_w, yuv_real_h);
 
         // Dump raw bytes at the start of the source (first 16 bytes = 4 u32 words).
         u32 *raw32 = (u32*)yuv_src;
@@ -1737,6 +1807,33 @@ static void SetTextureParams(PolyParam *mod)
           s32 Y11 = buf3 & 255;
           printf("[YUV] twiddled-style decode block0: tw_idx=%u raw=%08X %08X\n", tw, tw0, tw1);
           printf("[YUV]   Y00=%d Y10=%d Y01=%d Y11=%d U=%d V=%d\n", Y00, Y10, Y01, Y11, Yu, Yv);
+        }
+
+        // ASCII brightness thumbnail of the FULL raw source (every cell is a
+        // real sampled pixel, not averaged) — dense enough to actually show
+        // structure like dashed lines, instead of the previous 64px-step scan
+        // which could easily land entirely between thin dashes every time.
+        // This directly answers whether tiling/repetition is already present
+        // in the raw VRAM bytes BEFORE any CMPR/RGBA8 encode or GX upload.
+        {
+          u32 *raw32t = (u32*)yuv_src;
+          const int COLS = 100, ROWS = 32;
+          printf("[YUV] thumbnail %dx%d (luma 0-9, low..high):\n", COLS, ROWS);
+          for (int r = 0; r < ROWS; r++)
+          {
+            char line[COLS + 1];
+            u32 sy = (u32)((u64)r * h / ROWS);
+            for (int c = 0; c < COLS; c++)
+            {
+              u32 sx = (u32)((u64)c * w / COLS) & ~1u; // even: UYVY pixel pairs
+              u32 word = raw32t[(sy * w + sx) / 2];
+              s32 yy = (word >> 0) & 255; // luma of the first pixel in the pair
+              int level = (yy * 10) / 256; if (level > 9) level = 9; if (level < 0) level = 0;
+              line[c] = (char)('0' + level);
+            }
+            line[COLS] = 0;
+            printf("[YUV]  %s\n", line);
+          }
         }
       }
 
@@ -2726,6 +2823,43 @@ void DoRender()
   PolyParam *drawMod = listModes;
 
   const VertexList *const crLST = curLST; // hint to the compiler that sceGUM cant edit this value !
+
+  // FMV Strip Debug
+  if (fmv_debug)
+  {
+    // Full, unfiltered dump of every strip this frame: catches anything a
+    // narrower instrumentation point (e.g. only logging inside EndPolyStrip)
+    // could miss, and ties each strip to its actual texture/format state.
+    Vertex *dvtx = vertices;
+    PolyParam *dmod = listModes;
+    u32 strip_idx = 0;
+    for (const VertexList *dlst = lists; dlst != crLST; dlst++, strip_idx++)
+    {
+      s32 raw_cnt   = dlst->count;
+      bool new_param = raw_cnt < 0;
+      s32 vcnt      = raw_cnt & 0x7FFF;
+      bool textured = dmod->pcw.Texture != 0;
+      u32 fmt       = textured ? (u32)dmod->tcw.NO_PAL.PixelFmt : 0xFF;
+      u32 addr      = textured ? ((dmod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) : 0;
+
+      float minx = 1e9f, maxx = -1e9f, miny = 1e9f, maxy = -1e9f;
+      for (s32 i = 0; i < vcnt; i++)
+      {
+        if (dvtx[i].x < minx) minx = dvtx[i].x;
+        if (dvtx[i].x > maxx) maxx = dvtx[i].x;
+        if (dvtx[i].y < miny) miny = dvtx[i].y;
+        if (dvtx[i].y > maxy) maxy = dvtx[i].y;
+      }
+
+      printf("[STRIP] #%u %s vtx=%d new_param=%d textured=%d fmt=%u addr=%06X x=[%.1f..%.1f] y=[%.1f..%.1f]\n",
+             strip_idx, (dlst == TransLST) ? "TRANS" : "OPAQUE", vcnt, (int)new_param,
+             (int)textured, fmt, addr, minx, maxx, miny, maxy);
+
+      if (new_param) dmod++;
+      dvtx += vcnt;
+    }
+    printf("[FRAME] total strips=%u total verts=%u\n", strip_idx, (u32)(curVTX - vertices));
+  }
 
   GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 
