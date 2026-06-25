@@ -38,6 +38,7 @@ extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
 extern int g_gx_accurate;
+extern int g_fmv_format_preset;
 
 // ---------------------------------------------------------------------------
 // Internal structures
@@ -64,6 +65,7 @@ struct GamePreset
     int controller;
     int framebuffer_2d;
     int gx_accurate;
+    int fmv_format;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -191,6 +193,15 @@ static int parse_bpp(const char* v)
     return -1;
 }
 
+static int parse_fmv_format(const char* v)
+{
+    if (key_eq(v, "cmpr"))   return 0;
+    if (key_eq(v, "rgba8"))  return 1;
+    if (key_eq(v, "rgb565")) return 2;
+    printf("[game_presets] Unknown fmv_format value: '%s'\n", v);
+    return -1;
+}
+
 static int parse_controller(const char* v)
 {
     if (key_eq(v, "standard"))   return 0;
@@ -221,6 +232,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);
     else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = atoi(val);
     else if (key_eq(key, "gx_accurate"))    p->gx_accurate    = atoi(val);
+    else if (key_eq(key, "fmv_format"))     p->fmv_format     = parse_fmv_format(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -278,6 +290,7 @@ void game_presets_load(const char* cfg_path)
             cur->players  = cur->controller                                  = -1;
             cur->ppz_write = -1;
             cur->framebuffer_2d = cur->gx_accurate = -1;
+            cur->fmv_format = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -358,6 +371,7 @@ void game_presets_apply(const char* filepath)
         if (p->controller >= 0) { g_controller_type       = p->controller; printf("  controller -> %d\n", p->controller); }
         if (p->framebuffer_2d >= 0) { g_framebuffer_2d    = p->framebuffer_2d; printf("  framebuffer_2d -> %d\n", p->framebuffer_2d); }
         if (p->gx_accurate    >= 0) { g_gx_accurate       = p->gx_accurate;    printf("  gx_accurate    -> %d\n", p->gx_accurate);    }
+        if (p->fmv_format     >= 0) { g_fmv_format_preset = p->fmv_format;     printf("  fmv_format     -> %d\n", p->fmv_format);     }
 
         return; // First match only
     }

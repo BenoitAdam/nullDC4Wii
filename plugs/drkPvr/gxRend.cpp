@@ -94,12 +94,11 @@ extern "C" int get_gx_accurate();
 #define GX_ACCURATE() (get_gx_accurate() == 1)
 
 // FMV Format Selection
-//   fmv_format == 0 = CMPR
-//   fmv_format == 1 = RGBA8
-//   fmv_format == 2 = RGB565
-extern int fmv_format;
+extern "C" int get_fmv_format_preset();
 
-fmv_format = 0;
+#define FMV_FORMAT_CMPR()   (get_fmv_format_preset() == 0)
+#define FMV_FORMAT_RGBA8()  (get_fmv_format_preset() == 1)
+#define FMV_FORMAT_RGB565() (get_fmv_format_preset() == 2)
 
 int frame_counter;
 
@@ -1567,7 +1566,7 @@ static void SetTextureParams(PolyParam *mod)
   u32 decode_bytes;
   {
     bool is_yuv422 = (mod->tcw.NO_PAL.PixelFmt == 3);
-    if (is_yuv422 && fmv_format == 1)
+    if (is_yuv422 && FMV_FORMAT_RGBA8())
       decode_bytes = (u32)w * h * 4; // RGBA8: 4 bytes/pixel
     else
       decode_bytes = (u32)w * h * 2; // 16bpp worst-case (covers CMPR and RGB565)
@@ -1882,7 +1881,7 @@ static void SetTextureParams(PolyParam *mod)
                "TA_YUV_TEX_CTRL=%08X real_w=%u real_h=%u\n",
                tex_addr, w, h, (unsigned)mod->tcw.NO_PAL.ScanOrder,
                (unsigned)mod->tcw.NO_PAL.MipMapped,
-               (unsigned)mod->tcw.NO_PAL.StrideSel, fmv_format,
+               (unsigned)mod->tcw.NO_PAL.StrideSel, get_fmv_format_preset(),
                (u32)TA_YUV_TEX_CTRL, yuv_real_w, yuv_real_h);
 
         // Dump raw bytes at the start of the source (first 16 bytes = 4 u32 words).
@@ -1953,7 +1952,7 @@ static void SetTextureParams(PolyParam *mod)
         }
       }
 
-      if (fmv_format == 1)
+      if (FMV_FORMAT_RGBA8())
       {
         // ---- RGBA8 path ----
         if (mod->tcw.NO_PAL.ScanOrder)
@@ -1968,7 +1967,7 @@ static void SetTextureParams(PolyParam *mod)
         }
         FMT = GX_TF_RGBA8;
       }
-      else if (fmv_format == 2)
+      else if (FMV_FORMAT_RGB565())
       {
         // ---- RGB565 path — cheapest per-pixel cost (direct store, no
         // block encoding, no 8-bit channel expansion) ----

@@ -97,6 +97,12 @@ extern "C" {
   int get_gx_accurate() { return g_gx_accurate; }
 }
 
+int g_fmv_format_preset = 2; // 0=CMPR (DXT1), 1=RGBA8, 2=RGB565
+
+extern "C" {
+  int get_fmv_format_preset() { return g_fmv_format_preset; }
+}
+
 int g_player_count = 2;
 
 extern "C" {
@@ -488,14 +494,15 @@ void displayAccuracyMenu()
 #define OPT_ADV_ALPHA   8
 #define OPT_FRAMEBUFFER_2D 9
 #define OPT_GX_ACCURATE 10
-#define OPT_FRAMESKIP   11
-#define OPT_TEX_CACHE   12
-#define OPT_4BPP        13
-#define OPT_8BPP        14
-#define OPT_PLAYERS     15
-#define OPT_CTRL_TYPE   16
-#define OPT_MORE_INFO   17
-#define OPT_ROW_COUNT   18
+#define OPT_FMV_FORMAT  11
+#define OPT_FRAMESKIP   12
+#define OPT_TEX_CACHE   13
+#define OPT_4BPP        14
+#define OPT_8BPP        15
+#define OPT_PLAYERS     16
+#define OPT_CTRL_TYPE   17
+#define OPT_MORE_INFO   18
+#define OPT_ROW_COUNT   19
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -592,6 +599,15 @@ bool displayOptionsMenu()
     switch (g_gx_accurate) {
       case 0: printf("[< NO  >]"); break;
       case 1: printf("[< YES >]"); break;
+    }
+    printf("\n");
+
+    // --- Row 11: FMV Format ---
+    printf("%s FMV FORMAT    : ", (selectedRow == OPT_FMV_FORMAT) ? ">" : " ");
+    switch (g_fmv_format_preset) {
+      case 0: printf("[< CMPR (DXT1)   >]"); break;
+      case 1: printf("[< RGBA8         >]"); break;
+      case 2: printf("[< RGB565        >]"); break;
     }
     printf("\n");
 
@@ -692,6 +708,7 @@ bool displayOptionsMenu()
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
         case OPT_GX_ACCURATE: g_gx_accurate         = (g_gx_accurate           + 1) % 2; break;
+        case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 2) % 3; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 3) % 4; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 3) % 4; break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 4) % 5; break;
@@ -711,6 +728,7 @@ bool displayOptionsMenu()
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
         case OPT_GX_ACCURATE: g_gx_accurate         = (g_gx_accurate           + 1) % 2; break;
+        case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 1) % 3; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 1) % 4; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 1) % 4; break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 1) % 5; break;
@@ -1093,6 +1111,12 @@ int main(int argc, wchar *argv[])
     printf("2D Framebuffer : %s\n", g_framebuffer_2d ? "YES" : "NO");
     printf("GX_ACCURATE    : %s\n", g_gx_accurate ? "YES" : "NO");
     printf("PPZ_WRITE      : %s\n", g_ppz_write_preset ? "YES" : "NO");
+    printf("FMV Format     : ");
+    switch(g_fmv_format_preset) {
+      case 0: printf("CMPR (DXT1)\n"); break;
+      case 1: printf("RGBA8\n");       break;
+      case 2: printf("RGB565\n");      break;
+    }
     printf("Frameskipping  : ");
     switch(g_frameskip_preset) {
       case 0: printf("0\n");    break;
