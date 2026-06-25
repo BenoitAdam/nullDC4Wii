@@ -18,7 +18,7 @@ SD:/data/
 Game files :
 ============
 
-Put your games in SD:/discs
+Put your games in SD:/discs or USB:/Dreamcast
 
 Compatibility :
 ===============
