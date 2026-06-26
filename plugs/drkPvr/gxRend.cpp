@@ -3256,7 +3256,13 @@ void DoRender()
         // UseAlpha==0 means the hardware forces vertex alpha to 1.0 before modulation
         // (vertex alpha must not be allowed to multiply texture alpha to zero).
         // UseAlpha==1 means vertex alpha is used as supplied.
-        force_vtx_alpha_opaque = !drawMod->tsp.UseAlpha;
+        // Regression fix: ARGB1555 (fmt 0) and RGB565 (fmt 1) textures are commonly
+        // drawn with vertex alpha left at 0 even when UseAlpha==1 (e.g. Test Drive 6's
+        // menu/HUD text, an ARGB1555 cutout font): the game relies on the texture's
+        // own alpha, not the vertex alpha, to gate visibility. Always force opaque for
+        // these two formats; defer to TSP.UseAlpha for everything else (e.g. ARGB4444).
+        u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
+        force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !drawMod->tsp.UseAlpha;
 
         // TSP.IgnoreTexA: when set, hardware forces the texture's alpha to 1.0
         // before modulation (e.g. RGB565 has no alpha channel at all, so this is
