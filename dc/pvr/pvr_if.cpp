@@ -92,8 +92,8 @@ INLINE u8 GetUV420(int x, int y, u8* base)
     // Subsample coordinates
     int realx = x >> 1;
     int realy = y >> 1;
-    
-    return base[realx + realy * 8];
+
+    return *host_ptr_xor(&base[realx + realy * 8]);
 }
 
 /**

@@ -1334,7 +1334,6 @@ int g_yuv_src_real_h = 0;
 // DC planar YUV422: each u32 = UYVY (byte0=U, byte1=Y0, byte2=V, byte3=Y1)
 static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
-  u32 *src32 = (u32 *)src_vram;
   u32 src_stride = g_yuv_src_stride_override ? (u32)g_yuv_src_stride_override : w;
   u32 real_h = g_yuv_src_real_h ? (u32)g_yuv_src_real_h : h;
   static const u32 sub_ox[4] = {0,4,0,4};
@@ -1354,10 +1353,14 @@ static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
         if (y >= h || y >= real_h) { for (int c=0;c<4;c++) block_pixels[row*4+c]=0; continue; }
         for (u32 col = 0; col < 4; col += 2)
         {
-          u32 word = src32[(y*src_stride + bx+col) / 2];
-          // Byte order
-          s32 Y0=(word>> 0)&255, Yv=(word>> 8)&255;
-          s32 Y1=(word>>16)&255, Yu=(word>>24)&255;
+          // Read bytes by position, not by loading a u32 and bit-shifting:
+          // the source word's byte layout is U,Y0,V,Y1 at increasing
+          // addresses regardless of host endianness, but bit-shift
+          // extraction (word&255 etc) only recovers that on little-endian
+          // hosts. On big-endian (Wii) it swaps Y0/Y1. Positional byte
+          // reads are correct on any host.
+          u8 *p = &src_vram[(y*src_stride + bx+col) * 2];
+          s32 Yu=p[0], Y0=p[1], Yv=p[2], Y1=p[3];
           block_pixels[row*4+col  ] = (u16)YUV422(Y0,Yu,Yv);
           block_pixels[row*4+col+1] = (u16)YUV422(Y1,Yu,Yv);
         }
@@ -1448,7 +1451,6 @@ static void YUV422_to_CMPR_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
 // YUV422 planar -> GX_TF_RGBA8
 static void YUV422_to_RGBA8_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
-  u32 *src32  = (u32 *)src_vram;
   u32 src_stride = g_yuv_src_stride_override ? (u32)g_yuv_src_stride_override : w;
   u32 real_h  = g_yuv_src_real_h ? (u32)g_yuv_src_real_h : h;
   u32 tiles_x = w / 4, tiles_y = h / 4;
@@ -1471,10 +1473,9 @@ static void YUV422_to_RGBA8_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
           continue;
         }
         u32 x    = tx*4 + col;
-        u32 word = src32[(y*src_stride + x) / 2];
-        // Layout
-        s32 Y0=(word>> 0)&255, Yv=(word>> 8)&255;
-        s32 Y1=(word>>16)&255, Yu=(word>>24)&255;
+        // Positional byte read (see YUV422_to_CMPR_Planar) — endian-safe.
+        u8 *p = &src_vram[(y*src_stride + x) * 2];
+        s32 Yu=p[0], Y0=p[1], Yv=p[2], Y1=p[3];
         u16 c0 = (u16)YUV422(Y0,Yu,Yv);
         u16 c1 = (u16)YUV422(Y1,Yu,Yv);
         ar[p0*2  ]=0xFF; ar[p0*2+1]=RGB565_R8(c0);
@@ -1560,7 +1561,6 @@ static void YUV422_to_RGBA8_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
 // YUV422 planar -> GX_TF_RGB565
 static void YUV422_to_RGB565_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
-  u32 *src32  = (u32 *)src_vram;
   u32 src_stride = g_yuv_src_stride_override ? (u32)g_yuv_src_stride_override : w;
   u32 real_h  = g_yuv_src_real_h ? (u32)g_yuv_src_real_h : h;
   u32 tiles_x = w / 4, tiles_y = h / 4;
@@ -1580,9 +1580,9 @@ static void YUV422_to_RGB565_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
       for (u32 col = 0; col < 4; col += 2)
       {
         u32 x    = tx*4 + col;
-        u32 word = src32[(y*src_stride + x) / 2];
-        s32 Y0=(word>> 0)&255, Yv=(word>> 8)&255;
-        s32 Y1=(word>>16)&255, Yu=(word>>24)&255;
+        // Positional byte read (see YUV422_to_CMPR_Planar) — endian-safe.
+        u8 *p = &src_vram[(y*src_stride + x) * 2];
+        s32 Yu=p[0], Y0=p[1], Yv=p[2], Y1=p[3];
         tile[row*4+col  ] = (u16)YUV422(Y0,Yu,Yv);
         tile[row*4+col+1] = (u16)YUV422(Y1,Yu,Yv);
       }
@@ -2067,11 +2067,9 @@ static void SetTextureParams(PolyParam *mod)
         // Decode the first 2 pixels exactly the way the planar path does,
         // so we can see if U/V/Y extraction and the YUV422() formula look sane.
         {
-          u32 word = raw32[0];
-          s32 Y0 = (word >>  0) & 255;
-          s32 Yv = (word >>  8) & 255;
-          s32 Y1 = (word >> 16) & 255;
-          s32 Yu = (word >> 24) & 255;
+          // Positional byte read (see YUV422_to_CMPR_Planar) — endian-safe.
+          u8 *p = (u8*)&raw32[0];
+          s32 Yu=p[0], Y0=p[1], Yv=p[2], Y1=p[3];
           u16 c0 = (u16)YUV422(Y0, Yu, Yv);
           u16 c1 = (u16)YUV422(Y1, Yu, Yv);
           printf("[YUV] planar-style decode word0: Y0=%d Y1=%d U=%d V=%d\n", Y0, Y1, Yu, Yv);
@@ -2116,8 +2114,8 @@ static void SetTextureParams(PolyParam *mod)
             for (int c = 0; c < COLS; c++)
             {
               u32 sx = (u32)((u64)c * w / COLS) & ~1u; // even: UYVY pixel pairs
-              u32 word = raw32t[(sy * w + sx) / 2];
-              s32 yy = (word >> 0) & 255; // luma of the first pixel in the pair
+              u8 *p = &((u8*)raw32t)[(sy * w + sx) * 2];
+              s32 yy = p[1]; // luma of the first pixel in the pair (byte1 = Y0)
               int level = (yy * 10) / 256; if (level > 9) level = 9; if (level < 0) level = 0;
               line[c] = (char)('0' + level);
             }
