@@ -920,7 +920,7 @@ void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
     
     for (u32 x = 0; x < Width; x += PixelConvertor::xpp)
     {
-      
+
       u8 idx = *host_ptr_xor(&p_in[offset_y | table_x[x]]);
 
       u8 *cb = &vq_codebook[idx * 8];
@@ -3850,6 +3850,13 @@ bool InitRenderer()
     break;
   }
 
+  // Force single-sample, full 24-bit colour. rmode->aa selects a
+  // 16-bit (RGB565) EFB further below, which dithers to hide banding —
+  // that dither noise was previously masked by the deflicker blur and
+  // becomes visible once the blur is removed. Pixel accuracy matters
+  // more here than the TV anti-aliasing this mode is meant for.
+  // rmode->aa = GX_FALSE;
+
   // Set up the video registers with the chosen mode (devkit wii example)
   VIDEO_Configure(rmode);
 
@@ -3893,7 +3900,7 @@ bool InitRenderer()
   GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
   GX_SetDispCopySrc(0, 0, rmode->fbWidth, rmode->efbHeight);
   GX_SetDispCopyDst(rmode->fbWidth, xfbHeight);
-  GX_SetCopyFilter(rmode->aa, rmode->sample_pattern, GX_TRUE, rmode->vfilter);
+  GX_SetCopyFilter(rmode->aa, rmode->sample_pattern, GX_TRUE, rmode->vfilter); // GX_FALSE or GX_TRUE ?
   GX_SetFieldMode(rmode->field_rendering, ((rmode->viHeight == 2 * rmode->xfbHeight) ? GX_ENABLE : GX_DISABLE));
 
   if (rmode->aa)
