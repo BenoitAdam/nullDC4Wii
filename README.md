@@ -422,6 +422,7 @@ All together, let's Cast the Dream.
 - skmp because he's the god
 - Senryoku, develloper of Deecy emulator
 - Everyone on emuvdev/ discord
+- Jilou04 for constantly testing on Wii U and reporting
 - All testers and all futur testers
 - People actually helping me on the wiibrew wiki
 
