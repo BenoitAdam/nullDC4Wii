@@ -180,8 +180,8 @@ static int parse_bpp(const char* v)
 {
     if (key_eq(v, "i4_stub"))    return 0;
     if (key_eq(v, "i8_stub"))    return 0;
-    if (key_eq(v, "i4_grey"))    return 1;
-    if (key_eq(v, "i8_grey"))    return 1;
+    if (key_eq(v, "4bpp_optimized")) return 1;
+    if (key_eq(v, "8bpp_optimized")) return 1;
     if (key_eq(v, "ci4_fast"))   return 2;
     if (key_eq(v, "ci8_fast"))   return 2;
     if (key_eq(v, "ci4_normal")) return 3;

@@ -71,7 +71,7 @@ extern "C" int get_frameskip_preset();
 extern "C" int get_4bpp_preset();
 
 #define TEXTURE_4BPP_I4_STUB() (get_4bpp_preset() == 0) // I4 Stub // 17 FPS VEMU Menu Daytona
-#define TEXTURE_4BPP_I4_GREY_FAST() (get_4bpp_preset() == 1) // I4 (Gray Fast) // 15 FPS VEMU Menu Daytona (untested)
+#define TEXTURE_4BPP_OPTIMIZED() (get_4bpp_preset() == 1) // 4BPP Optimized // 15 FPS VEMU Menu Daytona (untested)
 #define TEXTURE_4BPP_CI4_FAST() (get_4bpp_preset() == 2) // CI4 (Fast) // 15 FPS VEMU Menu Daytona
 #define TEXTURE_4BPP_CI4() (get_4bpp_preset() == 3) // CI4 (ok) // 4 FPS VEMU Menu Daytona
 #define TEXTURE_4BPP_RGB565() (get_4bpp_preset() == 4) // RGB565 // 1 FPS VEMU Menu Daytona
@@ -80,7 +80,7 @@ extern "C" int get_4bpp_preset();
 extern "C" int get_8bpp_preset();
 
 #define TEXTURE_8BPP_I8_STUB() (get_8bpp_preset() == 0) // I8 Stub
-#define TEXTURE_8BPP_I8_GREY_FAST() (get_8bpp_preset() == 1) // I8 Gray (Fast))
+#define TEXTURE_8BPP_OPTIMIZED() (get_8bpp_preset() == 1) // 8BPP Optimized
 #define TEXTURE_8BPP_CI8_FAST() (get_8bpp_preset() == 2) // CI8 (Fast, direct tile writes)
 #define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 3)      // CI8 (Accurate, ^3 BE correction)
 #define TEXTURE_8BPP_RGB565() (get_8bpp_preset() == 4) // RGB565
@@ -2210,7 +2210,7 @@ static void SetTextureParams(PolyParam *mod)
 
         FMT = GX_TF_I4; // wha? the ?
         }
-      else if(TEXTURE_4BPP_I4_GREY_FAST()){ // BEST: full palette decode -> GX RGB565/RGB5A3
+      else if(TEXTURE_4BPP_OPTIMIZED()){ // BEST: full palette decode -> GX RGB565/RGB5A3
         // Replaces the old pure-greyscale stub. Decodes through the real DC
         // palette (same idea as TEXTURE_4BPP_RGB565 below) but fixes that
         // path's bugs and applies the same speed tricks used by the FAST
@@ -2372,7 +2372,7 @@ static void SetTextureParams(PolyParam *mod)
         pbuff->has_pal = false; // palette baked in, GPU doesn't need a TLUT
       }
       else if (TEXTURE_4BPP_CI4_FAST()) { // 4BPP palette -> GX_TF_CI4 (Fast)
-        // FAST path: same structure as I4_GREY_FAST but outputs CI4 index data.
+        // FAST path: same structure as 4BPP_Optimized but outputs CI4 index data.
         // TLUT already loaded above — only the index nibbles need reordering here.
         //
         // ScanOrder FAST: source bytes are already row-major packed nibbles.
@@ -2591,7 +2591,7 @@ static void SetTextureParams(PolyParam *mod)
         FMT = GX_TF_I8; // wha? the ? FUCK!
 
       }
-      else if(TEXTURE_8BPP_I8_GREY_FAST()) {
+      else if(TEXTURE_8BPP_OPTIMIZED()) {
         // BEST: full palette decode -> GX RGB565/RGB5A3 (fast). Same approach
         // and same fixes as the 4BPP BEST path above — see its comment for
         // the full rationale (ScanOrder handling, ^3 BE correction, twiddle

@@ -60,14 +60,14 @@ extern "C" {
 }
 
 int g_4bpp_preset = 2;
-// 0=I4 Stub, 1=I4 grey fast, 2=CI4 fast, 3=CI4 normal, 4=RGB565
+// 0=I4 Stub, 1=4BPP Optimized, 2=CI4 fast, 3=CI4 normal, 4=RGB565
 
 extern "C" {
   int get_4bpp_preset() { return g_4bpp_preset; }
 }
 
 int g_8bpp_preset = 2;
-// 0=I8 Stub, 1=I8 grey, 2=CI8 fast, 3=CI8 normal, 4=RGB565
+// 0=I8 Stub, 1=8BPP Optimized, 2=CI8 fast, 3=CI8 normal, 4=RGB565
 
 extern "C" {
   int get_8bpp_preset() { return g_8bpp_preset; }
@@ -620,7 +620,7 @@ bool displayOptionsMenu()
     printf("%s 4BPP MODE     : ", (selectedRow == OPT_4BPP) ? ">" : " ");
     switch (g_4bpp_preset) {
       case 0: printf("[< I4 STUB           >]"); break;
-      case 1: printf("[< I4 GREY (FAST)    >]"); break;
+      case 1: printf("[< 4BPP OPTIMIZED    >]"); break;
       case 2: printf("[< CI4 (FAST)        >]"); break;
       case 3: printf("[< CI4 (NORMAL)      >]"); break;
       case 4: printf("[< RGB565 (ACCURATE) >]"); break;
@@ -631,7 +631,7 @@ bool displayOptionsMenu()
     printf("%s 8BPP MODE     : ", (selectedRow == OPT_8BPP) ? ">" : " ");
     switch (g_8bpp_preset) {
       case 0: printf("[< I8 STUB           >]"); break;
-      case 1: printf("[< I8 GREY (FAST)    >]"); break;
+      case 1: printf("[< 8BPP OPTIMIZED    >]"); break;
       case 2: printf("[< CI8 (FAST)        >]"); break;
       case 3: printf("[< CI8 (NORMAL)      >]"); break;
       case 4: printf("[< RGB565 (ACCURATE) >]"); break;
@@ -1116,7 +1116,7 @@ int main(int argc, wchar *argv[])
     printf("4BPP Mode      : ");
     switch(g_4bpp_preset) {
       case 0: printf("I4 STUB\n");        break;
-      case 1: printf("I4 GREY (FAST)\n"); break;
+      case 1: printf("4BPP OPTIMIZED\n"); break;
       case 2: printf("CI4 (FAST)\n");     break;
       case 3: printf("CI4 (NORMAL)\n");   break;
       case 4: printf("RGB565\n");         break;
@@ -1124,7 +1124,7 @@ int main(int argc, wchar *argv[])
     printf("8BPP Mode      : ");
     switch(g_8bpp_preset) {
       case 0: printf("I8 STUB\n");        break;
-      case 1: printf("I8 GREY (FAST)\n"); break;
+      case 1: printf("8BPP OPTIMIZED\n"); break;
       case 2: printf("CI8 (FAST)\n");     break;
       case 3: printf("CI8 (NORMAL)\n");   break;
       case 4: printf("RGB565\n");         break;
