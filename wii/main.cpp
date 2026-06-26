@@ -73,7 +73,7 @@ extern "C" {
   int get_8bpp_preset() { return g_8bpp_preset; }
 }
 
-int g_texture_cache_preset = 0;
+int g_texture_cache_preset = 1;
 
 extern "C" {
   int get_texture_cache_preset() { return g_texture_cache_preset; }
@@ -511,7 +511,7 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H");
 
-    printf("NullDC4Wii - Alpha 0.33   OPTIONS\n");
+    printf("NullDC4Wii - Alpha 0.34   OPTIONS\n");
     printf("===================================\n\n");
 
     // --- Row 0: Launch ---
@@ -754,7 +754,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - Alpha 0.33   ");
+    printf("\nNullDC4Wii - Alpha 0.34   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("(-) GRAPHICS: ");
