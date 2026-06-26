@@ -2746,10 +2746,12 @@ static bool ShouldSkipFrame() // Returns true when the current frame should be d
 
 void DoRender()
 {
+  /* commented to help prevent FIFO 
   if(get_debug_loop() == 1) {
     printf("MEM1 free: %.2f MB\n", ((unat)SYS_GetArena1Hi() - (unat)SYS_GetArena1Lo()) / 1024.f / 1024);
     printf("MEM2 free: %.2f MB\n", ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / 1024.f / 1024.f);
   }
+    */
   float dc_width = 640;
   float dc_height = 480;
 
@@ -2916,12 +2918,14 @@ void DoRender()
   // Z range so that min >= max, the projection math below produces NaN/inf
   // which desyncs the GX FIFO ("GFX Fifo Opcode unknown 0x64").
   // Reset to a safe default range so the frame renders without a crash.
-  // Can be removed
+  // Unsure, commenting
+  /*
   if (vtx_min_Z >= vtx_max_Z || vtx_max_Z != vtx_max_Z || vtx_min_Z != vtx_min_Z)
   {
     vtx_min_Z = 0.0001f;
     vtx_max_Z = 100000.0f;  
   }
+    */
 
   // extend range
   vtx_max_Z *= 1.001; // to not clip vtx_max verts
@@ -2958,6 +2962,8 @@ void DoRender()
   const VertexList *const crLST = curLST; // hint to the compiler that sceGUM cant edit this value !
 
   // FMV Strip Debug
+  // commented to prevent unecessary if/else in main render loop
+  /*
   if (fmv_debug)
   {
     // Full, unfiltered dump of every strip this frame: catches anything a
@@ -2993,6 +2999,7 @@ void DoRender()
     }
     printf("[FRAME] total strips=%u total verts=%u\n", strip_idx, (u32)(curVTX - vertices));
   }
+  */
 
   GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 
