@@ -241,6 +241,7 @@ struct TextureCacheDesc
   bool has_pal;
   u32  vq_codebook_w0;  // VQ fingerprint (cb_w0 ^ idx_w0)
   u32  slot_size;       // bump allocator: total bytes of this allocation
+  u32  shape_key;       // CACHE_FAST: non-address TCW/TSP bits (format/scan/stride/mip/size)
 };
 
 // -- CACHE_VERY_FAST / CACHE_FAST: direct nullDC4Wii slot -----------------------
@@ -1666,11 +1667,41 @@ static void SetTextureParams(PolyParam *mod)
 
   bool cache_valid = false;
 
-  if (CACHE_VERY_FAST() || CACHE_FAST())
+  if (CACHE_VERY_FAST())
   {
-    cache_valid = (*ptex_skmp == 0xDEADBEEF) && (pbuff->addr == tex_addr);
-    if (CACHE_VERY_FAST())
-      cache_valid = cache_valid && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
+    cache_valid = (*ptex_skmp == 0xDEADBEEF) && (pbuff->addr == tex_addr)
+                && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
+  }
+  else if (CACHE_FAST())
+  {
+    // VQ: the codebook lives at tex_addr itself, so the VERY_FAST trick of
+    // stomping tex_addr with the sentinel would corrupt codebook entry 0,
+    // and watching only the codebook misses index-only updates (animated
+    // VQ textures reusing the same palette). Use the same non-destructive
+    // codebook+index fingerprint as CACHE_NORMAL instead — a couple of
+    // extra word reads, still O(1), no VRAM writes for VQ.
+    if (is_vq)
+    {
+      u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
+      if (mod->tcw.NO_PAL.MipMapped)
+        idx_addr = (orig_tex_addr + VQMipPoint[mod->tsp.TexU + 3]) & VRAM_MASK;
+      u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
+      u32 idx_w0 = *(u32*)&params.vram[idx_addr];
+      u32 fp = cb_w0 ^ idx_w0;
+      cache_valid = (pbuff->addr == tex_addr) && (pbuff->vq_codebook_w0 == fp);
+    }
+    else
+    {
+      // Same sentinel trick as VERY_FAST, plus a shape key (format, scan
+      // order, stride, mip, size bits) so a different texture reusing the
+      // same address/stride combo can't be served stale data — this is
+      // the gap VERY_FAST plugs by disabling its cache entirely for
+      // stride+scan-order textures. Validating the shape instead lets
+      // CACHE_FAST keep caching those textures safely.
+      u32 shape_key = (mod->tcw.full & ~0x1FFFFFu) ^ (mod->tsp.full & 0x3Fu);
+      cache_valid = (*ptex_skmp == 0xDEADBEEF) && (pbuff->addr == tex_addr)
+                  && (pbuff->shape_key == shape_key);
+    }
   }
   else if (CACHE_NORMAL())
   {
@@ -1723,7 +1754,7 @@ static void SetTextureParams(PolyParam *mod)
     pbuff->has_pal = false;
     pbuff->addr    = (CACHE_VERY_FAST() || CACHE_FAST()) ? tex_addr : orig_tex_addr;
 
-    if (is_vq && !(CACHE_VERY_FAST() || CACHE_FAST()))
+    if (is_vq && !CACHE_VERY_FAST())
     {
       u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
       if (mod->tcw.NO_PAL.MipMapped)
@@ -1731,6 +1762,14 @@ static void SetTextureParams(PolyParam *mod)
       u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
       u32 idx_w0 = *(u32*)&params.vram[idx_addr];
       pbuff->vq_codebook_w0 = cb_w0 ^ idx_w0;
+    }
+    else if (CACHE_FAST())
+    {
+      // Non-VQ: remember the format/scan/stride/mip/size bits alongside the
+      // sentinel so a future draw at the same address with a different
+      // shape (e.g. a stride-selected texture) can't be served this slot's
+      // stale data — see the CACHE_FAST validity check above.
+      pbuff->shape_key = (mod->tcw.full & ~0x1FFFFFu) ^ (mod->tsp.full & 0x3Fu);
     }
 
     if(DEBUG_MESSAGE()) {
@@ -2615,8 +2654,16 @@ static void SetTextureParams(PolyParam *mod)
     }
     else if (CACHE_FAST())
     {
-      u32 *ptex_fast = (u32*)&params.vram[tex_addr];
-      *ptex_fast = 0xDEADBEEF;
+      // VQ validity is tracked purely via the codebook+index fingerprint
+      // (stored above) — no VRAM write, so the codebook/index data the
+      // decoder just read stays intact. Only stomp the sentinel for
+      // non-VQ formats, where tex_addr == orig_tex_addr (untouched by the
+      // VQ mip-offset math) and a real overwrite naturally invalidates it.
+      if (!is_vq)
+      {
+        u32 *ptex_fast = (u32*)&params.vram[tex_addr];
+        *ptex_fast = 0xDEADBEEF;
+      }
     }
     else if (!is_vq)
     {
