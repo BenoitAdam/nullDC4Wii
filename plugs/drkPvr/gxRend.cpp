@@ -920,7 +920,8 @@ void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
     
     for (u32 x = 0; x < Width; x += PixelConvertor::xpp)
     {
-      u8 idx = p_in[(offset_y | table_x[x]) ^ 3]; 
+      
+      u8 idx = *host_ptr_xor(&p_in[offset_y | table_x[x]]);
 
       u8 *cb = &vq_codebook[idx * 8];
       u16 s0 = *host_ptr_xor((u16*)&cb[0]);
