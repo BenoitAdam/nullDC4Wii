@@ -73,7 +73,7 @@ extern "C" int get_8bpp_preset();
 extern "C" int get_texture_cache_preset();
 
 #define CACHE_VERY_FAST()   (get_texture_cache_preset() == 0) // Original nullDC4Wii/SKMP algorithm.
-#define CACHE_FAST()        (get_texture_cache_preset() == 1) // Still buggy
+#define CACHE_FAST()        (get_texture_cache_preset() == 1) // Persistent bump-allocated cache (correct sizing, cross-frame)
 #define CACHE_NORMAL()      (get_texture_cache_preset() == 2) // Perfect Result (to the cost of FPS)
 #define CACHE_QUALITY()     (get_texture_cache_preset() == 3) // 
 #define CACHE_EXTRA()       (get_texture_cache_preset() == 4) // For Debug only
@@ -244,8 +244,14 @@ struct TextureCacheDesc
   u32  shape_key;       // CACHE_FAST: non-address TCW/TSP bits (format/scan/stride/mip/size)
 };
 
-// -- CACHE_VERY_FAST / CACHE_FAST: direct nullDC4Wii slot -----------------------
+// -- CACHE_VERY_FAST: direct nullDC4Wii slot -------------------------------------
 // Slot position = vram_buffer[tex_addr * 2] - O(1), no lookup.
+//
+// NOTE: this fixed mapping assumes a texture's decoded size never exceeds twice
+// the VRAM distance to the next texture's address — false in general (e.g. a
+// small VQ/CI4 source decodes into a much larger RGB565/RGB5A3 buffer), so two
+// unrelated textures can overlap and corrupt each other ("puzzled" textures).
+// CACHE_FAST below replaces this with a correctly-sized bump allocator instead.
 static INLINE TextureCacheDesc* skimp_slot(u32 tex_addr)
 {
   u32 cache_offset = tex_addr * 2;
@@ -370,11 +376,89 @@ static TextureCacheDesc* bump_alloc(u32 pixel_bytes, u32 **pixel_out)
   return d;
 }
 
+// ── CACHE_FAST: persistent bump arena + hash map ──────────────────────────────
+//
+// Fixes the "puzzled" texture corruption from the old skimp_slot scheme (decoded
+// size could overrun into the next address's slot) by giving every texture an
+// allocation sized to what it actually decodes to — the same allocator shape
+// CACHE_NORMAL uses. Unlike CACHE_NORMAL's arena/map, this one is NEVER cleared
+// on a per-frame basis (tex_frame_reset() only touches s_bump_offset/s_texmap
+// above), so a static texture still skips re-decoding on every later frame —
+// that cross-frame skip is what makes CACHE_FAST fast. Reuses the same 16 MB
+// vram_buffer budget as everything else; only one cache preset is ever active
+// at a time, so there is no real sharing conflict, just a 14 MB sub-budget like
+// CACHE_NORMAL's BUMP_TOTAL.
+//
+// Freshness is NOT implied by "found in the map" the way it is for CACHE_NORMAL
+// (which redecodes every texture every frame): the caller still runs the usual
+// CACHE_FAST sentinel/shape-key (or VQ fingerprint) check against whatever this
+// map returns before trusting it.
+static const u32 FAST_BUMP_TOTAL = 14u * 1024u * 1024u; // 14 MB, mirrors BUMP_TOTAL
+
+static u32 s_fast_bump_offset = 0;
+
+#define FASTMAP_SIZE  2048u // power-of-two; larger than TEXMAP_SIZE since this map
+#define FASTMAP_MASK  (FASTMAP_SIZE - 1u) // persists across many frames instead of one
+#define FASTMAP_EMPTY 0xFFFFFFFFu
+
+static TexMapSlot s_fastmap[FASTMAP_SIZE]; // ~16 KB, lives in BSS
+
+static void fast_cache_reset()
+{
+  s_fast_bump_offset = 0;
+  memset(s_fastmap, 0xFF, sizeof(s_fastmap));
+}
+
+// Single linear probe that returns either the slot already holding tex_addr
+// (*found = true) or the first free slot where it could be inserted
+// (*found = false) — standard open-addressing lookup-or-insertion-point.
+static INLINE u32 fast_map_locate(u32 tex_addr, bool *found)
+{
+  u32 idx = texmap_hash(tex_addr) & FASTMAP_MASK;
+  u32 probe = 0;
+  while (probe < FASTMAP_SIZE)
+  {
+    u32 k = s_fastmap[idx].key;
+    if (k == tex_addr)      { *found = true;  return idx; }
+    if (k == FASTMAP_EMPTY) { *found = false; return idx; }
+    idx = (idx + 1u) & FASTMAP_MASK;
+    probe++;
+  }
+  *found = false;
+  return FASTMAP_SIZE; // table completely full (shouldn't happen at 2048 slots)
+}
+
+// Allocates `pixel_bytes` worth of room (descriptor+pixels), sized exactly like
+// CACHE_NORMAL's bump_alloc. Wraps (discarding every existing entry) if it
+// doesn't fit — rare with a 14 MB budget reused across many frames of texture
+// churn, and safe: a wrap means every previously handed-out offset may now be
+// overwritten, so every old map entry must be dropped, not just the new one.
+static TextureCacheDesc* fast_bump_alloc(u32 pixel_bytes, u32 **pixel_out, u32 *alloc_off_out)
+{
+  u32 desc_sz  = (sizeof(TextureCacheDesc) + 31) & ~31u;
+  u32 pixel_sz = (pixel_bytes + 31) & ~31u;
+  u32 total    = desc_sz + pixel_sz;
+  if (s_fast_bump_offset + total > FAST_BUMP_TOTAL)
+  {
+    s_fast_bump_offset = 0;
+    memset(s_fastmap, 0xFF, sizeof(s_fastmap));
+  }
+  u32 alloc_off       = s_fast_bump_offset;
+  TextureCacheDesc *d = (TextureCacheDesc*)&vram_buffer[alloc_off];
+  *pixel_out          = (u32*)&vram_buffer[alloc_off + desc_sz];
+  memset(d, 0, desc_sz);
+  d->slot_size        = total;
+  s_fast_bump_offset += total;
+  *alloc_off_out       = alloc_off;
+  return d;
+}
+
 // ── Unified cache interface ───────────────────────────────────────────────────
 static void tex_cache_init()
 {
   s_bump_offset = 0;
   hash_map_reset();
+  fast_cache_reset();
 }
 
 static void tex_frame_reset()
@@ -1572,11 +1656,38 @@ static void SetTextureParams(PolyParam *mod)
   TextureCacheDesc *pbuff = nullptr;
   bool already_decoded_this_frame = false;
 
-  if (CACHE_VERY_FAST() || CACHE_FAST())
+  if (CACHE_VERY_FAST())
   {
     // Direct-slot cache: slot derived from tex_addr. O(1), no scan.
     pbuff     = skimp_slot(tex_addr);
     pixel_buf = (u32*)&pbuff[1];
+  }
+  else if (CACHE_FAST())
+  {
+    // Persistent bump arena + hash map: O(1) lookup like skimp_slot, but the
+    // allocation is sized to what this texture actually decodes to, so it
+    // can never overrun into a neighboring texture's data.
+    bool found;
+    u32  fidx   = fast_map_locate(tex_addr, &found);
+    u32  desc_sz = (sizeof(TextureCacheDesc) + 31) & ~31u;
+    if (found)
+    {
+      u32 off   = s_fastmap[fidx].bump_offset;
+      pbuff     = (TextureCacheDesc*)&vram_buffer[off];
+      pixel_buf = (u32*)&vram_buffer[off + desc_sz];
+    }
+    else
+    {
+      u32 alloc_off;
+      pbuff = fast_bump_alloc(decode_bytes, &pixel_buf, &alloc_off);
+      if (fidx != FASTMAP_SIZE) // table had a free slot for it
+      {
+        s_fastmap[fidx].key         = tex_addr;
+        s_fastmap[fidx].bump_offset = alloc_off;
+      }
+      // pbuff->addr stays 0 from fast_bump_alloc's memset, so the validity
+      // check below naturally treats this as a cache miss and decodes it.
+    }
   }
   else
   {
