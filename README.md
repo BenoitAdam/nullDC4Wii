@@ -329,7 +329,7 @@ Please check the compatiblity Wiki : https://wiibrew.org/wiki/NullDC4Wii/Compati
 
 ### Does it work on Wii U ?
 
-We have a Wii U fowarder that also use the speed boot of the Wii U (overcloack). A native port for Wii U could be done if someone wants to do port it.
+We have a Wii U fowarder that also use the speed boot of the Wii U (overclock). A native port for Wii U could be done if someone wants to do port it.
 
 ### Controls are messy / this doesn't work, etc...
 
