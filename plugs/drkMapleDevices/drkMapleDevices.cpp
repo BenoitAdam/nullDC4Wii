@@ -168,16 +168,21 @@ static void MapAnalogStick(u32 port, s32 stickX, s32 stickY, s32 nunchuckX, s32 
 }
 
 /**
- * Maps trigger inputs from GameCube controller
+ * Maps trigger inputs from GameCube controller, Wiimote +/-, and Nunchuck Z
  * @param port Controller port (0-3)
+ * @param wiiButtons Wii Remote button state
  * @param gcButtons GameCube button state
+ * @param nunchuckButtons Nunchuck button state
  */
-static void MapTriggers(u32 port, u32 gcButtons)
+static void MapTriggers(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButtons)
 {
     // Map L/R triggers (Dreamcast uses 0-255 range)
     // Note: PAD_TriggerL/R would give analog values, but using digital for simplicity
-    rt[port] = (gcButtons & PAD_TRIGGER_R) ? 255 : 0;
-    lt[port] = (gcButtons & PAD_TRIGGER_L) ? 255 : 0;
+    // Wiimote PLUS / Nunchuck Z mirror the digital C/D bits set in MapButtons(),
+    // since some games (e.g. Daytona USA, Chu Chu Rocket) read the analog
+    // trigger value instead of the digital button bit.
+    rt[port] = (gcButtons & PAD_TRIGGER_R || wiiButtons & WPAD_BUTTON_PLUS) ? 255 : 0;
+    lt[port] = (gcButtons & PAD_TRIGGER_L || wiiButtons & WPAD_BUTTON_MINUS || nunchuckButtons & WPAD_NUNCHUK_BUTTON_Z) ? 255 : 0;
 }
 
 /**
@@ -238,7 +243,7 @@ void UpdateInputState(u32 port)
     // Map all inputs to Dreamcast controller format
     MapButtons(port, wiiButtons, gcButtons, nunchuckButtons);
     MapAnalogStick(port, stickX, stickY, nunchuckX, nunchuckY);
-    MapTriggers(port, gcButtons);
+    MapTriggers(port, wiiButtons, gcButtons, nunchuckButtons);
 }
 
 /**
