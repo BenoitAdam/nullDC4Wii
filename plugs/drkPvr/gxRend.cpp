@@ -3050,46 +3050,20 @@ void DoRender()
       {
         SetTextureParams(drawMod);
 
-        // ARGB1555 (fmt 0/7) and ARGB4444 (fmt 2) carry their own alpha in the texture.
-        // On real DC hardware the vertex alpha is ignored for these formats — the PVR
-        // blends using the texture's 1-bit (1555) or 4-bit (4444) alpha directly.
-        // Under GX_MODULATE the TEV multiplies vertex RGBA by texture RGBA, so a
-        // vertex alpha of 0 (which DC games leave at 0 for opaque-with-cutout polys)
-        // wipes the texture alpha and makes the polygon invisible.
-        // Fix: force vertex alpha to 0xFF for those formats so MODULATE leaves the
-        // texture alpha untouched.
-        {
-          u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
-          // fmt == 0 needed for Ryo's head
-          // fmt == 1 needed for Ryo's eyes
-          // fmt == 2 makes BIOS display buggy
-          // fmt == 7 suggested by AI
-          force_vtx_alpha_opaque = (fmt == 0 || fmt == 1); 
-        }
+        // Real PVR hardware decides this per-polygon via TSP.UseAlpha, not pixel format.
+        // UseAlpha==0 means the hardware forces vertex alpha to 1.0 before modulation
+        // (vertex alpha must not be allowed to multiply texture alpha to zero).
+        // UseAlpha==1 means vertex alpha is used as supplied.
+        force_vtx_alpha_opaque = !drawMod->tsp.UseAlpha;
 
         // This is more accurate for alpha. May cost CPU cycles
         if (ADVANCED_ALPHA())
         {
-          u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
-          // alpha_fmt value :
-          // fmt == 0 needed for Chuchu when placing an arrow
-          // fmt == 1 needed for keeping fast FPS in castlevania
-          // fmt == 2 needed for ChuChu logo / CrazyTaxiGO! & Dreamcast spiral
-          // fmt == 5 needed for Sega Tetris score
-          // fmt == 6 needed ?
-          // fmt == 7 needed ?
-          int alpha_fmt = (fmt == 0 || fmt == 1 || fmt == 2 || fmt == 5 || fmt == 6 || fmt == 7) ? 1 : 0;
-          // We maybe could also put specific handling to avoid any FPS dropdown :
-          /*
-          int alpha_fmt;
-          if (fmt == 0) {
-              alpha_fmt = 1;
-          } else if (fmt == 2) {
-              alpha_fmt = 2; // Keep distinct so the state cache isn't constantly thrashing
-          } else {
-              alpha_fmt = 0;
-          }
-          */
+          // TSP.IgnoreTexA: when set, hardware ignores the texture's alpha channel
+          // entirely (treats it as 1.0), so there is no texture-driven zero-alpha to
+          // discard. When clear, texture alpha is live and cutout fragments (alpha==0)
+          // should be discarded via the alpha test below.
+          int alpha_fmt = drawMod->tsp.IgnoreTexA ? 0 : 1;
           if (alpha_fmt != last_alpha_fmt)
           {
             if (alpha_fmt)
