@@ -218,7 +218,7 @@ Cache setting (starting alpha 0.21)
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **CACHE_VERY_FAST** | skmp original algorythm (magic numbers). Very fast but buggy  | Max FPS |
-| **CACHE_FAST** | Broken for now, generally worse than VERY_FAST and NORMAL  | ??? FPS |
+| **CACHE_FAST** | from alpha0.34 this is the default setting  | Almost Max FPS |
 | **CACHE_NORMAL** | Best accuracy. Display mostly correctly | Mid FPS |
 | **CACHE_QUALITY** | Best accuracy. Display mostly correctly | Mid FPS |
 | **CACHE_EXTRA** | Redraw every frame. Accurate (Only for dev & Debug) | Low FPS |
