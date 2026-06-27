@@ -34,14 +34,18 @@ void CalculateSync()
         (u64)SH4_CLOCK * (u64)(SPG_LOAD.hcount + 1) / (u64)pixel_clock
     );
 
+    // SCALER_CTL.hscale halves the active horizontal resolution (low-res 2D
+    // titles), independently of the vertical interlace/240p scale below.
+    float scale_x = SCALER_CTL.hscale ? 0.5f : 1.0f;
+
     if (SPG_CONTROL.interlace)
     {
         spg_LineSh4Cycles /= 2;
-        rend_set_fb_scale(1.0f, 1.0f);
+        rend_set_fb_scale(scale_x, 1.0f);
     }
     else
     {
-        rend_set_fb_scale(1.0f,
+        rend_set_fb_scale(scale_x,
             ((SPG_CONTROL.NTSC == 0 && SPG_CONTROL.PAL == 0) ||
              (SPG_CONTROL.NTSC == 1 && SPG_CONTROL.PAL == 1)) ? 1.0f : 0.5f);
     }

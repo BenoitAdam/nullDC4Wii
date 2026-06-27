@@ -20,6 +20,7 @@ void ListInit();
 void SoftReset();
 
 void SetFpsText(char* text);
+void SetFbScale(float x, float y);
 
 
 #define rend_init         InitRenderer
@@ -38,4 +39,4 @@ void SetFpsText(char* text);
 
 #define rend_set_fps_text SetFpsText
 #define rend_set_render_rect(rect,sht)
-#define rend_set_fb_scale(x,y)
+#define rend_set_fb_scale SetFbScale

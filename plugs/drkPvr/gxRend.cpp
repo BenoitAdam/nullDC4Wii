@@ -2946,6 +2946,20 @@ static void SetTextureParams(PolyParam *mod)
 
 static bool s_did_3d_render = false;
 
+// Set by SPG.cpp's CalculateSync() from SPG_CONTROL/SCALER_CTL whenever the
+// video timing changes. 240p (non-interlaced NTSC/PAL) modes and SCALER_CTL's
+// hscale bit halve the active resolution on real hardware, so the TA-rendered
+// scene only spans a fraction of the nominal 640x480 canvas. DoRender() uses
+// these to shrink the projected canvas size accordingly.
+static float g_fb_scale_x = 1.0f;
+static float g_fb_scale_y = 1.0f;
+
+void SetFbScale(float x, float y)
+{
+  g_fb_scale_x = x;
+  g_fb_scale_y = y;
+}
+
 // ============================
 // Framebuffer-present tracking (devcast-style, magic-word variant)
 // ============================
@@ -3062,8 +3076,13 @@ void DoRender()
     printf("MEM2 free: %.2f MB\n", ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / 1024.f / 1024.f);
   }
     */
-  float dc_width = 640;
-  float dc_height = 480;
+
+  // 240p (non-interlaced NTSC/PAL) and SCALER_CTL.hscale modes only use a
+  // fraction of the nominal 640x480 canvas (real hardware halves the active
+  // scanline/pixel count) — shrink the canvas so geometry submitted in that
+  // smaller space still fills the whole output instead of a quarter/half of it.
+  float dc_width = 640.f * g_fb_scale_x;
+  float dc_height = 480.f * g_fb_scale_y;
 
   VIDEO_SetBlack(FALSE);
   // Set viewport to a centred 4:3 sub-region of the 16:9 framebuffer.
@@ -3251,8 +3270,8 @@ void DoRender()
   // incorrectly couple x and z. X is remapped at vertex submission instead.
   Mtx44 mtx =
       {
-          {(2.f / dc_width), 0, +(640.f / dc_width), 0},
-          {0, -(2.f / dc_height), -(480.f / dc_height), 0},
+          {(2.f / dc_width), 0, +1, 0},
+          {0, -(2.f / dc_height), -1, 0},
           {0, 0, p5, p6},
           {0, 0, -1, 0}
         };
