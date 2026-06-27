@@ -69,6 +69,13 @@ extern "C" int get_8bpp_preset();
 #define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 3)      // CI8 (Accurate, ^3 BE correction)
 #define TEXTURE_8BPP_RGB565() (get_8bpp_preset() == 4) // RGB565
 
+// Jojo's Bizarre Adventure texture-cache fix: TLUT-reupload-skip + CACHE_FAST
+// PalSelect-masking. Off by default so every other game keeps the exact
+// pre-fix caching/palette behavior; enable per-game via game_presets.cfg
+// (jojo_fix=1).
+extern "C" int get_jojo_fix_preset();
+#define JOJO_FIX() (get_jojo_fix_preset() != 0)
+
 // Texture cache management
 extern "C" int get_texture_cache_preset();
 
@@ -459,6 +466,40 @@ static void tex_cache_init()
   s_bump_offset = 0;
   hash_map_reset();
   fast_cache_reset();
+}
+
+// CACHE_FAST shape_key helper: for index-only GX formats (CI4/CI8 via the
+// Fast/Normal presets), the decoded buffer holds palette *indices*, not
+// colors — PalSelect only picks which bank the separately-managed TLUT
+// samples (see the palette setup block above), so most of it must NOT be
+// part of the shape key. Otherwise the same texture redrawn with a
+// different PalSelect (e.g. one glyph atlas recolored per character) is
+// wrongly treated as a different texture and the whole buffer gets
+// redecoded on every single draw, even within the same frame.
+//
+// BUT: union TCW's PAL.PalSelect (bits 21-26) overlaps the exact same bits
+// as NO_PAL.StrideSel/Reserved/ScanOrder (see ta_structs.h) — PalSelect's
+// top bit (bit 26, weight 32) IS the ScanOrder bit the decode switch reads
+// via mod->tcw.NO_PAL.ScanOrder to choose twiddled vs linear decoding.
+// Dropping that bit too would let a PalSelect change that crosses the
+// 0-31/32-63 boundary reuse an index buffer decoded under the *other*
+// scan-order interpretation — scrambled output. So only bits 21-25 (the
+// bank-within-half selector, which doesn't affect decode shape) are
+// dropped; bit 26 stays in the key.
+//
+// JOJO_FIX()-gated: this masking is what lets a glyph atlas recolored per
+// character hit the cache instead of redecoding every draw (Jojo's Bizarre
+// Adventure). Off by default — every other game keeps the plain shape_key
+// (full PalSelect included) it always had.
+static INLINE u32 tex_shape_key(PolyParam *mod, u32 pixel_fmt)
+{
+  u32 key = (mod->tcw.full & ~0x1FFFFFu) ^ (mod->tsp.full & 0x3Fu);
+  if (!JOJO_FIX()) return key;
+  bool index_only = (pixel_fmt == 5) ? (TEXTURE_4BPP_CI4_FAST() || TEXTURE_4BPP_CI4())
+                  : (pixel_fmt == 6) ? (TEXTURE_8BPP_CI8_FAST() || TEXTURE_8BPP_CI8())
+                  : false;
+  if (index_only) key &= ~(0x1Fu << 21); // drop PalSelect bits 21-25 only, keep bit 26 (ScanOrder)
+  return key;
 }
 
 static void tex_frame_reset()
@@ -1741,28 +1782,51 @@ static void SetTextureParams(PolyParam *mod)
     }
     u32 *pal = PALETTE_RAM + pal_base;
 
-    for (u32 i = 0; i < n_entries; i++)
+    // JOJO_FIX(): GX_TLUT0 is the only TLUT slot in use, so re-uploading is
+    // only ever needed when the bytes actually bound for it differ from
+    // whatever is already sitting in that slot. Cheap source-side checksum
+    // lets us skip the conversion loop + DCFlushRange + GX_LoadTlut entirely
+    // on a repeat — this is what eliminates the bulk of GX_LoadTlut calls
+    // when a scene hammers many draws that reuse the same palette bank
+    // back-to-back (e.g. text/sprite glyphs sharing one font palette).
+    // Off by default: every other game keeps the old behavior of reloading
+    // the TLUT unconditionally on every textured-and-palettized draw.
+    bool need_reupload = true;
+    static u32 s_last_tlut_checksum = 0xFFFFFFFFu;
+    if (JOJO_FIX())
     {
-      u32 pe = pal[i];
-      u16 px;
-      switch (pal_fmt)
-      {
-        case 1:  px = (u16)(pe & 0xFFFF); break;                   // RGB565  -> RGB565
-        case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;         // ARGB4444-> RGB5A3
-        case 3:  {                                                  // ARGB8888-> RGB5A3
-          u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-          px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-          break;
-        }
-        default: px = ABGR1555((u16)(pe & 0xFFFF)); break;         // ARGB1555-> RGB5A3
-      }
-      s_tlut_buf[i] = px;
+      u32 checksum = pal_fmt ^ (n_entries << 16) ^ pal_base;
+      for (u32 i = 0; i < n_entries; i++)
+        checksum = checksum * 31u + pal[i];
+      need_reupload = (checksum != s_last_tlut_checksum);
+      if (need_reupload) s_last_tlut_checksum = checksum;
     }
 
-    DCFlushRange(s_tlut_buf, n_entries * sizeof(u16));
-    GXTlutObj tlut_obj;
-    GX_InitTlutObj(&tlut_obj, s_tlut_buf, gx_tlut_fmt, (u16)n_entries);
-    GX_LoadTlut(&tlut_obj, GX_TLUT0);
+    if (need_reupload)
+    {
+      for (u32 i = 0; i < n_entries; i++)
+      {
+        u32 pe = pal[i];
+        u16 px;
+        switch (pal_fmt)
+        {
+          case 1:  px = (u16)(pe & 0xFFFF); break;                   // RGB565  -> RGB565
+          case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;         // ARGB4444-> RGB5A3
+          case 3:  {                                                  // ARGB8888-> RGB5A3
+            u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+            px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+            break;
+          }
+          default: px = ABGR1555((u16)(pe & 0xFFFF)); break;         // ARGB1555-> RGB5A3
+        }
+        s_tlut_buf[i] = px;
+      }
+
+      DCFlushRange(s_tlut_buf, n_entries * sizeof(u16));
+      GXTlutObj tlut_obj;
+      GX_InitTlutObj(&tlut_obj, s_tlut_buf, gx_tlut_fmt, (u16)n_entries);
+      GX_LoadTlut(&tlut_obj, GX_TLUT0);
+    }
   }
 
   // === End of Palette TLUT setup ===
@@ -1809,7 +1873,7 @@ static void SetTextureParams(PolyParam *mod)
       // the gap VERY_FAST plugs by disabling its cache entirely for
       // stride+scan-order textures. Validating the shape instead lets
       // CACHE_FAST keep caching those textures safely.
-      u32 shape_key = (mod->tcw.full & ~0x1FFFFFu) ^ (mod->tsp.full & 0x3Fu);
+      u32 shape_key = tex_shape_key(mod, pixel_fmt);
       cache_valid = (*ptex_skmp == 0xDEADBEEF) && (pbuff->addr == tex_addr)
                   && (pbuff->shape_key == shape_key);
     }
@@ -1880,7 +1944,7 @@ static void SetTextureParams(PolyParam *mod)
       // sentinel so a future draw at the same address with a different
       // shape (e.g. a stride-selected texture) can't be served this slot's
       // stale data — see the CACHE_FAST validity check above.
-      pbuff->shape_key = (mod->tcw.full & ~0x1FFFFFu) ^ (mod->tsp.full & 0x3Fu);
+      pbuff->shape_key = tex_shape_key(mod, pixel_fmt);
     }
 
     if(DEBUG_MESSAGE()) {
@@ -2400,14 +2464,24 @@ static void SetTextureParams(PolyParam *mod)
           else
           {
             // Twiddled FAST: 2-pixels-per-iteration paired write.
-            // Full-width twiddle: twop(x, y, w, h) — each nibble is its own pixel.
+            // Precompute per-axis Morton contributions once (O(w+h)) instead of
+            // calling twop(x,y,w,h) per pixel (O(w*h) — same fix 4BPP_OPTIMIZED
+            // applies above; this path was missing it, which is why large
+            // twiddled CI4 textures were far slower here than in OPTIMIZED
+            // despite the lighter per-pixel body otherwise).
             // ^3 = full 32-bit BE word reversal. Nibble convention: even→low (& 0xF), odd→high (>> 4).
+            u32 table_x[1024];
+            u32 table_y[1024];
+            for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
+            for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+
             for (u32 y = 0; y < h; y++)
             {
+              u32 ty = table_y[y];
               for (u32 x = 0; x < w; x += 2)
               {
-                u32 tw0  = twop(x,     y, w, h);                     // nibble index for x
-                u32 tw1  = twop(x + 1, y, w, h);                     // nibble index for x+1
+                u32 tw0  = ty | table_x[x];                          // nibble index for x
+                u32 tw1  = ty | table_x[x + 1];                       // nibble index for x+1
                 u8  raw0 = src[(tw0 >> 1) ^ 3];                      // ^3: full 32-bit BE correction
                 u8  raw1 = src[(tw1 >> 1) ^ 3];
                 u8  idx0 = (tw0 & 1) ? (raw0 >> 4) : (raw0 & 0xF);  // palette index for x
@@ -2463,18 +2537,28 @@ static void SetTextureParams(PolyParam *mod)
           }
           else
           {
-            // Twiddled (Morton order) for 4BPP:
-            // Full-width twiddle: twop(x, y, w, h) — each nibble is its own addressable pixel.
+            // Twiddled (Morton order) for 4BPP: precompute per-axis Morton
+            // contributions once (O(w+h)) instead of calling twop(x,y,w,h)
+            // per pixel (O(w*h) — same fix as 4BPP_OPTIMIZED/CI4_FAST above;
+            // this path was still doing the expensive per-pixel call).
             // ^3 = full 32-bit BE word reversal.
             // Nibble convention: even pixel → LOW nibble (& 0xF), odd pixel → HIGH nibble (>> 4).
+            u32 table_x[1024];
+            u32 table_y[1024];
+            for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
+            for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+
             for (u32 y = 0; y < h; y++)
+            {
+              u32 ty = table_y[y];
               for (u32 x = 0; x < w; x++)
               {
-                u32 tw_nibble = twop(x, y, w, h);                         // nibble index
+                u32 tw_nibble = ty | table_x[x];                          // nibble index
                 u8  raw       = src[(tw_nibble >> 1) ^ 3];                // ^3: 32-bit BE correction
                 u8  idx       = (tw_nibble & 1) ? (raw >> 4) : (raw & 0xF);
                 ci4_prel(idst, x, y, w, idx);
               }
+            }
           }
         }
 
@@ -2495,13 +2579,22 @@ static void SetTextureParams(PolyParam *mod)
           u8  *src = (u8 *)&params.vram[tex_addr];
           u16 *dst = (u16 *)VramWork;
 
-          // We pull the switch OUTSIDE the loops. 
+          // Precompute per-axis Morton contributions once (O(w+h)) instead of
+          // calling twop(x,y,w,h) per pixel (O(w*h) — same fix applied to the
+          // other 4BPP paths above; this loop was still doing it per pixel).
+          u32 table_x[1024];
+          u32 table_y[1024];
+          for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
+          for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+
+          // We pull the switch OUTSIDE the loops.
           // The compiler can now optimize each loop specifically for the format.
           switch (pal_fmt) {
               case 1: // RGB565
                   for (u32 y = 0; y < h; y++) {
+                      u32 ty = table_y[y];
                       for (u32 x = 0; x < w; x++) {
-                          u32 tw_nibble = twop(x, y, w, h);
+                          u32 tw_nibble = ty | table_x[x];
                           u8  raw = src[(tw_nibble >> 1) ^ 1];
                           u8  idx = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
                           dst[GX_TexOffs(x, y, w)] = (u16)(pal[idx] & 0xFFFF);
@@ -2511,8 +2604,9 @@ static void SetTextureParams(PolyParam *mod)
 
               case 2: // ARGB4444
                   for (u32 y = 0; y < h; y++) {
+                      u32 ty = table_y[y];
                       for (u32 x = 0; x < w; x++) {
-                          u32 tw_nibble = twop(x, y, w, h);
+                          u32 tw_nibble = ty | table_x[x];
                           u8  raw = src[(tw_nibble >> 1) ^ 1];
                           u8  idx = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
                           dst[GX_TexOffs(x, y, w)] = ABGR4444((u16)(pal[idx] & 0xFFFF));
@@ -2522,8 +2616,9 @@ static void SetTextureParams(PolyParam *mod)
 
               case 3: // ARGB8888 -> RGB5A3
                   for (u32 y = 0; y < h; y++) {
+                      u32 ty = table_y[y];
                       for (u32 x = 0; x < w; x++) {
-                          u32 tw_nibble = twop(x, y, w, h);
+                          u32 tw_nibble = ty | table_x[x];
                           u8  raw = src[(tw_nibble >> 1) ^ 1];
                           u8  idx = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
                           u32 pe  = pal[idx];
@@ -2535,8 +2630,9 @@ static void SetTextureParams(PolyParam *mod)
 
               default: // ARGB1555
                   for (u32 y = 0; y < h; y++) {
+                      u32 ty = table_y[y];
                       for (u32 x = 0; x < w; x++) {
-                          u32 tw_nibble = twop(x, y, w, h);
+                          u32 tw_nibble = ty | table_x[x];
                           u8  raw = src[(tw_nibble >> 1) ^ 1];
                           u8  idx = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
                           dst[GX_TexOffs(x, y, w)] = ABGR1555((u16)(pal[idx] & 0xFFFF));
@@ -2748,16 +2844,25 @@ static void SetTextureParams(PolyParam *mod)
           }
           else
           {
-            // Twiddled FAST: twop() per pixel (unavoidable), but tile address
+            // Twiddled FAST: precompute per-axis Morton contributions once
+            // (O(w+h)) instead of calling twop(x,y,w,h) per pixel (O(w*h) —
+            // same fix as the 4BPP paths; this was the dominant per-pixel
+            // cost despite the inlined tile-address math below). Tile address
             // is computed inline — no ci8_prel call. y_tile_base is hoisted
             // out of the x loop: saves one multiply + one add per pixel.
+            u32 table_x[1024];
+            u32 table_y[1024];
+            for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
+            for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+
             u32 tiles_x = w / 8;
             for (u32 y = 0; y < h; y++)
             {
               u32 y_tile_base = (y / 4) * tiles_x * 32 + (y % 4) * 8;
+              u32 ty           = table_y[y];
               for (u32 x = 0; x < w; x++)
               {
-                u8  idx      = src[twop(x, y, w, h) ^ 3]; // ^3: 32-bit BE correction
+                u8  idx      = src[(ty | table_x[x]) ^ 3]; // ^3: 32-bit BE correction
                 u32 byte_off = y_tile_base + (x / 8) * 32 + (x % 8);
                 idst[byte_off] = idx;
               }
@@ -2799,13 +2904,24 @@ static void SetTextureParams(PolyParam *mod)
           else
           {
             // Twiddled (Morton order): twiddle index = byte index for 8BPP.
+            // Precompute per-axis Morton contributions once (O(w+h)) instead
+            // of calling twop(x,y,w,h) per pixel (O(w*h) — same fix as the
+            // 4BPP paths above).
             // ^3: full 32-bit word reversal — same as I8 grey Twiddled path.
+            u32 table_x[1024];
+            u32 table_y[1024];
+            for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
+            for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+
             for (u32 y = 0; y < h; y++)
+            {
+              u32 ty = table_y[y];
               for (u32 x = 0; x < w; x++)
               {
-                u8 idx = src[twop(x, y, w, h) ^ 3]; // ^3: 32-bit BE VRAM correction
+                u8 idx = src[(ty | table_x[x]) ^ 3]; // ^3: 32-bit BE VRAM correction
                 ci8_prel(idst, x, y, w, idx);
               }
+            }
           }
         }
 
@@ -2829,12 +2945,20 @@ static void SetTextureParams(PolyParam *mod)
           u8  *src = (u8 *)&params.vram[tex_addr];
           u16 *dst = (u16 *)VramWork;
 
-          // 8BPP twiddled: 1 byte = 1 pixel in Morton order.
+          // 8BPP twiddled: 1 byte = 1 pixel in Morton order. Precompute
+          // per-axis Morton contributions once (O(w+h)) instead of calling
+          // twop(x,y,w,h) per pixel (O(w*h) — same fix as the 4BPP paths above).
+          u32 table_x[1024];
+          u32 table_y[1024];
+          for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
+          for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+
           for (u32 y = 0; y < h; y++)
           {
+            u32 ty = table_y[y];
             for (u32 x = 0; x < w; x++)
             {
-              u32 tw  = twop(x, y, w, h);
+              u32 tw  = ty | table_x[x];
               u8  idx = src[tw ^ 3];  // ^3: full 32-bit BE word correction (matches CI8/I8 paths)
 
               u32 pe = pal[idx];

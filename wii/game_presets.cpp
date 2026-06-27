@@ -8,6 +8,11 @@
         accuracy=fast       <- only fields listed are overridden
         graphics=low
         8bpp=i8_stub
+        jojo_fix=1          <- 0/1, enables the gxRend.cpp TLUT-checksum-skip
+                                and CACHE_FAST PalSelect-masking optimizations
+                                (see plugs/drkPvr/gxRend.cpp JOJO_FIX()).
+                                Default 0 (off) leaves every other game's
+                                texture caching/palette behavior unchanged.
 
     First matching rule wins.
     Unset fields are left at whatever the user selected in the UI.
@@ -34,6 +39,7 @@ extern int g_texture_cache_preset;
 extern int g_ppz_write_preset;
 extern int g_4bpp_preset;
 extern int g_8bpp_preset;
+extern int g_jojo_fix_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -60,6 +66,7 @@ struct GamePreset
     int ppz_write;
     int bpp4;
     int bpp8;
+    int jojo_fix;
     int players;
     int controller;
     int framebuffer_2d;
@@ -226,6 +233,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "ppz_write"))  p->ppz_write  = atoi(val);
     else if (key_eq(key, "4bpp"))       p->bpp4       = parse_bpp(val);
     else if (key_eq(key, "8bpp"))       p->bpp8       = parse_bpp(val);
+    else if (key_eq(key, "jojo_fix"))   p->jojo_fix   = atoi(val);
     else if (key_eq(key, "players"))    p->players    = atoi(val);
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);
     else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = atoi(val);
@@ -284,6 +292,7 @@ void game_presets_load(const char* cfg_path)
             // Mark every field as "not set"
             cur->accuracy = cur->graphics  = cur->ratio    = cur->adv_alpha = -1;
             cur->frameskip= cur->tex_cache = cur->bpp4     = cur->bpp8      = -1;
+            cur->jojo_fix = -1;
             cur->players  = cur->controller                                  = -1;
             cur->ppz_write = -1;
             cur->framebuffer_2d = -1;
@@ -364,6 +373,7 @@ void game_presets_apply(const char* filepath)
         if (p->ppz_write  >= 0) { g_ppz_write_preset      = p->ppz_write;  printf("  ppz_write  -> %d\n", p->ppz_write);  }
         if (p->bpp4       >= 0) { g_4bpp_preset           = p->bpp4;       printf("  4bpp       -> %d\n", p->bpp4);       }
         if (p->bpp8       >= 0) { g_8bpp_preset           = p->bpp8;       printf("  8bpp       -> %d\n", p->bpp8);       }
+        if (p->jojo_fix   >= 0) { g_jojo_fix_preset       = p->jojo_fix;   printf("  jojo_fix   -> %d\n", p->jojo_fix);   }
         if (p->players    >= 0) { g_player_count          = p->players;    printf("  players    -> %d\n", p->players);    }
         if (p->controller >= 0) { g_controller_type       = p->controller; printf("  controller -> %d\n", p->controller); }
         if (p->framebuffer_2d >= 0) { g_framebuffer_2d    = p->framebuffer_2d; printf("  framebuffer_2d -> %d\n", p->framebuffer_2d); }

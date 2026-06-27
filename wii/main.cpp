@@ -97,6 +97,12 @@ extern "C" {
   int get_fmv_format_preset() { return g_fmv_format_preset; }
 }
 
+int g_jojo_fix_preset = 1; // 0=off (pre-fix behavior), 1=on — enable via [jojo] in game_presets.cfg
+
+extern "C" {
+  int get_jojo_fix_preset() { return g_jojo_fix_preset; }
+}
+
 int g_player_count = 2;
 
 extern "C" {
@@ -1129,6 +1135,7 @@ int main(int argc, wchar *argv[])
       case 3: printf("CI8 (NORMAL)\n");   break;
       case 4: printf("RGB565\n");         break;
     }
+    printf("Jojo Fix       : %s\n", g_jojo_fix_preset ? "YES" : "NO");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
