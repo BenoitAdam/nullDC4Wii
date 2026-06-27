@@ -97,7 +97,7 @@ extern "C" {
   int get_fmv_format_preset() { return g_fmv_format_preset; }
 }
 
-int g_jojo_fix_preset = 1; // 0=off (pre-fix behavior), 1=on — enable via [jojo] in game_presets.cfg
+int g_jojo_fix_preset = 0; // 0=off (pre-fix behavior), 1=on — enable via [jojo] in game_presets.cfg
 
 extern "C" {
   int get_jojo_fix_preset() { return g_jojo_fix_preset; }
@@ -498,10 +498,11 @@ void displayAccuracyMenu()
 #define OPT_TEX_CACHE   12
 #define OPT_4BPP        13
 #define OPT_8BPP        14
-#define OPT_PLAYERS     15
-#define OPT_CTRL_TYPE   16
-#define OPT_MORE_INFO   17
-#define OPT_ROW_COUNT   18
+#define OPT_JOJO_FIX    15
+#define OPT_PLAYERS     16
+#define OPT_CTRL_TYPE   17
+#define OPT_MORE_INFO   18
+#define OPT_ROW_COUNT   19
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -642,9 +643,18 @@ bool displayOptionsMenu()
       case 3: printf("[< CI8 (NORMAL)      >]"); break;
       case 4: printf("[< RGB565 (ACCURATE) >]"); break;
     }
+    printf("\n");
+
+    // --- Row 12: Jojo Fix ---
+    printf("%s JOJO FIX      : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
+    switch (g_jojo_fix_preset) {
+      case 0: printf("[< OFF           >]"); break;
+      case 1: printf("[< ON (DEFAULT)  >]"); break;
+    }
+    printf(" (Tip: for JoJo's Bizarre Adventure)");
     printf("\n\n");
 
-    // --- Row 12: Players ---
+    // --- Row 13: Players ---
     printf("%s PLAYERS       : ", (selectedRow == OPT_PLAYERS) ? ">" : " ");
     printf(g_player_count == 1 ? "[< 1 PLAYER  >]" : "[< 2 PLAYERS >]");
     printf("\n");
@@ -703,6 +713,7 @@ bool displayOptionsMenu()
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 3) % 4; break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 4) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 4) % 5; break;
+        case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
         default: break;
@@ -722,6 +733,7 @@ bool displayOptionsMenu()
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 1) % 4; break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 1) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 1) % 5; break;
+        case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + 1) % kControllerTypeCount; break;
         default: break;
