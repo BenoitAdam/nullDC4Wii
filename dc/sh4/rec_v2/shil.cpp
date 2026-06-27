@@ -57,7 +57,9 @@ static void RegWriteInfo(shil_opcode* ops, const shil_param& p, u32 ord)
 
         if (prevW != 0xFFFFFFFF && prevR < prevW)
         {
-            printf("DEAD OPCODE %u -> %u (reg %u)\n", prevW, ord, r);
+            // Per-opcode logging removed: fires on every dead write found,
+            // which floods console output across thousands of blocks and
+            // would itself skew any speed comparison.
             ops[prevW].Flow = 1;
         }
         RegisterWrite[r] = ord;

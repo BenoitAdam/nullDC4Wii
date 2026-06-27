@@ -97,6 +97,10 @@ CXXFLAGS += -finline-functions   # Inline sh4op handlers
 CXXFLAGS += -ffast-math          # If no FPU edge cases needed
 CXXFLAGS += -fno-exceptions      # Reduce code size
 
+# Experimental: enable SHIL dead-write elimination in the SH4 recompiler
+# (dc/sh4/rec_v2/shil.cpp). Off upstream; remove this line to revert.
+# CXXFLAGS += -DSHIL_ENABLE_DCE
+
 # Linker Flags
 LDFLAGS  := -g $(MACHDEP) -Wl,-Map,$(TARGET).map
 
