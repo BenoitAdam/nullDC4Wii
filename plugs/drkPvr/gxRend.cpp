@@ -32,22 +32,6 @@ extern "C" int get_ratio_preset();
 extern "C" int get_advanced_alpha_preset();
 #define ADVANCED_ALPHA() (get_advanced_alpha_preset() == 1)
 
-// RGB565 has no real alpha channel, but real PVR hardware colour-keys pure
-// black (0,0,0) as transparent for VQ-compressed RGB565 textures when the
-// polygon does NOT ignore texture alpha (TSP.IgnoreTexA==0) — e.g. Power
-// Stone's star/sparkle sprites. When IgnoreTexA==1 (the common case for
-// opaque scenery), black must stay opaque (see Shenmue hands regression,
-// commit 394cac2). This is a per-polygon TSP setting, not a texture-data
-// property, so it's set right before decoding and consulted from
-// conv565_VQ::ConvertPixel below.
-static bool g_565_colorkey_black = false;
-
-// The VQ-565 decode above depends on TSP.IgnoreTexA, which isn't otherwise
-// part of any texture cache's fingerprint/shape key. Fold it in so two draws
-// of the same VRAM texture with different IgnoreTexA can't share a stale
-// cached decode (only matters for PixelFmt==1; harmless no-op otherwise).
-#define VQ_FP_EXTRA(mod) (((mod)->tcw.NO_PAL.PixelFmt == 1 && !(mod)->tsp.IgnoreTexA) ? 0xA5A5A5A5u : 0u)
-
 bool use_adv_alpha = ADVANCED_ALPHA(); // compute once
 
 // This is defined in main.cpp
@@ -869,13 +853,9 @@ pixelcvt_startVQ(conv565_VQ, 2, 2)
   return R | (G << 5) | (B << 11);
 }  // closes inner block
 }  // closes Convert
-  // RGB565 has no alpha channel. When upcast to RGB5A3, pure black colour-keys
-  // as transparent ONLY when the current polygon honours texture alpha
-  // (g_565_colorkey_black, set per-draw from TSP.IgnoreTexA — see the FMT
-  // switch above); otherwise every pixel is forced opaque so opaque scenery
-  // with black texels isn't punched full of holes (Shenmue hands regression).
+  // HACK: ConvertPixel now maps RGB565 to RGB5A3, treating black as transparent.
   __forceinline static u16 ConvertPixel(u16 p) {
-    if (g_565_colorkey_black && p == 0x0000) return 0x0000; // transparent
+    if (p == 0x0000) return 0x8000; // opaque black (fixes depth write)
     u32 r = (p >> 11) & 0x1F;
     u32 g = (p >> 5) & 0x3F;
     u32 b = p & 0x1F;
@@ -1818,7 +1798,7 @@ static void SetTextureParams(PolyParam *mod)
         idx_addr = (orig_tex_addr + VQMipPoint[mod->tsp.TexU + 3]) & VRAM_MASK;
       u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
       u32 idx_w0 = *(u32*)&params.vram[idx_addr];
-      u32 fp = cb_w0 ^ idx_w0 ^ VQ_FP_EXTRA(mod);
+      u32 fp = cb_w0 ^ idx_w0;
       cache_valid = (pbuff->addr == tex_addr) && (pbuff->vq_codebook_w0 == fp);
     }
     else
@@ -1844,7 +1824,7 @@ static void SetTextureParams(PolyParam *mod)
         idx_addr = (orig_tex_addr + VQMipPoint[mod->tsp.TexU + 3]) & VRAM_MASK;
       u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
       u32 idx_w0 = *(u32*)&params.vram[idx_addr];
-      u32 fp = cb_w0 ^ idx_w0 ^ VQ_FP_EXTRA(mod);
+      u32 fp = cb_w0 ^ idx_w0;
       cache_valid = (pbuff->addr == orig_tex_addr) && (pbuff->vq_codebook_w0 == fp);
     }
     else
@@ -1865,7 +1845,7 @@ static void SetTextureParams(PolyParam *mod)
         idx_addr = (orig_tex_addr + VQMipPoint[mod->tsp.TexU + 3]) & VRAM_MASK;
       u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
       u32 idx_w0 = *(u32*)&params.vram[idx_addr];
-      u32 fp = cb_w0 ^ idx_w0 ^ VQ_FP_EXTRA(mod);
+      u32 fp = cb_w0 ^ idx_w0;
       cache_valid = (pbuff->addr == orig_tex_addr) && (pbuff->vq_codebook_w0 == fp);
     }
     else
@@ -1892,7 +1872,7 @@ static void SetTextureParams(PolyParam *mod)
         idx_addr = (orig_tex_addr + VQMipPoint[mod->tsp.TexU + 3]) & VRAM_MASK;
       u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
       u32 idx_w0 = *(u32*)&params.vram[idx_addr];
-      pbuff->vq_codebook_w0 = cb_w0 ^ idx_w0 ^ VQ_FP_EXTRA(mod);
+      pbuff->vq_codebook_w0 = cb_w0 ^ idx_w0;
     }
     else if (CACHE_FAST())
     {
@@ -1934,13 +1914,6 @@ static void SetTextureParams(PolyParam *mod)
 
     case 1:
       // 565 Format  R value: 5 bits; G value: 6 bits; B value: 5 bits
-      //
-      // Real PVR hardware colour-keys pure black as transparent for
-      // VQ-compressed RGB565 when the polygon honours texture alpha
-      // (TSP.IgnoreTexA==0) — set the flag conv565_VQ::ConvertPixel reads.
-      // Only VQ_Comp can ever go through the RGB5A3 upcast path; the
-      // non-VQ (native RGB565, no alpha bits possible) path ignores it.
-      g_565_colorkey_black = mod->tcw.NO_PAL.VQ_Comp && !mod->tsp.IgnoreTexA;
       if (mod->tcw.NO_PAL.ScanOrder)
       {
         // verify(tcw.NO_PAL.VQ_Comp==0);
@@ -1952,9 +1925,7 @@ static void SetTextureParams(PolyParam *mod)
         // verify(tsp.TexU==tsp.TexV);
         twidle_tex(565);
       }
-      // VQ-compressed RGB565 is decoded per-pixel via conv565_VQ::ConvertPixel,
-      // which upcasts to RGB5A3 (see g_565_colorkey_black there); the non-VQ
-      // path can stay native RGB565 since it's uploaded directly.
+      // HACK: For VQ-compressed RGB565, use RGB5A3 to allow alpha (black→transparent)
       if (mod->tcw.NO_PAL.VQ_Comp) {
           FMT = GX_TF_RGB5A3;
       } else {
@@ -3345,23 +3316,8 @@ void DoRender()
   GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
 
-  // Cutout/alpha-test setup no longer needs to vary per polygon: with
-  // TSP.IgnoreTexA correctly forcing texture alpha to 1.0 at the TEV stage
-  // (below), the final fragment alpha can only be exactly 0 for a genuine
-  // cutout texel, so the fast "alpha test before depth" path is always safe.
-  if (ADVANCED_ALPHA())
-  {
-    GX_SetAlphaCompare(GX_GREATER, 0, GX_AOP_AND, GX_ALWAYS, 0);
-    GX_SetZCompLoc(GX_FALSE);
-  }
-  else
-  {
-    GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
-    GX_SetZCompLoc(GX_TRUE);
-  }
-
   int last_textured = -1;  // track texture state to skip redundant GX calls
-  int last_ignore_tex_a = -1; // -1 = unset
+  int last_alpha_fmt = -1; // -1 = unset
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
 
@@ -3391,7 +3347,6 @@ void DoRender()
           GX_SetNumTexGens(1);
           GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
           GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
-          last_ignore_tex_a = -1; // GX_MODULATE reset the alpha-in combiner; force re-apply below
         }
         else
         {
@@ -3417,19 +3372,28 @@ void DoRender()
         u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
         force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !drawMod->tsp.UseAlpha;
 
-        // TSP.IgnoreTexA: when set, hardware forces the texture's alpha to 1.0
-        // before modulation (e.g. RGB565 has no alpha channel at all, so this is
-        // normally set). Replicate that at the TEV stage instead of relying on
-        // texture data being pre-baked opaque: out.a = rasa when ignored,
-        // out.a = rasa*texa (the normal GX_MODULATE alpha) when honored.
-        int ignore_tex_a = drawMod->tsp.IgnoreTexA ? 1 : 0;
-        if (ignore_tex_a != last_ignore_tex_a)
+        // This is more accurate for alpha. May cost CPU cycles
+        if (ADVANCED_ALPHA())
         {
-          if (ignore_tex_a)
-            GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
-          else
-            GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO);
-          last_ignore_tex_a = ignore_tex_a;
+          // TSP.IgnoreTexA: when set, hardware ignores the texture's alpha channel
+          // entirely (treats it as 1.0), so there is no texture-driven zero-alpha to
+          // discard. When clear, texture alpha is live and cutout fragments (alpha==0)
+          // should be discarded via the alpha test below.
+          int alpha_fmt = drawMod->tsp.IgnoreTexA ? 0 : 1;
+          if (alpha_fmt != last_alpha_fmt)
+          {
+            if (alpha_fmt)
+            {
+              GX_SetAlphaCompare(GX_GREATER, 0, GX_AOP_AND, GX_ALWAYS, 0);
+              GX_SetZCompLoc(GX_FALSE);
+            }
+            else
+            {
+              GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+              GX_SetZCompLoc(GX_TRUE);
+            }
+            last_alpha_fmt = alpha_fmt;
+          }
         }
       }
       else
