@@ -855,7 +855,7 @@ pixelcvt_startVQ(conv565_VQ, 2, 2)
 }  // closes Convert
   // HACK: ConvertPixel now maps RGB565 to RGB5A3, treating black as transparent.
   __forceinline static u16 ConvertPixel(u16 p) {
-    if (p == 0x0000) return 0x8000; // opaque black (fixes depth write)
+    if (p == 0x0000) return 0x0000; // alpha=0 (ARGB3444 mode) -> fully transparent
     u32 r = (p >> 11) & 0x1F;
     u32 g = (p >> 5) & 0x3F;
     u32 b = p & 0x1F;
