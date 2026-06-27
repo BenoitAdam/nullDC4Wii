@@ -264,6 +264,12 @@ u32 INLINE BSR(u32 v)
         return rv;
 	#endif
 
+#elif (HOST_ARCH==ARCH_PPC)
+
+	// cntlzw (count-leading-zeros word) is a single-cycle PPC750 instruction;
+	// __builtin_clz compiles straight to it under devkitPPC/GCC.
+	return 31 - __builtin_clz(v);
+
 #else
 
 	// Generic, *FIXME* ADD PPC BIT OP //
