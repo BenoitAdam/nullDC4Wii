@@ -411,7 +411,6 @@ void checkBiosFiles()
 
 void displayAccuracyMenu()
 {
-  int selectedOption = g_accuracy_preset;
 
   while (true)
   {
@@ -420,7 +419,7 @@ void displayAccuracyMenu()
     printf(" \n");
     printf("Information about preset :\n\n");
 
-    printf("Calculations Accuracy (can lead to bugs if not AVERAGE):\n");
+    printf("Calculations Accuracy (can lead to bugs if not ACCURATE):\n");
     printf("> FAST     - Maximum Speed\n");
     printf("> BALANCED - Good Balance\n");
     printf("> ACCURATE - Maximum Accuracy (closest to real hardware)\n\n");
@@ -435,43 +434,13 @@ void displayAccuracyMenu()
     printf("> ORIGINAL   - 4/3 ratio\n");
     printf("> FULLSCREEN\n\n");
 
-    printf("Current setting:\n");
-    switch(g_accuracy_preset) {
-      case 0: printf("FAST - ");     break;
-      case 1: printf("BALANCED - "); break;
-      case 2: printf("ACCURATE - "); break;
-    }
-    switch(g_graphism_preset) {
-      case 0: printf("LOW - ");    break;
-      case 1: printf("NORMAL - "); break;
-      case 2: printf("HIGH - ");   break;
-      case 3: printf("EXTRA - ");  break;
-    }
-    switch(g_ratio_preset) {
-      case 0: printf("ORIGINAL\n");   break;
-      case 1: printf("FULLSCREEN\n"); break;
-    }
-
-    printf("\nUP/DOWN: Select option | A: Confirm | B: Back\n");
+    printf("\nB: Back\n");
     printf("Note: Change settings if you experience issues or need more speed.\n");
 
     WPAD_ScanPads();
     u32 pressed = WPAD_ButtonsDown(0);
-
-    if (pressed & WPAD_BUTTON_UP)
-    {
-      if (selectedOption > 0) selectedOption--;
-    }
-    else if (pressed & WPAD_BUTTON_DOWN)
-    {
-      if (selectedOption < 2) selectedOption++;
-    }
-    else if (pressed & WPAD_BUTTON_A)
-    {
-      g_accuracy_preset = selectedOption;
-      return;
-    }
-    else if (pressed & WPAD_BUTTON_B)
+    
+    if (pressed & WPAD_BUTTON_B)
     {
       return;
     }
@@ -525,8 +494,7 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H");
 
-    printf("NullDC4Wii - Alpha 0.36   OPTIONS\n");
-    printf("===================================\n\n");
+    printf("====== NullDC4Wii - Alpha 0.36   OPTIONS ======\n\n");
 
     // --- Row 0: Launch ---
     printf("%s LAUNCH GAME\n", (selectedRow == OPT_LAUNCH) ? ">" : " ");
@@ -544,10 +512,9 @@ bool displayOptionsMenu()
     else
       printf("    (no game preset matched)\n");
 
-    // --- Row 3: Blank separator ---
     printf("\n");
 
-    // --- Row 4: Graphics ---
+    // --- Row 3: Graphics ---
     printf("%s GRAPHICS      : ", (selectedRow == OPT_GRAPHICS) ? ">" : " ");
     switch (g_graphism_preset) {
       case 0: printf("[< LOW        >]"); break;
@@ -558,7 +525,7 @@ bool displayOptionsMenu()
     printf(" (Tip: 2D Games should use LOW)");
     printf("\n");
 
-    // --- Row 5: Accuracy ---
+    // --- Row 4: Accuracy ---
     printf("%s ACCURACY      : ", (selectedRow == OPT_ACCURACY) ? ">" : " ");
     switch (g_accuracy_preset) {
       case 0: printf("[< FAST       >]"); break;
@@ -568,15 +535,15 @@ bool displayOptionsMenu()
     printf(" (Tip: not much difference)");
     printf("\n");
 
-    // --- Row 6: Ratio ---
+    // --- Row 5: Ratio ---
     printf("%s RATIO         : ", (selectedRow == OPT_RATIO) ? ">" : " ");
     switch (g_ratio_preset) {
       case 0: printf("[< ORIGINAL   >]"); break;
       case 1: printf("[< FULLSCREEN >]"); break;
     }
-    printf("\n\n");
+    printf("\n");
 
-    // --- Row 7: PPZ Write ---
+    // --- Row 6: PPZ Write ---
     printf("%s PPZ_WRITE     : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
     switch (g_ppz_write_preset) {
       case 0: printf("[< NO  >]"); break;
@@ -584,7 +551,7 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 8: Advanced Alpha ---
+    // --- Row 7: Advanced Alpha ---
     printf("%s ADVANCED ALPHA: ", (selectedRow == OPT_ADV_ALPHA) ? ">" : " ");
     switch (g_advanced_alpha_preset) {
       case 0: printf("[< NO            >]"); break;
@@ -592,16 +559,15 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 9: Decal Alpha Fix ---
+    // --- Row 8: Decal Alpha Fix ---
     printf("%s DECAL ALPHA   : ", (selectedRow == OPT_DECAL_ALPHA) ? ">" : " ");
     switch (g_decal_alpha_preset) {
       case 0: printf("[< OFF (FASTER)  >]"); break;
       case 1: printf("[< ON (CORRECT)  >]"); break;
     }
-    printf(" (Tip: ON if transparency instead of opaque)");
     printf("\n");
 
-    // --- Row 10: 2D Framebuffer ---
+    // --- Row 9: 2D Framebuffer ---
     printf("%s 2D FRAMEBUFFER: ", (selectedRow == OPT_FRAMEBUFFER_2D) ? ">" : " ");
     switch (g_framebuffer_2d) {
       case 0: printf("[< NO  >]"); break;
@@ -619,7 +585,7 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 8: Frameskipping ---
+    // --- Row 11: Frameskipping ---
     printf("%s FRAMESKIPPING : ", (selectedRow == OPT_FRAMESKIP) ? ">" : " ");
     switch (g_frameskip_preset) {
       case 0: printf("[< 0 (DEFAULT)   >]"); break;
@@ -629,7 +595,7 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 9: Texture Cache ---
+    // --- Row 12: Texture Cache ---
     printf("%s TEXTURE CACHE : ", (selectedRow == OPT_TEX_CACHE) ? ">" : " ");
     switch (g_texture_cache_preset) {
       case 0: printf("[< VERY FAST     >]"); break;
@@ -639,7 +605,7 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 10: 4BPP ---
+    // --- Row 13: 4BPP ---
     printf("%s 4BPP MODE     : ", (selectedRow == OPT_4BPP) ? ">" : " ");
     switch (g_4bpp_preset) {
       case 0: printf("[< I4 STUB           >]"); break;
@@ -650,7 +616,7 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 11: 8BPP ---
+    // --- Row 14: 8BPP ---
     printf("%s 8BPP MODE     : ", (selectedRow == OPT_8BPP) ? ">" : " ");
     switch (g_8bpp_preset) {
       case 0: printf("[< I8 STUB           >]"); break;
@@ -661,21 +627,21 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 12: Jojo Fix ---
+    // --- Row 15: Jojo Fix ---
     printf("%s JOJO FIX      : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
     switch (g_jojo_fix_preset) {
       case 0: printf("[< OFF           >]"); break;
       case 1: printf("[< ON (DEFAULT)  >]"); break;
     }
     printf(" (Tip: for JoJo's Bizarre Adventure)");
-    printf("\n\n");
+    printf("\n");
 
-    // --- Row 13: Players ---
+    // --- Row 16: Players ---
     printf("%s PLAYERS       : ", (selectedRow == OPT_PLAYERS) ? ">" : " ");
     printf(g_player_count == 1 ? "[< 1 PLAYER  >]" : "[< 2 PLAYERS >]");
     printf("\n");
 
-    // --- Row 13: Controller ---
+    // --- Row 17: Controller ---
     printf("%s CONTROLLER    : ", (selectedRow == OPT_CTRL_TYPE) ? ">" : " ");
     switch (g_controller_type) {
       case 0: printf("[< STANDARD              >]"); break;
@@ -697,8 +663,7 @@ bool displayOptionsMenu()
     printf("%s MORE INFO      (press A to open)\n", (selectedRow == OPT_MORE_INFO) ? ">" : " ");
 
     printf("\n");
-    printf("UP/DOWN: Navigate | LEFT/RIGHT: Change value\n");
-    printf("A: Launch / Open | B: Back to file list\n");
+    printf("UP/DOWN: Navigate | LEFT/RIGHT: Change value | A: Launch | B: Back\n");
 
     WPAD_ScanPads();
     u32 pressed = WPAD_ButtonsDown(0);
