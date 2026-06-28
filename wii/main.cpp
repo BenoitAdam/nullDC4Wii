@@ -596,9 +596,9 @@ bool displayOptionsMenu()
     printf("%s DECAL ALPHA   : ", (selectedRow == OPT_DECAL_ALPHA) ? ">" : " ");
     switch (g_decal_alpha_preset) {
       case 0: printf("[< OFF (FASTER)  >]"); break;
-      case 1: printf("[< ON (DEFAULT)  >]"); break;
+      case 1: printf("[< ON (CORRECT)  >]"); break;
     }
-    printf(" (Tip: OFF if decals run slow)");
+    printf(" (Tip: ON if transparency instead of opaque)");
     printf("\n");
 
     // --- Row 10: 2D Framebuffer ---
