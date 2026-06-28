@@ -373,6 +373,8 @@ Since I (BenoitAdam) digged the NullDC code, AI has been heavily used to make im
 
 It's ok, you have the right, but without AI this project wouldn't have been resurected. AI for code is really a big help, definitly not the same thing with AI generated images and videos. For information AI for image ask ~10x more power, AI for video ask ~100x more power.
 
+Reduce CO2 emission & grow trees is the plan for the planet.
+
 ## Ressources
 
 ### Dreamcast Emulators 
