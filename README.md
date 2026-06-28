@@ -40,6 +40,19 @@ a fork from https://github.com/skmp/nullDCe
 - Use LLVM to port code for PowerPC ? (skmp says its not a good idea in this case)
 - Full Dynarec implementation (AI seems to know about this)
 - WinCE Games support https://github.com/BenoitAdam94/nullDC4Wii/issues/37
+  - SH4 MMU is now implemented: real UTLB lookup with TLB-miss /
+    protection-violation / initial-page-write exceptions (dc/mem/mmu.cpp),
+    wired into both the interpreter and the Wii PPC JIT
+    (dc/mem/_vmem.cpp, wii/dc/sh4/rec_v2/wii_driver.cpp - shop_readm/
+    shop_writem now check MMUCR.AT at runtime and defer to the C
+    dispatcher instead of inlining the raw-virtual-address fast path).
+    AT=0 games (the vast majority) are unaffected - one extra cheap
+    branch per memory access.
+  - Not yet covered: the `op->rs1.is_imm()` compile-time-constant
+    addressing path in shop_readm (rare; mostly GBR/PC-relative literal
+    loads) still bypasses translation. Needs real-hardware/Dolphin
+    testing - this was written and reasoned through carefully but never
+    executed on target.
 
 
 ## Installation

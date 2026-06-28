@@ -1017,6 +1017,23 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
 						ppc_addi(ppc_rarg1,ppc_rarg1,lo);
 						ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
+
+						// Runtime MMU guard: while MMUCR.AT is set, always defer to the
+						// slow C dispatcher below (it implements TLB lookup + the SH4
+						// TLB-miss/protection exceptions WinCE-class titles rely on).
+						// Checked at runtime, not compile time, because a block compiled
+						// while AT=0 can still be executing after the guest sets AT=1.
+						// rarg2 is free here (not computed yet) - the next line
+						// overwrites it with the real ptr value regardless of branch.
+						{
+							u32 lo_at=ppc_addr_high(ppc_rarg2,(void*)&CCN_MMUCR.reg_data);
+							ppc_lwz(ppc_rarg2,ppc_rarg2,lo_at);
+							ppc_andi(ppc_rarg2,ppc_rarg2,1);
+							ppc_cmpi(ppc_cr0,ppc_rarg2,0,0);
+						}
+						ppc_label* slow_mmu=ppc_CreateLabel();
+						ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);		// bne slow_mmu (AT set)
+
 						ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,0,26,0);	// ptr (≠r0)
 						ppc_cmpi(ppc_cr0,ppc_rarg2,0,0);		// ptr == 0 ?
 
@@ -1035,8 +1052,9 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_label* done=ppc_CreateLabel();
 						ppc_bcx(BO_ALWAYS,BI_CR0_EQ,0,0,0);		// b done
 
-						// --- slow MMIO path (addr in rarg0 untouched) ---
+						// --- slow MMIO/MMU path (addr in rarg0 untouched) ---
 						slow->MarkLabel();
+						slow_mmu->MarkLabel();
 						if (!fuct) fuct=(void*)ReadMem64;
 						ppc_call(fuct);
 						done->MarkLabel();
@@ -1052,6 +1070,18 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
 						ppc_addi(ppc_rarg1,ppc_rarg1,lo);
 						ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
+
+						// Runtime MMU guard: see comment in the flags==8 branch above.
+						// rarg2 is free here (not computed yet).
+						{
+							u32 lo_at=ppc_addr_high(ppc_rarg2,(void*)&CCN_MMUCR.reg_data);
+							ppc_lwz(ppc_rarg2,ppc_rarg2,lo_at);
+							ppc_andi(ppc_rarg2,ppc_rarg2,1);
+							ppc_cmpi(ppc_cr0,ppc_rarg2,0,0);
+						}
+						ppc_label* slow_mmu=ppc_CreateLabel();
+						ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);		// bne slow_mmu (AT set)
+
 						// rarg2 = ptr = iirf & ~0x1F  (clear low 5 bits: ME=26)
 						// NOTE: ptr goes in rarg2 (NOT r0) — load-indexed treats a
 						// base of r0 as literal zero, which would drop the pointer.
@@ -1086,8 +1116,9 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_label* done=ppc_CreateLabel();
 						ppc_bcx(BO_ALWAYS,BI_CR0_EQ,0,0,0);		// b done
 
-						// --- slow MMIO path ---
+						// --- slow MMIO/MMU path ---
 						slow->MarkLabel();
+						slow_mmu->MarkLabel();
 						if (!fuct)
 							fuct=(sz==1)?(void*)ReadMem8:(sz==2)?(void*)ReadMem16:(void*)ReadMem32;
 						ppc_call(fuct);
@@ -1133,6 +1164,26 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					printf("rs3: %08X\n",op->rs3.type);
 					die("invalid rs3");
 				}
+
+				// Runtime MMU guard: when MMUCR.AT is set, always defer to the slow
+				// C dispatcher for this store (it implements TLB lookup + the SH4
+				// TLB-miss/protection exceptions WinCE-class titles rely on). The
+				// inline fast path below indexes _vmem_MemInfo_ptr with the raw
+				// (virtual) address and must never be taken for P0/P3 addresses
+				// while paging is active. Checked at runtime, not compile time,
+				// because a block compiled while AT=0 can still be executing after
+				// the guest later sets AT=1 (MMUCR writes don't invalidate blocks).
+				// rarg1 is free here (data isn't loaded yet) and is safe to clobber -
+				// it's reloaded with real data (or left alone for the flags==8 case)
+				// immediately below.
+				{
+					u32 lo_at=ppc_addr_high(ppc_rarg1,(void*)&CCN_MMUCR.reg_data);
+					ppc_lwz(ppc_rarg1,ppc_rarg1,lo_at);
+					ppc_andi(ppc_rarg1,ppc_rarg1,1);
+					ppc_cmpi(ppc_cr0,ppc_rarg1,0,0);
+				}
+				ppc_label* slow_mmu=ppc_CreateLabel();
+				ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);		// bne slow_mmu (AT set)
 
 				if (op->flags==8)
 				{
@@ -1183,8 +1234,9 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					ppc_label* done=ppc_CreateLabel();
 					ppc_bcx(BO_ALWAYS,BI_CR0_EQ,0,0,0);		// b done
 
-					// --- slow MMIO path (addr/data untouched) ---
+					// --- slow MMIO/MMU path (addr/data untouched) ---
 					slow->MarkLabel();
+					slow_mmu->MarkLabel();
 					ppc_call(&WriteMem64);
 					done->MarkLabel();
 				}
@@ -1225,8 +1277,9 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					ppc_label* done=ppc_CreateLabel();
 					ppc_bcx(BO_ALWAYS,BI_CR0_EQ,0,0,0);		// b done
 
-					// --- slow MMIO path (addr=rarg0, data=rarg1 preserved) ---
+					// --- slow MMIO/MMU path (addr=rarg0, data=rarg1 preserved) ---
 					slow->MarkLabel();
+					slow_mmu->MarkLabel();
 					if (sz==1)
 					{
 						ppc_andi(ppc_rarg1,ppc_rarg1,0xFF);

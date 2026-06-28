@@ -14,6 +14,7 @@
 #include "dc/aica/aica_if.h"
 #include "dc/pvr/pvr_if.h"
 #include "sh4_mem.h"
+#include "mmu.h"
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -66,6 +67,14 @@ static u32 FindMask(u32 msk)
 template<typename T>
 static INLINE T fastcall _vmem_readt(u32 addr)
 {
+    if (mmu_NeedsTranslation(addr))
+    {
+        u32 paddr;
+        if (!mmu_TranslateAddress(addr, paddr, MMU_ACCESS_READ))
+            return (T)MEM_ERROR_RETURN_VALUE; // exception already raised; instruction will retry
+        addr = paddr;
+    }
+
     const u32 sz   = sizeof(T);
     const u32 page = addr >> 24;
     const unat iirf = (unat)_vmem_MemInfo_ptr[page];
@@ -108,6 +117,14 @@ static INLINE T fastcall _vmem_readt(u32 addr)
 template<typename T>
 static INLINE void fastcall _vmem_writet(u32 addr, T data)
 {
+    if (mmu_NeedsTranslation(addr))
+    {
+        u32 paddr;
+        if (!mmu_TranslateAddress(addr, paddr, MMU_ACCESS_WRITE))
+            return; // exception already raised; instruction will retry, write must not happen
+        addr = paddr;
+    }
+
     const u32 sz   = sizeof(T);
     const u32 page = addr >> 24;
     const unat iirf = (unat)_vmem_MemInfo_ptr[page];
