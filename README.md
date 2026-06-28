@@ -208,7 +208,7 @@ While the emulator is still in alpha, the visual difference is limited for now.
 | Mode (4BPP/8BPP) | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **I4_STUB/I8_STUB** | Dummy algorythm  | Some element doesn't display at all, for max FPS |
-| **I4 (FAST)/I8 (FAST)** | Basic algorythm  | Display in grey Scale (Use for debug) |
+| **OPTIMIZED** | ? algorythm  | ?? Please test ! |
 | **CI4 (FAST)/CI8 (FAST)** | Basic algorythm | Display mostly correctly (consume a bit of FPS on some games) |
 | **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Should display better |
 | **RGB565** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
@@ -343,11 +343,15 @@ Probably not, this emulator prioritize multiplayer fun games to play friends wit
 
 Try different games, parameters and report in the compatibility wiki : https://wiibrew.org/wiki/NullDC4Wii/Compatibility
 
-### Is 100% speed of the emulator achievable ?
+### Is 100% speed of the emulator achievable on Wii ?
 
-I think it could be achievable on some games. PAL50 helps in that case.
+Yes and no.
 
-Nonetheless, rewriting the emulator in pure assembly could definitly make the emulator way faster, but we don't have time to spend for this. Also, before doing that, it should be 100% functionnal in C.
+Currently we are on 60/70% emulator speed in average. We can't really go further than 80%. Maybe if rewriten in assembly partially or totally this could help. Libogc may limit MMU (this is being investigated at the moment), but the port of KallistiOS for Gamecube/Wii could open new possibility.
+
+### Is 100% speed of the emulator achievable on Wii U?
+
+Probably ! Wii U has the additional CPU power we need. Test the overlocked fowarder !
 
 ### Can it read Original games (GD-Rom) ?
 
@@ -368,6 +372,8 @@ Since I (BenoitAdam) digged the NullDC code, AI has been heavily used to make im
 ### I hate AI !
 
 It's ok, you have the right, but without AI this project wouldn't have been resurected. AI for code is really a big help, definitly not the same thing with AI generated images and videos. For information AI for image ask ~10x more power, AI for video ask ~100x more power.
+
+Reduce CO2 emission & grow trees is the plan for the planet.
 
 ## Ressources
 
