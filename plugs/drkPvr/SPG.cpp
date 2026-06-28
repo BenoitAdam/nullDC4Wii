@@ -7,6 +7,11 @@
 #include "Renderer_if.h"
 #include "regs.h"
 #include <ogc/system.h>
+#include <unistd.h>
+
+// Game-preset controlled toggle (see wii/game_presets.h, wii/main.cpp).
+extern "C" int get_speed_limiter_preset();
+#define SPEED_LIMITER() (get_speed_limiter_preset() != 0)
 
 u32 spg_InVblank = 0;
 s32 spg_ScanlineSh4CycleCounter = 0;
@@ -17,6 +22,7 @@ s32 spg_LineSh4Cycles = 0;
 u32 spg_FrameSh4Cycles = 0;
 
 double spg_last_vps = 0;
+static double s_limiter_next_deadline = 0.0; // os_GetSeconds() deadline for the next vblank (speed limiter)
 
 // 54 MHz pixel clock (register defines it as 27 MHz, doubled here)
 //54 mhz pixel clock (actually, this is defined as 27 .. why ? --drk)
@@ -149,6 +155,51 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 printf("%s\n", fpsStr);
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
+            }
+
+            // ── Speed limiter: cap emulation at real-hardware (100%) speed ──
+            // The SH4 thread doesn't VIDEO_WaitVSync() (see gxRend.cpp) so it
+            // normally runs as fast as the host CPU allows; light frames push
+            // speed past 100%. Sleeping only the amount we're AHEAD of the
+            // real-hardware vblank period caps the top end without ever
+            // penalizing frames that are already at/below real speed.
+            //
+            // Uses a fixed-cadence absolute deadline (deadline += target_sec)
+            // rather than re-anchoring to the actual wake time. usleep() can
+            // overshoot by a few ms depending on host scheduler granularity;
+            // re-anchoring to the (overshot) wake time bakes that overshoot
+            // into every subsequent frame permanently (observed as a steady
+            // FPS well below the target, e.g. 50Hz PAL collapsing to ~37).
+            // Anchoring to the deadline instead means one frame's overshoot
+            // just shortens the next frame's wait, so the average converges
+            // on the true target instead of drifting.
+            if (SPEED_LIMITER())
+            {
+                double target_sec = (double)spg_FrameSh4Cycles / (double)SH4_CLOCK;
+                double cur        = os_GetSeconds();
+
+                if (s_limiter_next_deadline == 0.0)
+                {
+                    s_limiter_next_deadline = cur + target_sec;
+                }
+                else
+                {
+                    if (cur < s_limiter_next_deadline)
+                        usleep((useconds_t)((s_limiter_next_deadline - cur) * 1000000.0));
+
+                    s_limiter_next_deadline += target_sec;
+
+                    // If we fell badly behind (debugger stall, frame hitch...),
+                    // don't burn through a burst of unthrottled catch-up frames —
+                    // resync the schedule to "now".
+                    cur = os_GetSeconds();
+                    if (s_limiter_next_deadline < cur - 0.25)
+                        s_limiter_next_deadline = cur + target_sec;
+                }
+            }
+            else
+            {
+                s_limiter_next_deadline = 0.0; // reset so re-enabling doesn't use a stale deadline
             }
         }
     }

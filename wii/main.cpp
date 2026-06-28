@@ -109,6 +109,12 @@ extern "C" {
   int get_jojo_fix_preset() { return g_jojo_fix_preset; }
 }
 
+int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
+
+extern "C" {
+  int get_speed_limiter_preset() { return g_speed_limiter_preset; }
+}
+
 int g_player_count = 2;
 
 extern "C" {
@@ -475,10 +481,11 @@ void displayAccuracyMenu()
 #define OPT_4BPP        14
 #define OPT_8BPP        15
 #define OPT_JOJO_FIX    16
-#define OPT_PLAYERS     17
-#define OPT_CTRL_TYPE   18
-#define OPT_MORE_INFO   19
-#define OPT_ROW_COUNT   20
+#define OPT_SPEED_LIMIT 17
+#define OPT_PLAYERS     18
+#define OPT_CTRL_TYPE   19
+#define OPT_MORE_INFO   20
+#define OPT_ROW_COUNT   21
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -636,12 +643,21 @@ bool displayOptionsMenu()
     printf(" (Tip: for JoJo's Bizarre Adventure)");
     printf("\n");
 
-    // --- Row 16: Players ---
+    // --- Row 16: Speed Limiter ---
+    printf("%s SPEED LIMITER : ", (selectedRow == OPT_SPEED_LIMIT) ? ">" : " ");
+    switch (g_speed_limiter_preset) {
+      case 0: printf("[< OFF (UNCAPPED) >]"); break;
+      case 1: printf("[< ON (CAP 100%%)  >]"); break;
+    }
+    printf(" (Tip: stops speed exceeding 100%%)");
+    printf("\n");
+
+    // --- Row 17: Players ---
     printf("%s PLAYERS       : ", (selectedRow == OPT_PLAYERS) ? ">" : " ");
     printf(g_player_count == 1 ? "[< 1 PLAYER  >]" : "[< 2 PLAYERS >]");
     printf("\n");
 
-    // --- Row 17: Controller ---
+    // --- Row 18: Controller ---
     printf("%s CONTROLLER    : ", (selectedRow == OPT_CTRL_TYPE) ? ">" : " ");
     switch (g_controller_type) {
       case 0: printf("[< STANDARD              >]"); break;
@@ -696,6 +712,7 @@ bool displayOptionsMenu()
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 4) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 4) % 5; break;
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
+        case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
         default: break;
@@ -717,6 +734,7 @@ bool displayOptionsMenu()
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 1) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 1) % 5; break;
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
+        case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + 1) % kControllerTypeCount; break;
         default: break;
@@ -1132,6 +1150,7 @@ int main(int argc, wchar *argv[])
       case 4: printf("RGB565\n");         break;
     }
     printf("Jojo Fix       : %s\n", g_jojo_fix_preset ? "YES" : "NO");
+    printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
