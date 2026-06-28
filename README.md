@@ -213,7 +213,7 @@ While the emulator is still in alpha, the visual difference is limited for now.
 | **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Should display better |
 | **RGB565** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
 
-Cache setting (starting alpha 0.21)
+####  Cache setting (starting alpha 0.21)
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
@@ -223,14 +223,14 @@ Cache setting (starting alpha 0.21)
 | **CACHE_QUALITY** | Best accuracy. Display mostly correctly | Mid FPS |
 | **CACHE_EXTRA** | Redraw every frame. Accurate (Only for dev & Debug) | Low FPS |
 
-ADVANCED_ALPHA
+#### ADVANCED_ALPHA
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **NO** | basic alpha threathment  | Not accurate |
 | **YES (default)** | additionnal alpha threatment | Near perfect |
 
-DECAL_ALPHA
+#### DECAL_ALPHA
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
@@ -239,7 +239,7 @@ DECAL_ALPHA
 
 See more : https://github.com/BenoitAdam/nullDC4Wii/issues/68
 
-PPZ_WRITE : PER POLYGON Z WRITE
+#### PPZ_WRITE : PER POLYGON Z WRITE
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
