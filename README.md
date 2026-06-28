@@ -228,7 +228,16 @@ ADVANCED_ALPHA
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **NO** | basic alpha threathment  | Not accurate |
-| **YES (default starting alpha 0.30)** | additionnal alpha threatment | Near perfect |
+| **YES (default)** | additionnal alpha threatment | Near perfect |
+
+DECAL_ALPHA
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO (default)** | no decal alpha  | Not accurate |
+| **YES** | Decal alpha implemented | Accurate |
+
+See more : https://github.com/BenoitAdam/nullDC4Wii/issues/68
 
 PPZ_WRITE : PER POLYGON Z WRITE
 
@@ -238,6 +247,8 @@ PPZ_WRITE : PER POLYGON Z WRITE
 | **YES (default)** | Per Polygon Z Write | More accurate |
 
 Try putting NO if you experience troubles, with HUD for example.
+
+
 
 
 See Compatiblity guide for hints depending of the games
