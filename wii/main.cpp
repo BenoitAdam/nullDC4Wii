@@ -53,6 +53,12 @@ extern "C" {
   int get_advanced_alpha_preset() { return g_advanced_alpha_preset; }
 }
 
+int g_decal_alpha_preset = 0; // 0=legacy GX_MODULATE (faster, wrong transparency) 1=correct DecalAlpha shading (GX_DECAL)
+
+extern "C" {
+  int get_decal_alpha_preset() { return g_decal_alpha_preset; }
+}
+
 int g_frameskip_preset = 0;
 
 extern "C" {
@@ -492,17 +498,18 @@ void displayAccuracyMenu()
 #define OPT_RATIO       6
 #define OPT_PPZ_WRITE   7
 #define OPT_ADV_ALPHA   8
-#define OPT_FRAMEBUFFER_2D 9
-#define OPT_FMV_FORMAT  10
-#define OPT_FRAMESKIP   11
-#define OPT_TEX_CACHE   12
-#define OPT_4BPP        13
-#define OPT_8BPP        14
-#define OPT_JOJO_FIX    15
-#define OPT_PLAYERS     16
-#define OPT_CTRL_TYPE   17
-#define OPT_MORE_INFO   18
-#define OPT_ROW_COUNT   19
+#define OPT_DECAL_ALPHA 9
+#define OPT_FRAMEBUFFER_2D 10
+#define OPT_FMV_FORMAT  11
+#define OPT_FRAMESKIP   12
+#define OPT_TEX_CACHE   13
+#define OPT_4BPP        14
+#define OPT_8BPP        15
+#define OPT_JOJO_FIX    16
+#define OPT_PLAYERS     17
+#define OPT_CTRL_TYPE   18
+#define OPT_MORE_INFO   19
+#define OPT_ROW_COUNT   20
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -585,7 +592,16 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 9: 2D Framebuffer ---
+    // --- Row 9: Decal Alpha Fix ---
+    printf("%s DECAL ALPHA   : ", (selectedRow == OPT_DECAL_ALPHA) ? ">" : " ");
+    switch (g_decal_alpha_preset) {
+      case 0: printf("[< OFF (FASTER)  >]"); break;
+      case 1: printf("[< ON (DEFAULT)  >]"); break;
+    }
+    printf(" (Tip: OFF if decals run slow)");
+    printf("\n");
+
+    // --- Row 10: 2D Framebuffer ---
     printf("%s 2D FRAMEBUFFER: ", (selectedRow == OPT_FRAMEBUFFER_2D) ? ">" : " ");
     switch (g_framebuffer_2d) {
       case 0: printf("[< NO  >]"); break;
@@ -707,6 +723,7 @@ bool displayOptionsMenu()
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 2; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
+        case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
         case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 2) % 3; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 3) % 4; break;
@@ -727,6 +744,7 @@ bool displayOptionsMenu()
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 2; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
+        case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
         case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 1) % 3; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 1) % 4; break;
@@ -1109,6 +1127,7 @@ int main(int argc, wchar *argv[])
       case 1: printf("FULLSCREEN\n"); break;
     }
     printf("Advanced Alpha : %s\n", g_advanced_alpha_preset ? "YES (DEBUG)" : "NO");
+    printf("Decal Alpha Fix: %s\n", g_decal_alpha_preset ? "YES (DEFAULT)" : "NO");
     printf("2D Framebuffer : %s\n", g_framebuffer_2d ? "YES" : "NO");
     printf("PPZ_WRITE      : %s\n", g_ppz_write_preset ? "YES" : "NO");
     printf("FMV Format     : ");

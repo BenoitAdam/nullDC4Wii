@@ -90,6 +90,14 @@ extern "C" int get_ppz_write_preset();
 
 #define PER_POLYGON_Z_WRITE() (get_ppz_write_preset() == 1) // Fix Test-drive 6 draw distance
 
+// DecalAlpha shading fix: TSP.ShadInstr==2 polygons use GX_DECAL (Cv=(1-At)*Cr+At*Ct;
+// Av=Ar) instead of GX_MODULATE, and skip the texture-alpha discard test (which
+// doesn't apply to DecalAlpha's output alpha). Off restores the original
+// always-GX_MODULATE behavior, which is cheaper but renders DecalAlpha polygons
+// (e.g. some decal/UI banners) with incorrect transparency.
+extern "C" int get_decal_alpha_preset();
+#define DECAL_ALPHA_FIX() (get_decal_alpha_preset() == 1)
+
 // 2D Framebuffer Rendering
 extern "C" int get_framebuffer_2d();
 
@@ -1661,8 +1669,8 @@ static void YUV422_to_RGB565_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
 
 static void SetTextureParams(PolyParam *mod)
 {
-
-  GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
+  // TEVSTAGE0's op (GX_MODULATE vs GX_DECAL) is now chosen by the caller based on
+  // TSP.ShadInstr right after this returns — do not force it here.
 
   u32 tex_addr = (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
   const u32 orig_tex_addr = tex_addr;
@@ -3461,6 +3469,7 @@ void DoRender()
 
   int last_textured = -1;  // track texture state to skip redundant GX calls
   int last_alpha_fmt = -1; // -1 = unset
+  int last_shad_instr = -1; // -1 = unset; tracks the GX op currently set on TEVSTAGE0 for textured polys
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
 
@@ -3496,12 +3505,27 @@ void DoRender()
           GX_SetNumTexGens(0);
           GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
           GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+          last_shad_instr = -1; // force TEVSTAGE0 op to be reapplied on the next textured poly
         }
         last_textured = is_textured;
       }
       if (is_textured)
       {
         SetTextureParams(drawMod);
+
+        // TSP.ShadInstr selects the PVR shading instruction. DecalAlpha (2) blends
+        // texture color toward the vertex/shading color using texture alpha as the
+        // lerp factor, outputting vertex alpha as pixel alpha. That's exactly GX's
+        // built-in GX_DECAL op (Cv=(1-At)*Cr + At*Ct; Av=Ar), so use it directly
+        // instead of GX_MODULATE (which wrongly outputs texture alpha as pixel alpha
+        // and made DecalAlpha polygons blend toward the framebuffer instead of the
+        // shading color). Decal/Modulate/ModulateAlpha keep using GX_MODULATE.
+        int tev_op = (DECAL_ALPHA_FIX() && drawMod->tsp.ShadInstr == 2) ? GX_DECAL : GX_MODULATE;
+        if (tev_op != last_shad_instr)
+        {
+          GX_SetTevOp(GX_TEVSTAGE0, tev_op);
+          last_shad_instr = tev_op;
+        }
 
         // Real PVR hardware decides this per-polygon via TSP.UseAlpha, not pixel format.
         // UseAlpha==0 means the hardware forces vertex alpha to 1.0 before modulation
@@ -3522,7 +3546,12 @@ void DoRender()
           // entirely (treats it as 1.0), so there is no texture-driven zero-alpha to
           // discard. When clear, texture alpha is live and cutout fragments (alpha==0)
           // should be discarded via the alpha test below.
-          int alpha_fmt = drawMod->tsp.IgnoreTexA ? 0 : 1;
+          // ShadInstr==2 (DecalAlpha) is excluded: its TEV output alpha is Ar (vertex/
+          // shading alpha, via GX_DECAL), not TEX(A) -- texture alpha is fully consumed
+          // by the color blend equation instead, so this test would never discard
+          // anything for it. Forcing alpha_fmt=0 here keeps early-Z (GX_SetZCompLoc
+          // TRUE) for DecalAlpha polygons instead of paying for late-Z with no benefit.
+          int alpha_fmt = (DECAL_ALPHA_FIX() && drawMod->tsp.ShadInstr == 2) ? 0 : (drawMod->tsp.IgnoreTexA ? 0 : 1);
           if (alpha_fmt != last_alpha_fmt)
           {
             if (alpha_fmt)
