@@ -710,17 +710,41 @@ u32 GX_TexOffs(u32 x, u32 y, u32 w)
 // (see ta.h: "#define __forceinline"), so without this attribute the compiler
 // is free to leave it as a real call/ret — costly since this runs per pixel
 // during FMV decode (the hottest texture-conversion path in the renderer).
-static inline u32 __attribute__((always_inline)) YUV422(s32 Y, s32 Yu, s32 Yv)
+//
+// Split into chroma/luma halves because every YUV422 source pixel pair (and
+// every 2x2 twiddled block) shares one U/V pair across 2-4 luma samples.
+// Computing the chroma terms (Bc/Gc/Rc) once per shared U/V and reusing them
+// drops the per-pixel cost from 7 multiplies (original, computed by every
+// caller that re-derived B/G/R from scratch) to 1 (just the luma term) —
+// callers that still want a single all-in-one conversion can use YUV422().
+static inline void __attribute__((always_inline)) YUV422_chroma(s32 Yu, s32 Yv, s32 &Bc, s32 &Gc, s32 &Rc)
 {
-  s32 B = (76283 * (Y - 16) + 132252 * (Yu - 128)) >> (16 + 3);                     // 5
-  s32 G = (76283 * (Y - 16) - 53281 * (Yv - 128) - 25624 * (Yu - 128)) >> (16 + 2); // 6
-  s32 R = (76283 * (Y - 16) + 104595 * (Yv - 128)) >> (16 + 3);                     // 5
+  s32 Uc = Yu - 128;
+  s32 Vc = Yv - 128;
+  Bc = 132252 * Uc;
+  Gc = -53281 * Vc - 25624 * Uc;
+  Rc = 104595 * Vc;
+}
+
+static inline u32 __attribute__((always_inline)) YUV422_luma(s32 Y, s32 Bc, s32 Gc, s32 Rc)
+{
+  s32 Yc = 76283 * (Y - 16);
+  s32 B = (Yc + Bc) >> (16 + 3);
+  s32 G = (Yc + Gc) >> (16 + 2);
+  s32 R = (Yc + Rc) >> (16 + 3);
 
   colclamp(0, 0x1F, B);
   colclamp(0, 0x3F, G);
   colclamp(0, 0x1F, R);
 
   return (R << 11) | (G << 5) | (B);  // RGB565 format
+}
+
+static inline u32 __attribute__((always_inline)) YUV422(s32 Y, s32 Yu, s32 Yv)
+{
+  s32 Bc, Gc, Rc;
+  YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
+  return YUV422_luma(Y, Bc, Gc, Rc);
 }
 
 // Infrastructure for fast pixel conversion routines using static polymorphism/templates.
@@ -1458,8 +1482,10 @@ static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
           // reads are correct on any host.
           u8 *p = &src_vram[(y*src_stride + bx+col) * 2];
           s32 Yu=p[0], Y0=p[1], Yv=p[2], Y1=p[3];
-          block_pixels[row*4+col  ] = (u16)YUV422(Y0,Yu,Yv);
-          block_pixels[row*4+col+1] = (u16)YUV422(Y1,Yu,Yv);
+          s32 Bc, Gc, Rc;
+          YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
+          block_pixels[row*4+col  ] = (u16)YUV422_luma(Y0, Bc, Gc, Rc);
+          block_pixels[row*4+col+1] = (u16)YUV422_luma(Y1, Bc, Gc, Rc);
         }
       }
       encode_cmpr_block(block_pixels, super_dst + sub*8);
@@ -1524,10 +1550,12 @@ static void YUV422_to_CMPR_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
         s32 Y01 = buf2 & 255; s32 Yu = (buf2 >> 8) & 255;
         s32 Y11 = buf3 & 255;
 
-        block_pixels[row*4+col    ] = (u16)YUV422(Y00, Yu, Yv);
-        block_pixels[row*4+col+1  ] = (u16)YUV422(Y01, Yu, Yv);
-        block_pixels[(row+1)*4+col  ] = (u16)YUV422(Y10, Yu, Yv);
-        block_pixels[(row+1)*4+col+1] = (u16)YUV422(Y11, Yu, Yv);
+        s32 Bc, Gc, Rc;
+        YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
+        block_pixels[row*4+col    ] = (u16)YUV422_luma(Y00, Bc, Gc, Rc);
+        block_pixels[row*4+col+1  ] = (u16)YUV422_luma(Y01, Bc, Gc, Rc);
+        block_pixels[(row+1)*4+col  ] = (u16)YUV422_luma(Y10, Bc, Gc, Rc);
+        block_pixels[(row+1)*4+col+1] = (u16)YUV422_luma(Y11, Bc, Gc, Rc);
       }
       encode_cmpr_block(block_pixels, super_dst + sub*8);
     }
@@ -1575,8 +1603,10 @@ static void YUV422_to_RGBA8_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
         // Positional byte read (see YUV422_to_CMPR_Planar) — endian-safe.
         u8 *p = &src_vram[(y*src_stride + x) * 2];
         s32 Yu=p[0], Y0=p[1], Yv=p[2], Y1=p[3];
-        u16 c0 = (u16)YUV422(Y0,Yu,Yv);
-        u16 c1 = (u16)YUV422(Y1,Yu,Yv);
+        s32 Bc, Gc, Rc;
+        YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
+        u16 c0 = (u16)YUV422_luma(Y0, Bc, Gc, Rc);
+        u16 c1 = (u16)YUV422_luma(Y1, Bc, Gc, Rc);
         ar[p0*2  ]=0xFF; ar[p0*2+1]=RGB565_R8(c0);
         ar[p1*2  ]=0xFF; ar[p1*2+1]=RGB565_R8(c1);
         gb[p0*2  ]=RGB565_G8(c0); gb[p0*2+1]=RGB565_B8(c0);
@@ -1626,10 +1656,12 @@ static void YUV422_to_RGBA8_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
       s32 Y01 = buf2 & 255; s32 Yu = (buf2 >> 8) & 255;
       s32 Y11 = buf3 & 255;
 
-      u16 c00 = (u16)YUV422(Y00, Yu, Yv);
-      u16 c01 = (u16)YUV422(Y01, Yu, Yv);
-      u16 c10 = (u16)YUV422(Y10, Yu, Yv);
-      u16 c11 = (u16)YUV422(Y11, Yu, Yv);
+      s32 Bc, Gc, Rc;
+      YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
+      u16 c00 = (u16)YUV422_luma(Y00, Bc, Gc, Rc);
+      u16 c01 = (u16)YUV422_luma(Y01, Bc, Gc, Rc);
+      u16 c10 = (u16)YUV422_luma(Y10, Bc, Gc, Rc);
+      u16 c11 = (u16)YUV422_luma(Y11, Bc, Gc, Rc);
 
       u32 idx00 = row*4+col,         idx01 = row*4+col+1;
       u32 idx10 = (row+1)*4+col,     idx11 = (row+1)*4+col+1;
@@ -1684,8 +1716,10 @@ static void YUV422_to_RGB565_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
         // Positional byte read (see YUV422_to_CMPR_Planar) — endian-safe.
         u8 *p = &src_vram[(y*src_stride + x) * 2];
         s32 Yu=p[0], Y0=p[1], Yv=p[2], Y1=p[3];
-        tile[row*4+col  ] = (u16)YUV422(Y0,Yu,Yv);
-        tile[row*4+col+1] = (u16)YUV422(Y1,Yu,Yv);
+        s32 Bc, Gc, Rc;
+        YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
+        tile[row*4+col  ] = (u16)YUV422_luma(Y0, Bc, Gc, Rc);
+        tile[row*4+col+1] = (u16)YUV422_luma(Y1, Bc, Gc, Rc);
       }
     }
   }
@@ -1727,10 +1761,12 @@ static void YUV422_to_RGB565_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
       s32 Y01 = buf2 & 255; s32 Yu = (buf2 >> 8) & 255;
       s32 Y11 = buf3 & 255;
 
-      tile[(row  )*4+col  ] = (u16)YUV422(Y00, Yu, Yv);
-      tile[(row  )*4+col+1] = (u16)YUV422(Y01, Yu, Yv);
-      tile[(row+1)*4+col  ] = (u16)YUV422(Y10, Yu, Yv);
-      tile[(row+1)*4+col+1] = (u16)YUV422(Y11, Yu, Yv);
+      s32 Bc, Gc, Rc;
+      YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
+      tile[(row  )*4+col  ] = (u16)YUV422_luma(Y00, Bc, Gc, Rc);
+      tile[(row  )*4+col+1] = (u16)YUV422_luma(Y01, Bc, Gc, Rc);
+      tile[(row+1)*4+col  ] = (u16)YUV422_luma(Y10, Bc, Gc, Rc);
+      tile[(row+1)*4+col+1] = (u16)YUV422_luma(Y11, Bc, Gc, Rc);
     }
   }
 }
