@@ -986,6 +986,60 @@ u32 fastcall twiddle_razi(u32 x, u32 y, u32 x_sz, u32 y_sz)
 #define twop twiddle_razi
 u8 *VramWork;
 
+// ----------------------------------------------------------------------------
+// Twiddle axis-table cache.
+//
+// Every twiddled texture path below precomputes table_x[x]=twop(x,0,w,h) and
+// table_y[y]=twop(0,y,w,h) once per call so the per-pixel loop only needs a
+// cheap "table_x[x] | table_y[y]" instead of calling twop() per pixel. But a
+// game reuses the same handful of texture sizes every frame, so rebuilding
+// these tables from twop()'s branchy bit-interleave loop on every single
+// texture decode is redundant work. Cache the raw (undivided) tables
+// globally, keyed by (w,h) — twop's interleave order depends on both
+// dimensions, not just one, so a non-square texture needs its own entry.
+// ----------------------------------------------------------------------------
+#define TWIDDLE_CACHE_SLOTS 24
+
+struct TwiddleAxisEntry
+{
+  u32 w, h;           // 0,0 = unused slot
+  u32 table_x[1024];  // raw twop(x,0,w,h) for x in [0,w)
+  u32 table_y[1024];  // raw twop(0,y,w,h) for y in [0,h)
+};
+
+static TwiddleAxisEntry g_twiddle_cache[TWIDDLE_CACHE_SLOTS];
+static u32 g_twiddle_cache_count = 0;
+
+// Returns raw (undivided) per-axis twiddle tables for (w,h), building and
+// caching them on first use. table_x[x] | table_y[y] == twop(x,y,w,h); both
+// can be shifted (e.g. >>2 for 2x2-block formats) before or after the OR,
+// since the two tables occupy disjoint bit positions.
+static void get_twiddle_axis_tables(u32 w, u32 h, const u32 **out_x, const u32 **out_y)
+{
+  for (u32 i = 0; i < g_twiddle_cache_count; i++)
+  {
+    if (g_twiddle_cache[i].w == w && g_twiddle_cache[i].h == h)
+    {
+      *out_x = g_twiddle_cache[i].table_x;
+      *out_y = g_twiddle_cache[i].table_y;
+      return;
+    }
+  }
+
+  // Not cached yet: claim a slot (evict slot 0 once full — in practice a
+  // game's set of distinct texture sizes is small and stable, so eviction
+  // essentially never triggers).
+  u32 idx = (g_twiddle_cache_count < TWIDDLE_CACHE_SLOTS) ? g_twiddle_cache_count++ : 0;
+  TwiddleAxisEntry &e = g_twiddle_cache[idx];
+  e.w = w;
+  e.h = h;
+  for (u32 x = 0; x < w; x++) e.table_x[x] = twop(x, 0, w, h);
+  for (u32 y = 0; y < h; y++) e.table_y[y] = twop(0, y, w, h);
+
+  *out_x = e.table_x;
+  *out_y = e.table_y;
+}
+
 // Texture untwiddling and conversion template. (Handler)
 template <class PixelConvertor>
 void fastcall texture_TW(u8 *p_in, u32 Width, u32 Height)
@@ -997,12 +1051,15 @@ void fastcall texture_TW(u8 *p_in, u32 Width, u32 Height)
   u32 table_x[1024];
   u32 table_y[1024];
 
-  // Precompute twiddle divided by divider outside the main loops
+  // Read the cached raw per-axis tables for this (Width,Height) — avoids
+  // re-running twop()'s bit-interleave loop for sizes already seen this run.
+  const u32 *traw_x, *traw_y;
+  get_twiddle_axis_tables(Width, Height, &traw_x, &traw_y);
   for (u32 x = 0; x < Width; x += PixelConvertor::xpp) {
-    table_x[x] = twop(x, 0, Width, Height) / divider;
+    table_x[x] = traw_x[x] / divider;
   }
   for (u32 y = 0; y < Height; y += PixelConvertor::ypp) {
-    table_y[y] = twop(0, y, Width, Height) / divider;
+    table_y[y] = traw_y[y] / divider;
   }
 
   for (u32 y = 0; y < Height; y += PixelConvertor::ypp)
@@ -1039,11 +1096,13 @@ void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
   u32 table_x[1024];
   u32 table_y[1024];
 
+  const u32 *traw_x, *traw_y;
+  get_twiddle_axis_tables(Width, Height, &traw_x, &traw_y);
   for (u32 x = 0; x < Width; x += PixelConvertor::xpp) {
-    table_x[x] = twop(x, 0, Width, Height) / divider;
+    table_x[x] = traw_x[x] / divider;
   }
   for (u32 y = 0; y < Height; y += PixelConvertor::ypp) {
-    table_y[y] = twop(0, y, Width, Height) / divider;
+    table_y[y] = traw_y[y] / divider;
   }
 
   u16 *dst = (u16*)pb;
@@ -1424,8 +1483,10 @@ static void YUV422_to_CMPR_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
   // interleave into disjoint bit positions. Same trick texture_TW already
   // uses below — turns w*h/4 twiddle_razi calls into just w+h of them.
   u32 table_x[1024], table_y[1024];
-  for (u32 x = 0; x < w; x += 2) table_x[x] = twop(x, 0, w, h) / 4;
-  for (u32 y = 0; y < h; y += 2) table_y[y] = twop(0, y, w, h) / 4;
+  const u32 *traw_x, *traw_y;
+  get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
+  for (u32 x = 0; x < w; x += 2) table_x[x] = traw_x[x] / 4;
+  for (u32 y = 0; y < h; y += 2) table_y[y] = traw_y[y] / 4;
 
   for (u32 ty = 0; ty < h; ty += 8)
   for (u32 tx = 0; tx < w; tx += 8)
@@ -1525,8 +1586,10 @@ static void YUV422_to_RGBA8_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
 
   // Same per-axis twiddle precompute as YUV422_to_CMPR_Twiddled — see there.
   u32 table_x[1024], table_y[1024];
-  for (u32 x = 0; x < w; x += 2) table_x[x] = twop(x, 0, w, h) / 4;
-  for (u32 y = 0; y < h; y += 2) table_y[y] = twop(0, y, w, h) / 4;
+  const u32 *traw_x, *traw_y;
+  get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
+  for (u32 x = 0; x < w; x += 2) table_x[x] = traw_x[x] / 4;
+  for (u32 y = 0; y < h; y += 2) table_y[y] = traw_y[y] / 4;
 
   for (u32 ty = 0; ty < tiles_y; ty++)
   for (u32 tx = 0; tx < tiles_x; tx++)
@@ -1627,8 +1690,10 @@ static void YUV422_to_RGB565_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
   u16 *dst16  = (u16 *)dst;
 
   u32 table_x[1024], table_y[1024];
-  for (u32 x = 0; x < w; x += 2) table_x[x] = twop(x, 0, w, h) / 4;
-  for (u32 y = 0; y < h; y += 2) table_y[y] = twop(0, y, w, h) / 4;
+  const u32 *traw_x, *traw_y;
+  get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
+  for (u32 x = 0; x < w; x += 2) table_x[x] = traw_x[x] / 4;
+  for (u32 y = 0; y < h; y += 2) table_y[y] = traw_y[y] / 4;
 
   for (u32 ty = 0; ty < tiles_y; ty++)
   for (u32 tx = 0; tx < tiles_x; tx++)
@@ -2354,12 +2419,14 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         }
         else
         {
-          // Twiddled: precompute per-axis Morton contributions once instead
-          // of calling twop(x,y,w,h) per pixel.
+          // Twiddled: read the cached per-axis Morton tables instead of
+          // calling twop(x,y,w,h) per pixel (or rebuilding them per call).
           u32 table_x[1024];
           u32 table_y[1024];
-          for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
-          for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+          const u32 *traw_x, *traw_y;
+          get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
+          for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
+          for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
 
           switch (pal_fmt) {
             case 1: // RGB565
@@ -2483,8 +2550,10 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
             // ^3 = full 32-bit BE word reversal. Nibble convention: even→low (& 0xF), odd→high (>> 4).
             u32 table_x[1024];
             u32 table_y[1024];
-            for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
-            for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+            const u32 *traw_x, *traw_y;
+            get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
+            for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
+            for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
 
             for (u32 y = 0; y < h; y++)
             {
@@ -2556,8 +2625,10 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
             // Nibble convention: even pixel → LOW nibble (& 0xF), odd pixel → HIGH nibble (>> 4).
             u32 table_x[1024];
             u32 table_y[1024];
-            for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
-            for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+            const u32 *traw_x, *traw_y;
+            get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
+            for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
+            for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
 
             for (u32 y = 0; y < h; y++)
             {
@@ -2595,8 +2666,10 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
           // other 4BPP paths above; this loop was still doing it per pixel).
           u32 table_x[1024];
           u32 table_y[1024];
-          for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
-          for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+          const u32 *traw_x, *traw_y;
+          get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
+          for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
+          for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
 
           // We pull the switch OUTSIDE the loops.
           // The compiler can now optimize each loop specifically for the format.
@@ -2742,12 +2815,14 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         }
         else
         {
-          // Twiddled: precompute per-axis Morton contributions once instead
-          // of calling twop(x,y,w,h) per pixel.
+          // Twiddled: read the cached per-axis Morton tables instead of
+          // calling twop(x,y,w,h) per pixel (or rebuilding them per call).
           u32 table_x[1024];
           u32 table_y[1024];
-          for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
-          for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+          const u32 *traw_x, *traw_y;
+          get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
+          for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
+          for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
 
           switch (pal_fmt) {
             case 1: // RGB565
@@ -2863,8 +2938,10 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
             // out of the x loop: saves one multiply + one add per pixel.
             u32 table_x[1024];
             u32 table_y[1024];
-            for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
-            for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+            const u32 *traw_x, *traw_y;
+            get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
+            for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
+            for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
 
             u32 tiles_x = w / 8;
             for (u32 y = 0; y < h; y++)
@@ -2921,8 +2998,10 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
             // ^3: full 32-bit word reversal — same as I8 grey Twiddled path.
             u32 table_x[1024];
             u32 table_y[1024];
-            for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
-            for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+            const u32 *traw_x, *traw_y;
+            get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
+            for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
+            for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
 
             for (u32 y = 0; y < h; y++)
             {
@@ -2961,8 +3040,10 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
           // twop(x,y,w,h) per pixel (O(w*h) — same fix as the 4BPP paths above).
           u32 table_x[1024];
           u32 table_y[1024];
-          for (u32 x = 0; x < w; x++) table_x[x] = twop(x, 0, w, h);
-          for (u32 y = 0; y < h; y++) table_y[y] = twop(0, y, w, h);
+          const u32 *traw_x, *traw_y;
+          get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
+          for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
+          for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
 
           for (u32 y = 0; y < h; y++)
           {
