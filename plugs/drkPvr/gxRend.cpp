@@ -115,6 +115,10 @@ extern "C" int get_ppz_write_preset();
 extern "C" int get_decal_alpha_preset();
 #define DECAL_ALPHA_FIX() (get_decal_alpha_preset() == 1)
 
+// ARGB1555 Opaque or Transparent
+extern "C" int get_abgr1555_fix_preset();
+#define ABGR1555_FIX() (get_abgr1555_fix_preset() == 1)
+
 // 2D Framebuffer Rendering
 extern "C" int get_framebuffer_2d();
 
@@ -215,15 +219,12 @@ void ApplyGraphismPreset() {
 
 // DC ARGB1555 (bit15=A1, R5,G5,B5) -> GX RGB5A3.
 // bit15=1: keep as-is (opaque X1R5G5B5).
-// bit15=0: DC alpha=0 only means "transparent" for blend modes that actually
-// gate on alpha (e.g. SRC_ALPHA blend, punch-through). For other blend modes
-// (e.g. additive ONE/ONE) alpha never factors into the RGB math, so blanking
-// RGB here was destroying real pixel color whenever a pixel happened to have
-// its alpha bit clear. Keep alpha=0 (still A3=0, translucent-tagged) but
-// preserve R4G4B4 from the source R5G5B5, same truncation ABGR4444 already
-// does for its alpha bits.
-#define ABGR1555(x) ((x) & 0x8000 ? (x) : \
-    ((((x) >> 11) & 0xFu) << 8) | ((((x) >> 6) & 0xFu) << 4) | (((x) >> 1) & 0xFu))
+// bit15=0: ABGR1555_FIX() ON preserves R4G4B4 from the source R5G5B5 (alpha
+// stays 0/translucent-tagged); OFF blanks to 0x0000 (legacy behavior). See
+// ABGR1555_FIX() above for why blanking can be wrong.
+#define ABGR1555(x) ((x) & 0x8000 ? (x) : (ABGR1555_FIX() ? \
+    ((((x) >> 11) & 0xFu) << 8) | ((((x) >> 6) & 0xFu) << 4) | (((x) >> 1) & 0xFu) \
+    : 0x0000))
 
 // ARGB4444 (DC: A4 R4 G4 B4) → GX RGB5A3
 // ARGB4444 has 4 alpha (transparency) bits, Wii's RGB5A3 has 3 bits.

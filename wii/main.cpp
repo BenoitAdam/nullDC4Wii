@@ -115,6 +115,12 @@ extern "C" {
   int get_vertex_color_fix_preset() { return g_vertex_color_fix_preset; }
 }
 
+int g_abgr1555_fix_preset = 1; // 0=blank RGB to 0 on alpha-bit-clear (legacy), 1=preserve RGB (default)
+
+extern "C" {
+  int get_abgr1555_fix_preset() { return g_abgr1555_fix_preset; }
+}
+
 int g_rgb565_vq_alpha = 0; // 0=black opaque 1=black transparent
 
 extern "C" {
@@ -496,10 +502,11 @@ void displayAccuracyMenu()
 #define OPT_RGB565_VQ_ALPHA 17
 #define OPT_SPEED_LIMIT 18
 #define OPT_VERTEX_COLOR_FIX 19
-#define OPT_PLAYERS     20
-#define OPT_CTRL_TYPE   21
-#define OPT_MORE_INFO   22
-#define OPT_ROW_COUNT   23
+#define OPT_ABGR1555_FIX 20
+#define OPT_PLAYERS     21
+#define OPT_CTRL_TYPE   22
+#define OPT_MORE_INFO   23
+#define OPT_ROW_COUNT   24
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -680,7 +687,15 @@ bool displayOptionsMenu()
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON                >]"); break;
     }
-    printf(" (for Crazy Taxi's gray HUD icons)");
+    printf(" (for Crazy Taxi's arrow)");
+    printf("\n");
+
+    // --- Row 17c: ABGR1555 Alpha Fix ---
+    printf("%s ABGR1555        : ", (selectedRow == OPT_ABGR1555_FIX) ? ">" : " ");
+    switch (g_abgr1555_fix_preset) {
+      case 0: printf("[< OPAQUE (HACK)     >]"); break;
+      case 1: printf("[< ALPHA (CORRECT)   >]"); break;
+    }
     printf("\n");
 
     // --- Row 17: Players ---
@@ -746,6 +761,7 @@ bool displayOptionsMenu()
         case OPT_RGB565_VQ_ALPHA: g_rgb565_vq_alpha = (g_rgb565_vq_alpha       + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
+        case OPT_ABGR1555_FIX: g_abgr1555_fix_preset  = (g_abgr1555_fix_preset  + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
         default: break;
@@ -770,6 +786,7 @@ bool displayOptionsMenu()
         case OPT_RGB565_VQ_ALPHA: g_rgb565_vq_alpha = (g_rgb565_vq_alpha       + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
+        case OPT_ABGR1555_FIX: g_abgr1555_fix_preset  = (g_abgr1555_fix_preset  + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + 1) % kControllerTypeCount; break;
         default: break;
@@ -1188,6 +1205,7 @@ int main(int argc, wchar *argv[])
     printf("RGB565 VQ Alpha: %s\n", g_rgb565_vq_alpha ? "BLACK TRANSPARENT" : "BLACK OPAQUE");
     printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
     printf("Vertex Color Fix: %s\n", g_vertex_color_fix_preset ? "ON" : "OFF");
+    printf("ABGR1555 Fix   : %s\n", g_abgr1555_fix_preset ? "ON (KEEP RGB)" : "OFF (BLANK RGB)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
