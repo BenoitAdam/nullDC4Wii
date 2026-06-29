@@ -1667,10 +1667,13 @@ static void YUV422_to_RGB565_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
 // Processes the Dreamcast's TCW (Texture Control Word) to initialize Wii TexObjects.
 // 4 steps
 
-static void SetTextureParams(PolyParam *mod)
+static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 {
-  // TEVSTAGE0's op (GX_MODULATE vs GX_DECAL) is now chosen by the caller based on
-  // TSP.ShadInstr right after this returns — do not force it here.
+  // decal_alpha_fix off: keep the original unconditional GX_MODULATE here so this
+  // path costs exactly what it did before the fix existed. On: the caller sets
+  // TEVSTAGE0's op itself based on TSP.ShadInstr right after this returns.
+  if (!decal_alpha_fix)
+    GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
 
   u32 tex_addr = (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
   const u32 orig_tex_addr = tex_addr;
@@ -3468,6 +3471,7 @@ void DoRender()
   int last_textured = -1;  // track texture state to skip redundant GX calls
   int last_alpha_fmt = -1; // -1 = unset
   int last_shad_instr = -1; // -1 = unset; tracks the GX op currently set on TEVSTAGE0 for textured polys
+  const bool decal_alpha_fix = DECAL_ALPHA_FIX(); // read once per frame, not per polygon
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
 
@@ -3509,20 +3513,20 @@ void DoRender()
       }
       if (is_textured)
       {
-        SetTextureParams(drawMod);
+        SetTextureParams(drawMod, decal_alpha_fix);
 
-        // TSP.ShadInstr selects the PVR shading instruction. DecalAlpha (2) blends
-        // texture color toward the vertex/shading color using texture alpha as the
-        // lerp factor, outputting vertex alpha as pixel alpha. That's exactly GX's
-        // built-in GX_DECAL op (Cv=(1-At)*Cr + At*Ct; Av=Ar), so use it directly
-        // instead of GX_MODULATE (which wrongly outputs texture alpha as pixel alpha
-        // and made DecalAlpha polygons blend toward the framebuffer instead of the
-        // shading color). Decal/Modulate/ModulateAlpha keep using GX_MODULATE.
-        int tev_op = (DECAL_ALPHA_FIX() && drawMod->tsp.ShadInstr == 2) ? GX_DECAL : GX_MODULATE;
-        if (tev_op != last_shad_instr)
+        // TSP.ShadInstr==2 (DecalAlpha) needs GX_DECAL instead of GX_MODULATE on
+        // TEVSTAGE0 (see DECAL_ALPHA_FIX() above for why). Gated on decal_alpha_fix
+        // so the off path never reads tsp.ShadInstr here — SetTextureParams() above
+        // already set GX_MODULATE unconditionally either way.
+        if (decal_alpha_fix)
         {
-          GX_SetTevOp(GX_TEVSTAGE0, tev_op);
-          last_shad_instr = tev_op;
+          int tev_op = (drawMod->tsp.ShadInstr == 2) ? GX_DECAL : GX_MODULATE;
+          if (tev_op != last_shad_instr)
+          {
+            GX_SetTevOp(GX_TEVSTAGE0, tev_op);
+            last_shad_instr = tev_op;
+          }
         }
 
         // Real PVR hardware decides this per-polygon via TSP.UseAlpha, not pixel format.
@@ -3549,7 +3553,7 @@ void DoRender()
           // by the color blend equation instead, so this test would never discard
           // anything for it. Forcing alpha_fmt=0 here keeps early-Z (GX_SetZCompLoc
           // TRUE) for DecalAlpha polygons instead of paying for late-Z with no benefit.
-          int alpha_fmt = (DECAL_ALPHA_FIX() && drawMod->tsp.ShadInstr == 2) ? 0 : (drawMod->tsp.IgnoreTexA ? 0 : 1);
+          int alpha_fmt = (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) ? 0 : (drawMod->tsp.IgnoreTexA ? 0 : 1);
           if (alpha_fmt != last_alpha_fmt)
           {
             if (alpha_fmt)
