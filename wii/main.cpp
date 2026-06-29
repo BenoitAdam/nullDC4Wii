@@ -103,13 +103,13 @@ extern "C" {
   int get_fmv_format_preset() { return g_fmv_format_preset; }
 }
 
-int g_jojo_fix_preset = 0; // 0=off (pre-fix behavior), 1=on — enable via [jojo] in game_presets.cfg
+int g_jojo_fix_preset = 0; // 0=off (pre-fix behavior), 1 = On
 
 extern "C" {
   int get_jojo_fix_preset() { return g_jojo_fix_preset; }
 }
 
-int g_vertex_color_fix_preset = 0; // 0=off (legacy grayscale), 1=on — enable via [crazytaxi] in game_presets.cfg
+int g_vertex_color_fix_preset = 1; // 0 = Greyscale , 1 = On
 
 extern "C" {
   int get_vertex_color_fix_preset() { return g_vertex_color_fix_preset; }

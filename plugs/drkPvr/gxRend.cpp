@@ -570,6 +570,11 @@ float vtx_max_Z;
 // already near the Wii's memory budget (see "Wii memory limit" above).
 float curFaceColorR = 1.0f, curFaceColorG = 1.0f, curFaceColorB = 1.0f, curFaceColorA = 1.0f;
 
+// Cached once per frame in reset_vtx_state() instead of calling
+// VERTEX_COLOR_FIX() (an uncached extern getter) on every Intensity vertex —
+// the preset can't change mid-frame anyway.
+bool g_vertex_color_fix_cached = false;
+
 char fps_text[512];
 
 struct VertexDecoder;
@@ -685,6 +690,7 @@ void reset_vtx_state()
   vtx_min_Z = 131072;
   vtx_max_Z = 0;
   tex_frame_reset(); // reset per-frame texture bump arena
+  g_vertex_color_fix_cached = VERTEX_COLOR_FIX();
 }
 
 #define VTX_TFX(x) (x)
@@ -4072,11 +4078,12 @@ struct VertexDecoder
   // the final RGB is the polygon's FaceColor (curFaceColor*, set by
   // AppendPolyParam1/2B/4B) scaled by that intensity. Alpha comes straight
   // from curFaceColorA, not from the intensity scalar. Gated behind
-  // VERTEX_COLOR_FIX() (see its decl above) — off keeps the original flat
-  // grayscale behavior untouched for every game that hasn't opted in.
+  // g_vertex_color_fix_cached (refreshed once per frame in reset_vtx_state(),
+  // see its decl above) — off keeps the original flat grayscale behavior
+  // untouched for every game that hasn't opted in.
   static u32 INTESITY(float inte)
   {
-    if (!VERTEX_COLOR_FIX())
+    if (!g_vertex_color_fix_cached)
     {
       u32 C = inte * 255;
       if (C > 255)
