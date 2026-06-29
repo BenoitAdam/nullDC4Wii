@@ -31,6 +31,13 @@
                                 1=sleeps the difference each vblank so speed never
                                   exceeds 100% (never penalizes frames already at
                                   or below 100%; see plugs/drkPvr/SPG.cpp).
+        vertex_color_fix=1 <- 0/1, real PVR Intensity (Gouraud) shading: each
+                                vertex's scalar intensity is multiplied by the
+                                polygon's FaceColor (see gxRend.cpp
+                                VERTEX_COLOR_FIX()). Default 0 (off) keeps the
+                                old flat-grayscale behavior for every other game;
+                                Crazy Taxi needs this on for its HUD arrow/dollar
+                                sign to show their real color instead of gray.
 
     First matching rule wins.
     Unset fields are left at whatever the user selected in the UI.
@@ -61,6 +68,7 @@ extern int g_jojo_fix_preset;
 extern int g_decal_alpha_preset;
 extern int g_rgb565_vq_alpha;
 extern int g_speed_limiter_preset;
+extern int g_vertex_color_fix_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -91,6 +99,7 @@ struct GamePreset
     int decal_alpha;
     int rgb565_vq_alpha;
     int speed_limiter;
+    int vertex_color_fix;
     int players;
     int controller;
     int framebuffer_2d;
@@ -261,6 +270,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "decal_alpha")) p->decal_alpha = atoi(val);
     else if (key_eq(key, "rgb565_vq_alpha")) p->rgb565_vq_alpha = atoi(val);
     else if (key_eq(key, "speed_limiter")) p->speed_limiter = atoi(val);
+    else if (key_eq(key, "vertex_color_fix")) p->vertex_color_fix = atoi(val);
     else if (key_eq(key, "players"))    p->players    = atoi(val);
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);
     else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = atoi(val);
@@ -323,6 +333,7 @@ void game_presets_load(const char* cfg_path)
             cur->decal_alpha = -1;
             cur->rgb565_vq_alpha = -1;
             cur->speed_limiter = -1;
+            cur->vertex_color_fix = -1;
             cur->players  = cur->controller                                  = -1;
             cur->ppz_write = -1;
             cur->framebuffer_2d = -1;
@@ -407,6 +418,7 @@ void game_presets_apply(const char* filepath)
         if (p->decal_alpha >= 0) { g_decal_alpha_preset   = p->decal_alpha; printf("  decal_alpha -> %d\n", p->decal_alpha); }
         if (p->rgb565_vq_alpha >= 0) { g_rgb565_vq_alpha = p->rgb565_vq_alpha; printf("  rgb565_vq_alpha -> %d\n", p->rgb565_vq_alpha); }
         if (p->speed_limiter >= 0) { g_speed_limiter_preset = p->speed_limiter; printf("  speed_limiter -> %d\n", p->speed_limiter); }
+        if (p->vertex_color_fix >= 0) { g_vertex_color_fix_preset = p->vertex_color_fix; printf("  vertex_color_fix -> %d\n", p->vertex_color_fix); }
         if (p->players    >= 0) { g_player_count          = p->players;    printf("  players    -> %d\n", p->players);    }
         if (p->controller >= 0) { g_controller_type       = p->controller; printf("  controller -> %d\n", p->controller); }
         if (p->framebuffer_2d >= 0) { g_framebuffer_2d    = p->framebuffer_2d; printf("  framebuffer_2d -> %d\n", p->framebuffer_2d); }

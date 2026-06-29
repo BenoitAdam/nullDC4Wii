@@ -82,6 +82,17 @@ extern "C" int get_8bpp_preset();
 extern "C" int get_jojo_fix_preset();
 #define JOJO_FIX() (get_jojo_fix_preset() != 0)
 
+// Intensity (Gouraud) vertex-color fix: real PVR hardware multiplies each
+// vertex's scalar intensity by the polygon's FaceColor (TA_PolyParam1/2B/4B).
+// Off (legacy) builds a flat grayscale value from the intensity alone,
+// dropping the FaceColor entirely — this is why intensity-shaded elements
+// (e.g. Crazy Taxi's HUD arrow/dollar sign) render white/gray instead of
+// their intended color. Off by default so every other (untested) game keeps
+// the exact pre-fix look; enable per-game via game_presets.cfg
+// (vertex_color_fix=1).
+extern "C" int get_vertex_color_fix_preset();
+#define VERTEX_COLOR_FIX() (get_vertex_color_fix_preset() != 0)
+
 // Texture cache management
 extern "C" int get_texture_cache_preset();
 
@@ -4060,12 +4071,19 @@ struct VertexDecoder
   // Real PVR Intensity (Gouraud) mode: each vertex carries a scalar intensity;
   // the final RGB is the polygon's FaceColor (curFaceColor*, set by
   // AppendPolyParam1/2B/4B) scaled by that intensity. Alpha comes straight
-  // from curFaceColorA, not from the intensity scalar. Previously this just
-  // built a flat grayscale value, which is why intensity-shaded elements
-  // (e.g. Crazy Taxi's HUD arrow/dollar sign) rendered white/gray instead
-  // of their intended color.
+  // from curFaceColorA, not from the intensity scalar. Gated behind
+  // VERTEX_COLOR_FIX() (see its decl above) — off keeps the original flat
+  // grayscale behavior untouched for every game that hasn't opted in.
   static u32 INTESITY(float inte)
   {
+    if (!VERTEX_COLOR_FIX())
+    {
+      u32 C = inte * 255;
+      if (C > 255)
+        C = 255;
+      return (0xFF << 24) | (C << 16) | (C << 8) | (C);
+    }
+
     s32 R = (s32)(curFaceColorR * inte * 255.0f);
     s32 G = (s32)(curFaceColorG * inte * 255.0f);
     s32 B = (s32)(curFaceColorB * inte * 255.0f);
