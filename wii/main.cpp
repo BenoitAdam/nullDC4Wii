@@ -522,7 +522,7 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H");
 
-    printf("====== NullDC4Wii - Alpha 0.37   OPTIONS ======\n\n");
+    printf("====== NullDC4Wii - Alpha 0.38   OPTIONS ======\n\n");
 
     // --- Row 0: Launch ---
     printf("%s LAUNCH GAME\n", (selectedRow == OPT_LAUNCH) ? ">" : " ");
@@ -825,7 +825,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - Alpha 0.37   ");
+    printf("\nNullDC4Wii - Alpha 0.38   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("(-) GRAPHICS: ");
