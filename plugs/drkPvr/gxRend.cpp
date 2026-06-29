@@ -3379,14 +3379,12 @@ void DoRender()
   // Z range so that min >= max, the projection math below produces NaN/inf
   // which desyncs the GX FIFO ("GFX Fifo Opcode unknown 0x64").
   // Reset to a safe default range so the frame renders without a crash.
-  // Unsure, commenting
-  /*
+  // Don't remove this part or Bomberman intro FMV will not display on real hardware
   if (vtx_min_Z >= vtx_max_Z || vtx_max_Z != vtx_max_Z || vtx_min_Z != vtx_min_Z)
   {
     vtx_min_Z = 0.0001f;
     vtx_max_Z = 100000.0f;  
   }
-    */
 
   // extend range
   vtx_max_Z *= 1.001; // to not clip vtx_max verts
