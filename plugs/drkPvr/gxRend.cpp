@@ -202,8 +202,17 @@ void ApplyGraphismPreset() {
 // RGB565 (DC: R5G6B5) → GX RGB565: identical layout, no conversion needed
 #define ABGR0565(x) (x)
 
-// DC ARGB1555: bit15=0 = fully transparent. Fix: map to 0x0000 so alpha compare discards it.
-#define ABGR1555(x) ((x) & 0x8000 ? (x) : 0x0000) // Works together with the coding routing introduced in alpha 0.13 (alpha_fmt stuff)
+// DC ARGB1555 (bit15=A1, R5,G5,B5) -> GX RGB5A3.
+// bit15=1: keep as-is (opaque X1R5G5B5).
+// bit15=0: DC alpha=0 only means "transparent" for blend modes that actually
+// gate on alpha (e.g. SRC_ALPHA blend, punch-through). For other blend modes
+// (e.g. additive ONE/ONE) alpha never factors into the RGB math, so blanking
+// RGB here was destroying real pixel color whenever a pixel happened to have
+// its alpha bit clear. Keep alpha=0 (still A3=0, translucent-tagged) but
+// preserve R4G4B4 from the source R5G5B5, same truncation ABGR4444 already
+// does for its alpha bits.
+#define ABGR1555(x) ((x) & 0x8000 ? (x) : \
+    ((((x) >> 11) & 0xFu) << 8) | ((((x) >> 6) & 0xFu) << 4) | (((x) >> 1) & 0xFu))
 
 // ARGB4444 (DC: A4 R4 G4 B4) → GX RGB5A3
 // ARGB4444 has 4 alpha (transparency) bits, Wii's RGB5A3 has 3 bits.
