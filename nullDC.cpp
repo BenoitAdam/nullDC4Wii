@@ -260,6 +260,9 @@ void LoadSettings()
 
 	settings.emulator.AutoStart=cfgLoadInt("nullDC","Emulator.AutoStart",0)!=0;
 	settings.emulator.NoConsole=cfgLoadInt("nullDC","Emulator.NoConsole",0)!=0;
+	settings.emulator.AudioBuffers=cfgLoadInt("nullDC","Emulator.AudioBuffers",3);
+	if (settings.emulator.AudioBuffers>3)
+		settings.emulator.AudioBuffers=3;
 	printf("[nullDC.cpp] Loaded settings\n");
 }
 void SaveSettings()
@@ -272,4 +275,5 @@ void SaveSettings()
 	cfgSaveInt("nullDC","Dreamcast.RTC",settings.dreamcast.RTC);
 	cfgSaveInt("nullDC","Emulator.AutoStart",settings.emulator.AutoStart);
 	cfgSaveInt("nullDC","Emulator.NoConsole",settings.emulator.NoConsole);
+	cfgSaveInt("nullDC","Emulator.AudioBuffers",settings.emulator.AudioBuffers);
 }
