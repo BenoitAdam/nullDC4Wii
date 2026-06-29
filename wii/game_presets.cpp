@@ -16,6 +16,16 @@
         decal_alpha=1       <- 0/1, selects ShadInstr==2 (DecalAlpha) blending.
                                 0=legacy GX_MODULATE (faster, wrong transparency)
                                 1=correct DecalAlpha shading (GX_DECAL).
+        rgb565_vq_alpha=1   <- 0/1, colour-keys pure black as transparent for
+                                VQ-compressed RGB565 textures (see gxRend.cpp
+                                conv565_VQ::ConvertPixel). RGB565 has no real
+                                alpha channel, so this is a hack needed only by
+                                Power Stone's sparkle sprites. Default 0 (off,
+                                black stays opaque) — on for any other game,
+                                this punches holes in ordinary opaque/translucent
+                                textures with black/dark texels (e.g. Castlevania's
+                                door) once ADVANCED_ALPHA's per-polygon alpha-test
+                                discard is active.
         speed_limiter=1     <- 0/1, caps emulation at real-hardware (100%) speed.
                                 0=uncapped (may run >100% on light frames, default)
                                 1=sleeps the difference each vblank so speed never
@@ -49,6 +59,7 @@ extern int g_4bpp_preset;
 extern int g_8bpp_preset;
 extern int g_jojo_fix_preset;
 extern int g_decal_alpha_preset;
+extern int g_rgb565_vq_alpha;
 extern int g_speed_limiter_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -78,6 +89,7 @@ struct GamePreset
     int bpp8;
     int jojo_fix;
     int decal_alpha;
+    int rgb565_vq_alpha;
     int speed_limiter;
     int players;
     int controller;
@@ -247,6 +259,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "8bpp"))       p->bpp8       = parse_bpp(val);
     else if (key_eq(key, "jojo_fix"))   p->jojo_fix   = atoi(val);
     else if (key_eq(key, "decal_alpha")) p->decal_alpha = atoi(val);
+    else if (key_eq(key, "rgb565_vq_alpha")) p->rgb565_vq_alpha = atoi(val);
     else if (key_eq(key, "speed_limiter")) p->speed_limiter = atoi(val);
     else if (key_eq(key, "players"))    p->players    = atoi(val);
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);
@@ -308,6 +321,7 @@ void game_presets_load(const char* cfg_path)
             cur->frameskip= cur->tex_cache = cur->bpp4     = cur->bpp8      = -1;
             cur->jojo_fix = -1;
             cur->decal_alpha = -1;
+            cur->rgb565_vq_alpha = -1;
             cur->speed_limiter = -1;
             cur->players  = cur->controller                                  = -1;
             cur->ppz_write = -1;
@@ -391,6 +405,7 @@ void game_presets_apply(const char* filepath)
         if (p->bpp8       >= 0) { g_8bpp_preset           = p->bpp8;       printf("  8bpp       -> %d\n", p->bpp8);       }
         if (p->jojo_fix   >= 0) { g_jojo_fix_preset       = p->jojo_fix;   printf("  jojo_fix   -> %d\n", p->jojo_fix);   }
         if (p->decal_alpha >= 0) { g_decal_alpha_preset   = p->decal_alpha; printf("  decal_alpha -> %d\n", p->decal_alpha); }
+        if (p->rgb565_vq_alpha >= 0) { g_rgb565_vq_alpha = p->rgb565_vq_alpha; printf("  rgb565_vq_alpha -> %d\n", p->rgb565_vq_alpha); }
         if (p->speed_limiter >= 0) { g_speed_limiter_preset = p->speed_limiter; printf("  speed_limiter -> %d\n", p->speed_limiter); }
         if (p->players    >= 0) { g_player_count          = p->players;    printf("  players    -> %d\n", p->players);    }
         if (p->controller >= 0) { g_controller_type       = p->controller; printf("  controller -> %d\n", p->controller); }

@@ -109,6 +109,12 @@ extern "C" {
   int get_jojo_fix_preset() { return g_jojo_fix_preset; }
 }
 
+int g_rgb565_vq_alpha = 0; // 0=black opaque 1=black transparent
+
+extern "C" {
+  int get_rgb565_vq_alpha() { return g_rgb565_vq_alpha; }
+}
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -481,11 +487,12 @@ void displayAccuracyMenu()
 #define OPT_4BPP        14
 #define OPT_8BPP        15
 #define OPT_JOJO_FIX    16
-#define OPT_SPEED_LIMIT 17
-#define OPT_PLAYERS     18
-#define OPT_CTRL_TYPE   19
-#define OPT_MORE_INFO   20
-#define OPT_ROW_COUNT   21
+#define OPT_RGB565_VQ_ALPHA 17
+#define OPT_SPEED_LIMIT 18
+#define OPT_PLAYERS     19
+#define OPT_CTRL_TYPE   20
+#define OPT_MORE_INFO   21
+#define OPT_ROW_COUNT   22
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -522,98 +529,98 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row 3: Graphics ---
-    printf("%s GRAPHICS      : ", (selectedRow == OPT_GRAPHICS) ? ">" : " ");
+    printf("%s GRAPHICS        : ", (selectedRow == OPT_GRAPHICS) ? ">" : " ");
     switch (g_graphism_preset) {
-      case 0: printf("[< LOW        >]"); break;
-      case 1: printf("[< NORMAL     >]"); break;
-      case 2: printf("[< HIGH       >]"); break;
-      case 3: printf("[< EXTRA      >]"); break;
+      case 0: printf("[< LOW               >]"); break;
+      case 1: printf("[< NORMAL            >]"); break;
+      case 2: printf("[< HIGH              >]"); break;
+      case 3: printf("[< EXTRA             >]"); break;
     }
-    printf(" (Tip: 2D Games should use LOW)");
+    printf(" (2D Games should use LOW)");
     printf("\n");
 
     // --- Row 4: Accuracy ---
-    printf("%s ACCURACY      : ", (selectedRow == OPT_ACCURACY) ? ">" : " ");
+    printf("%s ACCURACY        : ", (selectedRow == OPT_ACCURACY) ? ">" : " ");
     switch (g_accuracy_preset) {
-      case 0: printf("[< FAST       >]"); break;
-      case 1: printf("[< BALANCED   >]"); break;
-      case 2: printf("[< ACCURATE   >]"); break;
+      case 0: printf("[< FAST              >]"); break;
+      case 1: printf("[< BALANCED          >]"); break;
+      case 2: printf("[< ACCURATE          >]"); break;
     }
-    printf(" (Tip: not much difference)");
+    printf(" (not much difference for now)");
     printf("\n");
 
     // --- Row 5: Ratio ---
-    printf("%s RATIO         : ", (selectedRow == OPT_RATIO) ? ">" : " ");
+    printf("%s RATIO           : ", (selectedRow == OPT_RATIO) ? ">" : " ");
     switch (g_ratio_preset) {
-      case 0: printf("[< ORIGINAL   >]"); break;
-      case 1: printf("[< FULLSCREEN >]"); break;
+      case 0: printf("[< ORIGINAL          >]"); break;
+      case 1: printf("[< FULLSCREEN        >]"); break;
     }
     printf("\n");
 
     // --- Row 6: PPZ Write ---
-    printf("%s PPZ_WRITE     : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
+    printf("%s PPZ_WRITE       : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
     switch (g_ppz_write_preset) {
-      case 0: printf("[< NO  >]"); break;
-      case 1: printf("[< YES >]"); break;
+      case 0: printf("[< NO                >]"); break;
+      case 1: printf("[< YES               >]"); break;
     }
     printf("\n");
 
     // --- Row 7: Advanced Alpha ---
-    printf("%s ADVANCED ALPHA: ", (selectedRow == OPT_ADV_ALPHA) ? ">" : " ");
+    printf("%s ADVANCED ALPHA  : ", (selectedRow == OPT_ADV_ALPHA) ? ">" : " ");
     switch (g_advanced_alpha_preset) {
-      case 0: printf("[< NO            >]"); break;
-      case 1: printf("[< YES (DEFAULT) >]"); break;
+      case 0: printf("[< NO                >]"); break;
+      case 1: printf("[< YES (DEFAULT)     >]"); break;
     }
     printf("\n");
 
     // --- Row 8: Decal Alpha Fix ---
-    printf("%s DECAL ALPHA   : ", (selectedRow == OPT_DECAL_ALPHA) ? ">" : " ");
+    printf("%s DECAL ALPHA     : ", (selectedRow == OPT_DECAL_ALPHA) ? ">" : " ");
     switch (g_decal_alpha_preset) {
-      case 0: printf("[< OFF (FASTER)  >]"); break;
-      case 1: printf("[< ON (CORRECT)  >]"); break;
+      case 0: printf("[< OFF (FASTER)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
     }
     printf("\n");
 
     // --- Row 9: 2D Framebuffer ---
-    printf("%s 2D FRAMEBUFFER: ", (selectedRow == OPT_FRAMEBUFFER_2D) ? ">" : " ");
+    printf("%s 2D FRAMEBUFFER  : ", (selectedRow == OPT_FRAMEBUFFER_2D) ? ">" : " ");
     switch (g_framebuffer_2d) {
-      case 0: printf("[< NO  >]"); break;
-      case 1: printf("[< YES >]"); break;
+      case 0: printf("[< NO                >]"); break;
+      case 1: printf("[< YES               >]"); break;
     }
     printf(" (Tip: try for 2D games)");
     printf("\n");
 
     // --- Row 10: FMV Format ---
-    printf("%s FMV FORMAT    : ", (selectedRow == OPT_FMV_FORMAT) ? ">" : " ");
+    printf("%s FMV FORMAT      : ", (selectedRow == OPT_FMV_FORMAT) ? ">" : " ");
     switch (g_fmv_format_preset) {
-      case 0: printf("[< CMPR (DXT1)   >]"); break;
-      case 1: printf("[< RGBA8         >]"); break;
-      case 2: printf("[< RGB565        >]"); break;
+      case 0: printf("[< CMPR (DXT1)       >]"); break;
+      case 1: printf("[< RGBA8             >]"); break;
+      case 2: printf("[< RGB565            >]"); break;
     }
     printf("\n");
 
     // --- Row 11: Frameskipping ---
-    printf("%s FRAMESKIPPING : ", (selectedRow == OPT_FRAMESKIP) ? ">" : " ");
+    printf("%s FRAMESKIPPING   : ", (selectedRow == OPT_FRAMESKIP) ? ">" : " ");
     switch (g_frameskip_preset) {
-      case 0: printf("[< 0 (DEFAULT)   >]"); break;
-      case 1: printf("[< 1             >]"); break;
-      case 2: printf("[< 2             >]"); break;
-      case 3: printf("[< AUTO          >]"); break;
+      case 0: printf("[< 0 (DEFAULT)       >]"); break;
+      case 1: printf("[< 1                 >]"); break;
+      case 2: printf("[< 2                 >]"); break;
+      case 3: printf("[< AUTO              >]"); break;
     }
     printf("\n");
 
     // --- Row 12: Texture Cache ---
-    printf("%s TEXTURE CACHE : ", (selectedRow == OPT_TEX_CACHE) ? ">" : " ");
+    printf("%s TEXTURE CACHE   : ", (selectedRow == OPT_TEX_CACHE) ? ">" : " ");
     switch (g_texture_cache_preset) {
-      case 0: printf("[< VERY FAST     >]"); break;
-      case 1: printf("[< FAST          >]"); break;
-      case 2: printf("[< NORMAL        >]"); break;
-      case 3: printf("[< QUALITY       >]"); break;
+      case 0: printf("[< VERY FAST         >]"); break;
+      case 1: printf("[< FAST              >]"); break;
+      case 2: printf("[< NORMAL            >]"); break;
+      case 3: printf("[< QUALITY           >]"); break;
     }
     printf("\n");
 
     // --- Row 13: 4BPP ---
-    printf("%s 4BPP MODE     : ", (selectedRow == OPT_4BPP) ? ">" : " ");
+    printf("%s 4BPP MODE       : ", (selectedRow == OPT_4BPP) ? ">" : " ");
     switch (g_4bpp_preset) {
       case 0: printf("[< I4 STUB           >]"); break;
       case 1: printf("[< 4BPP OPTIMIZED    >]"); break;
@@ -624,7 +631,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row 14: 8BPP ---
-    printf("%s 8BPP MODE     : ", (selectedRow == OPT_8BPP) ? ">" : " ");
+    printf("%s 8BPP MODE       : ", (selectedRow == OPT_8BPP) ? ">" : " ");
     switch (g_8bpp_preset) {
       case 0: printf("[< I8 STUB           >]"); break;
       case 1: printf("[< 8BPP OPTIMIZED    >]"); break;
@@ -635,36 +642,44 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row 15: Jojo Fix ---
-    printf("%s JOJO FIX      : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
+    printf("%s JOJO FIX        : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
     switch (g_jojo_fix_preset) {
-      case 0: printf("[< OFF           >]"); break;
-      case 1: printf("[< ON (DEFAULT)  >]"); break;
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
     }
-    printf(" (Tip: for JoJo's Bizarre Adventure)");
+    printf(" (for JoJo's Bizarre Adventure)");
     printf("\n");
 
-    // --- Row 16: Speed Limiter ---
-    printf("%s SPEED LIMITER : ", (selectedRow == OPT_SPEED_LIMIT) ? ">" : " ");
-    switch (g_speed_limiter_preset) {
-      case 0: printf("[< OFF (UNCAPPED) >]"); break;
-      case 1: printf("[< ON (CAP 100%%)  >]"); break;
+    // --- Row 16: RGB565 VQ Alpha ---
+    printf("%s RGB565 VQ ALPHA : ", (selectedRow == OPT_RGB565_VQ_ALPHA) ? ">" : " ");
+    switch (g_rgb565_vq_alpha) {
+      case 0: printf("[< BLACK OPAQUE      >]"); break;
+      case 1: printf("[< BLACK TRANSPARENT >]"); break;
     }
-    printf(" (Tip: stops speed exceeding 100%%)");
+    printf("\n");
+
+    // --- Row 17: Speed Limiter ---
+    printf("%s SPEED LIMITER   : ", (selectedRow == OPT_SPEED_LIMIT) ? ">" : " ");
+    switch (g_speed_limiter_preset) {
+      case 0: printf("[< OFF (UNCAPPED)    >]"); break;
+      case 1: printf("[< ON (CAP 100%%)     >]"); break;
+    }
+    printf(" (Stops speed exceeding 100%%)");
     printf("\n");
 
     // --- Row 17: Players ---
-    printf("%s PLAYERS       : ", (selectedRow == OPT_PLAYERS) ? ">" : " ");
-    printf(g_player_count == 1 ? "[< 1 PLAYER  >]" : "[< 2 PLAYERS >]");
+    printf("%s PLAYERS         : ", (selectedRow == OPT_PLAYERS) ? ">" : " ");
+    printf(g_player_count == 1 ? "[< 1 PLAYER          >]" : "[< 2 PLAYERS         >]");
     printf("\n");
 
     // --- Row 18: Controller ---
-    printf("%s CONTROLLER    : ", (selectedRow == OPT_CTRL_TYPE) ? ">" : " ");
+    printf("%s CONTROLLER      : ", (selectedRow == OPT_CTRL_TYPE) ? ">" : " ");
     switch (g_controller_type) {
-      case 0: printf("[< STANDARD              >]"); break;
-      case 1: printf("[< LIGHT GUN             >]"); break;
-      case 2: printf("[< MARACAS               >]"); break;
-      case 3: printf("[< KEYBOARD              >]"); break;
-      case 4: printf("[< FISHING ROD           >]"); break;
+      case 0: printf("[< STANDARD          >]"); break;
+      case 1: printf("[< LIGHT GUN         >]"); break;
+      case 2: printf("[< MARACAS           >]"); break;
+      case 3: printf("[< KEYBOARD          >]"); break;
+      case 4: printf("[< FISHING ROD       >]"); break;
     }
     switch (g_controller_type) {
       case 1: printf(" (Needs Sensor Bar + IR)"); break;
@@ -712,6 +727,7 @@ bool displayOptionsMenu()
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 4) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 4) % 5; break;
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
+        case OPT_RGB565_VQ_ALPHA: g_rgb565_vq_alpha = (g_rgb565_vq_alpha       + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
@@ -734,6 +750,7 @@ bool displayOptionsMenu()
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 1) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 1) % 5; break;
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
+        case OPT_RGB565_VQ_ALPHA: g_rgb565_vq_alpha = (g_rgb565_vq_alpha       + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + 1) % kControllerTypeCount; break;
@@ -1150,6 +1167,7 @@ int main(int argc, wchar *argv[])
       case 4: printf("RGB565\n");         break;
     }
     printf("Jojo Fix       : %s\n", g_jojo_fix_preset ? "YES" : "NO");
+    printf("RGB565 VQ Alpha: %s\n", g_rgb565_vq_alpha ? "BLACK TRANSPARENT" : "BLACK OPAQUE");
     printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
