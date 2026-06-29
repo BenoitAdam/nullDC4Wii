@@ -550,6 +550,15 @@ bool global_regd;
 float vtx_min_Z;
 float vtx_max_Z;
 
+// Scratch face color for the polygon currently being decoded, used by
+// Intensity (Col_Type==2) Gouraud shading: AppendPolyParam1/2B/4B set this
+// from the TA stream, and AppendPolyVertex2/7/8/10/13A/14A consume it
+// immediately while building each vertex's color, before the next polygon
+// header overwrites it. Transient decode-time state only — NOT persisted
+// per-entry in listModes[], which is replayed later at draw time and is
+// already near the Wii's memory budget (see "Wii memory limit" above).
+float curFaceColorR = 1.0f, curFaceColorG = 1.0f, curFaceColorB = 1.0f, curFaceColorA = 1.0f;
+
 char fps_text[512];
 
 struct VertexDecoder;
@@ -4048,12 +4057,24 @@ struct VertexDecoder
 
     return (A << 24) | (B << 16) | (G << 8) | R;
   }
+  // Real PVR Intensity (Gouraud) mode: each vertex carries a scalar intensity;
+  // the final RGB is the polygon's FaceColor (curFaceColor*, set by
+  // AppendPolyParam1/2B/4B) scaled by that intensity. Alpha comes straight
+  // from curFaceColorA, not from the intensity scalar. Previously this just
+  // built a flat grayscale value, which is why intensity-shaded elements
+  // (e.g. Crazy Taxi's HUD arrow/dollar sign) rendered white/gray instead
+  // of their intended color.
   static u32 INTESITY(float inte)
   {
-    u32 C = inte * 255;
-    if (C > 255)
-      C = 255;
-    return (0xFF << 24) | (C << 16) | (C << 8) | (C);
+    s32 R = (s32)(curFaceColorR * inte * 255.0f);
+    s32 G = (s32)(curFaceColorG * inte * 255.0f);
+    s32 B = (s32)(curFaceColorB * inte * 255.0f);
+    s32 A = (s32)(curFaceColorA * 255.0f);
+    colclamp(0, 255, R);
+    colclamp(0, 255, G);
+    colclamp(0, 255, B);
+    colclamp(0, 255, A);
+    return ((u32)A << 24) | ((u32)B << 16) | ((u32)G << 8) | (u32)R;
   }
 
   // Polys
@@ -4073,6 +4094,10 @@ struct VertexDecoder
   __forceinline static void fastcall AppendPolyParam1(TA_PolyParam1 *pp)
   {
     glob_param_bdc;
+    curFaceColorR = pp->FaceColorR;
+    curFaceColorG = pp->FaceColorG;
+    curFaceColorB = pp->FaceColorB;
+    curFaceColorA = pp->FaceColorA;
   }
   __forceinline static void fastcall AppendPolyParam2A(TA_PolyParam2A *pp)
   {
@@ -4080,6 +4105,12 @@ struct VertexDecoder
   }
   __forceinline static void fastcall AppendPolyParam2B(TA_PolyParam2B *pp)
   {
+    // FaceOffset (specular-like highlight) is intentionally not applied yet,
+    // consistent with decode_pvr_vertex()'s existing "skip offset color".
+    curFaceColorR = pp->FaceColorR;
+    curFaceColorG = pp->FaceColorG;
+    curFaceColorB = pp->FaceColorB;
+    curFaceColorA = pp->FaceColorA;
   }
   __forceinline static void fastcall AppendPolyParam3(TA_PolyParam3 *pp)
   {
@@ -4091,6 +4122,13 @@ struct VertexDecoder
   }
   __forceinline static void fastcall AppendPolyParam4B(TA_PolyParam4B *pp)
   {
+    // Only volume 0's face color is used: AppendPolyVertex10/13A/14A (the
+    // intensity vertex handlers for two-volume polys) only ever read
+    // BaseInt0, never blending in volume 1.
+    curFaceColorR = pp->FaceColor0R;
+    curFaceColorG = pp->FaceColor0G;
+    curFaceColorB = pp->FaceColor0B;
+    curFaceColorA = pp->FaceColor0A;
   }
 
   // Poly Strip handling
