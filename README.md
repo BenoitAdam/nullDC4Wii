@@ -358,7 +358,9 @@ Try different games, parameters and report in the compatibility wiki : https://w
 
 Yes and no.
 
-Currently we are on 60/70% emulator speed in average. We can't really go further than 80%. Maybe if rewriten in assembly partially or totally this could help. Libogc may limit MMU (this is being investigated at the moment), but the port of KallistiOS for Gamecube/Wii could open new possibility.
+Currently we are on 60/70% emulator speed in average. We can't really go further than 80%. Maybe if rewriten in assembly partially or totally this could help. Libogc may limit MMU (this is being investigated at the moment).
+
+The port of KallistiOS for Gamecube/Wii could open new possibility and MMU control, but that would also means reprogramming a lot of stuff.
 
 ### Is 100% speed of the emulator achievable on Wii U?
 
@@ -374,11 +376,13 @@ Maybe it's possible, but we don't have time to focus on this. CDI Files on SD Ca
 
 ### Will WinCE games be implemented ?
 
-That an additionnal ressources in CPU and we are limited. That may would make sense for a WiiU Port
+That an additionnal ressources in CPU and we are limited. That may would make sense for a WiiU Port.
+
+We are currently testing a branch with some implementation but it doesn't seem to work.
 
 ### How is AI involved in the project ?
 
-Since I (BenoitAdam) digged the NullDC code, AI has been heavily used to make improvement to the emulator. The very first state of the emulator (alpha 0.02) is 99% hand written code by SKMP and NullDC contributors at the time. Only some few changes have been made to be able to recompile it and make it run. Various AI are used : MistalAI/ChatGPT/Codex/Claude and Deepseek. Claude is very convenient because of artifact. Gemini helped on some improvements, and Deepseek too.
+Since I (BenoitAdam) digged the NullDC code, AI has been heavily used to make improvement to the emulator. The very first state of the emulator (alpha 0.02) is 99% hand written code by SKMP and NullDC contributors at the time. Only some few changes have been made to be able to recompile it and make it run. Various AI are used : MistalAI/ChatGPT/Codex/Claude and Deepseek. Claude is very convenient because of artifact and Claude Code. Gemini helped on some improvements, and Deepseek too.
 
 ### I hate AI !
 
