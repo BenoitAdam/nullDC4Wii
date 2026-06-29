@@ -239,7 +239,8 @@ void ApplyGraphismPreset() {
 struct Vertex
 {
   float u, v;        // Texture coordinates
-  unsigned int col;  // Vertex color
+  unsigned int col;  // Vertex color (Base Color)
+  unsigned int ocol; // Offset Color — added on top of (col*texture) per PIX(RGB) = COL(RGB)*TEX(RGB) + OFFSET(RGB), only when PCW.Offset is set for this polygon
   float x, y, z;     // 3D coordinates
 };
 
@@ -647,11 +648,12 @@ void decode_pvr_vertex(u32 base, u32 ptr, Vertex *cv)
   // Handle Vertex Color
   u32 col = vri(ptr);  ptr += 4;
   cv->col = col; // ABGR8888(col);
+  cv->ocol = 0;
   if (isp.Offset)
   {
-    // Skip offset color for now (used for specular-like highlights)
-    (void)vri(ptr);  ptr += 4;
-     //	vert_packed_color_(cv->spc,col);
+    // PIX(RGB) = COL(RGB)*TEX(RGB) + OFFSET(RGB) — added in the GX render
+    // loop's extra TEV stage, gated on PolyParam.pcw.Offset.
+    cv->ocol = vri(ptr);  ptr += 4;
   }
 }
 
@@ -3376,10 +3378,11 @@ void DoRender()
   GX_InvalidateTexAll();
 
   // GX ACCURATE
-  // Single vertex format, always 24 bytes/vertex (POS+CLR0+TEX0).
+  // Single vertex format, always 28 bytes/vertex (POS+CLR0+CLR1+TEX0).
   // VCD never changes mid-stream to avoid CP packet FIFO misalignment.
   GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS,  GX_POS_XYZ,  GX_F32,   0);
   GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+  GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR1, GX_CLR_RGBA, GX_RGBA8, 0);
   GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST,   GX_F32,   0);
 
   // OLD GX ACCURATE (better in some cases ?)
@@ -3389,17 +3392,33 @@ void DoRender()
   // GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
 
   // Note : making an if/else statement here also cause FIFO (CPU desynchronisation)
-																	 
-  
 
-  GX_SetNumChans(1);
+
+
+  // CLR1 carries the per-vertex Offset Color (PIX(RGB) = COL(RGB)*TEX(RGB) +
+  // OFFSET(RGB)). Channel 1 is plain pass-through, same as channel 0's
+  // default (no lighting).
+  GX_SetNumChans(2);
+  GX_SetChanCtrl(GX_COLOR1A1, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE);
   GX_SetNumTexGens(1);
 
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
 
+  // TEVSTAGE1: always-on additive stage, Cv = Cprev + Color1(rgb), Av = Aprev
+  // (Offset Color only adds to RGB, never alpha). Left permanently enabled
+  // and fed 0 (via use_offset_color below) for polygons without PCW.Offset
+  // set, instead of toggling stages/VCD per-polygon.
+  GX_SetNumTevStages(2);
+  GX_SetTevOrder(GX_TEVSTAGE1, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR1A1);
+  GX_SetTevColorIn(GX_TEVSTAGE1, GX_CC_CPREV, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
+  GX_SetTevColorOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_TC_LINEAR, GX_TRUE, GX_TEVPREV);
+  GX_SetTevAlphaIn(GX_TEVSTAGE1, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_APREV);
+  GX_SetTevAlphaOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_TC_LINEAR, GX_TRUE, GX_TEVPREV);
+
   GX_ClearVtxDesc();
   GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
   GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
+  GX_SetVtxDesc(GX_VA_CLR1, GX_DIRECT);
   GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
 
   GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
@@ -3611,6 +3630,7 @@ void DoRender()
   const bool decal_alpha_fix = DECAL_ALPHA_FIX(); // read once per frame, not per polygon
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
+  bool use_offset_color = false; // PCW.Offset: PIX(RGB) += vertex Offset Color (TEVSTAGE1 add)
 
 
   // Process opaque and then translucent lists.
@@ -3631,6 +3651,10 @@ void DoRender()
     if (count < 0)
     {
       int is_textured = drawMod->pcw.Texture ? 1 : 0;
+      // PCW.Offset: gate whether this polygon's Offset Color vertex attribute
+      // actually contributes (TEVSTAGE1 is always enabled; this just zeroes
+      // its input below for polygons that don't use it).
+      use_offset_color = drawMod->pcw.Offset ? true : false;
       if (is_textured != last_textured)
       {
         if (is_textured)
@@ -3742,6 +3766,10 @@ void DoRender()
         if (force_vtx_alpha_opaque)
           vcol |= 0xFF000000u;
         GX_Color1u32(HOST_TO_LE32(vcol));
+        // CLR1 = Offset Color, added on top of the modulated result by the
+        // always-on TEVSTAGE1 (GX_CC_RASC there reads this channel). Forced
+        // to 0 (no-op add) for polygons without PCW.Offset set.
+        GX_Color1u32(use_offset_color ? HOST_TO_LE32(drawVTX->ocol) : 0);
         GX_TexCoord2f32(drawVTX->u, drawVTX->v);
         drawVTX++;
       }
@@ -4148,6 +4176,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = ABGR8888(vtx->BaseCol);
+    curVTX->ocol = 0; // no Offset Color in this vertex format
 
     curVTX++;
   }
@@ -4157,6 +4186,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = FLCOL(&vtx->BaseA);
+    curVTX->ocol = 0; // no Offset Color in this vertex format
 
     curVTX++;
   }
@@ -4166,6 +4196,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = INTESITY(vtx->BaseInt);
+    curVTX->ocol = 0; // no Offset Color in this vertex format
 
     curVTX++;
   }
@@ -4175,6 +4206,9 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = ABGR8888(vtx->BaseCol);
+    // PIX(RGB) = COL(RGB)*TEX(RGB) + OFFSET(RGB) — applied in the GX render
+    // loop's extra TEV stage, gated on PolyParam.pcw.Offset for this strip.
+    curVTX->ocol = ABGR8888(vtx->OffsCol);
 
     curVTX->u = vtx->u;
     curVTX->v = vtx->v;
@@ -4187,6 +4221,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = ABGR8888(vtx->BaseCol);
+    curVTX->ocol = ABGR8888(vtx->OffsCol);
 
     curVTX->u = CVT16UV(vtx->u);
     curVTX->v = CVT16UV(vtx->v);
@@ -4205,6 +4240,7 @@ struct VertexDecoder
   __forceinline static void AppendPolyVertex5B(TA_Vertex5B *vtx)
   {
     curVTX->col = FLCOL(&vtx->BaseA);
+    curVTX->ocol = FLCOL(&vtx->OffsA);
     curVTX++;
   }
 
@@ -4219,6 +4255,7 @@ struct VertexDecoder
   __forceinline static void AppendPolyVertex6B(TA_Vertex6B *vtx)
   {
     curVTX->col = FLCOL(&vtx->BaseA);
+    curVTX->ocol = FLCOL(&vtx->OffsA);
     curVTX++;
   }
 
@@ -4230,6 +4267,10 @@ struct VertexDecoder
     curVTX->v = vtx->v;
 
     curVTX->col = INTESITY(vtx->BaseInt);
+    // TODO: OffsInt is a face-offset-color intensity multiplier (needs a
+    // per-polygon "face offset color" reference, like FaceBaseColor below);
+    // not implemented — force no offset contribution for now.
+    curVTX->ocol = 0;
 
     curVTX++;
   }
@@ -4239,6 +4280,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = INTESITY(vtx->BaseInt);
+    curVTX->ocol = 0; // TODO: see AppendPolyVertex7
 
     curVTX->u = CVT16UV(vtx->u);
     curVTX->v = CVT16UV(vtx->v);
@@ -4251,6 +4293,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = ABGR8888(vtx->BaseCol0);
+    curVTX->ocol = 0; // no Offset Color in this vertex format
 
     curVTX++;
   }
@@ -4260,6 +4303,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = INTESITY(vtx->BaseInt0);
+    curVTX->ocol = 0; // no Offset Color in this vertex format
 
     curVTX++;
   }
@@ -4273,6 +4317,7 @@ struct VertexDecoder
     curVTX->v = vtx->v0;
 
     curVTX->col = ABGR8888(vtx->BaseCol0);
+    curVTX->ocol = 0; // Two-Volume offset color not implemented
   }
   __forceinline static void AppendPolyVertex11B(TA_Vertex11B *vtx)
   {
@@ -4288,6 +4333,7 @@ struct VertexDecoder
     curVTX->v = CVT16UV(vtx->v0);
 
     curVTX->col = ABGR8888(vtx->BaseCol0);
+    curVTX->ocol = 0; // Two-Volume offset color not implemented
   }
   __forceinline static void AppendPolyVertex12B(TA_Vertex12B *vtx)
   {
@@ -4301,6 +4347,7 @@ struct VertexDecoder
     curVTX->u = vtx->u0;
     curVTX->v = vtx->v0;
     curVTX->col = INTESITY(vtx->BaseInt0);
+    curVTX->ocol = 0; // Two-Volume offset color not implemented
   }
   __forceinline static void AppendPolyVertex13B(TA_Vertex13B *vtx)
   {
@@ -4314,6 +4361,7 @@ struct VertexDecoder
     curVTX->u = CVT16UV(vtx->u0);
     curVTX->v = CVT16UV(vtx->v0);
     curVTX->col = INTESITY(vtx->BaseInt0);
+    curVTX->ocol = 0; // Two-Volume offset color not implemented
   }
   __forceinline static void AppendPolyVertex14B(TA_Vertex14B *vtx)
   {
@@ -4353,6 +4401,10 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
     curVTX[1].col = 0xFFFFFFFF;
     curVTX[2].col = 0xFFFFFFFF;
     curVTX[3].col = 0xFFFFFFFF;
+    curVTX[0].ocol = 0;
+    curVTX[1].ocol = 0;
+    curVTX[2].ocol = 0;
+    curVTX[3].ocol = 0;
 
     {
       vert_base(2, sv->x0, sv->y0, sv->z0);
