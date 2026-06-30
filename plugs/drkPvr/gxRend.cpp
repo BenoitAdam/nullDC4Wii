@@ -3750,7 +3750,7 @@ void DoRender()
             alpha_fmt = (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) ? 0 : (drawMod->tsp.IgnoreTexA ? 0 : 1);
           } else {
             // fps_boost gain even 2 FPS in Castlevania but the alpha isn't correct anymore
-            bool fps_boost = false; // upcoming preset ?
+            bool fps_boost = true; // upcoming preset ?
 
             bool blend_alpha_independent = (drawMod->tsp.SrcInstr < 4 && drawMod->tsp.DstInstr < 4);
             if (fps_boost && drawLST != TransLST) { // New in alpha 0.39
