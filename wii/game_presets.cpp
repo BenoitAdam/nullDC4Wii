@@ -43,6 +43,13 @@
                                 R4G4B4 from the source texel; 0 blanks RGB to 0,
                                 which is wrong for blend modes (e.g. additive
                                 ONE/ONE) that don't gate on alpha.
+        blend_mode=1        <- 0/1, per-polygon TSP SrcInstr/DstInstr blend mode
+                                for the translucent list (see gxRend.cpp
+                                BLEND_MODE()). 1 (default, correct) applies the
+                                polygon's actual blend factors each frame;
+                                0 (legacy) skips the per-polygon override and uses
+                                the GX default, which is faster but renders
+                                Resident Evil 3's translucent polygons incorrectly.
 
     First matching rule wins.
     Unset fields are left at whatever the user selected in the UI.
@@ -75,6 +82,7 @@ extern int g_rgb565_vq_alpha;
 extern int g_speed_limiter_preset;
 extern int g_vertex_color_fix_preset;
 extern int g_abgr1555_fix_preset;
+extern int g_blend_mode_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -111,6 +119,7 @@ struct GamePreset
     int controller;
     int framebuffer_2d;
     int fmv_format;
+    int blend_mode;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -283,6 +292,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);
     else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = atoi(val);
     else if (key_eq(key, "fmv_format"))     p->fmv_format     = parse_fmv_format(val);
+    else if (key_eq(key, "blend_mode"))     p->blend_mode     = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -347,6 +357,7 @@ void game_presets_load(const char* cfg_path)
             cur->ppz_write = -1;
             cur->framebuffer_2d = -1;
             cur->fmv_format = -1;
+            cur->blend_mode = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -433,6 +444,7 @@ void game_presets_apply(const char* filepath)
         if (p->controller >= 0) { g_controller_type       = p->controller; printf("  controller -> %d\n", p->controller); }
         if (p->framebuffer_2d >= 0) { g_framebuffer_2d    = p->framebuffer_2d; printf("  framebuffer_2d -> %d\n", p->framebuffer_2d); }
         if (p->fmv_format     >= 0) { g_fmv_format_preset = p->fmv_format;     printf("  fmv_format     -> %d\n", p->fmv_format);     }
+        if (p->blend_mode     >= 0) { g_blend_mode_preset = p->blend_mode;     printf("  blend_mode     -> %d\n", p->blend_mode);     }
 
         return; // First match only
     }

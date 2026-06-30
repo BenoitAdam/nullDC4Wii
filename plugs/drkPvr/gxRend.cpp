@@ -131,6 +131,12 @@ extern "C" int get_fmv_format_preset();
 #define FMV_FORMAT_RGBA8()  (get_fmv_format_preset() == 1)
 #define FMV_FORMAT_RGB565() (get_fmv_format_preset() == 2)
 
+// Blend mode: per-polygon TSP SrcInstr/DstInstr blending (necessary for Resident Evil 3)
+extern "C" int get_blend_mode_preset();
+#define BLEND_MODE() (get_blend_mode_preset() == 1)
+
+bool blend_mode = BLEND_MODE();
+
 int frame_counter;
 
 #include "config.h"
@@ -3734,40 +3740,32 @@ void DoRender()
         // own alpha, not the vertex alpha, to gate visibility. Always force opaque for
         // these two formats; defer to TSP.UseAlpha for everything else (e.g. ARGB4444).
         u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
-        force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !drawMod->tsp.UseAlpha;
+        force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !drawMod->tsp.UseAlpha;        
 
         // This is more accurate for alpha. May cost CPU cycles
         if (ADVANCED_ALPHA())
-        {
-          // TSP.IgnoreTexA: when set, hardware ignores the texture's alpha channel
-          // entirely (treats it as 1.0), so there is no texture-driven zero-alpha to
-          // discard. When clear, texture alpha is live and cutout fragments (alpha==0)
-          // should be discarded via the alpha test below.
-          // ShadInstr==2 (DecalAlpha) is excluded: its TEV output alpha is Ar (vertex/
-          // shading alpha, via GX_DECAL), not TEX(A) -- texture alpha is fully consumed
-          // by the color blend equation instead, so this test would never discard
-          // anything for it. Forcing alpha_fmt=0 here keeps early-Z (GX_SetZCompLoc
-          // TRUE) for DecalAlpha polygons instead of paying for late-Z with no benefit.
-          //
-          // Per the PVR blend-factor table, settings 0-3 (Zero/One/OtherColor/
-          // InverseOtherColor) never reference alpha in the blend coefficient at
-          // all -- only 4-7 (Src/Dst Alpha and their inverses) do. So whenever
-          // both SrcInstr and DstInstr are alpha-independent (e.g. the common
-          // additive One/One pair used for glow/light overlays), discarding a
-          // fragment because its texture alpha happens to be 0 has no hardware
-          // basis: real PVR would still add its full RGB contribution. Forcing
-          // alpha_fmt=0 here stops this test from eating real, fully-opaque-RGB
-          // pixels that merely have a clear alpha bit (e.g. RE3's title screen).
-          //
-          // Opaque-list polygons never discard on alpha either: per the spec,
-          // an Opaque polygon's blend factors are fixed (SRC=One, DST=Zero) --
-          // hardware always draws it outright, full stop. TSP blend bits in the
-          // Opaque list are "don't care" and must not gate visibility here.
-          bool blend_alpha_independent = drawMod->tsp.SrcInstr < 4 && drawMod->tsp.DstInstr < 4;
-          int alpha_fmt = (drawLST != TransLST) ? 0 :
-                          (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) ? 0 :
-                          (blend_alpha_independent ? 0 :
-                          (drawMod->tsp.IgnoreTexA ? 0 : 1));
+        {    
+          int alpha_fmt = 0;
+          if (!blend_mode) { // Legacy Behavior (correct for Chuchurocket & max FPS)
+            alpha_fmt = (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) ? 0 : (drawMod->tsp.IgnoreTexA ? 0 : 1);
+          } else {
+            // fps_boost gain even 2 FPS in Castlevania but the alpha isn't correct anymore
+            bool fps_boost = false; // upcoming preset ?
+
+            bool blend_alpha_independent = (drawMod->tsp.SrcInstr < 4 && drawMod->tsp.DstInstr < 4);
+            if (fps_boost && drawLST != TransLST) { // New in alpha 0.39
+                alpha_fmt = 0;
+            } else if (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) { // Was there in alpha0.38
+                alpha_fmt = 0;
+            } else if (blend_alpha_independent) { // New in alpha 0.39
+                alpha_fmt = 0;
+            } else if (drawMod->tsp.IgnoreTexA) { // Was there in alpha0.38
+                alpha_fmt = 0;
+            } else {
+                alpha_fmt = 1; // Was 0 before
+            }
+          }
+
           if (alpha_fmt != last_alpha_fmt)
           {
             if (alpha_fmt)
@@ -3803,12 +3801,8 @@ void DoRender()
       }
 
       // Per-polygon blend mode: match TSP.SrcInstr / DstInstr for the translucent
-      // list so that DC blend modes like One/Zero (replace) or One/One (additive)
-      // work correctly instead of being forced through SrcAlpha/InvSrcAlpha.
-      // Without this, polygons whose texture alpha is 0 (e.g. ARGB1555 with bit15=0)
-      // contribute nothing to the framebuffer even without alpha compare, because
-      // SrcAlpha blend with alpha=0 evaluates to: 0*src + 1*dst = dst (invisible).
-      if (in_trans_list)
+      // Absolutely necessary for Resident Evil 3
+      if (blend_mode && in_trans_list)
       {
         int src = (int)drawMod->tsp.SrcInstr;
         int dst = (int)drawMod->tsp.DstInstr;

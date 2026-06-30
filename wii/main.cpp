@@ -121,6 +121,12 @@ extern "C" {
   int get_abgr1555_fix_preset() { return g_abgr1555_fix_preset; }
 }
 
+int g_blend_mode_preset = 0; // 0=off 1=on (per-polygon TSP blend, correct for RE3)
+
+extern "C" {
+  int get_blend_mode_preset() { return g_blend_mode_preset; }
+}
+
 int g_rgb565_vq_alpha = 0; // 0=black opaque 1=black transparent
 
 extern "C" {
@@ -505,8 +511,9 @@ void displayAccuracyMenu()
 #define OPT_ABGR1555_FIX 20
 #define OPT_PLAYERS     21
 #define OPT_CTRL_TYPE   22
-#define OPT_MORE_INFO   23
-#define OPT_ROW_COUNT   24
+#define OPT_BLEND_MODE  23
+#define OPT_MORE_INFO   24
+#define OPT_ROW_COUNT   25
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -721,7 +728,16 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 14: More Info ---
+    // --- Row 23: Blend Mode ---
+    printf("%s BLEND MODE      : ", (selectedRow == OPT_BLEND_MODE) ? ">" : " ");
+    switch (g_blend_mode_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" (ON Resident Evil 3)");
+    printf("\n");
+
+    // --- Row 24: More Info ---
     printf("%s MORE INFO      (press A to open)\n", (selectedRow == OPT_MORE_INFO) ? ">" : " ");
 
     printf("\n");
@@ -764,6 +780,7 @@ bool displayOptionsMenu()
         case OPT_ABGR1555_FIX: g_abgr1555_fix_preset  = (g_abgr1555_fix_preset  + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
+        case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         default: break;
       }
     }
@@ -789,6 +806,7 @@ bool displayOptionsMenu()
         case OPT_ABGR1555_FIX: g_abgr1555_fix_preset  = (g_abgr1555_fix_preset  + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + 1) % kControllerTypeCount; break;
+        case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         default: break;
       }
     }
@@ -1206,6 +1224,7 @@ int main(int argc, wchar *argv[])
     printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
     printf("Vertex Color Fix: %s\n", g_vertex_color_fix_preset ? "ON" : "OFF");
     printf("ABGR1555 Fix   : %s\n", g_abgr1555_fix_preset ? "ON (KEEP RGB)" : "OFF (BLANK RGB)");
+    printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
