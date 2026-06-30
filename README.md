@@ -248,7 +248,14 @@ See more : https://github.com/BenoitAdam/nullDC4Wii/issues/68
 
 Try putting NO if you experience troubles, with HUD for example.
 
+#### Vertex Color
 
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO** | Grey Scale | Grey scale (a tiny bit faster) |
+| **YES** | Intensity color | Accurate |
+
+Vertex color is a special method on Dreamcast to color stuff. Notable example in Crazy Taxi : The arrow and dollar sign are Vertex Colored. You will notice the cars too : They will add to the current texture so the same car with the same texture will appear red, blue, green, etc...
 
 
 See Compatiblity guide for hints depending of the games
