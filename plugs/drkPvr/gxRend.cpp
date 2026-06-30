@@ -3639,13 +3639,44 @@ void DoRender()
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
 
+  // DC TSP blend factor → GX blend factor lookup.
+  // SrcInstr: "OtherColor" for a source factor means the framebuffer (dst) color.
+  // DstInstr: "OtherColor" for a dest factor means the incoming (src) color.
+  static const u8 dc_src_to_gx[8] = {
+    GX_BL_ZERO,        // 0 = Zero
+    GX_BL_ONE,         // 1 = One
+    GX_BL_DSTCLR,      // 2 = OtherColor  (dst color used as src factor)
+    GX_BL_INVDSTCLR,   // 3 = InvOtherColor
+    GX_BL_SRCALPHA,    // 4 = SrcAlpha
+    GX_BL_INVSRCALPHA, // 5 = InvSrcAlpha
+    GX_BL_DSTALPHA,    // 6 = DstAlpha
+    GX_BL_INVDSTALPHA, // 7 = InvDstAlpha
+  };
+  static const u8 dc_dst_to_gx[8] = {
+    GX_BL_ZERO,        // 0 = Zero
+    GX_BL_ONE,         // 1 = One
+    GX_BL_SRCCLR,      // 2 = OtherColor  (src color used as dst factor)
+    GX_BL_INVSRCCLR,   // 3 = InvOtherColor
+    GX_BL_SRCALPHA,    // 4 = SrcAlpha
+    GX_BL_INVSRCALPHA, // 5 = InvSrcAlpha
+    GX_BL_DSTALPHA,    // 6 = DstAlpha
+    GX_BL_INVDSTALPHA, // 7 = InvDstAlpha
+  };
+  bool in_trans_list = false;
+  int last_src_blend = -1;
+  int last_dst_blend = -1;
+
 
   // Process opaque and then translucent lists.
   for (; drawLST != crLST; drawLST++)
   {
     if (drawLST == TransLST)
     {
-      // enable blending & blending mode
+      // Enable blending for the translucent list. Blend factors are set
+      // per-polygon below based on TSP.SrcInstr / DstInstr.
+      in_trans_list = true;
+      last_src_blend = -1; // force first per-polygon update
+      last_dst_blend = -1;
       GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 
       // TODO: per-polygon ISP state (isp.ZWriteDis, isp.CullMode, isp.DepthMode)
@@ -3717,7 +3748,26 @@ void DoRender()
           // by the color blend equation instead, so this test would never discard
           // anything for it. Forcing alpha_fmt=0 here keeps early-Z (GX_SetZCompLoc
           // TRUE) for DecalAlpha polygons instead of paying for late-Z with no benefit.
-          int alpha_fmt = (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) ? 0 : (drawMod->tsp.IgnoreTexA ? 0 : 1);
+          //
+          // Per the PVR blend-factor table, settings 0-3 (Zero/One/OtherColor/
+          // InverseOtherColor) never reference alpha in the blend coefficient at
+          // all -- only 4-7 (Src/Dst Alpha and their inverses) do. So whenever
+          // both SrcInstr and DstInstr are alpha-independent (e.g. the common
+          // additive One/One pair used for glow/light overlays), discarding a
+          // fragment because its texture alpha happens to be 0 has no hardware
+          // basis: real PVR would still add its full RGB contribution. Forcing
+          // alpha_fmt=0 here stops this test from eating real, fully-opaque-RGB
+          // pixels that merely have a clear alpha bit (e.g. RE3's title screen).
+          //
+          // Opaque-list polygons never discard on alpha either: per the spec,
+          // an Opaque polygon's blend factors are fixed (SRC=One, DST=Zero) --
+          // hardware always draws it outright, full stop. TSP blend bits in the
+          // Opaque list are "don't care" and must not gate visibility here.
+          bool blend_alpha_independent = drawMod->tsp.SrcInstr < 4 && drawMod->tsp.DstInstr < 4;
+          int alpha_fmt = (drawLST != TransLST) ? 0 :
+                          (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) ? 0 :
+                          (blend_alpha_independent ? 0 :
+                          (drawMod->tsp.IgnoreTexA ? 0 : 1));
           if (alpha_fmt != last_alpha_fmt)
           {
             if (alpha_fmt)
@@ -3749,6 +3799,24 @@ void DoRender()
         {
           GX_SetZMode(GX_TRUE, GX_GEQUAL, z_write ? GX_TRUE : GX_FALSE);
           last_z_write = z_write;
+        }
+      }
+
+      // Per-polygon blend mode: match TSP.SrcInstr / DstInstr for the translucent
+      // list so that DC blend modes like One/Zero (replace) or One/One (additive)
+      // work correctly instead of being forced through SrcAlpha/InvSrcAlpha.
+      // Without this, polygons whose texture alpha is 0 (e.g. ARGB1555 with bit15=0)
+      // contribute nothing to the framebuffer even without alpha compare, because
+      // SrcAlpha blend with alpha=0 evaluates to: 0*src + 1*dst = dst (invisible).
+      if (in_trans_list)
+      {
+        int src = (int)drawMod->tsp.SrcInstr;
+        int dst = (int)drawMod->tsp.DstInstr;
+        if (src != last_src_blend || dst != last_dst_blend)
+        {
+          GX_SetBlendMode(GX_BM_BLEND, dc_src_to_gx[src], dc_dst_to_gx[dst], GX_LO_CLEAR);
+          last_src_blend = src;
+          last_dst_blend = dst;
         }
       }
 
