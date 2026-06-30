@@ -512,8 +512,7 @@ void displayAccuracyMenu()
 #define OPT_PLAYERS     21
 #define OPT_CTRL_TYPE   22
 #define OPT_BLEND_MODE  23
-#define OPT_MORE_INFO   24
-#define OPT_ROW_COUNT   25
+#define OPT_ROW_COUNT   24
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -734,14 +733,11 @@ bool displayOptionsMenu()
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
-    printf(" (ON Resident Evil 3)");
+    printf(" (ON for Resident Evil 3)");
     printf("\n");
 
-    // --- Row 24: More Info ---
-    printf("%s MORE INFO      (press A to open)\n", (selectedRow == OPT_MORE_INFO) ? ">" : " ");
-
     printf("\n");
-    printf("UP/DOWN: Navigate | LEFT/RIGHT: Change value | A: Launch | B: Back\n");
+    printf("A: Launch | B: Back | 1: More Info\n");
 
     WPAD_ScanPads();
     u32 pressed = WPAD_ButtonsDown(0);
@@ -814,8 +810,10 @@ bool displayOptionsMenu()
     {
       if (selectedRow == OPT_LAUNCH)
         return true;
-      else if (selectedRow == OPT_MORE_INFO)
-        displayAccuracyMenu();
+    }
+    else if (pressed & WPAD_BUTTON_1)
+    {
+      displayAccuracyMenu();
     }
     else if (pressed & WPAD_BUTTON_B)
     {
