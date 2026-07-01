@@ -140,6 +140,13 @@ extern "C" int get_blend_mode_preset();
 extern "C" int get_rgb565_opaque_alpha_preset();
 #define RGB565_OPAQUE_ALPHA() (get_rgb565_opaque_alpha_preset() == 1)
 
+// Blend FPS boost: under ADVANCED_ALPHA()+BLEND_MODE(), skip the alpha-test/
+// GX_ZCompLoc pass for every polygon outside the translucent list (alpha_fmt
+// forced to 0). Gains a couple of FPS (e.g. Castlevania) at the cost of
+// incorrect alpha on opaque/punch-through polys that would otherwise need it.
+extern "C" int get_blend_fps_boost_preset();
+#define BLEND_FPS_BOOST() (get_blend_fps_boost_preset() == 1)
+
 
 
 int frame_counter;
@@ -3763,8 +3770,8 @@ void DoRender()
         {    
           int alpha_fmt = 0;
           if (BLEND_MODE()) {
-            // fps_boost gain even 2 FPS in Castlevania but the alpha isn't correct anymore
-            bool blend_fps_boost = true;
+            // fps_boost gains even 2 FPS in Castlevania but the alpha isn't correct anymore
+            bool blend_fps_boost = BLEND_FPS_BOOST();
             bool blend_alpha_independent = (drawMod->tsp.SrcInstr < 4 && drawMod->tsp.DstInstr < 4);
             if (blend_fps_boost && drawLST != TransLST) { // New in alpha 0.39
                 alpha_fmt = 0;

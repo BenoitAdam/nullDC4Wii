@@ -50,6 +50,12 @@
                                 0 (legacy) skips the per-polygon override and uses
                                 the GX default, which is faster but renders
                                 Resident Evil 3's translucent polygons incorrectly.
+        blend_fps_boost=1   <- 0/1, only used when blend_mode=1 (see gxRend.cpp
+                                BLEND_FPS_BOOST()). 1 forces alpha_fmt=0 (skips the
+                                alpha-test/ZCompLoc pass) for every polygon outside
+                                the translucent list, saving a couple of FPS (e.g.
+                                Castlevania) at the cost of incorrect alpha on some
+                                opaque/punch-through polys. Default 0 (off, correct).
 
     First matching rule wins.
     Unset fields are left at whatever the user selected in the UI.
@@ -84,6 +90,7 @@ extern int g_vertex_color_fix_preset;
 extern int g_abgr1555_fix_preset;
 extern int g_blend_mode_preset;
 extern int g_rgb565_opaque_alpha_preset;
+extern int g_blend_fps_boost_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -122,6 +129,7 @@ struct GamePreset
     int fmv_format;
     int blend_mode;
     int rgb565_opaque_alpha;
+    int blend_fps_boost;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -296,6 +304,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "fmv_format"))     p->fmv_format     = parse_fmv_format(val);
     else if (key_eq(key, "blend_mode"))     p->blend_mode     = atoi(val);
     else if (key_eq(key, "rgb565_opaque_alpha")) p->rgb565_opaque_alpha = atoi(val);
+    else if (key_eq(key, "blend_fps_boost")) p->blend_fps_boost = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -362,6 +371,7 @@ void game_presets_load(const char* cfg_path)
             cur->fmv_format = -1;
             cur->blend_mode = -1;
             cur->rgb565_opaque_alpha = -1;
+            cur->blend_fps_boost = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -450,6 +460,7 @@ void game_presets_apply(const char* filepath)
         if (p->fmv_format     >= 0) { g_fmv_format_preset = p->fmv_format;     printf("  fmv_format     -> %d\n", p->fmv_format);     }
         if (p->blend_mode     >= 0) { g_blend_mode_preset = p->blend_mode;     printf("  blend_mode     -> %d\n", p->blend_mode);     }
         if (p->rgb565_opaque_alpha >= 0) { g_rgb565_opaque_alpha_preset = p->rgb565_opaque_alpha; printf("  rgb565_opaque_alpha -> %d\n", p->rgb565_opaque_alpha); }
+        if (p->blend_fps_boost >= 0) { g_blend_fps_boost_preset = p->blend_fps_boost; printf("  blend_fps_boost -> %d\n", p->blend_fps_boost); }
 
         return; // First match only
     }
