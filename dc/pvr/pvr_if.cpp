@@ -154,11 +154,15 @@ INLINE void YUV_ConvertMacroBlock()
         // Convert 16x16 block
         for (u32 y = 0; y < YUV_MACROBLOCK_SIZE; y++) {
             for (u32 x = 0; x < YUV_MACROBLOCK_SIZE; x += 2) {
-                // Pack YUYV format: Y0 U Y1 V
-                yuyv[1] = GetY420(x, y, Y);      // Y0
-                yuyv[0] = GetUV420(x, y, U);     // U (shared)
-                yuyv[3] = GetY420(x + 1, y, Y);  // Y1
-                yuyv[2] = GetUV420(x, y, V);     // V (shared)
+                // Pack as DC LE UYVY u32 (U|Y0<<8|V<<16|Y1<<24).
+                // Written as Wii BE u32, this stores bytes [Y1,V,Y0,U] in
+                // vram.data — the same layout CPU 32-bit stores produce —
+                // so the UYVY u32 decoder (Yu=word>>0, Y0=word>>8, ...) works
+                // for both TA-YUV and CPU-written YUV422 textures.
+                yuyv[0] = GetY420(x + 1, y, Y);  // Y1 = Wii BE MSB = DC byte 3
+                yuyv[1] = GetUV420(x, y, V);      // V  = DC byte 2
+                yuyv[2] = GetY420(x, y, Y);       // Y0 = DC byte 1
+                yuyv[3] = GetUV420(x, y, U);      // U  = Wii BE LSB = DC byte 0
                 
                 // Write 2 pixels at once
                 YUV_putpixel2(x, y, *(u32*)yuyv);

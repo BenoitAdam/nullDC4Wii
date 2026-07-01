@@ -1262,15 +1262,12 @@ void Plannar(u8 *praw, u32 w, u32 h)
         break;
       case 422:
       {
-        // DC YUV422 real layout confirmed via hardware docs: per u32 word,
-        // bytes are [Y0][U][Y1][V] (low to high) — i.e. "Y0U" + "Y1V" pairs,
-        // NOT [U][Y0][V][Y1] as previously assumed. That earlier assumption
-        // fed near-zero chroma into YUV422() for neutral-gray pixels, which
-        // produced a strong green-dominant decode (confirmed via debug logs).
-        s32 Y0 = (word >>  0) & 255;  // Y0
-        s32 Yu = (word >>  8) & 255;  // U (Cb)
-        s32 Y1 = (word >> 16) & 255;  // Y1
-        s32 Yv = (word >> 24) & 255;  // V (Cr)
+        // DC YUV422 planar is UYVY: U,Y0,V,Y1 at DC LE bytes 0-3.
+        // u32 read on Wii BE gives correct DC LE value; extract accordingly.
+        s32 Yu = (word >>  0) & 255;  // U (Cb)
+        s32 Y0 = (word >>  8) & 255;  // Y0
+        s32 Yv = (word >> 16) & 255;  // V (Cr)
+        s32 Y1 = (word >> 24) & 255;  // Y1
         dst[GX_TexOffs(x + 0, y, w)] = YUV422(Y0, Yu, Yv);
         dst[GX_TexOffs(x + 1, y, w)] = YUV422(Y1, Yu, Yv);
       }
@@ -1499,7 +1496,9 @@ int g_yuv_src_stride_override = 0;
 int g_yuv_src_real_h = 0;
 
 // YUV422 planar -> GX_TF_CMPR
-// DC planar YUV422: each u32 = UYVY (byte0=U, byte1=Y0, byte2=V, byte3=Y1)
+// DC planar YUV422: UYVY layout — DC LE bytes [U, Y0, V, Y1] at addresses [0,1,2,3].
+// Each pixel pair is two u16s (Y<<8)|chroma; LE storage puts chroma at even addresses.
+// Wii BE u32 read gives the DC LE u32 value; bit-shift extraction recovers channels.
 static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
   u32 src_stride = g_yuv_src_stride_override ? (u32)g_yuv_src_stride_override : w;
@@ -1521,14 +1520,17 @@ static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
         if (y >= h || y >= real_h) { for (int c=0;c<4;c++) block_pixels[row*4+c]=0; continue; }
         for (u32 col = 0; col < 4; col += 2)
         {
-          // Read bytes by position, not by loading a u32 and bit-shifting:
-          // the source word's byte layout is U,Y0,V,Y1 at increasing
-          // addresses regardless of host endianness, but bit-shift
-          // extraction (word&255 etc) only recovers that on little-endian
-          // hosts. On big-endian (Wii) it swaps Y0/Y1. Positional byte
-          // reads are correct on any host.
-          u8 *p = &src_vram[(y*src_stride + bx+col) * 2];
-          s32 Yu=p[0], Y0=p[1], Yv=p[2], Y1=p[3];
+          // DC YUV422 planar is YUYV: Y0,U,Y1,V at DC LE bytes 0-3.
+          // u32 read gives the correct DC LE value on Wii BE, so bit-shift
+          // extraction recovers the right bytes. Byte-positional reads are
+          // WRONG on Wii: the Wii stores bytes in reversed order within each
+          // u32 (to satisfy the u32-read-equals-DC-LE invariant), so p[0]
+          // would be V (DC byte 3), not U (DC byte 0).
+          u32 word = *(u32*)&src_vram[(y*src_stride + bx+col) * 2];
+          s32 Yu = (word >>  0) & 255;  // U (Cb) = DC UYVY byte 0
+          s32 Y0 = (word >>  8) & 255;  // Y0
+          s32 Yv = (word >> 16) & 255;  // V (Cr) = DC UYVY byte 2
+          s32 Y1 = (word >> 24) & 255;  // Y1
           s32 Bc, Gc, Rc;
           YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
           block_pixels[row*4+col  ] = (u16)YUV422_luma(Y0, Bc, Gc, Rc);
@@ -1647,9 +1649,11 @@ static void YUV422_to_RGBA8_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
           continue;
         }
         u32 x    = tx*4 + col;
-        // Positional byte read (see YUV422_to_CMPR_Planar) — endian-safe.
-        u8 *p = &src_vram[(y*src_stride + x) * 2];
-        s32 Yu=p[0], Y0=p[1], Yv=p[2], Y1=p[3];
+        u32 word = *(u32*)&src_vram[(y*src_stride + x) * 2];
+        s32 Yu = (word >>  0) & 255;  // U
+        s32 Y0 = (word >>  8) & 255;  // Y0
+        s32 Yv = (word >> 16) & 255;  // V
+        s32 Y1 = (word >> 24) & 255;  // Y1
         s32 Bc, Gc, Rc;
         YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
         u16 c0 = (u16)YUV422_luma(Y0, Bc, Gc, Rc);
@@ -1760,9 +1764,11 @@ static void YUV422_to_RGB565_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
       for (u32 col = 0; col < 4; col += 2)
       {
         u32 x    = tx*4 + col;
-        // Positional byte read (see YUV422_to_CMPR_Planar) — endian-safe.
-        u8 *p = &src_vram[(y*src_stride + x) * 2];
-        s32 Yu=p[0], Y0=p[1], Yv=p[2], Y1=p[3];
+        u32 word = *(u32*)&src_vram[(y*src_stride + x) * 2];
+        s32 Yu = (word >>  0) & 255;  // U
+        s32 Y0 = (word >>  8) & 255;  // Y0
+        s32 Yv = (word >> 16) & 255;  // V
+        s32 Y1 = (word >> 24) & 255;  // Y1
         s32 Bc, Gc, Rc;
         YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
         tile[row*4+col  ] = (u16)YUV422_luma(Y0, Bc, Gc, Rc);
@@ -2272,9 +2278,11 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         // Decode the first 2 pixels exactly the way the planar path does,
         // so we can see if U/V/Y extraction and the YUV422() formula look sane.
         {
-          // Positional byte read (see YUV422_to_CMPR_Planar) — endian-safe.
-          u8 *p = (u8*)&raw32[0];
-          s32 Yu=p[0], Y0=p[1], Yv=p[2], Y1=p[3];
+          u32 w0 = raw32[0];
+          s32 Yu = (w0 >>  0) & 255;  // U
+          s32 Y0 = (w0 >>  8) & 255;  // Y0
+          s32 Yv = (w0 >> 16) & 255;  // V
+          s32 Y1 = (w0 >> 24) & 255;  // Y1
           u16 c0 = (u16)YUV422(Y0, Yu, Yv);
           u16 c1 = (u16)YUV422(Y1, Yu, Yv);
           printf("[YUV] planar-style decode word0: Y0=%d Y1=%d U=%d V=%d\n", Y0, Y1, Yu, Yv);
