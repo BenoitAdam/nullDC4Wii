@@ -140,7 +140,7 @@ extern "C" int get_blend_mode_preset();
 extern "C" int get_rgb565_opaque_alpha_preset();
 #define RGB565_OPAQUE_ALPHA() (get_rgb565_opaque_alpha_preset() == 1)
 
-bool blend_mode = BLEND_MODE();
+
 
 int frame_counter;
 
@@ -3762,14 +3762,11 @@ void DoRender()
         if (ADVANCED_ALPHA())
         {    
           int alpha_fmt = 0;
-          if (!blend_mode) { // Legacy Behavior (correct for Chuchurocket & max FPS)
-            alpha_fmt = (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) ? 0 : (drawMod->tsp.IgnoreTexA ? 0 : 1);
-          } else {
+          if (BLEND_MODE()) {
             // fps_boost gain even 2 FPS in Castlevania but the alpha isn't correct anymore
-            bool fps_boost = true; // upcoming preset ?
-
+            bool blend_fps_boost = true;
             bool blend_alpha_independent = (drawMod->tsp.SrcInstr < 4 && drawMod->tsp.DstInstr < 4);
-            if (fps_boost && drawLST != TransLST) { // New in alpha 0.39
+            if (blend_fps_boost && drawLST != TransLST) { // New in alpha 0.39
                 alpha_fmt = 0;
             } else if (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) { // Was there in alpha0.38
                 alpha_fmt = 0;
@@ -3780,6 +3777,8 @@ void DoRender()
             } else {
                 alpha_fmt = 1; // Was 0 before
             }
+          } else { // Legacy Behavior (correct for Chuchurocket & max FPS)
+            alpha_fmt = (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) ? 0 : (drawMod->tsp.IgnoreTexA ? 0 : 1);
           }
 
           if (alpha_fmt != last_alpha_fmt)
@@ -3818,7 +3817,7 @@ void DoRender()
 
       // Per-polygon blend mode: match TSP.SrcInstr / DstInstr for the translucent
       // Absolutely necessary for Resident Evil 3
-      if (blend_mode && in_trans_list)
+      if (BLEND_MODE() && in_trans_list)
       {
         int src = (int)drawMod->tsp.SrcInstr;
         int dst = (int)drawMod->tsp.DstInstr;
