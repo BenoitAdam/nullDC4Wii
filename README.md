@@ -336,6 +336,9 @@ Activate :
 
 ## Questions and Answers (FAQ)
 
+### It doesn't work
+
+First, try on SD card with a know game that work (Castlevana, Chuchu Rocket or Sega Tetris are best candidate). For USB, try a FAT32 USB key first before switching to any other device. It works on my 500HDD FAT32 for information
 
 ### Why this emulator ?
 
