@@ -121,7 +121,7 @@ extern "C" {
   int get_abgr1555_fix_preset() { return g_abgr1555_fix_preset; }
 }
 
-int g_blend_mode_preset = 0; // 0=off 1=on (per-polygon TSP blend, correct for RE3)
+int g_blend_mode_preset = 1; // 0=off 1=on (per-polygon TSP blend, correct for RE3)
 
 extern "C" {
   int get_blend_mode_preset() { return g_blend_mode_preset; }
@@ -131,6 +131,12 @@ int g_rgb565_opaque_alpha_preset = 1; // 1=force opaque for fmt0(ARGB1555)+fmt1(
 
 extern "C" {
   int get_rgb565_opaque_alpha_preset() { return g_rgb565_opaque_alpha_preset; }
+}
+
+int g_blend_fps_boost_preset = 0; // 0=off (correct alpha), 1=on (few extra FPS, e.g. Castlevania, wrong alpha)
+
+extern "C" {
+  int get_blend_fps_boost_preset() { return g_blend_fps_boost_preset; }
 }
 
 int g_rgb565_vq_alpha = 0; // 0=black opaque 1=black transparent
@@ -498,28 +504,30 @@ void displayAccuracyMenu()
 // row 1 = game name (display only, not selectable)
 // row 2 = preset banner (display only, not selectable)
 // row 3 = blank separator
+// Numbering below follows the order rows are actually printed on screen.
 #define OPT_GRAPHICS    4
 #define OPT_ACCURACY    5
 #define OPT_RATIO       6
 #define OPT_PPZ_WRITE   7
-#define OPT_ADV_ALPHA   8
-#define OPT_DECAL_ALPHA 9
-#define OPT_FRAMEBUFFER_2D 10
-#define OPT_FMV_FORMAT  11
-#define OPT_FRAMESKIP   12
-#define OPT_TEX_CACHE   13
-#define OPT_4BPP        14
-#define OPT_8BPP        15
-#define OPT_JOJO_FIX    16
-#define OPT_RGB565_VQ_ALPHA 17
-#define OPT_SPEED_LIMIT 18
-#define OPT_VERTEX_COLOR_FIX 19
-#define OPT_ABGR1555_FIX 20
-#define OPT_PLAYERS     21
-#define OPT_CTRL_TYPE   22
+#define OPT_DECAL_ALPHA 8
+#define OPT_FRAMEBUFFER_2D 9
+#define OPT_FMV_FORMAT  10
+#define OPT_FRAMESKIP   11
+#define OPT_TEX_CACHE   12
+#define OPT_4BPP        13
+#define OPT_8BPP        14
+#define OPT_JOJO_FIX    15
+#define OPT_RGB565_VQ_ALPHA 16
+#define OPT_SPEED_LIMIT 17
+#define OPT_VERTEX_COLOR_FIX 18
+#define OPT_ABGR1555_FIX 19
+#define OPT_PLAYERS     20
+#define OPT_CTRL_TYPE   21
+#define OPT_ADV_ALPHA   22
 #define OPT_BLEND_MODE  23
-#define OPT_RGB565_OPAQUE_ALPHA 24
-#define OPT_ROW_COUNT   25
+#define OPT_BLEND_FPS_BOOST 24
+#define OPT_RGB565_OPAQUE_ALPHA 25
+#define OPT_ROW_COUNT   26
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -535,10 +543,8 @@ bool displayOptionsMenu()
   {
     printf("\033[2J\033[H");
 
-    printf("====== NullDC4Wii - Alpha 0.38   OPTIONS ======\n\n");
-
     // --- Row 0: Launch ---
-    printf("%s LAUNCH GAME\n", (selectedRow == OPT_LAUNCH) ? ">" : " ");
+    printf("%s LAUNCH GAME      (A: Launch | B: Back | 1: More Info) NullDC4Wii a0.39\n", (selectedRow == OPT_LAUNCH) ? ">" : " ");
 
     // --- Row 1: Game name (display only) ---
     {
@@ -592,13 +598,6 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 7: Advanced Alpha ---
-    printf("%s ADVANCED ALPHA  : ", (selectedRow == OPT_ADV_ALPHA) ? ">" : " ");
-    switch (g_advanced_alpha_preset) {
-      case 0: printf("[< NO                >]"); break;
-      case 1: printf("[< YES (DEFAULT)     >]"); break;
-    }
-    printf("\n");
 
     // --- Row 8: Decal Alpha Fix ---
     printf("%s DECAL ALPHA     : ", (selectedRow == OPT_DECAL_ALPHA) ? ">" : " ");
@@ -695,7 +694,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row 17b: Intensity Color Fix ---
-    printf("%s VERTEX COLOR FIX: ", (selectedRow == OPT_VERTEX_COLOR_FIX) ? ">" : " ");
+    printf("%s VERTEX COLOR    : ", (selectedRow == OPT_VERTEX_COLOR_FIX) ? ">" : " ");
     switch (g_vertex_color_fix_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON                >]"); break;
@@ -734,13 +733,30 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
+    // --- Row 7: Advanced Alpha ---
+    printf("%s ADVANCED ALPHA  : ", (selectedRow == OPT_ADV_ALPHA) ? ">" : " ");
+    switch (g_advanced_alpha_preset) {
+      case 0: printf("[< NO                >]"); break;
+      case 1: printf("[< YES (DEFAULT)     >]"); break;
+    }
+    printf("\n");
+
     // --- Row 23: Blend Mode ---
-    printf("%s BLEND MODE      : ", (selectedRow == OPT_BLEND_MODE) ? ">" : " ");
+    printf("%s > BLEND MODE    : ", (selectedRow == OPT_BLEND_MODE) ? ">" : " ");
     switch (g_blend_mode_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
     printf(" (ON for Resident Evil 3)");
+    printf("\n");
+
+    // --- Row 25: Blend FPS Boost ---
+    printf("%s >> FPS BOOST    : ", (selectedRow == OPT_BLEND_FPS_BOOST) ? ">" : " ");
+    switch (g_blend_fps_boost_preset) {
+      case 0: printf("[< OFF (CORRECT)     >]"); break;
+      case 1: printf("[< ON (FASTER)       >]"); break;
+    }
+    printf(" (+2 FPS in BLEND MODE, bad alpha)");
     printf("\n");
 
     // --- Row 24: RGB565 Opaque Alpha ---
@@ -749,11 +765,8 @@ bool displayOptionsMenu()
       case 0: printf("[< OFF (FMT0 ONLY)   >]"); break;
       case 1: printf("[< ON (FMT0+FMT1)    >]"); break;
     }
-    printf("(OFF for POD2)");
-    printf("\n");
-
-    printf("\n");
-    printf("A: Launch | B: Back | 1: More Info\n");
+    printf(" (OFF for POD2)");
+  
 
     WPAD_ScanPads();
     u32 pressed = WPAD_ButtonsDown(0);
@@ -794,6 +807,7 @@ bool displayOptionsMenu()
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
+        case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
         default: break;
       }
     }
@@ -821,6 +835,7 @@ bool displayOptionsMenu()
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + 1) % kControllerTypeCount; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
+        case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
         default: break;
       }
     }
@@ -859,7 +874,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - Alpha 0.38   ");
+    printf("\nNullDC4Wii - Alpha 0.39   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("(-) GRAPHICS: ");
@@ -1242,6 +1257,7 @@ int main(int argc, wchar *argv[])
     printf("ABGR1555 Fix   : %s\n", g_abgr1555_fix_preset ? "ON (KEEP RGB)" : "OFF (BLANK RGB)");
     printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("RGB565 Opq Alpha: %s\n", g_rgb565_opaque_alpha_preset ? "ON (FMT0+FMT1)" : "OFF (FMT0 ONLY)");
+    printf("Blend FPS Boost: %s\n", g_blend_fps_boost_preset ? "ON (FASTER)" : "OFF (CORRECT)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
