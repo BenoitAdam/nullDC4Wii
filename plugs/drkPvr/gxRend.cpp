@@ -135,6 +135,11 @@ extern "C" int get_fmv_format_preset();
 extern "C" int get_blend_mode_preset();
 #define BLEND_MODE() (get_blend_mode_preset() == 1)
 
+// Force vertex alpha opaque for both ARGB1555 (fmt0) and RGB565 (fmt1).
+// Off: only ARGB1555 (fmt0) is forced opaque; RGB565 (fmt1) uses vertex alpha as-is.
+extern "C" int get_rgb565_opaque_alpha_preset();
+#define RGB565_OPAQUE_ALPHA() (get_rgb565_opaque_alpha_preset() == 1)
+
 bool blend_mode = BLEND_MODE();
 
 int frame_counter;
@@ -3740,7 +3745,10 @@ void DoRender()
         // own alpha, not the vertex alpha, to gate visibility. Always force opaque for
         // these two formats; defer to TSP.UseAlpha for everything else (e.g. ARGB4444).
         u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
-        force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !drawMod->tsp.UseAlpha;        
+        if (RGB565_OPAQUE_ALPHA())
+          force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !drawMod->tsp.UseAlpha;
+        else
+          force_vtx_alpha_opaque = (fmt == 0) || !drawMod->tsp.UseAlpha;
 
         // This is more accurate for alpha. May cost CPU cycles
         if (ADVANCED_ALPHA())

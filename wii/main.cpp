@@ -127,6 +127,12 @@ extern "C" {
   int get_blend_mode_preset() { return g_blend_mode_preset; }
 }
 
+int g_rgb565_opaque_alpha_preset = 1; // 1=force opaque for fmt0(ARGB1555)+fmt1(RGB565), 0=only fmt0
+
+extern "C" {
+  int get_rgb565_opaque_alpha_preset() { return g_rgb565_opaque_alpha_preset; }
+}
+
 int g_rgb565_vq_alpha = 0; // 0=black opaque 1=black transparent
 
 extern "C" {
@@ -512,7 +518,8 @@ void displayAccuracyMenu()
 #define OPT_PLAYERS     21
 #define OPT_CTRL_TYPE   22
 #define OPT_BLEND_MODE  23
-#define OPT_ROW_COUNT   24
+#define OPT_RGB565_OPAQUE_ALPHA 24
+#define OPT_ROW_COUNT   25
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -736,6 +743,15 @@ bool displayOptionsMenu()
     printf(" (ON for Resident Evil 3)");
     printf("\n");
 
+    // --- Row 24: RGB565 Opaque Alpha ---
+    printf("%s RGB565 ALPHA    : ", (selectedRow == OPT_RGB565_OPAQUE_ALPHA) ? ">" : " ");
+    switch (g_rgb565_opaque_alpha_preset) {
+      case 0: printf("[< OFF (FMT0 ONLY)   >]"); break;
+      case 1: printf("[< ON (FMT0+FMT1)    >]"); break;
+    }
+    printf("(OFF for POD2)");
+    printf("\n");
+
     printf("\n");
     printf("A: Launch | B: Back | 1: More Info\n");
 
@@ -777,6 +793,7 @@ bool displayOptionsMenu()
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
+        case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
         default: break;
       }
     }
@@ -803,6 +820,7 @@ bool displayOptionsMenu()
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
         case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + 1) % kControllerTypeCount; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
+        case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
         default: break;
       }
     }
@@ -1223,6 +1241,7 @@ int main(int argc, wchar *argv[])
     printf("Vertex Color Fix: %s\n", g_vertex_color_fix_preset ? "ON" : "OFF");
     printf("ABGR1555 Fix   : %s\n", g_abgr1555_fix_preset ? "ON (KEEP RGB)" : "OFF (BLANK RGB)");
     printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
+    printf("RGB565 Opq Alpha: %s\n", g_rgb565_opaque_alpha_preset ? "ON (FMT0+FMT1)" : "OFF (FMT0 ONLY)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)

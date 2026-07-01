@@ -83,6 +83,7 @@ extern int g_speed_limiter_preset;
 extern int g_vertex_color_fix_preset;
 extern int g_abgr1555_fix_preset;
 extern int g_blend_mode_preset;
+extern int g_rgb565_opaque_alpha_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -120,6 +121,7 @@ struct GamePreset
     int framebuffer_2d;
     int fmv_format;
     int blend_mode;
+    int rgb565_opaque_alpha;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -293,6 +295,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = atoi(val);
     else if (key_eq(key, "fmv_format"))     p->fmv_format     = parse_fmv_format(val);
     else if (key_eq(key, "blend_mode"))     p->blend_mode     = atoi(val);
+    else if (key_eq(key, "rgb565_opaque_alpha")) p->rgb565_opaque_alpha = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -358,6 +361,7 @@ void game_presets_load(const char* cfg_path)
             cur->framebuffer_2d = -1;
             cur->fmv_format = -1;
             cur->blend_mode = -1;
+            cur->rgb565_opaque_alpha = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -445,6 +449,7 @@ void game_presets_apply(const char* filepath)
         if (p->framebuffer_2d >= 0) { g_framebuffer_2d    = p->framebuffer_2d; printf("  framebuffer_2d -> %d\n", p->framebuffer_2d); }
         if (p->fmv_format     >= 0) { g_fmv_format_preset = p->fmv_format;     printf("  fmv_format     -> %d\n", p->fmv_format);     }
         if (p->blend_mode     >= 0) { g_blend_mode_preset = p->blend_mode;     printf("  blend_mode     -> %d\n", p->blend_mode);     }
+        if (p->rgb565_opaque_alpha >= 0) { g_rgb565_opaque_alpha_preset = p->rgb565_opaque_alpha; printf("  rgb565_opaque_alpha -> %d\n", p->rgb565_opaque_alpha); }
 
         return; // First match only
     }
