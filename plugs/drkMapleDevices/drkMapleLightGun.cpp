@@ -132,8 +132,13 @@ void UpdateLightGunState(u32 port)
     if (!s_ir_format_set[port])
     {
         WPAD_SetDataFormat(port, WPAD_FMT_BTNS_ACC_IR);
+        // ir.valid / ir.x / ir.y only work after WPAD_SetVRes sets the virtual
+        // screen resolution; without it vres defaults to 0 and ir.valid is
+        // always 0.  Set it to match WII_IR_W x WII_IR_H so the scaling in
+        // ScaleIRCoord is consistent with the vres range.
+        WPAD_SetVRes(port, WII_IR_W, WII_IR_H);
         s_ir_format_set[port] = true;
-        printf("[LightGun] IR data format set for port %d\n", port);
+        printf("[LightGun] IR data format + vres set for port %d\n", port);
     }
 
     WPAD_ScanPads();
@@ -143,7 +148,7 @@ void UpdateLightGunState(u32 port)
 
     if (data && data->ir.valid)
     {
-        // data->ir.x is 0..1023, data->ir.y is 0..767
+        // ir.x is 0..(WII_IR_W-1), ir.y is 0..(WII_IR_H-1) after SetVRes.
         // The Wii IR camera origin is top-left; DC expects same origin.
         gun_x[port] = ScaleIRCoord((s32)data->ir.x, WII_IR_W, DC_SCREEN_W);
         gun_y[port] = ScaleIRCoord((s32)data->ir.y, WII_IR_H, DC_SCREEN_H);
@@ -179,8 +184,11 @@ void UpdateLightGunState(u32 port)
     if (wiiButtons & WPAD_BUTTON_MINUS)
         kcode[port] &= ~key_CONT_START;
 
+    // key_CONT_C (bit 0) is always forced to "released" by the 0xF901 mask in
+    // MapleConfigMap::GetInput(), so we map PLUS to START instead so it
+    // actually registers.  Both MINUS and PLUS now act as Start / coin.
     if (wiiButtons & WPAD_BUTTON_PLUS)
-        kcode[port] &= ~key_CONT_C;  // Coin / Insert
+        kcode[port] &= ~key_CONT_START;
 
     // D-Pad (menu navigation in attract mode / config screens)
     if (wiiButtons & WPAD_BUTTON_UP)    kcode[port] &= ~key_CONT_DPAD_UP;

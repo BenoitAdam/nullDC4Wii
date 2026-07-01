@@ -183,17 +183,26 @@ void mcfg_CreateDevices()
 
 	// --- Bus 0 : Player 1 ---
 	mcfg_Create(ctrlType,       0, 5);  // Main controller
-	mcfg_Create(MDT_SegaVMU,   0, 0);  // VMU slot A1 (always present)
+	// VMUs only for standard controller — special devices (lightgun, maracas,
+	// keyboard, fishing rod) have no VMU slots on real hardware.
+	// maple_GetAttachedDevices() reports sub-port occupancy to the DC SH4; if a
+	// VMU is present here for a lightgun port, the DC sees lightgun+VMU which is
+	// an invalid configuration and games (e.g. Confidential Mission) reject it.
 	if (isStandard)
-		mcfg_Create(MDT_SegaVMU, 0, 1);  // VMU slot A2 (standard only)
+	{
+		mcfg_Create(MDT_SegaVMU, 0, 0);  // VMU slot A1
+		mcfg_Create(MDT_SegaVMU, 0, 1);  // VMU slot A2
+	}
 
 	// --- Bus 1 : Player 2 (when 2-player mode is active) ---
 	if (get_player_count() >= 2)
 	{
 		mcfg_Create(ctrlType,     1, 5);
-		mcfg_Create(MDT_SegaVMU, 1, 0);
 		if (isStandard)
+		{
+			mcfg_Create(MDT_SegaVMU, 1, 0);
 			mcfg_Create(MDT_SegaVMU, 1, 1);
+		}
 	}
 }
 
