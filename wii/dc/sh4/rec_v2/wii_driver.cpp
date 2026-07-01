@@ -1204,53 +1204,54 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						const u32 sz=op->flags;
 						verify(sz==1||sz==2||sz==4);
 
-						// areg = address source (rarg0, or rs1's pinned reg for a
-						// plain @Rn). The index + mirror-mask READ areg and write the
-						// rarg0/r0 scratch, so a pinned areg is never clobbered.
-						// r0 = (addr>>24)*4   (byte index into the void* table)
-						ppc_rlwinmx(ppc_r0,areg,10,22,29,0);
-						// rarg1 = &_vmem_MemInfo_ptr
-						u32 lo=ppc_addr_high(ppc_rarg1,(void*)&_vmem_MemInfo_ptr[0]);
-						if (lo) ppc_addi(ppc_rarg1,ppc_rarg1,lo);
-						ppc_lwzx(ppc_rarg1,ppc_rarg1,ppc_r0);		// rarg1 = iirf
-						// rarg2 = ptr = iirf & ~0x1F  (clear low 5 bits: ME=26)
-						// NOTE: ptr goes in rarg2 (NOT r0) — load-indexed treats a
-						// base of r0 as literal zero, which would drop the pointer.
-						ppc_rlwinmx(ppc_rarg2,ppc_rarg1,0,0,26,0);
-						// MMIO test: ptr==0 <=> iirf<0x20 (the only set bits would be
-						// the low-5 shift field). Compare iirf directly so this doesn't
-						// depend on the ptr mask above.
-						ppc_cmpli(ppc_cr0,ppc_rarg1,0x20,0);		// iirf < 0x20 ? (UIMM=0x20,L=0)
+						// Fast path for the CACHED main-RAM window only (P1, top byte
+						// 0x8C -> 0x8C000000..0x8CFFFFFF = 16 MB of mem_b). This is the
+						// overwhelmingly common data region; MMIO, uncached mirrors and
+						// every other region fall to the cold path.
+						//
+						//   if ((addr>>24)==0x8C) {
+						//       native = addr + (mem_b.data - 0x8C000000);   // 1 addis
+						//       if (sz<4) native ^= 4-sz;                    // BE swizzle
+						//       rv = *(T*)native;                            // 1 load
+						//   } else rv = ReadMem<sz>(addr);                   // cold
+						//
+						// mem_b.data is 64 KB-aligned and set by _vmem_reserve() during
+						// init (BEFORE any block compiles), and 0x8C000000 is 64 KB-
+						// aligned too, so the delta's low 16 bits are 0 -> a single
+						// addis (adds delta>>16 << 16) forms the exact native address.
+						const u32 delta   = (u32)(uintptr_t)mem_b.data - 0x8C000000u;
+						const u32 delta_hi= (delta>>16)&0xFFFF;		// low 16 of delta are 0
 
-						// blt -> cold (forward, not-taken: fast path falls through).
+						// top byte == 0x8C ?  (rlwinm r0,areg,8,24,31 == srwi 24)
+						ppc_rlwinmx(ppc_r0,areg,8,24,31,0);		// r0 = addr>>24
+						ppc_cmpi(ppc_cr0,ppc_r0,0x8C,0);		// == 0x8C ?
+
+						// bne -> cold (forward, not-taken: RAM path falls through).
 						ppc_label* cold=ppc_CreateLabel();
-						ppc_bcx(BO_TRUE,BI_CR0_LT,0,0,0);		// blt cold (MMIO)
+						ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);		// bne cold (not RAM)
 
-						// --- fast direct path (fall-through) ---
-						// eff = (addr<<sh)>>sh. The shift count is iirf's low bits:
-						// ptr is >=0x40-aligned so iirf[26:31] (the 6 bits slw/srw use)
-						// equal the 5-bit shift field exactly -> feed iirf directly,
-						// no andi 0x1F needed.
-						ppc_slwx(ppc_rarg0,areg,ppc_rarg1,0);		// reads areg -> rarg0
-						ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0);
-						// big-endian sub-word swizzle
+						// --- fast direct RAM path (fall-through) ---
+						// native = addr + delta  (single addis). rarg0 = native addr.
+						ppc_addis(ppc_rarg0,areg,delta_hi);
+						// big-endian sub-word swizzle folded into the address
 						if (sz<4)
 							ppc_xori(ppc_rarg0,ppc_rarg0,4-sz);
-						// load rdreg = *(T*)(ptr + addr)  (ptr in rarg2, addr in rarg0)
+						// rv = *(T*)native   (d-form, base=rarg0 != r0)
 						if (sz==1)
 						{
-							ppc_lbzx(rdreg,ppc_rarg2,ppc_rarg0);
+							ppc_lbz(rdreg,ppc_rarg0,0);
 							ppc_extsbx(rdreg,rdreg,0);
 						}
 						else if (sz==2)
 						{
-							ppc_lhzx(rdreg,ppc_rarg2,ppc_rarg0);
+							ppc_lhz(rdreg,ppc_rarg0,0);
 							ppc_extshx(rdreg,rdreg,0);
 						}
 						else
-							ppc_lwzx(rdreg,ppc_rarg2,ppc_rarg0);
+							ppc_lwz(rdreg,ppc_rarg0,0);
 
-						// done = join point; slow path (registered below) bounces here.
+						// done = join point; cold path (kind=0) rematerialises rarg0
+						// from areg and calls ReadMem<sz>, then branches here.
 						ColdFrag& c=s_cold[s_cold_n++];
 						c.beq=cold; c.done=emit_GetCCPtr();
 						c.kind=0; c.sz=(u8)sz; c.rdreg=(u8)rdreg;
