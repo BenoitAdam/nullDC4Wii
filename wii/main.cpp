@@ -65,14 +65,14 @@ extern "C" {
   int get_frameskip_preset() { return g_frameskip_preset; }
 }
 
-int g_4bpp_preset = 2;
+int g_4bpp_preset = 1;
 // 0=I4 Stub, 1=4BPP Optimized, 2=CI4 fast, 3=CI4 normal, 4=RGB565
 
 extern "C" {
   int get_4bpp_preset() { return g_4bpp_preset; }
 }
 
-int g_8bpp_preset = 2;
+int g_8bpp_preset = 1;
 // 0=I8 Stub, 1=8BPP Optimized, 2=CI8 fast, 3=CI8 normal, 4=RGB565
 
 extern "C" {
@@ -537,7 +537,7 @@ bool displayOptionsMenu()
     printf("\033[2J\033[H");
 
     // --- Row 0: Launch ---
-    printf("%s LAUNCH GAME      (A: Launch | B: Back | 1: More Info) NullDC4Wii a0.39\n", (selectedRow == OPT_LAUNCH) ? ">" : " ");
+    printf("%s LAUNCH GAME      (A: Launch | B: Back | 1: More Info) NullDC4Wii a0.40\n", (selectedRow == OPT_LAUNCH) ? ">" : " ");
 
     // --- Row 1: Game name (display only) ---
     {
@@ -857,7 +857,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - Alpha 0.39   ");
+    printf("\nNullDC4Wii - Alpha 0.40   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("(-) GRAPHICS: ");
