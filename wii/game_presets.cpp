@@ -38,11 +38,6 @@
                                 old flat-grayscale behavior for every other game;
                                 Crazy Taxi needs this on for its HUD arrow/dollar
                                 sign to show their real color instead of gray.
-        abgr1555_fix=1      <- 0/1, ARGB1555 alpha-bit-clear handling (see
-                                gxRend.cpp ABGR1555_FIX()). 1 (default) preserves
-                                R4G4B4 from the source texel; 0 blanks RGB to 0,
-                                which is wrong for blend modes (e.g. additive
-                                ONE/ONE) that don't gate on alpha.
         blend_mode=1        <- 0/1, per-polygon TSP SrcInstr/DstInstr blend mode
                                 for the translucent list (see gxRend.cpp
                                 BLEND_MODE()). 1 (default, correct) applies the
@@ -87,7 +82,6 @@ extern int g_decal_alpha_preset;
 extern int g_rgb565_vq_alpha;
 extern int g_speed_limiter_preset;
 extern int g_vertex_color_fix_preset;
-extern int g_abgr1555_fix_preset;
 extern int g_blend_mode_preset;
 extern int g_rgb565_opaque_alpha_preset;
 extern int g_blend_fps_boost_preset;
@@ -122,7 +116,6 @@ struct GamePreset
     int rgb565_vq_alpha;
     int speed_limiter;
     int vertex_color_fix;
-    int abgr1555_fix;
     int players;
     int controller;
     int framebuffer_2d;
@@ -297,7 +290,6 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "rgb565_vq_alpha")) p->rgb565_vq_alpha = atoi(val);
     else if (key_eq(key, "speed_limiter")) p->speed_limiter = atoi(val);
     else if (key_eq(key, "vertex_color_fix")) p->vertex_color_fix = atoi(val);
-    else if (key_eq(key, "abgr1555_fix"))   p->abgr1555_fix = atoi(val);
     else if (key_eq(key, "players"))    p->players    = atoi(val);
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);
     else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = atoi(val);
@@ -364,7 +356,6 @@ void game_presets_load(const char* cfg_path)
             cur->rgb565_vq_alpha = -1;
             cur->speed_limiter = -1;
             cur->vertex_color_fix = -1;
-            cur->abgr1555_fix = -1;
             cur->players  = cur->controller                                  = -1;
             cur->ppz_write = -1;
             cur->framebuffer_2d = -1;
@@ -453,7 +444,6 @@ void game_presets_apply(const char* filepath)
         if (p->rgb565_vq_alpha >= 0) { g_rgb565_vq_alpha = p->rgb565_vq_alpha; printf("  rgb565_vq_alpha -> %d\n", p->rgb565_vq_alpha); }
         if (p->speed_limiter >= 0) { g_speed_limiter_preset = p->speed_limiter; printf("  speed_limiter -> %d\n", p->speed_limiter); }
         if (p->vertex_color_fix >= 0) { g_vertex_color_fix_preset = p->vertex_color_fix; printf("  vertex_color_fix -> %d\n", p->vertex_color_fix); }
-        if (p->abgr1555_fix >= 0) { g_abgr1555_fix_preset = p->abgr1555_fix; printf("  abgr1555_fix -> %d\n", p->abgr1555_fix); }
         if (p->players    >= 0) { g_player_count          = p->players;    printf("  players    -> %d\n", p->players);    }
         if (p->controller >= 0) { g_controller_type       = p->controller; printf("  controller -> %d\n", p->controller); }
         if (p->framebuffer_2d >= 0) { g_framebuffer_2d    = p->framebuffer_2d; printf("  framebuffer_2d -> %d\n", p->framebuffer_2d); }
