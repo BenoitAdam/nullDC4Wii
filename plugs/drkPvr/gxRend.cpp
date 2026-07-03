@@ -126,6 +126,12 @@ extern "C" int get_rgb565_opaque_alpha_preset();
 extern "C" int get_blend_fps_boost_preset();
 #define BLEND_FPS_BOOST() (get_blend_fps_boost_preset() == 1)
 
+// Punch-through list fix: draw lists in OP → PT → TR order (like real PVR)
+// with the PT list alpha-tested against PT_ALPHA_REF and blending off.
+// Off keeps the legacy behavior: PT polys drawn last, in the TR blend state.
+extern "C" int get_punch_through_preset();
+#define PUNCH_THROUGH_FIX() (get_punch_through_preset() == 1)
+
 
 int frame_counter;
 
@@ -549,6 +555,15 @@ PolyParam ALIGN16 listModes[8*1024];
 Vertex *curVTX = vertices;
 VertexList *curLST = lists;
 VertexList *TransLST = 0;
+// Punch-through list boundary, plus the vertex/param cursors captured when the
+// TR and PT lists start: lists/vertices/listModes are parallel streams that
+// can only be walked from a known cursor, and PUNCH_THROUGH_FIX() draws the PT
+// range out of submission order (OP → PT → TR).
+VertexList *PTLST = 0;
+Vertex *TransVTX = 0;
+PolyParam *TransMod = 0;
+Vertex *PT_VTX = 0;
+PolyParam *PT_Mod = 0;
 PolyParam *curMod = listModes;
 bool global_regd;
 float vtx_min_Z;
@@ -679,6 +694,14 @@ void reset_vtx_state()
   curVTX = vertices;
   curLST = lists;
   curMod = listModes;
+  // Clear the list boundaries so a frame without a TR (or PT) list doesn't
+  // reuse a stale pointer from the previous frame.
+  TransLST = 0;
+  PTLST = 0;
+  TransVTX = 0;
+  TransMod = 0;
+  PT_VTX = 0;
+  PT_Mod = 0;
   global_regd = false;
   vtx_min_Z = 131072;
   vtx_max_Z = 0;
@@ -3364,176 +3387,257 @@ void DoRender()
   int last_dst_blend = -1;
 
 
-  // Process opaque and then translucent lists.
-  for (; drawLST != crLST; drawLST++)
+  // ── Draw segments ──────────────────────────────────────────────────────────
+  // Legacy: one pass over every list in TA submission order (OP, TR, PT), so
+  // punch-through polys get drawn last, in the translucent blend state.
+  // PUNCH_THROUGH_FIX() with a PT list present splits the walk into three
+  // ranges drawn OP → PT → TR, like real PVR: PT polys render as opaque ones
+  // gated by a GX alpha test against PT_ALPHA_REF, and translucent polys can
+  // then blend over them. lists/vertices/listModes are parallel streams, so
+  // each range restarts from the cursors captured in StartList().
+  struct DrawSeg
   {
-    if (drawLST == TransLST)
+    VertexList *begin;
+    const VertexList *end;
+    Vertex *vtx;
+    PolyParam *mod;
+    bool punch_through;
+  };
+  DrawSeg segs[3];
+  int seg_count = 0;
+
+  if (PUNCH_THROUGH_FIX() && PTLST)
+  {
+    // Opaque: everything before the first of the TR/PT boundaries.
+    const VertexList *op_end = crLST;
+    if (TransLST && TransLST < op_end) op_end = TransLST;
+    if (PTLST < op_end) op_end = PTLST;
+    segs[seg_count].begin = lists;    segs[seg_count].end = op_end;
+    segs[seg_count].vtx = vertices;   segs[seg_count].mod = listModes;
+    segs[seg_count].punch_through = false; seg_count++;
+
+    segs[seg_count].begin = PTLST;
+    segs[seg_count].end = (TransLST && TransLST > PTLST) ? TransLST : crLST;
+    segs[seg_count].vtx = PT_VTX;     segs[seg_count].mod = PT_Mod;
+    segs[seg_count].punch_through = true; seg_count++;
+
+    if (TransLST)
     {
-      // Enable blending for the translucent list. Blend factors are set
-      // per-polygon below based on TSP.SrcInstr / DstInstr.
-      in_trans_list = true;
-      last_src_blend = -1; // force first per-polygon update
-      last_dst_blend = -1;
-      GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+      segs[seg_count].begin = TransLST;
+      segs[seg_count].end = (PTLST > TransLST) ? PTLST : crLST;
+      segs[seg_count].vtx = TransVTX; segs[seg_count].mod = TransMod;
+      segs[seg_count].punch_through = false; seg_count++;
+    }
+  }
+  else
+  {
+    segs[seg_count].begin = lists;  segs[seg_count].end = crLST;
+    segs[seg_count].vtx = vertices; segs[seg_count].mod = listModes;
+    segs[seg_count].punch_through = false; seg_count++;
+  }
 
-      // TODO: per-polygon ISP state (isp.ZWriteDis, isp.CullMode, isp.DepthMode)
-      // is not yet emulated. Translucent polys may incorrectly stamp the Z-buffer.
-      // See below
+  for (int seg = 0; seg < seg_count; seg++)
+  {
+    const bool seg_is_pt = segs[seg].punch_through;
+    const VertexList *const seg_end = segs[seg].end;
+    drawLST = segs[seg].begin;
+    drawVTX = segs[seg].vtx;
+    drawMod = segs[seg].mod;
 
+    if (seg_is_pt)
+    {
+      // Punch-through: opaque-style draw (no blending, Z write on) with the
+      // hardware alpha test real PVR applies to the PT list — a pixel passes
+      // only if its final alpha >= PT_ALPHA_REF. ZCompLoc must be FALSE so
+      // discarded pixels don't stamp the Z buffer.
+      GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+      GX_SetAlphaCompare(GX_GEQUAL, (u8)(PT_ALPHA_REF & 0xFF), GX_AOP_AND, GX_ALWAYS, 0);
+      GX_SetZCompLoc(GX_FALSE);
     }
 
-    s32 count = drawLST->count;
-    if (count < 0)
+    for (; drawLST != seg_end; drawLST++)
     {
-      int is_textured = drawMod->pcw.Texture ? 1 : 0;
-      if (is_textured != last_textured)
+      if (drawLST == TransLST)
       {
+        // Enable blending for the translucent list. Blend factors are set
+        // per-polygon below based on TSP.SrcInstr / DstInstr.
+        in_trans_list = true;
+        last_src_blend = -1; // force first per-polygon update
+        last_dst_blend = -1;
+        GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+
+        // TODO: per-polygon ISP state (isp.ZWriteDis, isp.CullMode, isp.DepthMode)
+        // is not yet emulated. Translucent polys may incorrectly stamp the Z-buffer.
+        // See below
+
+      }
+
+      s32 count = drawLST->count;
+      if (count < 0)
+      {
+        int is_textured = drawMod->pcw.Texture ? 1 : 0;
+        if (is_textured != last_textured)
+        {
+          if (is_textured)
+          {
+            GX_SetNumTexGens(1);
+            GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
+            GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
+          }
+          else
+          {
+            GX_SetNumTexGens(0);
+            GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+            GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+            last_shad_instr = -1; // force TEVSTAGE0 op to be reapplied on the next textured poly
+          }
+          last_textured = is_textured;
+        }
         if (is_textured)
         {
-          GX_SetNumTexGens(1);
-          GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
-          GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
+          SetTextureParams(drawMod, decal_alpha_fix);
+
+          // TSP.ShadInstr==2 (DecalAlpha) needs GX_DECAL instead of GX_MODULATE on
+          // TEVSTAGE0 (see DECAL_ALPHA_FIX() above for why). Gated on decal_alpha_fix
+          // so the off path never reads tsp.ShadInstr here — SetTextureParams() above
+          // already set GX_MODULATE unconditionally either way.
+          if (decal_alpha_fix)
+          {
+            int tev_op = (drawMod->tsp.ShadInstr == 2) ? GX_DECAL : GX_MODULATE;
+            if (tev_op != last_shad_instr)
+            {
+              GX_SetTevOp(GX_TEVSTAGE0, tev_op);
+              last_shad_instr = tev_op;
+            }
+          }
+
+          // Real PVR hardware decides this per-polygon via TSP.UseAlpha, not pixel format.
+          // UseAlpha==0 means the hardware forces vertex alpha to 1.0 before modulation
+          // (vertex alpha must not be allowed to multiply texture alpha to zero).
+          // UseAlpha==1 means vertex alpha is used as supplied.
+          // Regression fix: ARGB1555 (fmt 0) and RGB565 (fmt 1) textures are commonly
+          // drawn with vertex alpha left at 0 even when UseAlpha==1 (e.g. Test Drive 6's
+          // menu/HUD text, an ARGB1555 cutout font): the game relies on the texture's
+          // own alpha, not the vertex alpha, to gate visibility. Always force opaque for
+          // these two formats; defer to TSP.UseAlpha for everything else (e.g. ARGB4444).
+          u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
+          if (RGB565_OPAQUE_ALPHA())
+            force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !drawMod->tsp.UseAlpha;
+          else
+            force_vtx_alpha_opaque = (fmt == 0) || !drawMod->tsp.UseAlpha;
+
+          // This is more accurate for alpha. May cost CPU cycles.
+          // Skipped in the punch-through segment: its alpha test (GEQUAL
+          // PT_ALPHA_REF, set once at segment start) must not be overwritten.
+          if (ADVANCED_ALPHA() && !seg_is_pt)
+          {
+            int alpha_fmt = 0;
+            if (BLEND_MODE()) {
+              // fps_boost gains even 2 FPS in Castlevania but the alpha isn't correct anymore
+              bool blend_fps_boost = BLEND_FPS_BOOST();
+              bool blend_alpha_independent = (drawMod->tsp.SrcInstr < 4 && drawMod->tsp.DstInstr < 4);
+              if (blend_fps_boost && drawLST != TransLST) { // New in alpha 0.39
+                  alpha_fmt = 0;
+              } else if (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) { // Was there in alpha0.38
+                  alpha_fmt = 0;
+              } else if (blend_alpha_independent) { // New in alpha 0.39
+                  alpha_fmt = 0;
+              } else if (drawMod->tsp.IgnoreTexA) { // Was there in alpha0.38
+                  alpha_fmt = 0;
+              } else {
+                  alpha_fmt = 1; // Was 0 before
+              }
+            } else { // Legacy Behavior (correct for Chuchurocket & max FPS)
+              alpha_fmt = (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) ? 0 : (drawMod->tsp.IgnoreTexA ? 0 : 1);
+            }
+
+            if (alpha_fmt != last_alpha_fmt)
+            {
+              if (alpha_fmt)
+              {
+                GX_SetAlphaCompare(GX_GREATER, 0, GX_AOP_AND, GX_ALWAYS, 0);
+                GX_SetZCompLoc(GX_FALSE);
+              }
+              else
+              {
+                GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+                GX_SetZCompLoc(GX_TRUE);
+              }
+              last_alpha_fmt = alpha_fmt;
+            }
+          }
         }
         else
         {
-          GX_SetNumTexGens(0);
-          GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
-          GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
-          last_shad_instr = -1; // force TEVSTAGE0 op to be reapplied on the next textured poly
+          // Untextured polygon — vertex alpha is meaningful as-is, never override it.
+          force_vtx_alpha_opaque = false;
         }
-        last_textured = is_textured;
-      }
-      if (is_textured)
-      {
-        SetTextureParams(drawMod, decal_alpha_fix);
 
-        // TSP.ShadInstr==2 (DecalAlpha) needs GX_DECAL instead of GX_MODULATE on
-        // TEVSTAGE0 (see DECAL_ALPHA_FIX() above for why). Gated on decal_alpha_fix
-        // so the off path never reads tsp.ShadInstr here — SetTextureParams() above
-        // already set GX_MODULATE unconditionally either way.
-        if (decal_alpha_fix)
+        // ── Per-polygon Z write (ISP.ZWriteDis) ──────────────────────────────
+        // Real DC hardware honors ZWriteDis per polygon. Fix sprites with ZWriteDis=1
+        if(PER_POLYGON_Z_WRITE())
         {
-          int tev_op = (drawMod->tsp.ShadInstr == 2) ? GX_DECAL : GX_MODULATE;
-          if (tev_op != last_shad_instr)
+          bool z_write = !drawMod->isp.ZWriteDis;
+          if (z_write != last_z_write)
           {
-            GX_SetTevOp(GX_TEVSTAGE0, tev_op);
-            last_shad_instr = tev_op;
+            GX_SetZMode(GX_TRUE, GX_GEQUAL, z_write ? GX_TRUE : GX_FALSE);
+            last_z_write = z_write;
           }
         }
 
-        // Real PVR hardware decides this per-polygon via TSP.UseAlpha, not pixel format.
-        // UseAlpha==0 means the hardware forces vertex alpha to 1.0 before modulation
-        // (vertex alpha must not be allowed to multiply texture alpha to zero).
-        // UseAlpha==1 means vertex alpha is used as supplied.
-        // Regression fix: ARGB1555 (fmt 0) and RGB565 (fmt 1) textures are commonly
-        // drawn with vertex alpha left at 0 even when UseAlpha==1 (e.g. Test Drive 6's
-        // menu/HUD text, an ARGB1555 cutout font): the game relies on the texture's
-        // own alpha, not the vertex alpha, to gate visibility. Always force opaque for
-        // these two formats; defer to TSP.UseAlpha for everything else (e.g. ARGB4444).
-        u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
-        if (RGB565_OPAQUE_ALPHA())
-          force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !drawMod->tsp.UseAlpha;
-        else
-          force_vtx_alpha_opaque = (fmt == 0) || !drawMod->tsp.UseAlpha;
-
-        // This is more accurate for alpha. May cost CPU cycles
-        if (ADVANCED_ALPHA())
-        {    
-          int alpha_fmt = 0;
-          if (BLEND_MODE()) {
-            // fps_boost gains even 2 FPS in Castlevania but the alpha isn't correct anymore
-            bool blend_fps_boost = BLEND_FPS_BOOST();
-            bool blend_alpha_independent = (drawMod->tsp.SrcInstr < 4 && drawMod->tsp.DstInstr < 4);
-            if (blend_fps_boost && drawLST != TransLST) { // New in alpha 0.39
-                alpha_fmt = 0;
-            } else if (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) { // Was there in alpha0.38
-                alpha_fmt = 0;
-            } else if (blend_alpha_independent) { // New in alpha 0.39
-                alpha_fmt = 0;
-            } else if (drawMod->tsp.IgnoreTexA) { // Was there in alpha0.38
-                alpha_fmt = 0;
-            } else {
-                alpha_fmt = 1; // Was 0 before
-            }
-          } else { // Legacy Behavior (correct for Chuchurocket & max FPS)
-            alpha_fmt = (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) ? 0 : (drawMod->tsp.IgnoreTexA ? 0 : 1);
-          }
-
-          if (alpha_fmt != last_alpha_fmt)
+        // Per-polygon blend mode: match TSP.SrcInstr / DstInstr for the translucent
+        // Absolutely necessary for Resident Evil 3
+        if (BLEND_MODE() && in_trans_list)
+        {
+          int src = (int)drawMod->tsp.SrcInstr;
+          int dst = (int)drawMod->tsp.DstInstr;
+          if (src != last_src_blend || dst != last_dst_blend)
           {
-            if (alpha_fmt)
-            {
-              GX_SetAlphaCompare(GX_GREATER, 0, GX_AOP_AND, GX_ALWAYS, 0);
-              GX_SetZCompLoc(GX_FALSE);
-            }
-            else
-            {
-              GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
-              GX_SetZCompLoc(GX_TRUE);
-            }
-            last_alpha_fmt = alpha_fmt;
+            GX_SetBlendMode(GX_BM_BLEND, dc_src_to_gx[src], dc_dst_to_gx[dst], GX_LO_CLEAR);
+            last_src_blend = src;
+            last_dst_blend = dst;
           }
         }
-      }
-      else
-      {
-        // Untextured polygon — vertex alpha is meaningful as-is, never override it.
-        force_vtx_alpha_opaque = false;
+
+        drawMod++;
+        count &= 0x7FFF;
       }
 
-      // ── Per-polygon Z write (ISP.ZWriteDis) ──────────────────────────────
-      // Real DC hardware honors ZWriteDis per polygon. Fix sprites with ZWriteDis=1
-      if(PER_POLYGON_Z_WRITE())
+      if (count)
       {
-        bool z_write = !drawMod->isp.ZWriteDis;
-        if (z_write != last_z_write)
+        GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, count);
+        while (count--)
         {
-          GX_SetZMode(GX_TRUE, GX_GEQUAL, z_write ? GX_TRUE : GX_FALSE);
-          last_z_write = z_write;
+          GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
+          // For ARGB1555/4444 textures the DC game may leave vertex alpha = 0,
+          // expecting the hardware to ignore it. Force alpha = 0xFF so GX_MODULATE
+          // does not multiply the texture alpha away.
+          u32 vcol = drawVTX->col;
+          if (force_vtx_alpha_opaque)
+            vcol |= 0xFF000000u;
+          GX_Color1u32(HOST_TO_LE32(vcol));
+          GX_TexCoord2f32(drawVTX->u, drawVTX->v);
+          drawVTX++;
         }
+        GX_End();
       }
 
-      // Per-polygon blend mode: match TSP.SrcInstr / DstInstr for the translucent
-      // Absolutely necessary for Resident Evil 3
-      if (BLEND_MODE() && in_trans_list)
-      {
-        int src = (int)drawMod->tsp.SrcInstr;
-        int dst = (int)drawMod->tsp.DstInstr;
-        if (src != last_src_blend || dst != last_dst_blend)
-        {
-          GX_SetBlendMode(GX_BM_BLEND, dc_src_to_gx[src], dc_dst_to_gx[dst], GX_LO_CLEAR);
-          last_src_blend = src;
-          last_dst_blend = dst;
-        }
-      }
+      // sceGuDrawArray(GU_TRIANGLE_STRIP,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,count,0,drawVTX);
 
-      drawMod++;
-      count &= 0x7FFF;
+      //			drawVTX+=count;
     }
 
-    if (count)
+    if (seg_is_pt)
     {
-      GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, count);
-      while (count--)
-      {
-        GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
-        // For ARGB1555/4444 textures the DC game may leave vertex alpha = 0,
-        // expecting the hardware to ignore it. Force alpha = 0xFF so GX_MODULATE
-        // does not multiply the texture alpha away.
-        u32 vcol = drawVTX->col;
-        if (force_vtx_alpha_opaque)
-          vcol |= 0xFF000000u;
-        GX_Color1u32(HOST_TO_LE32(vcol));
-        GX_TexCoord2f32(drawVTX->u, drawVTX->v);
-        drawVTX++;
-      }
-      GX_End();
+      // Undo the PT alpha test before the translucent segment — and before the
+      // next frame when there is no translucent list, since GX alpha-compare
+      // state persists across frames. This matches the alpha_fmt==0 state of
+      // the ADVANCED_ALPHA() block above, so tell its cache about it.
+      GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+      GX_SetZCompLoc(GX_TRUE);
+      last_alpha_fmt = 0;
     }
-
-    // sceGuDrawArray(GU_TRIANGLE_STRIP,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,count,0,drawVTX);
-
-    //			drawVTX+=count;
-  } 
+  }
 
   reset_vtx_state();
 
@@ -3809,7 +3913,17 @@ struct VertexDecoder
   __forceinline static void StartList(u32 ListType)
   {
     if (ListType == ListType_Translucent)
+    {
       TransLST = curLST;
+      TransVTX = curVTX;
+      TransMod = curMod;
+    }
+    else if (ListType == ListType_Punch_Through)
+    {
+      PTLST = curLST;
+      PT_VTX = curVTX;
+      PT_Mod = curMod;
+    }
   }
   __forceinline static void EndList(u32 ListType) {}
 

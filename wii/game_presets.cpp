@@ -51,6 +51,12 @@
                                 the translucent list, saving a couple of FPS (e.g.
                                 Castlevania) at the cost of incorrect alpha on some
                                 opaque/punch-through polys. Default 0 (off, correct).
+        punch_through=1     <- 0/1, punch-through list fix (see gxRend.cpp
+                                PUNCH_THROUGH_FIX()). 1 (default, correct) draws
+                                lists in OP -> PT -> TR order with the PT list
+                                alpha-tested against PT_ALPHA_REF and blending off,
+                                like real PVR; 0 (legacy) draws PT polys last, in
+                                the translucent blend state.
 
     First matching rule wins.
     Unset fields are left at whatever the user selected in the UI.
@@ -85,6 +91,7 @@ extern int g_vertex_color_fix_preset;
 extern int g_blend_mode_preset;
 extern int g_rgb565_opaque_alpha_preset;
 extern int g_blend_fps_boost_preset;
+extern int g_punch_through_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -123,6 +130,7 @@ struct GamePreset
     int blend_mode;
     int rgb565_opaque_alpha;
     int blend_fps_boost;
+    int punch_through;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -297,6 +305,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "blend_mode"))     p->blend_mode     = atoi(val);
     else if (key_eq(key, "rgb565_opaque_alpha")) p->rgb565_opaque_alpha = atoi(val);
     else if (key_eq(key, "blend_fps_boost")) p->blend_fps_boost = atoi(val);
+    else if (key_eq(key, "punch_through"))  p->punch_through  = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -363,6 +372,7 @@ void game_presets_load(const char* cfg_path)
             cur->blend_mode = -1;
             cur->rgb565_opaque_alpha = -1;
             cur->blend_fps_boost = -1;
+            cur->punch_through = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -451,6 +461,7 @@ void game_presets_apply(const char* filepath)
         if (p->blend_mode     >= 0) { g_blend_mode_preset = p->blend_mode;     printf("  blend_mode     -> %d\n", p->blend_mode);     }
         if (p->rgb565_opaque_alpha >= 0) { g_rgb565_opaque_alpha_preset = p->rgb565_opaque_alpha; printf("  rgb565_opaque_alpha -> %d\n", p->rgb565_opaque_alpha); }
         if (p->blend_fps_boost >= 0) { g_blend_fps_boost_preset = p->blend_fps_boost; printf("  blend_fps_boost -> %d\n", p->blend_fps_boost); }
+        if (p->punch_through  >= 0) { g_punch_through_preset = p->punch_through;   printf("  punch_through  -> %d\n", p->punch_through);  }
 
         return; // First match only
     }
