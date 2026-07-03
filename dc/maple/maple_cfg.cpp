@@ -183,6 +183,8 @@ void mcfg_CreateDevices()
 
 	// --- Bus 0 : Player 1 ---
 	mcfg_Create(ctrlType,       0, 5);  // Main controller
+
+  // Claude Comment this : (probably wrong, because official lightgun has VMU)
 	// VMUs only for standard controller — special devices (lightgun, maracas,
 	// keyboard, fishing rod) have no VMU slots on real hardware.
 	// maple_GetAttachedDevices() reports sub-port occupancy to the DC SH4; if a
