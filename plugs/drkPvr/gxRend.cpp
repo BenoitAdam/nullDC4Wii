@@ -551,7 +551,8 @@ static INLINE u32 tex_shape_key(PolyParam *mod, u32 pixel_fmt)
   bool index_only = (pixel_fmt == 5) ? (TEXTURE_4BPP_CI4_FAST() || TEXTURE_4BPP_CI4())
                   : (pixel_fmt == 6) ? (TEXTURE_8BPP_CI8_FAST() || TEXTURE_8BPP_CI8())
                   : false;
-  if (index_only) key &= ~(0x1Fu << 21); // drop PalSelect bits 21-25 only, keep bit 26 (ScanOrder)
+  if (index_only) key &= ~(0x3Fu << 21); // drop all PalSelect bits 21-26: palette decode never reads ScanOrder (bit 26 is PalSelect bit 5, not a real ScanOrder flag)
+  // old : if (index_only) key &= ~(0x1Fu << 21); // drop PalSelect bits 21-25 only, keep bit 26 (ScanOrder)
   return key;
 }
 
@@ -1945,7 +1946,14 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   static u16 ATTRIBUTE_ALIGN(32) s_tlut_buf[256];
 
   u32 pixel_fmt = mod->tcw.NO_PAL.PixelFmt;
-  if (pixel_fmt == 5 || pixel_fmt == 6)
+  // Only the CI4/CI8 presets sample through a GX TLUT. Every other 4/8BPP
+  // preset (I4/I8 stubs, OPTIMIZED, RGB565 full-decode) bakes the palette
+  // into the pixel data, so converting + flushing + GX_LoadTlut'ing here on
+  // every single draw was pure waste for them.
+  bool tlut_needed = (pixel_fmt == 5) ? (TEXTURE_4BPP_CI4_FAST() || TEXTURE_4BPP_CI4())
+                   : (pixel_fmt == 6) ? (TEXTURE_8BPP_CI8_FAST() || TEXTURE_8BPP_CI8())
+                   : false;
+  if (tlut_needed)
   {
     u32 pal_fmt = PAL_RAM_CTRL & 3; // 0=ARGB1555 1=RGB565 2=ARGB4444 3=ARGB8888
     u8  gx_tlut_fmt = (pal_fmt == 1) ? GX_TL_RGB565 : GX_TL_RGB5A3; // u8, not a named enum
@@ -2430,34 +2438,32 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
         FMT = GX_TF_I4; // wha? the ?
         }
-      else if(TEXTURE_4BPP_OPTIMIZED()){ // BEST: full palette decode -> GX RGB565/RGB5A3
-        // Replaces the old pure-greyscale stub. Decodes through the real DC
-        // palette (same idea as TEXTURE_4BPP_RGB565 below) but fixes that
-        // path's bugs and applies the same speed tricks used by the FAST
-        // CI4/CI8 paths above:
+      else if(TEXTURE_4BPP_OPTIMIZED()){ // BEST: LUT-baked palette decode -> GX RGB565/RGB5A3
+        // Same accuracy as a full palette decode (correct ARGB8888/4444/1555
+        // palettes, correct PalSelect bank — fixes counters/HUDs that CI4+TLUT
+        // can't render right), but the palette is converted to GX format ONCE
+        // per texture into a 16-entry u16 LUT. The inner loop is then a pure
+        // table fetch: no per-pixel format switch, no conversion macros.
         //
-        //   - ScanOrder (linear) textures: TEXTURE_4BPP_RGB565 never checked
-        //     ScanOrder at all and always ran the twiddle math, scrambling
-        //     any non-twiddled 4BPP CI texture. Handled here with a direct
-        //     row-major loop (see aaa_docs/4BPP_8BPP_palette_texture_analysis.md,
-        //     "Known Remaining Issues").
-        //   - BE correction: uses ^3 (full 32-bit word byte-reversal), the
-        //     same convention proven by CI4_FAST/CI4 below, instead of the
-        //     RGB565 path's ^1 (only a 16-bit half-word swap — wrong for
-        //     VRAM's 32-bit BE layout).
-        //   - Palette base: PalSelect selects one of 64 16-entry banks, so
-        //     the absolute offset is PalSelect<<4 (matches CI4_FAST/CI4's
-        //     SetupPaletteForTexture call). TEXTURE_4BPP_RGB565 instead used
-        //     "PalSelect & ~15u", which zeroes the bank-select bits instead
-        //     of shifting them — picks the wrong palette bank.
-        //   - Twiddled textures: precompute per-axis twiddle(x)/twiddle(y)
-        //     tables once (O(w+h)) instead of calling twop() per pixel
-        //     (O(w*h) — the dominant cost per the doc above). OR-combining
-        //     table_x[x]|table_y[y] is valid because the Morton bit-interleave
-        //     never mixes x-bits with y-bits (same trick texture_TW() uses).
+        // Always twiddled: palette textures have NO ScanOrder bit. TCW bits
+        // 21-26 are PAL.PalSelect for paletted formats (see ta_structs.h),
+        // NOT Reserved/StrideSel/ScanOrder — those only exist in the NO_PAL
+        // union member. Reading NO_PAL.ScanOrder here was actually reading
+        // PalSelect bit 5, so any game using a 4BPP palette bank >= 32 wrongly
+        // took the old linear branch and got scrambled output. Real DC
+        // hardware stores palette textures twiddled, always — so this path
+        // now decodes twiddled unconditionally, no branch needed.
+        //
+        // Other speedups vs the previous OPTIMIZED code:
+        //   - Twiddle tables used via direct cached pointers (the old code
+        //     memcpy'd 2x 4 KB of tables on EVERY texture decode).
+        //   - Morton bit0 is Y's LSB (twop() interleaves y first), so rows
+        //     y and y+1 share each source byte:
+        //       nib(x, y even) = ty | tx    -> LOW  nibble
+        //       nib(x, y+1)    = nib + 1    -> HIGH nibble, SAME byte
+        //     Decoding two rows per pass halves the reads + table lookups.
         //   - GX tile addressing: the per-row tile/sub-tile math (y>>2, y&3,
-        //     w/4) is hoisted out of the x loop, leaving only cheap x>>2/x&3
-        //     per pixel instead of a full GX_TexOffs() call.
+        //     w/4) is hoisted out of the x loop.
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += OtherMipPoint[mod->tsp.TexU + 3] / 2; // 4bpp: texels/2 bytes
@@ -2468,150 +2474,70 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
         FMT = (pal_fmt == 1) ? GX_TF_RGB565 : GX_TF_RGB5A3;
 
+        // Bake the palette: 16 conversions total instead of w*h.
+        u16 gx_pal[16];
+        switch (pal_fmt)
+        {
+          case 1: // RGB565 -> RGB565 (direct)
+            for (u32 i = 0; i < 16; i++) gx_pal[i] = (u16)(pal[i] & 0xFFFF);
+            break;
+          case 2: // ARGB4444 -> RGB5A3
+            for (u32 i = 0; i < 16; i++) gx_pal[i] = ABGR4444((u16)(pal[i] & 0xFFFF));
+            break;
+          case 3: // ARGB8888 -> RGB5A3
+            for (u32 i = 0; i < 16; i++)
+            {
+              u32 pe = pal[i];
+              u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+              gx_pal[i] = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+            }
+            break;
+          default: // ARGB1555 -> RGB5A3
+            for (u32 i = 0; i < 16; i++) gx_pal[i] = ABGR1555((u16)(pal[i] & 0xFFFF));
+            break;
+        }
+
         u8  *src     = (u8 *)&params.vram[tex_addr];
         u16 *dst16   = (u16 *)VramWork;
         u32  tiles_x = w / 4; // GX 16bpp tile = 4x4 pixels
 
-        if (mod->tcw.NO_PAL.ScanOrder)
-        {
-          // Linear: row-major nibble stream, 2 pixels/byte.
-          // Even pixel -> low nibble, odd pixel -> high nibble (DC convention).
-          switch (pal_fmt) {
-            case 1: // RGB565
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 lin_row  = y * (w / 2);
-                for (u32 x = 0; x < w; x += 2) {
-                  u8 raw = src[(lin_row + x / 2) ^ 3];
-                  dst16[row_base + (x       >> 2) * 16 + (x       & 3)] = (u16)(pal[raw & 0xF] & 0xFFFF);
-                  dst16[row_base + ((x + 1) >> 2) * 16 + ((x + 1) & 3)] = (u16)(pal[raw >> 4]  & 0xFFFF);
-                }
-              }
-              break;
-            case 2: // ARGB4444
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 lin_row  = y * (w / 2);
-                for (u32 x = 0; x < w; x += 2) {
-                  u8 raw = src[(lin_row + x / 2) ^ 3];
-                  dst16[row_base + (x       >> 2) * 16 + (x       & 3)] = ABGR4444((u16)(pal[raw & 0xF] & 0xFFFF));
-                  dst16[row_base + ((x + 1) >> 2) * 16 + ((x + 1) & 3)] = ABGR4444((u16)(pal[raw >> 4]  & 0xFFFF));
-                }
-              }
-              break;
-            case 3: // ARGB8888 -> RGB5A3
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 lin_row  = y * (w / 2);
-                for (u32 x = 0; x < w; x += 2) {
-                  u8 raw = src[(lin_row + x / 2) ^ 3];
-                  u32 pe0 = pal[raw & 0xF], pe1 = pal[raw >> 4];
-                  u8 a0=(pe0>>24)&0xFF, r0=(pe0>>16)&0xFF, g0=(pe0>>8)&0xFF, b0=pe0&0xFF;
-                  u8 a1=(pe1>>24)&0xFF, r1=(pe1>>16)&0xFF, g1=(pe1>>8)&0xFF, b1=pe1&0xFF;
-                  dst16[row_base + (x       >> 2) * 16 + (x       & 3)] = (u16)(((a0>>5)<<12)|((r0>>4)<<8)|((g0>>4)<<4)|(b0>>4));
-                  dst16[row_base + ((x + 1) >> 2) * 16 + ((x + 1) & 3)] = (u16)(((a1>>5)<<12)|((r1>>4)<<8)|((g1>>4)<<4)|(b1>>4));
-                }
-              }
-              break;
-            default: // ARGB1555
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 lin_row  = y * (w / 2);
-                for (u32 x = 0; x < w; x += 2) {
-                  u8 raw = src[(lin_row + x / 2) ^ 3];
-                  dst16[row_base + (x       >> 2) * 16 + (x       & 3)] = ABGR1555((u16)(pal[raw & 0xF] & 0xFFFF));
-                  dst16[row_base + ((x + 1) >> 2) * 16 + ((x + 1) & 3)] = ABGR1555((u16)(pal[raw >> 4]  & 0xFFFF));
-                }
-              }
-              break;
-          }
-        }
-        else
-        {
-          // Twiddled: read the cached per-axis Morton tables instead of
-          // calling twop(x,y,w,h) per pixel (or rebuilding them per call).
-          u32 table_x[1024];
-          u32 table_y[1024];
-          const u32 *traw_x, *traw_y;
-          get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
-          for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
-          for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
+        // Twiddled decode (unconditional — see note above).
+        const u32 *table_x, *table_y;
+        get_twiddle_axis_tables(w, h, &table_x, &table_y);
 
-          switch (pal_fmt) {
-            case 1: // RGB565
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 ty       = table_y[y];
-                for (u32 x = 0; x < w; x++) {
-                  u32 nib = ty | table_x[x];
-                  u8  raw = src[(nib >> 1) ^ 3];
-                  u8  idx = (nib & 1) ? (raw >> 4) : (raw & 0xF);
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = (u16)(pal[idx] & 0xFFFF);
-                }
-              }
-              break;
-            case 2: // ARGB4444
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 ty       = table_y[y];
-                for (u32 x = 0; x < w; x++) {
-                  u32 nib = ty | table_x[x];
-                  u8  raw = src[(nib >> 1) ^ 3];
-                  u8  idx = (nib & 1) ? (raw >> 4) : (raw & 0xF);
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = ABGR4444((u16)(pal[idx] & 0xFFFF));
-                }
-              }
-              break;
-            case 3: // ARGB8888 -> RGB5A3
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 ty       = table_y[y];
-                for (u32 x = 0; x < w; x++) {
-                  u32 nib = ty | table_x[x];
-                  u8  raw = src[(nib >> 1) ^ 3];
-                  u8  idx = (nib & 1) ? (raw >> 4) : (raw & 0xF);
-                  u32 pe  = pal[idx];
-                  u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-                }
-              }
-              break;
-            default: // ARGB1555
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 ty       = table_y[y];
-                for (u32 x = 0; x < w; x++) {
-                  u32 nib = ty | table_x[x];
-                  u8  raw = src[(nib >> 1) ^ 3];
-                  u8  idx = (nib & 1) ? (raw >> 4) : (raw & 0xF);
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = ABGR1555((u16)(pal[idx] & 0xFFFF));
-                }
-              }
-              break;
+        for (u32 y = 0; y < h; y += 2) // h is pow2 >= 8, always even
+        {
+          u32 row_base0 = ((y    ) >> 2) * tiles_x * 16 + ((y    ) & 3) * 4;
+          u32 row_base1 = ((y + 1) >> 2) * tiles_x * 16 + ((y + 1) & 3) * 4;
+          u32 ty        = table_y[y]; // even y -> Morton bit0 clear
+          for (u32 x = 0; x < w; x++)
+          {
+            u32 nib = ty | table_x[x];     // nibble index for (x, y)
+            u8  raw = src[(nib >> 1) ^ 3]; // ^3: 32-bit BE VRAM correction
+            u32 col = (x >> 2) * 16 + (x & 3);
+            dst16[row_base0 + col] = gx_pal[raw & 0xF]; // row y   (low nibble)
+            dst16[row_base1 + col] = gx_pal[raw >> 4];  // row y+1 (high nibble)
           }
         }
 
         pbuff->has_pal = false; // palette baked in, GPU doesn't need a TLUT
       }
       else if (TEXTURE_4BPP_CI4_FAST()) { // 4BPP palette -> GX_TF_CI4 (Fast)
-        // FAST path: same structure as 4BPP_Optimized but outputs CI4 index data.
-        // TLUT already loaded above — only the index nibbles need reordering here.
+        // TLUT already loaded above — only the index nibbles are reordered here.
         //
-        // ScanOrder FAST: source bytes are already row-major packed nibbles.
-        //   DC nibble order (even→low, odd→high) must become GX CI4 order (even→high, odd→low).
-        //   We swap nibbles per source byte and write directly into GX CI4 tile rows,
-        //   skipping all per-pixel ci4_prel tile-offset math.
-        //   Cost: w*h/2 byte reads + nibble swap + tile writes. No twiddle at all.
+        // Always twiddled: palette textures have NO ScanOrder bit. TCW bits
+        // 21-26 are PAL.PalSelect for paletted formats (see ta_structs.h),
+        // NOT Reserved/StrideSel/ScanOrder — those only exist in the NO_PAL
+        // union member. Reading NO_PAL.ScanOrder here was actually reading
+        // PalSelect bit 5, so any game using a 4BPP palette bank >= 32 wrongly
+        // took the old linear branch and got scrambled output. Real DC
+        // hardware stores palette textures twiddled, always — so this path
+        // now decodes twiddled unconditionally.
         //
-        // Twiddled FAST: paired-nibble loop — 2 pixels per iteration, 1 byte written.
-        //   Halves inner-loop iterations vs the accurate CI4 path which calls ci4_prel once
-        //   per pixel. Both nibbles of each output byte are filled in a single store.
-        //
-        // Glitch trade-off: ScanOrder output is pixel-perfect (just reordered nibbles).
-        //   Twiddled output is correct but uses one extra twiddle call vs accurate path
-        //   (tw1 = tw0+1 which is mathematically equivalent to the accurate path's per-pixel
-        //   twiddle, so quality is identical — only ci4_prel overhead is eliminated).
-
+        // Paired-nibble loop: 2 pixels per iteration, both nibbles of each
+        // GX CI4 output byte filled in a single store (no ci4_prel calls).
+        // Per-axis Morton tables come from the shared cache (O(w+h) once per
+        // size, zero per-decode rebuild/copy).
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += OtherMipPoint[mod->tsp.TexU + 3] / 2; // 4bpp: texels/2 bytes
@@ -2619,69 +2545,27 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         {
           u8 *src  = (u8 *)&params.vram[tex_addr];
           u8 *idst = (u8 *)VramWork;
-          memset(idst, 0, w * h / 2);
 
-          if (mod->tcw.NO_PAL.ScanOrder)
+          const u32 *table_x, *table_y;
+          get_twiddle_axis_tables(w, h, &table_x, &table_y);
+
+          for (u32 y = 0; y < h; y++)
           {
-            // ScanOrder FAST: direct tile-row copy with nibble swap.
-            // GX CI4 tile: 8px wide x 8px tall = 32 bytes (4 bytes per tile-row).
-            // Source is row-major: row r, tile-col t → src bytes [(r*(w/2)) + t*4 .. +3].
-            // ^3 BE correction applies within each source u32 word (4 bytes).
-            u32 tiles_x = w / 8;
-            u32 tiles_y = h / 8;
-            for (u32 ty = 0; ty < tiles_y; ty++)
+            u32 ty = table_y[y];
+            for (u32 x = 0; x < w; x += 2)
             {
-              for (u32 tx = 0; tx < tiles_x; tx++)
-              {
-                u8 *tdst = idst + (ty * tiles_x + tx) * 32;
-                for (u32 row = 0; row < 8; row++)
-                {
-                  u32 src_byte = ((ty * 8 + row) * (w / 2)) + tx * 4;
-                  u8 *srow = src + src_byte;
-                  u8 *drow = tdst + row * 4;
-                  // Swap nibbles (DC low/high → GX high/low) + ^3 BE correction per word.
-                  drow[0] = (u8)(((srow[3] & 0x0F) << 4) | ((srow[3] >> 4) & 0x0F)); // 0^3=3
-                  drow[1] = (u8)(((srow[2] & 0x0F) << 4) | ((srow[2] >> 4) & 0x0F)); // 1^3=2
-                  drow[2] = (u8)(((srow[1] & 0x0F) << 4) | ((srow[1] >> 4) & 0x0F)); // 2^3=1
-                  drow[3] = (u8)(((srow[0] & 0x0F) << 4) | ((srow[0] >> 4) & 0x0F)); // 3^3=0
-                }
-              }
-            }
-          }
-          else
-          {
-            // Twiddled FAST: 2-pixels-per-iteration paired write.
-            // Precompute per-axis Morton contributions once (O(w+h)) instead of
-            // calling twop(x,y,w,h) per pixel (O(w*h) — same fix 4BPP_OPTIMIZED
-            // applies above; this path was missing it, which is why large
-            // twiddled CI4 textures were far slower here than in OPTIMIZED
-            // despite the lighter per-pixel body otherwise).
-            // ^3 = full 32-bit BE word reversal. Nibble convention: even→low (& 0xF), odd→high (>> 4).
-            u32 table_x[1024];
-            u32 table_y[1024];
-            const u32 *traw_x, *traw_y;
-            get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
-            for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
-            for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
+              u32 tw0  = ty | table_x[x];                         // nibble index for x
+              u32 tw1  = ty | table_x[x + 1];                     // nibble index for x+1
+              u8  raw0 = src[(tw0 >> 1) ^ 3];                     // ^3: 32-bit BE correction
+              u8  raw1 = src[(tw1 >> 1) ^ 3];
+              u8  idx0 = (tw0 & 1) ? (raw0 >> 4) : (raw0 & 0xF); // palette index for x
+              u8  idx1 = (tw1 & 1) ? (raw1 >> 4) : (raw1 & 0xF); // palette index for x+1
 
-            for (u32 y = 0; y < h; y++)
-            {
-              u32 ty = table_y[y];
-              for (u32 x = 0; x < w; x += 2)
-              {
-                u32 tw0  = ty | table_x[x];                          // nibble index for x
-                u32 tw1  = ty | table_x[x + 1];                       // nibble index for x+1
-                u8  raw0 = src[(tw0 >> 1) ^ 3];                      // ^3: full 32-bit BE correction
-                u8  raw1 = src[(tw1 >> 1) ^ 3];
-                u8  idx0 = (tw0 & 1) ? (raw0 >> 4) : (raw0 & 0xF);  // palette index for x
-                u8  idx1 = (tw1 & 1) ? (raw1 >> 4) : (raw1 & 0xF);  // palette index for x+1
-
-                // Pack both indices into one GX CI4 tile byte (even→high nibble, odd→low nibble).
-                u32 tile     = (y / 8) * (w / 8) + (x / 8);
-                u32 nibble   = tile * 64 + (y % 8) * 8 + (x % 8); // points at even pixel (high nibble)
-                u32 byte_off = nibble >> 1;
-                idst[byte_off] = (u8)((idx0 << 4) | (idx1 & 0x0F));
-              }
+              // Pack both indices into one GX CI4 tile byte
+              // (even -> high nibble, odd -> low nibble).
+              u32 tile     = (y / 8) * (w / 8) + (x / 8);
+              u32 nibble   = tile * 64 + (y % 8) * 8 + (x % 8); // points at even pixel
+              idst[nibble >> 1] = (u8)((idx0 << 4) | (idx1 & 0x0F));
             }
           }
         }
@@ -2690,18 +2574,23 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         pbuff->has_pal = true;
       }
 
-      else if (TEXTURE_4BPP_CI4()) { // 4BPP palette -> GX_TF_CI4
-        // Untwiddle index nibbles into GX CI4 block layout.
+      else if (TEXTURE_4BPP_CI4()) { // 4BPP palette -> GX_TF_CI4 (Accurate)
+        // Untwiddle index nibbles into GX CI4 block layout via ci4_prel.
         // TLUT already loaded above — only index data written here.
         //
-        // DC nibble convention (from hardware manual):
-        //   Even-indexed pixel → bits 3:0 (LOW nibble)
-        //   Odd-indexed pixel  → bits 7:4 (HIGH nibble)
+        // Always twiddled: palette textures have NO ScanOrder bit. TCW bits
+        // 21-26 are PAL.PalSelect for paletted formats (see ta_structs.h),
+        // NOT Reserved/StrideSel/ScanOrder — those only exist in the NO_PAL
+        // union member. Reading NO_PAL.ScanOrder here was actually reading
+        // PalSelect bit 5, so any game using a 4BPP palette bank >= 32 wrongly
+        // took the old linear branch and got scrambled output. Real DC
+        // hardware stores palette textures twiddled, always — so this path
+        // now decodes twiddled unconditionally.
         //
+        // DC nibble convention: even pixel -> LOW nibble, odd pixel -> HIGH nibble.
         // VRAM byte addressing: DC stores data in 32-bit little-endian words,
         // but the Wii's big-endian SH4 emulator stores them with full 32-bit
-        // reversal (DC byte B lives at vram[B ^ 3]).  This is the same
-        // convention the VQ path uses for its index byte reads (^ 3).
+        // reversal (DC byte B lives at vram[B ^ 3]).
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += OtherMipPoint[mod->tsp.TexU + 3] / 2; // 4bpp: texels/2 bytes
@@ -2711,44 +2600,18 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
           u8 *idst = (u8 *)VramWork;
           memset(idst, 0, w * h / 2); // clear required: nibbles are OR'd in
 
-          if (mod->tcw.NO_PAL.ScanOrder)
-          {
-            // Scanline (linear): row-major, 2 pixels per byte.
-            // Even pixel (x+0) is in the LOW nibble, odd pixel (x+1) in the HIGH nibble.
-            for (u32 y = 0; y < h; y++)
-              for (u32 x = 0; x < w; x += 2)
-              {
-                u32 lin = y * (w / 2) + x / 2;
-                u8  raw = src[lin ^ 3]; // ^3: correct for 32-bit BE VRAM layout
-                ci4_prel(idst, x + 0, y, w, raw & 0xF); // even → low nibble
-                ci4_prel(idst, x + 1, y, w, raw >> 4);  // odd  → high nibble
-              }
-          }
-          else
-          {
-            // Twiddled (Morton order) for 4BPP: precompute per-axis Morton
-            // contributions once (O(w+h)) instead of calling twop(x,y,w,h)
-            // per pixel (O(w*h) — same fix as 4BPP_OPTIMIZED/CI4_FAST above;
-            // this path was still doing the expensive per-pixel call).
-            // ^3 = full 32-bit BE word reversal.
-            // Nibble convention: even pixel → LOW nibble (& 0xF), odd pixel → HIGH nibble (>> 4).
-            u32 table_x[1024];
-            u32 table_y[1024];
-            const u32 *traw_x, *traw_y;
-            get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
-            for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
-            for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
+          const u32 *table_x, *table_y;
+          get_twiddle_axis_tables(w, h, &table_x, &table_y);
 
-            for (u32 y = 0; y < h; y++)
+          for (u32 y = 0; y < h; y++)
+          {
+            u32 ty = table_y[y];
+            for (u32 x = 0; x < w; x++)
             {
-              u32 ty = table_y[y];
-              for (u32 x = 0; x < w; x++)
-              {
-                u32 tw_nibble = ty | table_x[x];                          // nibble index
-                u8  raw       = src[(tw_nibble >> 1) ^ 3];                // ^3: 32-bit BE correction
-                u8  idx       = (tw_nibble & 1) ? (raw >> 4) : (raw & 0xF);
-                ci4_prel(idst, x, y, w, idx);
-              }
+              u32 tw_nibble = ty | table_x[x];                          // nibble index
+              u8  raw       = src[(tw_nibble >> 1) ^ 3];                // ^3: BE correction
+              u8  idx       = (tw_nibble & 1) ? (raw >> 4) : (raw & 0xF);
+              ci4_prel(idst, x, y, w, idx);
             }
           }
         }
@@ -2852,151 +2715,92 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
       }
       else if(TEXTURE_8BPP_OPTIMIZED()) {
-        // BEST: full palette decode -> GX RGB565/RGB5A3 (fast). Same approach
-        // and same fixes as the 4BPP BEST path above — see its comment for
-        // the full rationale (ScanOrder handling, ^3 BE correction, twiddle
-        // table precompute, hoisted GX tile addressing). See also
-        // aaa_docs/4BPP_8BPP_palette_texture_analysis.md for why CI8+TLUT
-        // isn't viable here (ARGB8888 palettes have no GX TLUT equivalent,
-        // and untwiddling indices into GX CI8 block layout costs the same
-        // CPU as untwiddling fully-decoded pixels).
+        // BEST: LUT-baked palette decode -> GX RGB565/RGB5A3.
+        // Same output as TEXTURE_8BPP_RGB565 (the path that renders the
+        // Crazy Taxi / Bomberman counters correctly) but faster:
+        //   - Palette converted ONCE into a 256-entry u16 LUT: the inner loop
+        //     is gx_pal[idx], no per-pixel format switch / ARGB8888 unpack.
+        //   - Twiddle tables via direct cached pointers (old code memcpy'd
+        //     8 KB of tables per decode), GX tile row addressing hoisted.
+        //
+        // Always twiddled: palette textures have NO ScanOrder bit. TCW bits
+        // 21-26 are PAL.PalSelect for paletted formats (see ta_structs.h),
+        // NOT Reserved/StrideSel/ScanOrder — those only exist in the NO_PAL
+        // union member. Reading NO_PAL.ScanOrder here was actually reading
+        // PalSelect bits 4-5, so any game using an 8BPP palette bank 2 or 3
+        // wrongly took the old linear branch and got scrambled output. Real
+        // DC hardware stores palette textures twiddled, always — so this
+        // path now decodes twiddled unconditionally.
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += OtherMipPoint[mod->tsp.TexU + 3]; // 8bpp: texels == bytes
 
         u32  pal_fmt  = PAL_RAM_CTRL & 3;
-        u32  pal_base = (mod->tcw.PAL.PalSelect >> 4) << 8; // PalSelect[5:4] selects a 256-entry bank
+        u32  pal_base = (mod->tcw.PAL.PalSelect >> 4) << 8; // bits[5:4] pick a 256-entry bank
         u32 *pal      = PALETTE_RAM + pal_base;
 
         FMT = (pal_fmt == 1) ? GX_TF_RGB565 : GX_TF_RGB5A3;
+
+        // Bake the palette: 256 conversions total instead of w*h.
+        static u16 gx_pal[256]; // static: keep it off the stack
+        switch (pal_fmt)
+        {
+          case 1: // RGB565 -> RGB565 (direct)
+            for (u32 i = 0; i < 256; i++) gx_pal[i] = (u16)(pal[i] & 0xFFFF);
+            break;
+          case 2: // ARGB4444 -> RGB5A3
+            for (u32 i = 0; i < 256; i++) gx_pal[i] = ABGR4444((u16)(pal[i] & 0xFFFF));
+            break;
+          case 3: // ARGB8888 -> RGB5A3
+            for (u32 i = 0; i < 256; i++)
+            {
+              u32 pe = pal[i];
+              u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+              gx_pal[i] = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+            }
+            break;
+          default: // ARGB1555 -> RGB5A3
+            for (u32 i = 0; i < 256; i++) gx_pal[i] = ABGR1555((u16)(pal[i] & 0xFFFF));
+            break;
+        }
 
         u8  *src     = (u8 *)&params.vram[tex_addr];
         u16 *dst16   = (u16 *)VramWork;
         u32  tiles_x = w / 4; // GX 16bpp tile = 4x4 pixels
 
-        if (mod->tcw.NO_PAL.ScanOrder)
-        {
-          // Linear: row-major, 1 byte per pixel.
-          switch (pal_fmt) {
-            case 1: // RGB565
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 lin_row  = y * w;
-                for (u32 x = 0; x < w; x++) {
-                  u8 idx = src[(lin_row + x) ^ 3];
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = (u16)(pal[idx] & 0xFFFF);
-                }
-              }
-              break;
-            case 2: // ARGB4444
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 lin_row  = y * w;
-                for (u32 x = 0; x < w; x++) {
-                  u8 idx = src[(lin_row + x) ^ 3];
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = ABGR4444((u16)(pal[idx] & 0xFFFF));
-                }
-              }
-              break;
-            case 3: // ARGB8888 -> RGB5A3
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 lin_row  = y * w;
-                for (u32 x = 0; x < w; x++) {
-                  u8 idx = src[(lin_row + x) ^ 3];
-                  u32 pe = pal[idx];
-                  u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-                }
-              }
-              break;
-            default: // ARGB1555
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 lin_row  = y * w;
-                for (u32 x = 0; x < w; x++) {
-                  u8 idx = src[(lin_row + x) ^ 3];
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = ABGR1555((u16)(pal[idx] & 0xFFFF));
-                }
-              }
-              break;
-          }
-        }
-        else
-        {
-          // Twiddled: read the cached per-axis Morton tables instead of
-          // calling twop(x,y,w,h) per pixel (or rebuilding them per call).
-          u32 table_x[1024];
-          u32 table_y[1024];
-          const u32 *traw_x, *traw_y;
-          get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
-          for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
-          for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
+        // Twiddled decode (unconditional — see note above).
+        // 1 byte = 1 pixel in Morton order.
+        const u32 *table_x, *table_y;
+        get_twiddle_axis_tables(w, h, &table_x, &table_y);
 
-          switch (pal_fmt) {
-            case 1: // RGB565
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 ty       = table_y[y];
-                for (u32 x = 0; x < w; x++) {
-                  u8 idx = src[(ty | table_x[x]) ^ 3];
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = (u16)(pal[idx] & 0xFFFF);
-                }
-              }
-              break;
-            case 2: // ARGB4444
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 ty       = table_y[y];
-                for (u32 x = 0; x < w; x++) {
-                  u8 idx = src[(ty | table_x[x]) ^ 3];
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = ABGR4444((u16)(pal[idx] & 0xFFFF));
-                }
-              }
-              break;
-            case 3: // ARGB8888 -> RGB5A3
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 ty       = table_y[y];
-                for (u32 x = 0; x < w; x++) {
-                  u8 idx = src[(ty | table_x[x]) ^ 3];
-                  u32 pe = pal[idx];
-                  u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-                }
-              }
-              break;
-            default: // ARGB1555
-              for (u32 y = 0; y < h; y++) {
-                u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
-                u32 ty       = table_y[y];
-                for (u32 x = 0; x < w; x++) {
-                  u8 idx = src[(ty | table_x[x]) ^ 3];
-                  dst16[row_base + (x >> 2) * 16 + (x & 3)] = ABGR1555((u16)(pal[idx] & 0xFFFF));
-                }
-              }
-              break;
+        for (u32 y = 0; y < h; y++)
+        {
+          u32 row_base = (y >> 2) * tiles_x * 16 + (y & 3) * 4;
+          u32 ty       = table_y[y];
+          for (u32 x = 0; x < w; x++)
+          {
+            u8 idx = src[(ty | table_x[x]) ^ 3]; // ^3: 32-bit BE VRAM correction
+            dst16[row_base + (x >> 2) * 16 + (x & 3)] = gx_pal[idx];
           }
         }
 
         pbuff->has_pal = false; // palette baked in, GPU doesn't need a TLUT
       }
       else if(TEXTURE_8BPP_CI8_FAST()) {
-        // 8BPP palette -> GX_TF_CI8  [FAST path — truly optimized]
+        // 8BPP palette -> GX_TF_CI8  [FAST path]
         // TLUT already loaded above — only index data written here.
         //
-        // ScanOrder FAST: skips ci8_prel entirely.
-        //   GX CI8 tile is 8px wide x 4px tall = 32 bytes.
-        //   We process a full tile row (8 pixels) per inner iteration using
-        //   two aligned u32 reads + manual ^3 byte reversal → 8 direct byte
-        //   writes. Zero per-pixel tile-math overhead, no function calls.
-        //   ^3 reverses bytes within each 32-bit word (DC BE VRAM layout):
-        //     drow[0..3] = word0 bytes reversed, drow[4..7] = word1 bytes reversed.
-        //   Source base is always 4-aligned (w is power-of-2 >= 8).
+        // Always twiddled: palette textures have NO ScanOrder bit. TCW bits
+        // 21-26 are PAL.PalSelect for paletted formats (see ta_structs.h),
+        // NOT Reserved/StrideSel/ScanOrder — those only exist in the NO_PAL
+        // union member. Reading NO_PAL.ScanOrder here was actually reading
+        // PalSelect bits 4-5, so any game using an 8BPP palette bank 2 or 3
+        // wrongly took the old linear branch and got scrambled output. Real
+        // DC hardware stores palette textures twiddled, always — so this
+        // path now decodes twiddled unconditionally.
         //
-        // Twiddled FAST: twop() per pixel is unavoidable, but we inline
-        //   the tile write (no ci8_prel call). y_tile_base is precomputed
-        //   once per scanline, cutting the per-pixel address math in half.
+        // Inlined tile write (no ci8_prel call); y_tile_base hoisted out of
+        // the x loop; per-axis Morton tables from the shared cache.
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += OtherMipPoint[mod->tsp.TexU + 3]; // 8bpp: texels == bytes
@@ -3005,64 +2809,19 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
           u8 *src  = (u8 *)&params.vram[tex_addr];
           u8 *idst = (u8 *)VramWork;
 
-          if (mod->tcw.NO_PAL.ScanOrder)
-          {
-            // ScanOrder FAST: direct tile-row writes, no ci8_prel, no per-pixel math.
-            // Outer loops iterate over tiles; inner loop over rows within a tile.
-            u32 tiles_x = w / 8;
-            u32 tiles_y = h / 4;
-            for (u32 ty = 0; ty < tiles_y; ty++)
-            {
-              for (u32 tx = 0; tx < tiles_x; tx++)
-              {
-                u8 *tdst = idst + (ty * tiles_x + tx) * 32;
-                for (u32 row = 0; row < 4; row++)
-                {
-                  // Source offset for this tile row. Always 4-aligned (w is pow2 >= 8).
-                  u32 src_off = (ty * 4 + row) * w + tx * 8;
-                  u32 w0 = *(u32 *)(src + src_off);     // bytes 0-3 of tile row
-                  u32 w1 = *(u32 *)(src + src_off + 4); // bytes 4-7 of tile row
-                  // ^3 = reverse bytes within each 32-bit word.
-                  // On big-endian Wii: (w >> 0)&0xFF = lowest address byte of the word.
-                  u8 *drow = tdst + row * 8;
-                  drow[0] = (u8)(w0 >>  0); // src[off+3]
-                  drow[1] = (u8)(w0 >>  8); // src[off+2]
-                  drow[2] = (u8)(w0 >> 16); // src[off+1]
-                  drow[3] = (u8)(w0 >> 24); // src[off+0]
-                  drow[4] = (u8)(w1 >>  0); // src[off+7]
-                  drow[5] = (u8)(w1 >>  8); // src[off+6]
-                  drow[6] = (u8)(w1 >> 16); // src[off+5]
-                  drow[7] = (u8)(w1 >> 24); // src[off+4]
-                }
-              }
-            }
-          }
-          else
-          {
-            // Twiddled FAST: precompute per-axis Morton contributions once
-            // (O(w+h)) instead of calling twop(x,y,w,h) per pixel (O(w*h) —
-            // same fix as the 4BPP paths; this was the dominant per-pixel
-            // cost despite the inlined tile-address math below). Tile address
-            // is computed inline — no ci8_prel call. y_tile_base is hoisted
-            // out of the x loop: saves one multiply + one add per pixel.
-            u32 table_x[1024];
-            u32 table_y[1024];
-            const u32 *traw_x, *traw_y;
-            get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
-            for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
-            for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
+          const u32 *table_x, *table_y;
+          get_twiddle_axis_tables(w, h, &table_x, &table_y);
 
-            u32 tiles_x = w / 8;
-            for (u32 y = 0; y < h; y++)
+          u32 tiles_x = w / 8;
+          for (u32 y = 0; y < h; y++)
+          {
+            u32 y_tile_base = (y / 4) * tiles_x * 32 + (y % 4) * 8;
+            u32 ty          = table_y[y];
+            for (u32 x = 0; x < w; x++)
             {
-              u32 y_tile_base = (y / 4) * tiles_x * 32 + (y % 4) * 8;
-              u32 ty           = table_y[y];
-              for (u32 x = 0; x < w; x++)
-              {
-                u8  idx      = src[(ty | table_x[x]) ^ 3]; // ^3: 32-bit BE correction
-                u32 byte_off = y_tile_base + (x / 8) * 32 + (x % 8);
-                idst[byte_off] = idx;
-              }
+              u8  idx      = src[(ty | table_x[x]) ^ 3]; // ^3: 32-bit BE correction
+              u32 byte_off = y_tile_base + (x / 8) * 32 + (x % 8);
+              idst[byte_off] = idx;
             }
           }
         }
@@ -3071,14 +2830,20 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         pbuff->has_pal = true;
       }
       else if(TEXTURE_8BPP_CI8()) {
-        // 8BPP palette -> GX_TF_CI8  [ACCURATE path — enhanced algorithm]
-        // Untwiddle index bytes into GX CI8 block layout.
+        // 8BPP palette -> GX_TF_CI8  [ACCURATE path]
+        // Untwiddle index bytes into GX CI8 block layout via ci8_prel.
         // TLUT already loaded above — only index data written here.
         //
-        // Uses ^3 (full 32-bit word byte-reversal) — the same BE correction
-        // used by the I8 grey path and the VQ decompressor. Each DC byte B
-        // lives at vram[B ^ 3] on the Wii's big-endian SH4 VRAM layout.
-        // This gives sharper, correctly-indexed characters vs the ^1 fast path.
+        // Always twiddled: palette textures have NO ScanOrder bit. TCW bits
+        // 21-26 are PAL.PalSelect for paletted formats (see ta_structs.h),
+        // NOT Reserved/StrideSel/ScanOrder — those only exist in the NO_PAL
+        // union member. Reading NO_PAL.ScanOrder here was actually reading
+        // PalSelect bits 4-5, so any game using an 8BPP palette bank 2 or 3
+        // wrongly took the old linear branch and got scrambled output. Real
+        // DC hardware stores palette textures twiddled, always — so this
+        // path now decodes twiddled unconditionally.
+        //
+        // ^3 = full 32-bit BE word reversal (DC byte B lives at vram[B ^ 3]).
         verify(mod->tcw.PAL.VQ_Comp == 0);
         if (mod->tcw.NO_PAL.MipMapped)
           tex_addr += OtherMipPoint[mod->tsp.TexU + 3]; // 8bpp: texels == bytes
@@ -3087,39 +2852,16 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
           u8 *src  = (u8 *)&params.vram[tex_addr];
           u8 *idst = (u8 *)VramWork;
 
-          if (mod->tcw.NO_PAL.ScanOrder)
-          {
-            // Scanline (linear): row-major, 1 byte per pixel.
-            // ^3: full 32-bit word reversal — same as I8 grey ScanOrder path.
-            for (u32 y = 0; y < h; y++)
-              for (u32 x = 0; x < w; x++)
-              {
-                u32 lin = y * w + x;
-                ci8_prel(idst, x, y, w, src[lin ^ 3]); // ^3: 32-bit BE VRAM correction
-              }
-          }
-          else
-          {
-            // Twiddled (Morton order): twiddle index = byte index for 8BPP.
-            // Precompute per-axis Morton contributions once (O(w+h)) instead
-            // of calling twop(x,y,w,h) per pixel (O(w*h) — same fix as the
-            // 4BPP paths above).
-            // ^3: full 32-bit word reversal — same as I8 grey Twiddled path.
-            u32 table_x[1024];
-            u32 table_y[1024];
-            const u32 *traw_x, *traw_y;
-            get_twiddle_axis_tables(w, h, &traw_x, &traw_y);
-            for (u32 x = 0; x < w; x++) table_x[x] = traw_x[x];
-            for (u32 y = 0; y < h; y++) table_y[y] = traw_y[y];
+          const u32 *table_x, *table_y;
+          get_twiddle_axis_tables(w, h, &table_x, &table_y);
 
-            for (u32 y = 0; y < h; y++)
+          for (u32 y = 0; y < h; y++)
+          {
+            u32 ty = table_y[y];
+            for (u32 x = 0; x < w; x++)
             {
-              u32 ty = table_y[y];
-              for (u32 x = 0; x < w; x++)
-              {
-                u8 idx = src[(ty | table_x[x]) ^ 3]; // ^3: 32-bit BE VRAM correction
-                ci8_prel(idst, x, y, w, idx);
-              }
+              u8 idx = src[(ty | table_x[x]) ^ 3]; // ^3: 32-bit BE correction
+              ci8_prel(idst, x, y, w, idx);
             }
           }
         }
