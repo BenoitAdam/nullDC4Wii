@@ -21,20 +21,19 @@ extern "C" int get_graphism_preset();
 #define HIGH() (get_graphism_preset() == 2)
 #define EXTRA() (get_graphism_preset() == 3)
 
-// This is defined in main.cpp
+// FULLSCREEN or 4:3 (4:3 still has bugs in some games)
 extern "C" int get_ratio_preset();
 
-// Helper macros to check current graphism mode
 #define ORIGINAL() (get_ratio_preset() == 0)
 #define FULLSCREEN() (get_ratio_preset() == 1)
 
-// Advanced alpha
+// ADVANCED ALPHA (may be slower but haven't really noticed any difference)
 extern "C" int get_advanced_alpha_preset();
 #define ADVANCED_ALPHA() (get_advanced_alpha_preset() == 1)
 
 bool use_adv_alpha = ADVANCED_ALPHA(); // compute once
 
-// RGB565 has no real alpha channel but in some games
+// RGB565 has no real alpha channel but in some games black appears transparent. (Hack)
 extern "C" int get_rgb565_vq_alpha();
 #define RGB565_VQ_COLORKEY() (get_rgb565_vq_alpha() == 1)
 
@@ -60,36 +59,26 @@ extern "C" int get_frameskip_preset();
 // 4BPP palette texture management
 extern "C" int get_4bpp_preset();
 
-#define TEXTURE_4BPP_I4_STUB() (get_4bpp_preset() == 0) // I4 Stub // 17 FPS VEMU Menu Daytona
-#define TEXTURE_4BPP_OPTIMIZED() (get_4bpp_preset() == 1) // 4BPP Optimized // 15 FPS VEMU Menu Daytona (untested)
-#define TEXTURE_4BPP_CI4_FAST() (get_4bpp_preset() == 2) // CI4 (Fast) // 15 FPS VEMU Menu Daytona
-#define TEXTURE_4BPP_CI4() (get_4bpp_preset() == 3) // CI4 (ok) // 4 FPS VEMU Menu Daytona
-#define TEXTURE_4BPP_RGB565() (get_4bpp_preset() == 4) // RGB565 // 1 FPS VEMU Menu Daytona
+#define TEXTURE_4BPP_I4_STUB() (get_4bpp_preset() == 0) // I4 Stub // 34 FPS VMU Menu Daytona
+#define TEXTURE_4BPP_OPTIMIZED() (get_4bpp_preset() == 1) // 4BPP Optimized // 34 FPS VMU Menu Daytona (untested)
+#define TEXTURE_4BPP_CI4_FAST() (get_4bpp_preset() == 2) // CI4 (supposed to be fast) // 34 FPS VMU Menu Daytona
+#define TEXTURE_4BPP_CI4() (get_4bpp_preset() == 3) // CI4 (supposed to be accurate) // 27 FPS VMU Menu Daytona
+#define TEXTURE_4BPP_RGB565() (get_4bpp_preset() == 4) // RGB565 // 33 FPS VMU Menu Daytona (worse display)
 
 // 8BPP palette texture management
 extern "C" int get_8bpp_preset();
 
 #define TEXTURE_8BPP_I8_STUB() (get_8bpp_preset() == 0) // I8 Stub
 #define TEXTURE_8BPP_OPTIMIZED() (get_8bpp_preset() == 1) // 8BPP Optimized
-#define TEXTURE_8BPP_CI8_FAST() (get_8bpp_preset() == 2) // CI8 (Fast, direct tile writes)
-#define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 3)      // CI8 (Accurate, ^3 BE correction)
+#define TEXTURE_8BPP_CI8_FAST() (get_8bpp_preset() == 2) // CI8 (supposed to be fast)
+#define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 3)      // CI8 (supposed to be accurate)
 #define TEXTURE_8BPP_RGB565() (get_8bpp_preset() == 4) // RGB565
 
 // Jojo's Bizarre Adventure texture-cache fix: TLUT-reupload-skip + CACHE_FAST
-// PalSelect-masking. Off by default so every other game keeps the exact
-// pre-fix caching/palette behavior; enable per-game via game_presets.cfg
-// (jojo_fix=1).
 extern "C" int get_jojo_fix_preset();
 #define JOJO_FIX() (get_jojo_fix_preset() != 0)
 
-// Intensity (Gouraud) vertex-color fix: real PVR hardware multiplies each
-// vertex's scalar intensity by the polygon's FaceColor (TA_PolyParam1/2B/4B).
-// Off (legacy) builds a flat grayscale value from the intensity alone,
-// dropping the FaceColor entirely — this is why intensity-shaded elements
-// (e.g. Crazy Taxi's HUD arrow/dollar sign) render white/gray instead of
-// their intended color. Off by default so every other (untested) game keeps
-// the exact pre-fix look; enable per-game via game_presets.cfg
-// (vertex_color_fix=1).
+// Vertex-color Intensity (Gouraud) (cars in Crazy Taxi 1)
 extern "C" int get_vertex_color_fix_preset();
 #define VERTEX_COLOR_FIX() (get_vertex_color_fix_preset() != 0)
 
@@ -98,8 +87,8 @@ extern "C" int get_texture_cache_preset();
 
 #define CACHE_VERY_FAST()   (get_texture_cache_preset() == 0) // Original nullDC4Wii/SKMP algorithm.
 #define CACHE_FAST()        (get_texture_cache_preset() == 1) // Persistent bump-allocated cache (correct sizing, cross-frame)
-#define CACHE_NORMAL()      (get_texture_cache_preset() == 2) // Perfect Result (to the cost of FPS)
-#define CACHE_QUALITY()     (get_texture_cache_preset() == 3) // 
+#define CACHE_NORMAL()      (get_texture_cache_preset() == 2) // Quality with enhancements
+#define CACHE_QUALITY()     (get_texture_cache_preset() == 3) // Perfect Result (to the cost of FPS)
 #define CACHE_EXTRA()       (get_texture_cache_preset() == 4) // For Debug only
 
 // Per Polygon Z Write
@@ -107,17 +96,9 @@ extern "C" int get_ppz_write_preset();
 
 #define PER_POLYGON_Z_WRITE() (get_ppz_write_preset() == 1) // Fix Test-drive 6 draw distance
 
-// DecalAlpha shading fix: TSP.ShadInstr==2 polygons use GX_DECAL (Cv=(1-At)*Cr+At*Ct;
-// Av=Ar) instead of GX_MODULATE, and skip the texture-alpha discard test (which
-// doesn't apply to DecalAlpha's output alpha). Off restores the original
-// always-GX_MODULATE behavior, which is cheaper but renders DecalAlpha polygons
-// (e.g. some decal/UI banners) with incorrect transparency.
+// DecalAlpha shading fix (cars in Crazy Taxi 1)
 extern "C" int get_decal_alpha_preset();
 #define DECAL_ALPHA_FIX() (get_decal_alpha_preset() == 1)
-
-// ARGB1555 Opaque or Transparent
-extern "C" int get_abgr1555_fix_preset();
-#define ABGR1555_FIX() (get_abgr1555_fix_preset() == 1)
 
 // 2D Framebuffer Rendering
 extern "C" int get_framebuffer_2d();
@@ -141,12 +122,9 @@ extern "C" int get_rgb565_opaque_alpha_preset();
 #define RGB565_OPAQUE_ALPHA() (get_rgb565_opaque_alpha_preset() == 1)
 
 // Blend FPS boost: under ADVANCED_ALPHA()+BLEND_MODE(), skip the alpha-test/
-// GX_ZCompLoc pass for every polygon outside the translucent list (alpha_fmt
-// forced to 0). Gains a couple of FPS (e.g. Castlevania) at the cost of
-// incorrect alpha on opaque/punch-through polys that would otherwise need it.
+// Gains a couple of FPS (e.g. Castlevania) at the cost of incorrect alpha on opaque/punch-through polys
 extern "C" int get_blend_fps_boost_preset();
 #define BLEND_FPS_BOOST() (get_blend_fps_boost_preset() == 1)
-
 
 
 int frame_counter;
@@ -160,7 +138,7 @@ int frame_counter;
 #include <stdio.h> // needed for log
 
 // The FIFO is the command buffer for the GX hardware. 
-// 256KB is a standard size for most homebrew applications.
+// 256KB is a standard size for most homebrew applications. May need more for NullDC4Wii to avoid FIFO error ?
 #define DEFAULT_FIFO_SIZE (256 * 1024)
 
 using namespace TASplitter;
@@ -219,10 +197,10 @@ void ApplyGraphismPreset() {
 #define ABGR1555_B(x) ((x) & 0x1F)
 #define MAKE_555A3
 
+// May need that later ?
 // #define ABGR1555_VQ(x) (x)  // Keep the original 1555 value, alpha bit intact
 // or
 // #define ABGR1555_VQ(x) ((x) & 0x8000 ? (x) : 0x8000) // Make transparent pixels fully transparent (alpha=1, RGB=0)
-
 
 #define MAKE_565(r, g, b, a)
 #define MAKE_1555(r, g, b, a)
@@ -235,14 +213,11 @@ void ApplyGraphismPreset() {
 // RGB565 (DC: R5G6B5) → GX RGB565: identical layout, no conversion needed
 #define ABGR0565(x) (x)
 
-// DC ARGB1555 (bit15=A1, R5,G5,B5) -> GX RGB5A3.
-// bit15=1: keep as-is (opaque X1R5G5B5).
-// bit15=0: ABGR1555_FIX() ON preserves R4G4B4 from the source R5G5B5 (alpha
-// stays 0/translucent-tagged); OFF blanks to 0x0000 (legacy behavior). See
-// ABGR1555_FIX() above for why blanking can be wrong.
-#define ABGR1555(x) ((x) & 0x8000 ? (x) : (ABGR1555_FIX() ? \
-    ((((x) >> 11) & 0xFu) << 8) | ((((x) >> 6) & 0xFu) << 4) | (((x) >> 1) & 0xFu) \
-    : 0x0000))
+// Old AGBR1555(x) definition (incorrect, faster ?). Check alpha0.39 for the preset switch
+// #define ABGR1555(x) ((x) & 0x8000 ? (x) : 0x0000) // Works together with the coding routing introduced in alpha 0.13 (alpha_fmt stuff)
+// New AGBR1555(x) definition :
+#define ABGR1555(x) ((x) & 0x8000 ? (x) : \
+    ((((x) >> 11) & 0xFu) << 8) | ((((x) >> 6) & 0xFu) << 4) | (((x) >> 1) & 0xFu))
 
 // ARGB4444 (DC: A4 R4 G4 B4) → GX RGB5A3
 // ARGB4444 has 4 alpha (transparency) bits, Wii's RGB5A3 has 3 bits.
@@ -396,8 +371,6 @@ static INLINE void hash_map_insert(u32 tex_addr, u32 bump_off)
 }
 
 // O(1) replacement for the old O(n) bump_find linear scan.
-// Returns the TextureCacheDesc* and sets *pixel_out, exactly like the
-// old function, so all call-sites remain unchanged.
 static INLINE TextureCacheDesc* hash_map_find(u32 orig_tex_addr, u32 **pixel_out)
 {
   u32 desc_sz = (sizeof(TextureCacheDesc) + 31) & ~31u;
@@ -2206,42 +2179,6 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     case 3:
     {
       // YUV422: 32 bits per 2 pixels (UYVY — U, Y0, V, Y1, 8 bits each).
-      // The Dreamcast PVR has no native YUV texture support on the Wii GX side,
-      // so we decode YUV->RGB ourselves and upload in one of three GX formats
-      // controlled by the global 'fmv_format':
-      //
-      //   fmv_format == 0  =>  GX_TF_CMPR  (DXT1 block compression)
-      //                        - 4bpp, best bandwidth / memory usage
-      //                        - minor quality loss from block quantisation
-      //                        - slowest to encode (per-block palette search)
-      //
-      //   fmv_format == 1  =>  GX_TF_RGBA8 (full 32bpp ARGB)
-      //                        - highest quality, no compression artefacts
-      //                        - 4× memory cost vs CMPR
-      //                        - use when quality matters more than memory
-      //
-      //   fmv_format == 2  =>  GX_TF_RGB565 (16bpp)
-      //                        - 2× memory cost vs CMPR, half vs RGBA8
-      //                        - cheapest to ENCODE: YUV422() already returns
-      //                          RGB565, so it's a direct store per pixel —
-      //                          no block search, no channel expansion
-      //                        - good default when CPU time matters more
-      //                          than the small extra memory vs CMPR
-      //
-      // Note: docs say YUV cannot be VQ-compressed on the DC PVR, but hardware
-      // reportedly supports it anyway (see original comment).  We do NOT handle
-      // the VQ+YUV combination here — it falls through unchanged.
-
-      // Every other format branch in this switch applies these two address/
-      // width fixups (see e.g. the 4bpp/8bpp cases below and twidle_tex()).
-      // This YUV branch was the one exception with neither: a Mipmapped
-      // texture's TCW address points at the *1x1* mip level (DC packs mips
-      // small->large), and reading forward from there without skipping to
-      // the full-size level means the "source" is actually a sequence of
-      // progressively larger copies of the same image packed back-to-back —
-      // which reinterpreted as one flat w x h image looks exactly like the
-      // same picture repeating several times. StrideSel similarly means the
-      // real VRAM row pitch is fixed at 512, not the declared po2 width.
       if (mod->tcw.NO_PAL.MipMapped)
       {
         tex_addr += OtherMipPoint[mod->tsp.TexU + 3] * 2; // YUV422: 2 bytes/pixel
@@ -2250,17 +2187,9 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       if (mod->tcw.NO_PAL.StrideSel)
         w = 512;
 
-      // The declared texture width 'w' (from TSP.TexU, power-of-two) is the
-      // padded GX texture size — it does NOT have to match the real per-row
-      // pixel pitch the game actually wrote into VRAM. For YUV422 specifically,
-      // real DC hardware exposes the *real* video width via the YUV converter
-      // unit's TA_YUV_TEX_CTRL register: bits[5:0] = (real_width/16 - 1) in
-      // 16-pixel "macroblock" units, regardless of whether the converter
-      // itself was used to write this data (games commonly still program it
-      // to describe their video's native size). Confirmed empirically: a
-      // hardcoded source stride of 640 (instead of the declared 1024) fixes
-      // one game's FMV; computing it from this register generalizes that
-      // fix instead of hardcoding a constant that breaks other textures.
+      // The declared texture width (w) may not match the actual video width
+      // which is stored in the YUV converter's TA_YUV_TEX_CTRL register (bits[5:0] = (real_width/16 - 1)).
+      // Using this register fixes texture issues without hardcoding values.
       u32 yuv_real_w = ((TA_YUV_TEX_CTRL & 0x3F) + 1) * 16;
       if (yuv_real_w == 0 || yuv_real_w > w)
         yuv_real_w = w; // sane fallback: register unset/irrelevant for this texture
