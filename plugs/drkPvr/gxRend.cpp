@@ -148,6 +148,16 @@ extern "C" int get_offset_color_preset();
 extern "C" int get_trans_sort_preset();
 #define TRANS_SORT() (get_trans_sort_preset() == 1)
 
+// Render-to-texture: a RENDER_START whose write address (FB_W_SOF1) has bit 24
+// set targets the 64-bit texture area — the game will bind the result as a
+// texture (mirrors, TV screens, some menu effects). On: the scene is rendered
+// normally, then the EFB is copied out with GX_CopyTex and converted back into
+// emulated VRAM at FB_W_SOF1 (honoring FB_W_CTRL packmode / FB_W_LINESTRIDE)
+// instead of being shown. Off (default): legacy behavior, the frame is dropped
+// (or handled by the FRAMEBUFFER_2D() path when that preset is on).
+extern "C" int get_render_to_texture_preset();
+#define RENDER_TO_TEXTURE() (get_render_to_texture_preset() == 1)
+
 
 int frame_counter;
 
@@ -3153,6 +3163,117 @@ static int trans_strip_cmp(const void *a, const void *b)
   return 0;
 }
 
+// Fixed GX scratch texture, always 640x480 RGB565 (4x4 tiled), 32-byte aligned
+// as EFB-copy destinations must be. Shared (file scope) between
+// PresentFramebuffer() below — which decodes the DC framebuffer into it — and
+// the RENDER_TO_TEXTURE() write-back — which uses it as the GX_CopyTex
+// destination. Both users finish with the buffer within their own call and
+// both run on the SH4 thread, so sharing is safe and saves 600 KB of BSS.
+#define FB2D_W 640
+#define FB2D_H 480
+static u16 fb2d_tex[FB2D_W * FB2D_H] ATTRIBUTE_ALIGN(32);
+
+// ── RENDER_TO_TEXTURE() state ────────────────────────────────────────────────
+// Set by StartRender() around the DoRender() call for an RTT frame; DoRender()
+// swaps its canvas/viewport to the RTT target size and hands its tail to
+// rtt_copy_efb_to_vram() instead of copying to the display.
+static bool s_rtt_pass = false;
+static u32  s_rtt_w = 0;   // RTT target size, from FB_X_CLIP / FB_Y_CLIP
+static u32  s_rtt_h = 0;
+
+// Copy the finished EFB scene back into emulated VRAM at FB_W_SOF1, the way
+// the real PVR writes an RTT frame, then leave the EFB cleared for the next
+// frame (the display path gets that clear from GX_CopyDisp's clear flag).
+//
+// Addressing: bit 24 of FB_W_SOF1 marks the 64-bit texture area, which is
+// exactly the linear params.vram[] layout the texture decoders read — so the
+// pixels are written linearly (no 32->64 offset conversion), and the first
+// u32 written at the target address stomps the tex-cache 0xDEADBEEF sentinel,
+// which is precisely the "re-decode this texture" signal.
+//
+// Pixel layout: Plannar() reads each native u32 word as low16 = left pixel,
+// high16 = right pixel, so pairs are written as (p1 << 16) | p0.
+static void rtt_copy_efb_to_vram()
+{
+  // Pad the copy rect to the 4x4 tile grid of GX_TF_RGB565 so the tile pitch
+  // used below is exact (EFB copies also require even sizes).
+  u32 copy_w = (s_rtt_w + 3) & ~3u;
+  u32 copy_h = (s_rtt_h + 3) & ~3u;
+
+  // Grab the RTT pixels without clearing yet — the EFB is cleared as a whole
+  // below so color AND depth start fresh everywhere, not just in this rect.
+  GX_SetTexCopySrc(0, 0, (u16)copy_w, (u16)copy_h);
+  GX_SetTexCopyDst((u16)copy_w, (u16)copy_h, GX_TF_RGB565, GX_FALSE);
+  GX_CopyTex(fb2d_tex, GX_FALSE);
+  GX_DrawDone(); // wait for the copy to land in main memory
+  DCInvalidateRange(fb2d_tex, copy_w * copy_h * 2);
+
+  u32 packmode = FB_W_CTRL & 7;
+  if (packmode <= 3)
+  {
+    // fb_kval bit 7 (FB_W_CTRL bit 15) becomes pixel bit 15 for 0555/1555.
+    u16 kbit    = (u16)(FB_W_CTRL & 0x8000);
+    u32 stride  = (FB_W_LINESTRIDE & 0x1FF) * 8; // register unit = 8 bytes/line
+    if (stride == 0)
+      stride = s_rtt_w * 2;
+    u32 base = FB_W_SOF1 & VRAM_MASK & ~3u;
+    u32 tiles_per_row = copy_w >> 2;
+
+    for (u32 y = 0; y < s_rtt_h; y++)
+    {
+      const u16 *trow = &fb2d_tex[((y >> 2) * tiles_per_row) * 16 + (y & 3) * 4];
+      u32 line = base + y * stride;
+      for (u32 x = 0; x < s_rtt_w; x += 2)
+      {
+        // x is even, so x and x+1 share a 4x4 tile row (x&3 is 0 or 2).
+        const u16 *tile = &trow[(x >> 2) * 16];
+        u16 t0 = tile[(x & 3) + 0];
+        u16 t1 = tile[(x & 3) + 1];
+        u16 p0, p1;
+        switch (packmode)
+        {
+        case 1: // RGB565: EFB copy format, pass through
+          p0 = t0;
+          p1 = t1;
+          break;
+        case 2: // ARGB4444 (alpha forced opaque: RGB565 copies carry no alpha)
+          p0 = (u16)(0xF000 | ((t0 >> 4) & 0x0F00) | ((t0 >> 3) & 0x00F0) | ((t0 >> 1) & 0x000F));
+          p1 = (u16)(0xF000 | ((t1 >> 4) & 0x0F00) | ((t1 >> 3) & 0x00F0) | ((t1 >> 1) & 0x000F));
+          break;
+        default: // 0 = KRGB0555, 3 = ARGB1555: drop G LSB, K/A from fb_kval
+          p0 = (u16)(kbit | ((t0 >> 1) & 0x7FE0) | (t0 & 0x001F));
+          p1 = (u16)(kbit | ((t1 >> 1) & 0x7FE0) | (t1 & 0x001F));
+          break;
+        }
+        *(u32 *)&params.vram[(line + x * 2) & VRAM_MASK] = ((u32)p1 << 16) | p0;
+      }
+    }
+  }
+  else if (DEBUG_MESSAGE())
+  {
+    // 24/32-bit packmodes (4/5/6) are not written back: no DC texture format
+    // reads them, so a game doing this is using the buffer some other way.
+    printf("[RTT] unsupported FB_W_CTRL packmode %d, write-back skipped\n", (int)packmode);
+  }
+
+  // Clear the whole EFB (color + Z) for the next frame, chunked so each
+  // discard-copy destination fits the scratch buffer. With fbWidth=640 the
+  // chunk is 480 lines, i.e. a single copy on every common video mode.
+  u32 chunk = ((u32)(FB2D_W * FB2D_H) / rmode->fbWidth) & ~3u;
+  for (u32 y = 0; y < rmode->efbHeight; y += chunk)
+  {
+    u32 ch = rmode->efbHeight - y;
+    if (ch > chunk)
+      ch = chunk;
+    GX_SetTexCopySrc(0, (u16)y, rmode->fbWidth, (u16)ch);
+    GX_SetTexCopyDst(rmode->fbWidth, (u16)ch, GX_TF_RGB565, GX_FALSE);
+    GX_CopyTex(fb2d_tex, GX_TRUE); // data discarded, only the clear matters
+  }
+  // Wait for the discard-copies: fb2d_tex must not be pending as a GP copy
+  // destination when PresentFramebuffer() next fills it from the CPU side.
+  GX_DrawDone();
+}
+
 // ============================
 // The main rendering loop. Executes GX commands to draw the stored vertex lists.
 // ============================
@@ -3172,13 +3293,26 @@ void DoRender()
   // smaller space still fills the whole output instead of a quarter/half of it.
   float dc_width = 640.f * g_fb_scale_x;
   float dc_height = 480.f * g_fb_scale_y;
+  if (s_rtt_pass)
+  {
+    // Render-to-texture: geometry was submitted in the RTT target's own
+    // coordinate space, so the canvas is the target size (no fb scale).
+    dc_width  = (float)s_rtt_w;
+    dc_height = (float)s_rtt_h;
+  }
 
   VIDEO_SetBlack(FALSE);
   // Set viewport to a centred 4:3 sub-region of the 16:9 framebuffer.
   // NDC [-1..+1] maps to this viewport, so all DC geometry (which is
   // already in 4:3 screen-space) displays with correct proportions.
   // In fullscreen mode use the whole width (stretched 16:9).
-  if (FULLSCREEN())
+  if (s_rtt_pass)
+  {
+    // 1:1 pixels into the EFB top-left corner; rtt_copy_efb_to_vram() reads
+    // exactly this rect back out.
+    GX_SetViewport(0, 0, (float)s_rtt_w, (float)s_rtt_h, 0, 1);
+  }
+  else if (FULLSCREEN())
   {
     GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
   }
@@ -3875,6 +4009,17 @@ void DoRender()
   reset_vtx_state();
 
   GX_DrawDone();
+
+  if (s_rtt_pass)
+  {
+    // Render-to-texture frame: nothing reaches the display. Copy the EFB back
+    // into emulated VRAM at FB_W_SOF1 (and leave the EFB cleared) instead.
+    // No present, no fb_stamp_present_magic(): FB_W_SOF1 is a texture here,
+    // not the scanout framebuffer.
+    rtt_copy_efb_to_vram();
+    return;
+  }
+
   GX_CopyDisp(frameBuffer[fb], GX_TRUE);
   VIDEO_SetNextFramebuffer(frameBuffer[fb]);
   VIDEO_Flush();
@@ -3898,16 +4043,13 @@ void DoRender()
 // image and draws it as a fullscreen textured quad, then copies to the Wii
 // framebuffer and presents.  Shared by the StartRender 2D-blit path and the
 // vblank-driven present in VBlank().
-// Fixed GX scratch texture, always 640x480 RGB565 (4x4 tiled). The DC source
-// framebuffer may be smaller/narrower; we decode the real region into the top
-// area of this texture and present only that sub-rect via UVs.
-#define FB2D_W 640
-#define FB2D_H 480
+// The DC source framebuffer may be smaller/narrower than the fb2d_tex scratch
+// texture (declared at file scope above DoRender, shared with the
+// RENDER_TO_TEXTURE() write-back); we decode the real region into the top
+// area of it and present only that sub-rect via UVs.
 
 void PresentFramebuffer()
 {
-  static u16 fb2d_tex[FB2D_W * FB2D_H] ATTRIBUTE_ALIGN(32);
-
   // ── Derive the source framebuffer geometry from FB_R_SIZE / FB_R_CTRL ──────
   // (devcast RenderFramebuffer).  FB_R_SIZE is a raw u32 here:
   //   bits  0-9  fb_x_size, 10-19 fb_y_size, 20-29 fb_modulus.
@@ -4098,6 +4240,34 @@ void StartRender()
 
   if (FB_W_SOF1 & 0x1000000)
   {
+    // Render-to-texture: bit 24 in the write address targets the 64-bit
+    // texture area (mirrors, TV screens, some menu effects). With the preset
+    // on and real geometry submitted, render the frame and copy it back into
+    // VRAM at FB_W_SOF1 instead of dropping it / treating it as a 2D present.
+    if (RENDER_TO_TEXTURE() && VtxCnt > 0)
+    {
+      // Target size from the pixel clip registers (extracted manually — see
+      // the ISP_BACKGND_T note in DoRender() about bitfields on the Wii).
+      u32 xclip = FB_X_CLIP.full;
+      u32 yclip = FB_Y_CLIP.full;
+      u32 rtt_w = ((xclip >> 16) & 0x7FF) + 1 - (xclip & 0x7FF); // clip max is inclusive
+      u32 rtt_h = ((yclip >> 16) & 0x3FF) + 1 - (yclip & 0x3FF);
+      if ((s32)rtt_w < 8 || rtt_w > (u32)rmode->fbWidth || rtt_w > FB2D_W)
+        rtt_w = 8;
+      if ((s32)rtt_h < 8 || rtt_h > (u32)rmode->efbHeight || rtt_h > FB2D_H)
+        rtt_h = 8;
+
+      if(DEBUG_MESSAGE()) printf("[PATH] RTT: FB_W_SOF1=%08X %ux%u packmode=%d stride=%d VtxCnt=%d\n",
+        FB_W_SOF1, rtt_w, rtt_h, (int)(FB_W_CTRL & 7), (int)((FB_W_LINESTRIDE & 0x1FF) * 8), VtxCnt);
+
+      s_rtt_w = rtt_w;
+      s_rtt_h = rtt_h;
+      s_rtt_pass = true;
+      DoRender();
+      s_rtt_pass = false;
+      return; // not a presented frame: no FrameCount++, display untouched
+    }
+
     if(FRAMEBUFFER_2D()){
       if (s_did_3d_render)
       {
