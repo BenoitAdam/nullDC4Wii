@@ -132,6 +132,14 @@ extern "C" int get_blend_fps_boost_preset();
 extern "C" int get_punch_through_preset();
 #define PUNCH_THROUGH_FIX() (get_punch_through_preset() == 1)
 
+// Offset (specular) color: real PVR shades textured polys as
+// PIX = BaseCol * TEX + OffsetCol. On: the per-vertex offset color is kept at
+// decode time (Vertex::spc), sent as GX_VA_CLR1 and added in a second TEV
+// stage (raster color GX_COLOR1A1) — restores specular highlights on cars/
+// water. Off: offset color is dropped as before (one TEV stage, 24B vertices).
+extern "C" int get_offset_color_preset();
+#define OFFSET_COLOR_FIX() (get_offset_color_preset() == 1)
+
 
 int frame_counter;
 
@@ -250,7 +258,11 @@ void ApplyGraphismPreset() {
 struct Vertex
 {
   float u, v;        // Texture coordinates
-  unsigned int col;  // Vertex color
+  unsigned int col;  // Vertex color (base)
+  unsigned int spc;  // Offset (specular) color, same ABGR layout as col.
+                     // Always written by the decode handlers (0 when the poly
+                     // has no offset color or OFFSET_COLOR_FIX() is off), only
+                     // submitted to GX when OFFSET_COLOR_FIX() is on.
   float x, y, z;     // 3D coordinates
 };
 
@@ -578,10 +590,26 @@ float vtx_max_Z;
 // already near the Wii's memory budget (see "Wii memory limit" above).
 float curFaceColorR = 1.0f, curFaceColorG = 1.0f, curFaceColorB = 1.0f, curFaceColorA = 1.0f;
 
+// Scratch face OFFSET color (specular), same lifetime rules as curFaceColor*:
+// set by AppendPolyParam2B (the only intensity header type carrying one) and
+// consumed by OFFS_INTESITY() while decoding that polygon's vertices.
+float curFaceOffsR = 0.0f, curFaceOffsG = 0.0f, curFaceOffsB = 0.0f;
+
+// 0xFFFFFFFF while the polygon being decoded has PCW.Offset set AND
+// OFFSET_COLOR_FIX() is on, else 0. Lets the vertex handlers keep/drop the
+// offset color with a mask (the TA vertex structs always reserve the field,
+// but its content is garbage when PCW.Offset is 0).
+u32 curPolyOffsMask = 0;
+
+// Per-polygon offset color for sprites (they carry it in the header, not per
+// vertex). Already ABGR-converted and masked by curPolyOffsMask.
+u32 curSpriteSpc = 0;
+
 // Cached once per frame in reset_vtx_state() instead of calling
 // VERTEX_COLOR_FIX() (an uncached extern getter) on every Intensity vertex —
 // the preset can't change mid-frame anyway.
 bool g_vertex_color_fix_cached = false;
+bool g_offset_color_fix_cached = false; // same idea, for OFFSET_COLOR_FIX()
 
 char fps_text[512];
 
@@ -680,11 +708,12 @@ void decode_pvr_vertex(u32 base, u32 ptr, Vertex *cv)
   // Handle Vertex Color
   u32 col = vri(ptr);  ptr += 4;
   cv->col = col; // ABGR8888(col);
+  cv->spc = 0;
   if (isp.Offset)
   {
-    // Skip offset color for now (used for specular-like highlights)
-    (void)vri(ptr);  ptr += 4;
-     //	vert_packed_color_(cv->spc,col);
+    // Offset (specular) color. Stored raw like cv->col — the only caller
+    // (background poly) only consumes cv->col anyway.
+    cv->spc = vri(ptr);  ptr += 4;
   }
 }
 
@@ -707,6 +736,7 @@ void reset_vtx_state()
   vtx_max_Z = 0;
   tex_frame_reset(); // reset per-frame texture bump arena
   g_vertex_color_fix_cached = VERTEX_COLOR_FIX();
+  g_offset_color_fix_cached = OFFSET_COLOR_FIX();
 }
 
 #define VTX_TFX(x) (x)
@@ -3139,7 +3169,12 @@ void DoRender()
 																	 
   
 
-  GX_SetNumChans(1);
+  // Offset (specular) color support. Read once per frame like the other
+  // presets; the setting cannot change while a game is running, so the VCD
+  // stays identical from frame to frame (see the FIFO warnings above).
+  const bool offset_fix = OFFSET_COLOR_FIX();
+
+  GX_SetNumChans(offset_fix ? 2 : 1);
   GX_SetNumTexGens(1);
 
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
@@ -3148,6 +3183,28 @@ void DoRender()
   GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
   GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
   GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
+
+  if (offset_fix)
+  {
+    // 28 bytes/vertex: POS+CLR0+CLR1+TEX0. Every vertex this frame submits
+    // CLR1 (spc, 0 when unused) so the VCD never changes mid-stream.
+    GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR1, GX_CLR_RGBA, GX_RGBA8, 0);
+    GX_SetVtxDesc(GX_VA_CLR1, GX_DIRECT);
+    // Channel 1: plain vertex color, no lighting.
+    GX_SetChanCtrl(GX_COLOR1A1, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, 0, GX_DF_NONE, GX_AF_NONE);
+    // TEV stage 1 implements the PVR offset term: PIX = stage0 + OffsetCol.
+    //   color = CPREV + RASC(COLOR1A1)   (a=RASC, b=0, c=0, d=CPREV)
+    //   alpha = APREV                    (offset alpha is unused on real PVR)
+    // Configured once here; the per-polygon loop below only toggles the
+    // stage count between 1 and 2, so polys without offset color keep the
+    // exact single-stage output (and fill rate) they had before.
+    GX_SetTevOrder(GX_TEVSTAGE1, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR1A1);
+    GX_SetTevColorIn(GX_TEVSTAGE1, GX_CC_RASC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+    GX_SetTevColorOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+    GX_SetTevAlphaIn(GX_TEVSTAGE1, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_APREV);
+    GX_SetTevAlphaOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+  }
+  GX_SetNumTevStages(1);
 
   GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
 
@@ -3353,6 +3410,7 @@ void DoRender()
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
 
   int last_textured = -1;  // track texture state to skip redundant GX calls
+  int last_tev_stages = 1; // offset_fix only: 2 while drawing offset-color polys
   int last_alpha_fmt = -1; // -1 = unset
   int last_shad_instr = -1; // -1 = unset; tracks the GX op currently set on TEVSTAGE0 for textured polys
   const bool decal_alpha_fix = DECAL_ALPHA_FIX(); // read once per frame, not per polygon
@@ -3502,6 +3560,20 @@ void DoRender()
           }
           last_textured = is_textured;
         }
+
+        // Enable TEV stage 1 (offset color add, configured once above) only
+        // for textured polys that actually carry an offset color, so
+        // everything else keeps single-stage fill rate.
+        if (offset_fix)
+        {
+          int tev_stages = (is_textured && drawMod->pcw.Offset) ? 2 : 1;
+          if (tev_stages != last_tev_stages)
+          {
+            GX_SetNumTevStages(tev_stages);
+            last_tev_stages = tev_stages;
+          }
+        }
+
         if (is_textured)
         {
           SetTextureParams(drawMod, decal_alpha_fix);
@@ -3615,6 +3687,23 @@ void DoRender()
       if (count)
       {
         GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, count);
+        if (offset_fix)
+        {
+          // VCD carries CLR1 this frame: every vertex must submit it, in
+          // attribute order POS, CLR0, CLR1, TEX0.
+          while (count--)
+          {
+            GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
+            u32 vcol = drawVTX->col;
+            if (force_vtx_alpha_opaque)
+              vcol |= 0xFF000000u;
+            GX_Color1u32(HOST_TO_LE32(vcol));
+            GX_Color1u32(HOST_TO_LE32(drawVTX->spc));
+            GX_TexCoord2f32(drawVTX->u, drawVTX->v);
+            drawVTX++;
+          }
+        }
+        else
         while (count--)
         {
           GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
@@ -3763,6 +3852,9 @@ void PresentFramebuffer()
   GX_SetVtxDesc(GX_VA_POS,  GX_DIRECT);
   GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
   GX_SetNumChans(0);
+  // The 3D path may have left TEV stage 1 active (OFFSET_COLOR_FIX with an
+  // offset poly drawn last); with 0 channels its raster input would be junk.
+  GX_SetNumTevStages(1);
   GX_SetNumTexGens(1);
   GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLORNULL);
@@ -3981,6 +4073,22 @@ struct VertexDecoder
     return ((u32)A << 24) | ((u32)B << 16) | ((u32)G << 8) | (u32)R;
   }
 
+  // Offset-color flavor of INTESITY(): the vertex's offset intensity scalar
+  // scales the polygon's FaceOffset color (curFaceOffs*, set by
+  // AppendPolyParam2B). Alpha is left 0 — the offset TEV stage only adds RGB
+  // and passes the previous stage's alpha through. Callers only invoke this
+  // when curPolyOffsMask is set, so OFFSET_COLOR_FIX() is already known on.
+  static u32 OFFS_INTESITY(float inte)
+  {
+    s32 R = (s32)(curFaceOffsR * inte * 255.0f);
+    s32 G = (s32)(curFaceOffsG * inte * 255.0f);
+    s32 B = (s32)(curFaceOffsB * inte * 255.0f);
+    colclamp(0, 255, R);
+    colclamp(0, 255, G);
+    colclamp(0, 255, B);
+    return ((u32)B << 16) | ((u32)G << 8) | (u32)R;
+  }
+
   // Polys
 #define glob_param_bdc                 \
   if ((curVTX - vertices) > 38 * 1024) \
@@ -3989,7 +4097,8 @@ struct VertexDecoder
   curMod->pcw = pp->pcw;               \
   curMod->isp = pp->isp;               \
   curMod->tsp = pp->tsp;               \
-  curMod->tcw = pp->tcw;
+  curMod->tcw = pp->tcw;               \
+  curPolyOffsMask = (g_offset_color_fix_cached && pp->pcw.Offset) ? 0xFFFFFFFFu : 0u;
 
   __forceinline static void fastcall AppendPolyParam0(TA_PolyParam0 *pp)
   {
@@ -4002,6 +4111,9 @@ struct VertexDecoder
     curFaceColorG = pp->FaceColorG;
     curFaceColorB = pp->FaceColorB;
     curFaceColorA = pp->FaceColorA;
+    // Type 1 carries no face offset color — clear the scratch so a stale
+    // value from an earlier Type 2 polygon can't leak into OFFS_INTESITY().
+    curFaceOffsR = curFaceOffsG = curFaceOffsB = 0.0f;
   }
   __forceinline static void fastcall AppendPolyParam2A(TA_PolyParam2A *pp)
   {
@@ -4009,12 +4121,15 @@ struct VertexDecoder
   }
   __forceinline static void fastcall AppendPolyParam2B(TA_PolyParam2B *pp)
   {
-    // FaceOffset (specular-like highlight) is intentionally not applied yet,
-    // consistent with decode_pvr_vertex()'s existing "skip offset color".
     curFaceColorR = pp->FaceColorR;
     curFaceColorG = pp->FaceColorG;
     curFaceColorB = pp->FaceColorB;
     curFaceColorA = pp->FaceColorA;
+    // Face offset (specular) color, consumed by OFFS_INTESITY() when
+    // OFFSET_COLOR_FIX() is on. Offset alpha is not used by the hardware.
+    curFaceOffsR = pp->FaceOffsetR;
+    curFaceOffsG = pp->FaceOffsetG;
+    curFaceOffsB = pp->FaceOffsetB;
   }
   __forceinline static void fastcall AppendPolyParam3(TA_PolyParam3 *pp)
   {
@@ -4033,6 +4148,8 @@ struct VertexDecoder
     curFaceColorG = pp->FaceColor0G;
     curFaceColorB = pp->FaceColor0B;
     curFaceColorA = pp->FaceColor0A;
+    // Type 4 carries no face offset color (see Type 1 note above).
+    curFaceOffsR = curFaceOffsG = curFaceOffsB = 0.0f;
   }
 
   // Poly Strip handling
@@ -4090,6 +4207,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = ABGR8888(vtx->BaseCol);
+    curVTX->spc = 0; // non-textured: no offset color on PVR
 
     curVTX++;
   }
@@ -4099,6 +4217,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = FLCOL(&vtx->BaseA);
+    curVTX->spc = 0;
 
     curVTX++;
   }
@@ -4108,6 +4227,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = INTESITY(vtx->BaseInt);
+    curVTX->spc = 0;
 
     curVTX++;
   }
@@ -4117,6 +4237,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = ABGR8888(vtx->BaseCol);
+    curVTX->spc = ABGR8888(vtx->OffsCol) & curPolyOffsMask;
 
     curVTX->u = vtx->u;
     curVTX->v = vtx->v;
@@ -4129,6 +4250,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = ABGR8888(vtx->BaseCol);
+    curVTX->spc = ABGR8888(vtx->OffsCol) & curPolyOffsMask;
 
     curVTX->u = CVT16UV(vtx->u);
     curVTX->v = CVT16UV(vtx->v);
@@ -4147,6 +4269,7 @@ struct VertexDecoder
   __forceinline static void AppendPolyVertex5B(TA_Vertex5B *vtx)
   {
     curVTX->col = FLCOL(&vtx->BaseA);
+    curVTX->spc = curPolyOffsMask ? FLCOL(&vtx->OffsA) : 0;
     curVTX++;
   }
 
@@ -4161,6 +4284,7 @@ struct VertexDecoder
   __forceinline static void AppendPolyVertex6B(TA_Vertex6B *vtx)
   {
     curVTX->col = FLCOL(&vtx->BaseA);
+    curVTX->spc = curPolyOffsMask ? FLCOL(&vtx->OffsA) : 0;
     curVTX++;
   }
 
@@ -4172,6 +4296,7 @@ struct VertexDecoder
     curVTX->v = vtx->v;
 
     curVTX->col = INTESITY(vtx->BaseInt);
+    curVTX->spc = curPolyOffsMask ? OFFS_INTESITY(vtx->OffsInt) : 0;
 
     curVTX++;
   }
@@ -4181,6 +4306,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = INTESITY(vtx->BaseInt);
+    curVTX->spc = curPolyOffsMask ? OFFS_INTESITY(vtx->OffsInt) : 0;
 
     curVTX->u = CVT16UV(vtx->u);
     curVTX->v = CVT16UV(vtx->v);
@@ -4193,6 +4319,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = ABGR8888(vtx->BaseCol0);
+    curVTX->spc = 0;
 
     curVTX++;
   }
@@ -4202,6 +4329,7 @@ struct VertexDecoder
   {
     vert_cvt_base;
     curVTX->col = INTESITY(vtx->BaseInt0);
+    curVTX->spc = 0;
 
     curVTX++;
   }
@@ -4215,6 +4343,7 @@ struct VertexDecoder
     curVTX->v = vtx->v0;
 
     curVTX->col = ABGR8888(vtx->BaseCol0);
+    curVTX->spc = ABGR8888(vtx->OffsCol0) & curPolyOffsMask;
   }
   __forceinline static void AppendPolyVertex11B(TA_Vertex11B *vtx)
   {
@@ -4230,6 +4359,7 @@ struct VertexDecoder
     curVTX->v = CVT16UV(vtx->v0);
 
     curVTX->col = ABGR8888(vtx->BaseCol0);
+    curVTX->spc = ABGR8888(vtx->OffsCol0) & curPolyOffsMask;
   }
   __forceinline static void AppendPolyVertex12B(TA_Vertex12B *vtx)
   {
@@ -4243,6 +4373,7 @@ struct VertexDecoder
     curVTX->u = vtx->u0;
     curVTX->v = vtx->v0;
     curVTX->col = INTESITY(vtx->BaseInt0);
+    curVTX->spc = curPolyOffsMask ? OFFS_INTESITY(vtx->OffsInt0) : 0;
   }
   __forceinline static void AppendPolyVertex13B(TA_Vertex13B *vtx)
   {
@@ -4256,6 +4387,7 @@ struct VertexDecoder
     curVTX->u = CVT16UV(vtx->u0);
     curVTX->v = CVT16UV(vtx->v0);
     curVTX->col = INTESITY(vtx->BaseInt0);
+    curVTX->spc = curPolyOffsMask ? OFFS_INTESITY(vtx->OffsInt0) : 0;
   }
   __forceinline static void AppendPolyVertex14B(TA_Vertex14B *vtx)
   {
@@ -4267,6 +4399,9 @@ struct VertexDecoder
   {
     TA_SpriteParam *pp = spr;
     glob_param_bdc;
+    // Sprites carry one packed offset color in the header, shared by all 4
+    // vertices (masked to 0 when PCW.Offset is off or the fix is disabled).
+    curSpriteSpc = ABGR8888(pp->OffsCol) & curPolyOffsMask;
   }
 
 // Sprite Vertex Handlers
@@ -4295,6 +4430,10 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
     curVTX[1].col = 0xFFFFFFFF;
     curVTX[2].col = 0xFFFFFFFF;
     curVTX[3].col = 0xFFFFFFFF;
+    curVTX[0].spc = curSpriteSpc;
+    curVTX[1].spc = curSpriteSpc;
+    curVTX[2].spc = curSpriteSpc;
+    curVTX[3].spc = curSpriteSpc;
 
     {
       vert_base(2, sv->x0, sv->y0, sv->z0);

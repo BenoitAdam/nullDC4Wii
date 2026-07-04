@@ -139,6 +139,12 @@ extern "C" {
   int get_punch_through_preset() { return g_punch_through_preset; }
 }
 
+int g_offset_color_preset = 0; // 0=off (offset/specular color dropped, legacy), 1=on (PIX = base*tex + offset via 2nd TEV stage)
+
+extern "C" {
+  int get_offset_color_preset() { return g_offset_color_preset; }
+}
+
 int g_rgb565_vq_alpha = 0; // 0=black opaque 1=black transparent
 
 extern "C" {
@@ -527,7 +533,8 @@ void displayAccuracyMenu()
 #define OPT_BLEND_FPS_BOOST 23
 #define OPT_RGB565_OPAQUE_ALPHA 24
 #define OPT_PUNCH_THROUGH 25
-#define OPT_ROW_COUNT   26
+#define OPT_OFFSET_COLOR 26
+#define OPT_ROW_COUNT   27
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -767,6 +774,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
     printf(" (PT list alpha test)");
+    printf("\n");
+
+    // --- Row 27: Offset (specular) color ---
+    printf("%s OFFSET COLOR    : ", (selectedRow == OPT_OFFSET_COLOR) ? ">" : " ");
+    switch (g_offset_color_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" (specular highlights)");
 
 
     WPAD_ScanPads();
@@ -809,6 +825,7 @@ bool displayOptionsMenu()
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
         case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
         case OPT_PUNCH_THROUGH: g_punch_through_preset = (g_punch_through_preset + 1) % 2; break;
+        case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
         default: break;
       }
     }
@@ -837,6 +854,7 @@ bool displayOptionsMenu()
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
         case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
         case OPT_PUNCH_THROUGH: g_punch_through_preset = (g_punch_through_preset + 1) % 2; break;
+        case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
         default: break;
       }
     }
@@ -1259,6 +1277,7 @@ int main(int argc, wchar *argv[])
     printf("RGB565 Opq Alpha: %s\n", g_rgb565_opaque_alpha_preset ? "ON (FMT0+FMT1)" : "OFF (FMT0 ONLY)");
     printf("Blend FPS Boost: %s\n", g_blend_fps_boost_preset ? "ON (FASTER)" : "OFF (CORRECT)");
     printf("Punch Through  : %s\n", g_punch_through_preset ? "ON (CORRECT)" : "OFF (FASTER?)");
+    printf("Offset Color   : %s\n", g_offset_color_preset ? "ON (SPECULAR)" : "OFF (LEGACY)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)

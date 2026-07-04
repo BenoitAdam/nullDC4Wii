@@ -201,6 +201,15 @@ However, this settings is invalid for Non Textured polygons.
 |  2      | Decal Alpha | The texture color value is blended with the Shading Color value according to the texture a value. PIX(RGB) = (TEX(RGB)* TEX(A)) + COL(RGB) * (1- TEX(A) ) + OFFSET(RGB) | PIX(A) = COL(A) |
 |  3      | Modulate Alpha | The texture color value is multiplied by the Shading Color value. The texture a value is multiplied by the Shading a value. PIX(RGB) = COL(RGB) * TEX (RGB) + OFFSET(RGB) | PIX(A) = COL(A) * TEX(A) |
 
+ClaudeAI (2026-07): OFFSET(RGB) is now implemented behind the OFFSET_COLOR preset
+(gxRend.cpp OFFSET_COLOR_FIX(), menu "OFFSET COLOR", game_presets.cfg key
+offset_color). Vertex::spc keeps the per-vertex offset color, sent as GX_VA_CLR1
+and added by TEV stage 1 (raster GX_COLOR1A1) on textured polys with PCW.Offset.
+Note the OFFSET add applies in ALL ShadInstr modes per the table above, so the
+extra stage sits cleanly on top of both GX_MODULATE and GX_DECAL. Default OFF
+until tested on real hardware (costs 4 bytes/vertex FIFO + a 2nd TEV stage on
+offset polys; vertices[] grew 24->28 bytes = +168KB BSS).
+
 
 
 
