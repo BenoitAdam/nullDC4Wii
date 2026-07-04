@@ -3469,6 +3469,15 @@ void DoRender()
         // TODO: per-polygon ISP state (isp.ZWriteDis, isp.CullMode, isp.DepthMode)
         // is not yet emulated. Translucent polys may incorrectly stamp the Z-buffer.
         // See below
+        //
+        // ClaudeAI: attempted on branch feature/per-poly-isp-state — added
+        // per-poly isp.DepthMode (GX depth func) and isp.CullMode (GX cull
+        // mode) behind ISP_DEPTH()/ISP_CULL() presets, merged into the same
+        // GX_SetZMode() call as the existing ZWriteDis handling. Measured a
+        // FPS regression and visual glitches in testing, so it was not
+        // merged to main. Kept on the branch for future investigation
+        // (suspects: per-poly GX state churn, and/or the DC CullMode->GX
+        // FRONT/BACK winding pairing being backwards for this projection).
 
       }
 
