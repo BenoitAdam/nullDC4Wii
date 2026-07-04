@@ -157,12 +157,6 @@ extern "C" {
   int get_render_to_texture_preset() { return g_render_to_texture_preset; }
 }
 
-int g_rgb565_vq_alpha = 0; // 0=black opaque 1=black transparent
-
-extern "C" {
-  int get_rgb565_vq_alpha() { return g_rgb565_vq_alpha; }
-}
-
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -535,20 +529,19 @@ void displayAccuracyMenu()
 #define OPT_4BPP        13
 #define OPT_8BPP        14
 #define OPT_JOJO_FIX    15
-#define OPT_RGB565_VQ_ALPHA 16
-#define OPT_SPEED_LIMIT 17
-#define OPT_VERTEX_COLOR_FIX 18
-#define OPT_PLAYERS     19
-#define OPT_CTRL_TYPE   20
-#define OPT_ADV_ALPHA   21
-#define OPT_BLEND_MODE  22
-#define OPT_BLEND_FPS_BOOST 23
-#define OPT_RGB565_OPAQUE_ALPHA 24
-#define OPT_PUNCH_THROUGH 25
-#define OPT_OFFSET_COLOR 26
-#define OPT_TRANS_SORT  27
-#define OPT_RENDER_TO_TEXTURE 28
-#define OPT_ROW_COUNT   29
+#define OPT_SPEED_LIMIT 16
+#define OPT_VERTEX_COLOR_FIX 17
+#define OPT_PLAYERS     18
+#define OPT_CTRL_TYPE   19
+#define OPT_ADV_ALPHA   20
+#define OPT_BLEND_MODE  21
+#define OPT_BLEND_FPS_BOOST 22
+#define OPT_RGB565_OPAQUE_ALPHA 23
+#define OPT_PUNCH_THROUGH 24
+#define OPT_OFFSET_COLOR 25
+#define OPT_TRANS_SORT  26
+#define OPT_RENDER_TO_TEXTURE 27
+#define OPT_ROW_COUNT   28
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -697,15 +690,7 @@ bool displayOptionsMenu()
     printf(" (for JoJo's Bizarre Adventure)");
     printf("\n");
 
-    // --- Row 16: RGB565 VQ Alpha ---
-    printf("%s RGB565 VQ ALPHA : ", (selectedRow == OPT_RGB565_VQ_ALPHA) ? ">" : " ");
-    switch (g_rgb565_vq_alpha) {
-      case 0: printf("[< BLACK OPAQUE      >]"); break;
-      case 1: printf("[< BLACK TRANSPARENT >]"); break;
-    }
-    printf("\n");
-
-    // --- Row 17: Speed Limiter ---
+    // --- Row 16: Speed Limiter ---
     printf("%s SPEED LIMITER   : ", (selectedRow == OPT_SPEED_LIMIT) ? ">" : " ");
     switch (g_speed_limiter_preset) {
       case 0: printf("[< OFF (UNCAPPED)    >]"); break;
@@ -848,7 +833,6 @@ bool displayOptionsMenu()
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 4) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 4) % 5; break;
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
-        case OPT_RGB565_VQ_ALPHA: g_rgb565_vq_alpha = (g_rgb565_vq_alpha       + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
@@ -879,7 +863,6 @@ bool displayOptionsMenu()
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 1) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 1) % 5; break;
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
-        case OPT_RGB565_VQ_ALPHA: g_rgb565_vq_alpha = (g_rgb565_vq_alpha       + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
         case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
@@ -1306,7 +1289,6 @@ int main(int argc, wchar *argv[])
       case 4: printf("RGB565\n");         break;
     }
     printf("Jojo Fix       : %s\n", g_jojo_fix_preset ? "YES" : "NO");
-    printf("RGB565 VQ Alpha: %s\n", g_rgb565_vq_alpha ? "BLACK TRANSPARENT" : "BLACK OPAQUE");
     printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
     printf("Vertex Color Fix: %s\n", g_vertex_color_fix_preset ? "ON" : "OFF");
     printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");

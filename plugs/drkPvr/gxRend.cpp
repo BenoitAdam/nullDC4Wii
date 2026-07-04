@@ -33,12 +33,6 @@ extern "C" int get_advanced_alpha_preset();
 
 bool use_adv_alpha = ADVANCED_ALPHA(); // compute once
 
-// RGB565 has no real alpha channel but in some games black appears transparent. (Hack)
-extern "C" int get_rgb565_vq_alpha();
-#define RGB565_VQ_COLORKEY() (get_rgb565_vq_alpha() == 1)
-
-static bool g_565_colorkey_black = false;
-
 // This is defined in main.cpp
 extern "C" int get_debug_message();
 #define DEBUG_MESSAGE() (get_debug_message() == 1)
@@ -1032,17 +1026,7 @@ pixelcvt_startVQ(conv565_VQ, 2, 2)
   return R | (G << 5) | (B << 11);
 }  // closes inner block
 }  // closes Convert
-  // RGB565 has no alpha channel. Pure black colour-keys as transparent only
-  // when g_565_colorkey_black is set (Power Stone preset — see its decl);
-  // every other game keeps black opaque so opaque/translucent scenery with
-  // black texels isn't punched full of holes under ADVANCED_ALPHA.
-  __forceinline static u16 ConvertPixel(u16 p) {
-    if (p == 0x0000) return g_565_colorkey_black ? 0x0000 : 0x8000;
-    u32 r = (p >> 11) & 0x1F;
-    u32 g = (p >> 5) & 0x3F;
-    u32 b = p & 0x1F;
-    return 0x8000 | (r << 10) | ((g >> 1) << 5) | b;
-  }
+  __forceinline static u16 ConvertPixel(u16 p) { return ABGR0565(p); }
 };  // closes struct
 
 pixelcvt_startVQ(conv1555_VQ, 2, 2)
@@ -2212,8 +2196,6 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
     case 1:
       // 565 Format  R value: 5 bits; G value: 6 bits; B value: 5 bits
-      // Game preset, not a per-polygon signal — see RGB565_VQ_COLORKEY() decl.
-      g_565_colorkey_black = mod->tcw.NO_PAL.VQ_Comp && RGB565_VQ_COLORKEY();
       if (mod->tcw.NO_PAL.ScanOrder)
       {
         // verify(tcw.NO_PAL.VQ_Comp==0);
@@ -2225,12 +2207,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         // verify(tsp.TexU==tsp.TexV);
         twidle_tex(565);
       }
-      // HACK: For VQ-compressed RGB565, use RGB5A3 to allow alpha (black→transparent)
-      if (mod->tcw.NO_PAL.VQ_Comp) {
-          FMT = GX_TF_RGB5A3;
-      } else {
-          FMT = GX_TF_RGB565;
-      }
+      FMT = GX_TF_RGB565;
       break;
 
     case 2:
