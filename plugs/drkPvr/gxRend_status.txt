@@ -210,6 +210,22 @@ extra stage sits cleanly on top of both GX_MODULATE and GX_DECAL. Default OFF
 until tested on real hardware (costs 4 bytes/vertex FIFO + a 2nd TEV stage on
 offset polys; vertices[] grew 24->28 bytes = +168KB BSS).
 
+ClaudeAI (2026-07): Translucent depth sorting is now implemented behind the
+TRANS_SORT preset (gxRend.cpp TRANS_SORT(), menu "TRANS SORT", game_presets.cfg
+key trans_sort). Real PVR autosorts translucent pixels per-pixel in hardware;
+Hollywood can't, so the TR list used to draw in TA submission order (wrong
+overlaps in alpha-heavy scenes). On: the TR strips are pre-walked into
+trans_sort_recs[] (one record per strip: farthest vertex W, vtx ptr, effective
+PolyParam) and qsort'ed back-to-front (painter's algorithm, ties keep
+submission order). Because sorted strips no longer arrive next to their
+count-sign-bit param marker, per-poly render state is re-applied whenever the
+strip's PolyParam pointer changes. Costs one extra pass over the TR vertices +
+a qsort per frame, and 128KB BSS for trans_sort_recs[]. Default OFF until
+tested on real hardware. Known limits: sorting is per-strip, not per-pixel —
+long strips spanning depth ranges and mutually intersecting translucent polys
+can still resolve wrong (real fix would need per-triangle split/OIT, too slow
+on Hollywood).
+
 
 
 

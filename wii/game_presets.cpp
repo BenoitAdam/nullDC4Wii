@@ -63,6 +63,13 @@
                                 highlights on cars/water), costing 4 bytes/vertex
                                 of FIFO and a second TEV stage on offset polys;
                                 0 (default, legacy) drops the offset color.
+        trans_sort=1        <- 0/1, translucent depth sort (see gxRend.cpp
+                                TRANS_SORT()). Real PVR autosorts translucent
+                                pixels in hardware; 1 sorts the TR strips
+                                back-to-front (painter's algorithm) before
+                                drawing, fixing wrong overlaps in alpha-heavy
+                                scenes, at some CPU cost per frame;
+                                0 (default, legacy) draws in submission order.
 
     First matching rule wins.
     Unset fields are left at whatever the user selected in the UI.
@@ -99,6 +106,7 @@ extern int g_rgb565_opaque_alpha_preset;
 extern int g_blend_fps_boost_preset;
 extern int g_punch_through_preset;
 extern int g_offset_color_preset;
+extern int g_trans_sort_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -139,6 +147,7 @@ struct GamePreset
     int blend_fps_boost;
     int punch_through;
     int offset_color;
+    int trans_sort;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -315,6 +324,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "blend_fps_boost")) p->blend_fps_boost = atoi(val);
     else if (key_eq(key, "punch_through"))  p->punch_through  = atoi(val);
     else if (key_eq(key, "offset_color"))   p->offset_color   = atoi(val);
+    else if (key_eq(key, "trans_sort"))     p->trans_sort     = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -383,6 +393,7 @@ void game_presets_load(const char* cfg_path)
             cur->blend_fps_boost = -1;
             cur->punch_through = -1;
             cur->offset_color = -1;
+            cur->trans_sort = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -473,6 +484,7 @@ void game_presets_apply(const char* filepath)
         if (p->blend_fps_boost >= 0) { g_blend_fps_boost_preset = p->blend_fps_boost; printf("  blend_fps_boost -> %d\n", p->blend_fps_boost); }
         if (p->punch_through  >= 0) { g_punch_through_preset = p->punch_through;   printf("  punch_through  -> %d\n", p->punch_through);  }
         if (p->offset_color   >= 0) { g_offset_color_preset  = p->offset_color;    printf("  offset_color   -> %d\n", p->offset_color);   }
+        if (p->trans_sort     >= 0) { g_trans_sort_preset    = p->trans_sort;      printf("  trans_sort     -> %d\n", p->trans_sort);     }
 
         return; // First match only
     }

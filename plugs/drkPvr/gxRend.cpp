@@ -140,6 +140,14 @@ extern "C" int get_punch_through_preset();
 extern "C" int get_offset_color_preset();
 #define OFFSET_COLOR_FIX() (get_offset_color_preset() == 1)
 
+// Translucent depth sort: real PVR autosorts translucent pixels per-pixel in
+// hardware; Hollywood can't, so the TR list is normally drawn in TA submission
+// order, giving wrong overlaps in alpha-heavy scenes. On: the TR strips are
+// sorted back-to-front (painter's algorithm) by each strip's farthest vertex
+// before drawing. Off (default): legacy submission-order draw, zero overhead.
+extern "C" int get_trans_sort_preset();
+#define TRANS_SORT() (get_trans_sort_preset() == 1)
+
 
 int frame_counter;
 
@@ -147,6 +155,7 @@ int frame_counter;
 #include "gxRend.h"
 #include <gccore.h>
 #include <malloc.h>
+#include <stdlib.h> // qsort, for TRANS_SORT()
 #include "regs.h"
 #include "wii/wii_audio.h"
 #include <stdio.h> // needed for log
@@ -3113,6 +3122,37 @@ static bool ShouldSkipFrame() // Returns true when the current frame should be d
     return false;
 }
 
+// ── TRANS_SORT(): per-strip back-to-front sort of the translucent list ──────
+// One record per TR strip, built by walking the lists/vertices/listModes
+// parallel streams once (the same walk the draw loop does), then qsort'ed.
+// Vertex::z holds W (view depth, larger = farther — see vert_base()), so
+// back-to-front means descending far_w. Ties keep TA submission order via the
+// vtx pointer (monotonically increasing in submission order) so 2D UI layers
+// stacked at the same depth are not reshuffled. Sized like lists[] (worst
+// case: every strip is translucent) — 8K * 16B = 128KB of BSS.
+struct TransStripRec
+{
+  float far_w;     // max Vertex::z of the strip (its farthest point)
+  Vertex *vtx;     // first vertex of the strip
+  PolyParam *mod;  // render state in effect for this strip
+  u16 count;       // vertex count (sign bit already consumed)
+  u16 _pad;
+};
+
+static TransStripRec trans_sort_recs[8 * 1024];
+
+static int trans_strip_cmp(const void *a, const void *b)
+{
+  const TransStripRec *ra = (const TransStripRec *)a;
+  const TransStripRec *rb = (const TransStripRec *)b;
+  if (ra->far_w > rb->far_w) return -1; // farther strips draw first
+  if (ra->far_w < rb->far_w) return 1;
+  // stable tie-break: original submission order
+  if (ra->vtx < rb->vtx) return -1;
+  if (ra->vtx > rb->vtx) return 1;
+  return 0;
+}
+
 // ============================
 // The main rendering loop. Executes GX commands to draw the stored vertex lists.
 // ============================
@@ -3444,6 +3484,19 @@ void DoRender()
   int last_src_blend = -1;
   int last_dst_blend = -1;
 
+  // TRANS_SORT() state. While ts_active, strips are fetched from
+  // trans_sort_recs[] (sorted back-to-front) instead of the sequential
+  // lists/vertices/listModes walk; ts_end_* are the walk cursors at the end
+  // of the TR range, restored when the sorted range is done so any strips
+  // after it (legacy path: a PT list submitted after TR) still line up.
+  const bool trans_sort = TRANS_SORT(); // read once per frame
+  bool ts_active = false;
+  int ts_idx = 0;
+  int ts_count = 0;
+  Vertex *ts_end_vtx = 0;
+  PolyParam *ts_end_mod = 0;
+  const PolyParam *ts_last_mod = 0; // last state applied while sorted-drawing
+
 
   // ── Draw segments ──────────────────────────────────────────────────────────
   // Legacy: one pass over every list in TA submission order (OP, TR, PT), so
@@ -3501,6 +3554,7 @@ void DoRender()
     drawLST = segs[seg].begin;
     drawVTX = segs[seg].vtx;
     drawMod = segs[seg].mod;
+    ts_active = false; // each segment restarts from its own captured cursors
 
     if (seg_is_pt)
     {
@@ -3515,6 +3569,16 @@ void DoRender()
 
     for (; drawLST != seg_end; drawLST++)
     {
+      if (ts_active && ts_idx == ts_count)
+      {
+        // Sorted TR range fully drawn — resume the sequential walk right
+        // after it (only reached when strips follow the TR range in this
+        // segment, i.e. legacy path with a PT list submitted after TR).
+        ts_active = false;
+        drawVTX = ts_end_vtx;
+        drawMod = ts_end_mod;
+      }
+
       if (drawLST == TransLST)
       {
         // Enable blending for the translucent list. Blend factors are set
@@ -3537,12 +3601,86 @@ void DoRender()
         // (suspects: per-poly GX state churn, and/or the DC CullMode->GX
         // FRONT/BACK winding pairing being backwards for this projection).
 
+        if (trans_sort)
+        {
+          // Build one record per TR strip by pre-walking the range with the
+          // same cursor rules as the draw loop (drawVTX/drawMod are exactly
+          // TransVTX/TransMod here), then sort back-to-front. The TR range
+          // ends where the PT list starts if PT was submitted after TR
+          // (legacy path — with PUNCH_THROUGH_FIX() the segment split already
+          // ends this segment there), else at the end of the stream.
+          const VertexList *tr_end = (PTLST && PTLST > TransLST) ? PTLST : crLST;
+          if (tr_end > seg_end)
+            tr_end = seg_end;
+
+          Vertex *wvtx = drawVTX;
+          PolyParam *wmod = drawMod;
+          // Param in effect if the first TR strip carries no header (should
+          // not happen — TA lists start with a global param — but a valid
+          // fallback beats reading a NULL mod).
+          PolyParam *cur_mod = (wmod > listModes) ? wmod - 1 : wmod;
+          int n = 0;
+          for (const VertexList *l = drawLST; l != tr_end; l++)
+          {
+            s32 c = l->count;
+            if (c < 0)
+              cur_mod = wmod++;
+            c &= 0x7FFF;
+
+            float far_w = 0.0f;
+            for (s32 i = 0; i < c; i++)
+              if (wvtx[i].z > far_w)
+                far_w = wvtx[i].z;
+
+            trans_sort_recs[n].far_w = far_w;
+            trans_sort_recs[n].vtx = wvtx;
+            trans_sort_recs[n].mod = cur_mod;
+            trans_sort_recs[n].count = (u16)c;
+            n++;
+            wvtx += c;
+          }
+
+          if (n > 1)
+            qsort(trans_sort_recs, n, sizeof(TransStripRec), trans_strip_cmp);
+
+          ts_idx = 0;
+          ts_count = n;
+          ts_end_vtx = wvtx;   // walk-end cursors, restored after the range
+          ts_end_mod = wmod;
+          ts_last_mod = 0;     // force state application on the first strip
+          ts_active = n > 0;
+        }
       }
 
-      s32 count = drawLST->count;
-      if (count < 0)
+      s32 count;
+      PolyParam *stripMod = 0; // non-NULL → apply this polygon's render state below
+      if (ts_active)
       {
-        int is_textured = drawMod->pcw.Texture ? 1 : 0;
+        // Sorted translucent strip: fetched out of submission order, so the
+        // count sign bit can't drive state changes anymore — re-apply render
+        // state whenever the strip's param differs from the last one applied.
+        const TransStripRec &r = trans_sort_recs[ts_idx++];
+        count = r.count;
+        drawVTX = r.vtx;
+        if (r.mod != ts_last_mod)
+        {
+          stripMod = r.mod;
+          ts_last_mod = r.mod;
+        }
+      }
+      else
+      {
+        count = drawLST->count;
+        if (count < 0)
+        {
+          stripMod = drawMod++;
+          count &= 0x7FFF;
+        }
+      }
+
+      if (stripMod)
+      {
+        int is_textured = stripMod->pcw.Texture ? 1 : 0;
         if (is_textured != last_textured)
         {
           if (is_textured)
@@ -3566,7 +3704,7 @@ void DoRender()
         // everything else keeps single-stage fill rate.
         if (offset_fix)
         {
-          int tev_stages = (is_textured && drawMod->pcw.Offset) ? 2 : 1;
+          int tev_stages = (is_textured && stripMod->pcw.Offset) ? 2 : 1;
           if (tev_stages != last_tev_stages)
           {
             GX_SetNumTevStages(tev_stages);
@@ -3576,7 +3714,7 @@ void DoRender()
 
         if (is_textured)
         {
-          SetTextureParams(drawMod, decal_alpha_fix);
+          SetTextureParams(stripMod, decal_alpha_fix);
 
           // TSP.ShadInstr==2 (DecalAlpha) needs GX_DECAL instead of GX_MODULATE on
           // TEVSTAGE0 (see DECAL_ALPHA_FIX() above for why). Gated on decal_alpha_fix
@@ -3584,7 +3722,7 @@ void DoRender()
           // already set GX_MODULATE unconditionally either way.
           if (decal_alpha_fix)
           {
-            int tev_op = (drawMod->tsp.ShadInstr == 2) ? GX_DECAL : GX_MODULATE;
+            int tev_op = (stripMod->tsp.ShadInstr == 2) ? GX_DECAL : GX_MODULATE;
             if (tev_op != last_shad_instr)
             {
               GX_SetTevOp(GX_TEVSTAGE0, tev_op);
@@ -3601,11 +3739,11 @@ void DoRender()
           // menu/HUD text, an ARGB1555 cutout font): the game relies on the texture's
           // own alpha, not the vertex alpha, to gate visibility. Always force opaque for
           // these two formats; defer to TSP.UseAlpha for everything else (e.g. ARGB4444).
-          u32 fmt = drawMod->tcw.NO_PAL.PixelFmt;
+          u32 fmt = stripMod->tcw.NO_PAL.PixelFmt;
           if (RGB565_OPAQUE_ALPHA())
-            force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !drawMod->tsp.UseAlpha;
+            force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !stripMod->tsp.UseAlpha;
           else
-            force_vtx_alpha_opaque = (fmt == 0) || !drawMod->tsp.UseAlpha;
+            force_vtx_alpha_opaque = (fmt == 0) || !stripMod->tsp.UseAlpha;
 
           // This is more accurate for alpha. May cost CPU cycles.
           // Skipped in the punch-through segment: its alpha test (GEQUAL
@@ -3616,20 +3754,20 @@ void DoRender()
             if (BLEND_MODE()) {
               // fps_boost gains even 2 FPS in Castlevania but the alpha isn't correct anymore
               bool blend_fps_boost = BLEND_FPS_BOOST();
-              bool blend_alpha_independent = (drawMod->tsp.SrcInstr < 4 && drawMod->tsp.DstInstr < 4);
+              bool blend_alpha_independent = (stripMod->tsp.SrcInstr < 4 && stripMod->tsp.DstInstr < 4);
               if (blend_fps_boost && drawLST != TransLST) { // New in alpha 0.39
                   alpha_fmt = 0;
-              } else if (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) { // Was there in alpha0.38
+              } else if (decal_alpha_fix && stripMod->tsp.ShadInstr == 2) { // Was there in alpha0.38
                   alpha_fmt = 0;
               } else if (blend_alpha_independent) { // New in alpha 0.39
                   alpha_fmt = 0;
-              } else if (drawMod->tsp.IgnoreTexA) { // Was there in alpha0.38
+              } else if (stripMod->tsp.IgnoreTexA) { // Was there in alpha0.38
                   alpha_fmt = 0;
               } else {
                   alpha_fmt = 1; // Was 0 before
               }
             } else { // Legacy Behavior (correct for Chuchurocket & max FPS)
-              alpha_fmt = (decal_alpha_fix && drawMod->tsp.ShadInstr == 2) ? 0 : (drawMod->tsp.IgnoreTexA ? 0 : 1);
+              alpha_fmt = (decal_alpha_fix && stripMod->tsp.ShadInstr == 2) ? 0 : (stripMod->tsp.IgnoreTexA ? 0 : 1);
             }
 
             if (alpha_fmt != last_alpha_fmt)
@@ -3658,7 +3796,7 @@ void DoRender()
         // Real DC hardware honors ZWriteDis per polygon. Fix sprites with ZWriteDis=1
         if(PER_POLYGON_Z_WRITE())
         {
-          bool z_write = !drawMod->isp.ZWriteDis;
+          bool z_write = !stripMod->isp.ZWriteDis;
           if (z_write != last_z_write)
           {
             GX_SetZMode(GX_TRUE, GX_GEQUAL, z_write ? GX_TRUE : GX_FALSE);
@@ -3670,8 +3808,8 @@ void DoRender()
         // Absolutely necessary for Resident Evil 3
         if (BLEND_MODE() && in_trans_list)
         {
-          int src = (int)drawMod->tsp.SrcInstr;
-          int dst = (int)drawMod->tsp.DstInstr;
+          int src = (int)stripMod->tsp.SrcInstr;
+          int dst = (int)stripMod->tsp.DstInstr;
           if (src != last_src_blend || dst != last_dst_blend)
           {
             GX_SetBlendMode(GX_BM_BLEND, dc_src_to_gx[src], dc_dst_to_gx[dst], GX_LO_CLEAR);
@@ -3679,9 +3817,6 @@ void DoRender()
             last_dst_blend = dst;
           }
         }
-
-        drawMod++;
-        count &= 0x7FFF;
       }
 
       if (count)

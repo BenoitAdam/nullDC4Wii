@@ -145,6 +145,12 @@ extern "C" {
   int get_offset_color_preset() { return g_offset_color_preset; }
 }
 
+int g_trans_sort_preset = 0; // 0=off (TR strips drawn in TA submission order, legacy), 1=on (per-strip back-to-front depth sort)
+
+extern "C" {
+  int get_trans_sort_preset() { return g_trans_sort_preset; }
+}
+
 int g_rgb565_vq_alpha = 0; // 0=black opaque 1=black transparent
 
 extern "C" {
@@ -534,7 +540,8 @@ void displayAccuracyMenu()
 #define OPT_RGB565_OPAQUE_ALPHA 24
 #define OPT_PUNCH_THROUGH 25
 #define OPT_OFFSET_COLOR 26
-#define OPT_ROW_COUNT   27
+#define OPT_TRANS_SORT  27
+#define OPT_ROW_COUNT   28
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -783,6 +790,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
     printf(" (specular highlights)");
+    printf("\n");
+
+    // --- Row 28: Translucent depth sort ---
+    printf("%s TRANS SORT      : ", (selectedRow == OPT_TRANS_SORT) ? ">" : " ");
+    switch (g_trans_sort_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" (sort translucent polys)");
 
 
     WPAD_ScanPads();
@@ -826,6 +842,7 @@ bool displayOptionsMenu()
         case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
         case OPT_PUNCH_THROUGH: g_punch_through_preset = (g_punch_through_preset + 1) % 2; break;
         case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
+        case OPT_TRANS_SORT: g_trans_sort_preset = (g_trans_sort_preset + 1) % 2; break;
         default: break;
       }
     }
@@ -855,6 +872,7 @@ bool displayOptionsMenu()
         case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
         case OPT_PUNCH_THROUGH: g_punch_through_preset = (g_punch_through_preset + 1) % 2; break;
         case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
+        case OPT_TRANS_SORT: g_trans_sort_preset = (g_trans_sort_preset + 1) % 2; break;
         default: break;
       }
     }
@@ -1278,6 +1296,7 @@ int main(int argc, wchar *argv[])
     printf("Blend FPS Boost: %s\n", g_blend_fps_boost_preset ? "ON (FASTER)" : "OFF (CORRECT)");
     printf("Punch Through  : %s\n", g_punch_through_preset ? "ON (CORRECT)" : "OFF (FASTER?)");
     printf("Offset Color   : %s\n", g_offset_color_preset ? "ON (SPECULAR)" : "OFF (LEGACY)");
+    printf("Trans Sort     : %s\n", g_trans_sort_preset ? "ON (SORTED)" : "OFF (LEGACY)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
