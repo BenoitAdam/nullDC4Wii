@@ -556,16 +556,43 @@ static bool opt_row_is_display(int row)
   return (row == 1 || row == 2 || row == 3);
 }
 
+// Second options page holds the less commonly tweaked presets, so the
+// main page doesn't scroll off screen.
+#define OPT_PAGE_COUNT 2
+
+static int opt_row_page(int row)
+{
+  switch (row) {
+    case OPT_ACCURACY:
+    case OPT_PPZ_WRITE:
+    case OPT_FMV_FORMAT:
+    case OPT_VERTEX_COLOR_FIX:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+// OPT_LAUNCH is shared across both pages so A/B/1 keep working everywhere.
+static bool opt_row_on_page(int row, int page)
+{
+  if (row == OPT_LAUNCH)
+    return true;
+  return opt_row_page(row) == page;
+}
+
 bool displayOptionsMenu()
 {
   int selectedRow = OPT_LAUNCH;
+  int optionsPage = 0;
 
   while (true)
   {
     printf("\033[2J\033[H");
 
     // --- Row 0: Launch ---
-    printf("%s LAUNCH GAME      (A: Launch | B: Back | 1: More Info) NullDC4Wii a0.40\n", (selectedRow == OPT_LAUNCH) ? ">" : " ");
+    printf("%s LAUNCH GAME      (A: Launch | B: Back | 1: More Info | 2: Page %d/%d) a0.40\n",
+           (selectedRow == OPT_LAUNCH) ? ">" : " ", optionsPage + 1, OPT_PAGE_COUNT);
 
     // --- Row 1: Game name (display only) ---
     {
@@ -582,6 +609,10 @@ bool displayOptionsMenu()
 
     printf("\n");
 
+    if (optionsPage == 1)
+      printf("    -- PRESETS PAGE 2/2 (2: Back to Page 1) --\n\n");
+
+    if (optionsPage == 0) {
     // --- Row 3: Graphics ---
     printf("%s GRAPHICS        : ", (selectedRow == OPT_GRAPHICS) ? ">" : " ");
     switch (g_graphism_preset) {
@@ -593,16 +624,6 @@ bool displayOptionsMenu()
     printf(" (2D Games should use LOW)");
     printf("\n");
 
-    // --- Row 4: Accuracy ---
-    printf("%s ACCURACY        : ", (selectedRow == OPT_ACCURACY) ? ">" : " ");
-    switch (g_accuracy_preset) {
-      case 0: printf("[< FAST              >]"); break;
-      case 1: printf("[< BALANCED          >]"); break;
-      case 2: printf("[< ACCURATE          >]"); break;
-    }
-    printf(" (not much difference for now)");
-    printf("\n");
-
     // --- Row 5: Ratio ---
     printf("%s RATIO           : ", (selectedRow == OPT_RATIO) ? ">" : " ");
     switch (g_ratio_preset) {
@@ -610,15 +631,6 @@ bool displayOptionsMenu()
       case 1: printf("[< FULLSCREEN        >]"); break;
     }
     printf("\n");
-
-    // --- Row 6: PPZ Write ---
-    printf("%s PPZ_WRITE       : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
-    switch (g_ppz_write_preset) {
-      case 0: printf("[< NO                >]"); break;
-      case 1: printf("[< YES               >]"); break;
-    }
-    printf("\n");
-
 
     // --- Row 8: Decal Alpha Fix ---
     printf("%s DECAL ALPHA     : ", (selectedRow == OPT_DECAL_ALPHA) ? ">" : " ");
@@ -635,15 +647,6 @@ bool displayOptionsMenu()
       case 1: printf("[< YES               >]"); break;
     }
     printf(" (Tip: try for 2D games)");
-    printf("\n");
-
-    // --- Row 10: FMV Format ---
-    printf("%s FMV FORMAT      : ", (selectedRow == OPT_FMV_FORMAT) ? ">" : " ");
-    switch (g_fmv_format_preset) {
-      case 0: printf("[< CMPR (DXT1)       >]"); break;
-      case 1: printf("[< RGBA8             >]"); break;
-      case 2: printf("[< RGB565            >]"); break;
-    }
     printf("\n");
 
     // --- Row 11: Frameskipping ---
@@ -704,15 +707,6 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CAP 100%%)     >]"); break;
     }
     printf(" (Stops speed exceeding 100%%)");
-    printf("\n");
-
-    // --- Row 17b: Intensity Color Fix ---
-    printf("%s VERTEX COLOR    : ", (selectedRow == OPT_VERTEX_COLOR_FIX) ? ">" : " ");
-    switch (g_vertex_color_fix_preset) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON                >]"); break;
-    }
-    printf(" (for Crazy Taxi's arrow)");
     printf("\n");
 
     // --- Row 17: Players ---
@@ -816,6 +810,46 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
     printf(" (2P viewports, Daytona)");
+    printf("\n");
+    } // end page 0
+
+    if (optionsPage == 1) {
+    // --- Row 4: Accuracy ---
+    printf("%s ACCURACY        : ", (selectedRow == OPT_ACCURACY) ? ">" : " ");
+    switch (g_accuracy_preset) {
+      case 0: printf("[< FAST              >]"); break;
+      case 1: printf("[< BALANCED          >]"); break;
+      case 2: printf("[< ACCURATE          >]"); break;
+    }
+    printf(" (not much difference for now)");
+    printf("\n");
+
+    // --- Row 6: PPZ Write ---
+    printf("%s PPZ_WRITE       : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
+    switch (g_ppz_write_preset) {
+      case 0: printf("[< NO                >]"); break;
+      case 1: printf("[< YES               >]"); break;
+    }
+    printf("\n");
+
+    // --- Row 10: FMV Format ---
+    printf("%s FMV FORMAT      : ", (selectedRow == OPT_FMV_FORMAT) ? ">" : " ");
+    switch (g_fmv_format_preset) {
+      case 0: printf("[< CMPR (DXT1)       >]"); break;
+      case 1: printf("[< RGBA8             >]"); break;
+      case 2: printf("[< RGB565            >]"); break;
+    }
+    printf("\n");
+
+    // --- Row 17b: Intensity Color Fix ---
+    printf("%s VERTEX COLOR    : ", (selectedRow == OPT_VERTEX_COLOR_FIX) ? ">" : " ");
+    switch (g_vertex_color_fix_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON                >]"); break;
+    }
+    printf(" (for Crazy Taxi's arrow)");
+    printf("\n");
+    } // end page 1
 
 
     WPAD_ScanPads();
@@ -825,13 +859,13 @@ bool displayOptionsMenu()
     {
       do {
         selectedRow = (selectedRow > 0) ? selectedRow - 1 : OPT_ROW_COUNT - 1;
-      } while (opt_row_is_display(selectedRow));
+      } while (opt_row_is_display(selectedRow) || !opt_row_on_page(selectedRow, optionsPage));
     }
     else if (pressed & WPAD_BUTTON_DOWN)
     {
       do {
         selectedRow = (selectedRow < OPT_ROW_COUNT - 1) ? selectedRow + 1 : 0;
-      } while (opt_row_is_display(selectedRow));
+      } while (opt_row_is_display(selectedRow) || !opt_row_on_page(selectedRow, optionsPage));
     }
     else if (pressed & WPAD_BUTTON_LEFT)
     {
@@ -903,6 +937,11 @@ bool displayOptionsMenu()
     else if (pressed & WPAD_BUTTON_1)
     {
       displayAccuracyMenu();
+    }
+    else if (pressed & WPAD_BUTTON_2)
+    {
+      optionsPage = (optionsPage + 1) % OPT_PAGE_COUNT;
+      selectedRow = OPT_LAUNCH;
     }
     else if (pressed & WPAD_BUTTON_B)
     {
