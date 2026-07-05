@@ -236,12 +236,18 @@ tile-aligned inside-clip rect via the User Tile Clip TA control parameter
 (ta.h ParamType_User_Tile_Clip -> SetTileClip) and PCW.User_Clip (latched
 Group_En-gated via ta.h GROUP_EN -> TileClipMode). Those were empty stubs
 before, so the two camera views rendered fullscreen on top of each other
-("we mostly see player 1's angle"). Now: the decoder latches rect+mode
-(ta_tileclip_rect/mode), glob_param_bdc packs them into a new
-PolyParam::tileclip field (+4B * 8K listModes = +32KB BSS), and the draw
-loop's per-strip state block calls apply_tile_clip() which maps the rect
-(32px tile units, max inclusive) through the pass's viewport transform and
-sets the GX scissor (cached, so unchanged clips cost one compare per param).
+("we mostly see player 1's angle"). Now: the decoder latches the packed clip
+(ta_tileclip, recombined only in the rare latch calls), glob_param_bdc copies
+it into listTileClip[] — a parallel array to listModes (32KB BSS) rather than
+a PolyParam field, so the hot 16-byte param struct stays cache-aligned — and
+the draw loop's per-strip state block calls apply_tile_clip() which maps the
+rect (32px tile units, max inclusive) through the pass's viewport transform
+and sets the GX scissor (cached, so unchanged clips cost one compare per
+param). Everything is preset-gated for zero overhead when off: the decode
+store via g_split_screen_cached (refreshed per frame in reset_vtx_state like
+the other cached preset flags), the draw-side read and the per-frame scissor
+re-open via tileclip_on; with the preset off the only residue is the gating
+branch itself and four float stores per frame (s_clip_* viewport mapping).
 Clip mode 3 (outside) can't be one GX scissor rect and draws unclipped;
 splitscreen uses mode 2 (inside). PCW bitfields are endian-corrected in
 ta_structs.h so pcw.User_Clip is safe on the big-endian Wii.

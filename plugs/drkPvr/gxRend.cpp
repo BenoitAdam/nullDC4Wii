@@ -308,12 +308,6 @@ struct PolyParam
 
   TSP tsp;
   TCW tcw;
-  // PVR user tile clip in effect for this polygon, captured at TA decode time
-  // by glob_param_bdc: mode<<30 | xmin<<24 | ymin<<16 | xmax<<8 | ymax.
-  // Rect is in 32-pixel tile units, max inclusive; mode is PCW.User_Clip
-  // (0=disabled, 2=inside, 3=outside). Consumed by apply_tile_clip() in the
-  // draw loop when SPLIT_SCREEN() is on. (+4 bytes * 8K entries = +32KB BSS.)
-  u32 tileclip;
 };
 
 struct TextureCacheDesc
@@ -593,6 +587,11 @@ static void tex_frame_reset()
 Vertex ALIGN16 vertices[42*1024]; // Wii memory limit
 VertexList ALIGN16 lists[8*1024];
 PolyParam ALIGN16 listModes[8*1024];
+// Per-param user tile clip, parallel to listModes (same index). Kept OUT of
+// PolyParam so the hot 16-byte param struct stays cache-aligned in the TA
+// decode and draw loops. Written at decode time and read at draw time only
+// when SPLIT_SCREEN() is on (g_split_screen_cached) — zero cost otherwise.
+u32 listTileClip[8*1024]; // 32KB BSS
 
 Vertex *curVTX = vertices;
 VertexList *curLST = lists;
@@ -610,14 +609,17 @@ PolyParam *curMod = listModes;
 bool global_regd;
 
 // PVR User Tile Clip state, latched from the TA stream (VertexDecoder::
-// SetTileClip / TileClipMode) and captured into each PolyParam by
+// SetTileClip / TileClipMode) and captured into listTileClip[] by
 // glob_param_bdc. The rect persists until the game sends a new User Tile Clip
 // control parameter; the mode is only updated by global params with
 // Group_En=1, like real hardware. Splitscreen games (Daytona USA multiplayer)
 // draw BOTH players' viewports in one render pass and rely on inside-clipping
 // to confine each camera to its half of the screen.
-u32 ta_tileclip_rect = 0;
-u32 ta_tileclip_mode = 0;
+// ta_tileclip holds the packed effective clip (mode<<30 | xmin<<24 | ymin<<16
+// | xmax<<8 | ymax, rect in 32px tile units, max inclusive) — recombined only
+// in the rare latch calls, so glob_param_bdc just copies one u32.
+u32 ta_tileclip_rect = 0; // rect bits of ta_tileclip
+u32 ta_tileclip = 0;      // packed mode<<30 | rect
 float vtx_min_Z;
 float vtx_max_Z;
 
@@ -650,6 +652,8 @@ u32 curSpriteSpc = 0;
 // the preset can't change mid-frame anyway.
 bool g_vertex_color_fix_cached = false;
 bool g_offset_color_fix_cached = false; // same idea, for OFFSET_COLOR_FIX()
+bool g_split_screen_cached     = false; // same idea, for SPLIT_SCREEN(): gates
+                                        // the listTileClip[] store per param
 
 char fps_text[512];
 
@@ -777,6 +781,7 @@ void reset_vtx_state()
   tex_frame_reset(); // reset per-frame texture bump arena
   g_vertex_color_fix_cached = VERTEX_COLOR_FIX();
   g_offset_color_fix_cached = OFFSET_COLOR_FIX();
+  g_split_screen_cached     = SPLIT_SCREEN();
 }
 
 #define VTX_TFX(x) (x)
@@ -3185,7 +3190,7 @@ static bool s_rtt_pass = false;
 static u32  s_rtt_w = 0;   // RTT target size, from FB_X_CLIP / FB_Y_CLIP
 static u32  s_rtt_h = 0;
 
-// ── Per-strip user tile clip (PolyParam::tileclip) ───────────────────────────
+// ── Per-strip user tile clip (listTileClip[]) ────────────────────────────────
 // DC-pixel → EFB-pixel mapping of the current DoRender() pass, stored by the
 // viewport block below and used by apply_tile_clip() to turn a strip's user
 // tile clip into a GX scissor.
@@ -3380,10 +3385,17 @@ void DoRender()
     s_clip_sy = (float)rmode->efbHeight / dc_height;
     s_clip_ox = vp_x; s_clip_oy = 0.f;
   }
-  // GX scissor state persists across frames — re-open it in case the last
-  // strip of the previous frame left a user tile clip sub-rect applied.
-  s_tileclip_applied = 0;
-  GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+  // Per-strip user tile clip (splitscreen games draw both players' viewports
+  // in one pass, confining each with an inside clip). Read once per frame.
+  // GX scissor state persists across frames — with the preset on, re-open it
+  // in case the last strip of the previous frame left a sub-rect applied;
+  // with it off the scissor is never touched, so skip the GX call entirely.
+  const bool tileclip_on = SPLIT_SCREEN();
+  if (tileclip_on)
+  {
+    s_tileclip_applied = 0;
+    GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+  }
   GX_InvVtxCache();
   GX_InvalidateTexAll();
 
@@ -3408,10 +3420,6 @@ void DoRender()
   // presets; the setting cannot change while a game is running, so the VCD
   // stays identical from frame to frame (see the FIFO warnings above).
   const bool offset_fix = OFFSET_COLOR_FIX();
-
-  // Per-strip user tile clip (splitscreen games draw both players' viewports
-  // in one pass, confining each with an inside clip). Read once per frame.
-  const bool tileclip_on = SPLIT_SCREEN();
 
   GX_SetNumChans(offset_fix ? 2 : 1);
   GX_SetNumTexGens(1);
@@ -3882,7 +3890,7 @@ void DoRender()
         // Honor the polygon's user tile clip (GX scissor). Cached inside
         // apply_tile_clip(), so params sharing the same clip cost one compare.
         if (tileclip_on)
-          apply_tile_clip(stripMod->tileclip);
+          apply_tile_clip(listTileClip[stripMod - listModes]);
 
         int is_textured = stripMod->pcw.Texture ? 1 : 0;
         if (is_textured != last_textured)
@@ -4482,7 +4490,8 @@ struct VertexDecoder
   curMod->isp = pp->isp;               \
   curMod->tsp = pp->tsp;               \
   curMod->tcw = pp->tcw;               \
-  curMod->tileclip = (ta_tileclip_mode << 30) | ta_tileclip_rect; \
+  if (g_split_screen_cached)           \
+    listTileClip[curMod - listModes] = ta_tileclip; \
   curPolyOffsMask = (g_offset_color_fix_cached && pp->pcw.Offset) ? 0xFFFFFFFFu : 0u;
 
   __forceinline static void fastcall AppendPolyParam0(TA_PolyParam0 *pp)
@@ -4883,12 +4892,13 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
     // User Tile Clip control parameter: rect in 32-pixel tile units, max
     // inclusive (already masked to 6/5 bits by the ta.h caller).
     ta_tileclip_rect = (xmin << 24) | (ymin << 16) | (xmax << 8) | ymax;
+    ta_tileclip      = (ta_tileclip & 0xC0000000u) | ta_tileclip_rect;
   }
   __forceinline static void TileClipMode(u32 mode)
   {
     // PCW.User_Clip of a global param — ta.h only calls this when Group_En=1,
     // so the mode persists across ungrouped params like real hardware.
-    ta_tileclip_mode = mode;
+    ta_tileclip = (mode << 30) | ta_tileclip_rect;
   }
   // Misc
   __forceinline static void ListCont()
