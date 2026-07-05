@@ -69,6 +69,15 @@
                                 bind the result as a texture, at the cost of an
                                 EFB copy + CPU convert per RTT frame;
                                 0 (default, legacy) drops those frames.
+        split_screen=1      <- 0/1, split-screen multiplayer (see gxRend.cpp
+                                SPLIT_SCREEN()). 2P games (Daytona USA
+                                multiplayer) render one pass per player
+                                viewport, clipped with FB_X_CLIP/FB_Y_CLIP.
+                                1 draws each partial-clip pass scissored into
+                                its half of the EFB and presents the assembled
+                                frame once per vblank; 0 (default, legacy)
+                                presents every pass fullscreen, so only one
+                                player's view shows.
 
     First matching rule wins.
     Unset fields are left at whatever the user selected in the UI.
@@ -106,6 +115,7 @@ extern int g_punch_through_preset;
 extern int g_offset_color_preset;
 extern int g_trans_sort_preset;
 extern int g_render_to_texture_preset;
+extern int g_split_screen_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -147,6 +157,7 @@ struct GamePreset
     int offset_color;
     int trans_sort;
     int render_to_texture;
+    int split_screen;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -324,6 +335,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "offset_color"))   p->offset_color   = atoi(val);
     else if (key_eq(key, "trans_sort"))     p->trans_sort     = atoi(val);
     else if (key_eq(key, "render_to_texture")) p->render_to_texture = atoi(val);
+    else if (key_eq(key, "split_screen"))   p->split_screen   = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -393,6 +405,7 @@ void game_presets_load(const char* cfg_path)
             cur->offset_color = -1;
             cur->trans_sort = -1;
             cur->render_to_texture = -1;
+            cur->split_screen = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -484,6 +497,7 @@ void game_presets_apply(const char* filepath)
         if (p->offset_color   >= 0) { g_offset_color_preset  = p->offset_color;    printf("  offset_color   -> %d\n", p->offset_color);   }
         if (p->trans_sort     >= 0) { g_trans_sort_preset    = p->trans_sort;      printf("  trans_sort     -> %d\n", p->trans_sort);     }
         if (p->render_to_texture >= 0) { g_render_to_texture_preset = p->render_to_texture; printf("  render_to_texture -> %d\n", p->render_to_texture); }
+        if (p->split_screen   >= 0) { g_split_screen_preset  = p->split_screen;    printf("  split_screen   -> %d\n", p->split_screen);   }
 
         return; // First match only
     }

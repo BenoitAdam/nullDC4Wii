@@ -226,6 +226,31 @@ long strips spanning depth ranges and mutually intersecting translucent polys
 can still resolve wrong (real fix would need per-triangle split/OIT, too slow
 on Hollywood).
 
+ClaudeAI (2026-07): Split-screen multiplayer is implemented behind the
+SPLIT_SCREEN preset (gxRend.cpp SPLIT_SCREEN(), menu "SPLIT SCREEN",
+game_presets.cfg key split_screen, enabled in the shipped [daytona] entry) —
+CONFIRMED WORKING on real hardware with Daytona USA multiplayer.
+The mechanism is the PVR User Tile Clip: the game draws BOTH players'
+viewports in ONE render pass, tagging each player's polygons with a
+tile-aligned inside-clip rect via the User Tile Clip TA control parameter
+(ta.h ParamType_User_Tile_Clip -> SetTileClip) and PCW.User_Clip (latched
+Group_En-gated via ta.h GROUP_EN -> TileClipMode). Those were empty stubs
+before, so the two camera views rendered fullscreen on top of each other
+("we mostly see player 1's angle"). Now: the decoder latches rect+mode
+(ta_tileclip_rect/mode), glob_param_bdc packs them into a new
+PolyParam::tileclip field (+4B * 8K listModes = +32KB BSS), and the draw
+loop's per-strip state block calls apply_tile_clip() which maps the rect
+(32px tile units, max inclusive) through the pass's viewport transform and
+sets the GX scissor (cached, so unchanged clips cost one compare per param).
+Clip mode 3 (outside) can't be one GX scissor rect and draws unclipped;
+splitscreen uses mode 2 (inside). PCW bitfields are endian-corrected in
+ta_structs.h so pcw.User_Clip is safe on the big-endian Wii.
+PresentFramebuffer() resets viewport+scissor when the preset is on so the 2D
+path can't inherit a sub-rect scissor left by the last clipped strip.
+(A first attempt composed multi-pass frames from partial FB_X/Y_CLIP render
+passes — Daytona doesn't use that scheme, so it was removed; see git history
+if another 2P game ever needs per-pass composition.)
+
 
 
 

@@ -152,6 +152,17 @@ extern "C" int get_trans_sort_preset();
 extern "C" int get_render_to_texture_preset();
 #define RENDER_TO_TEXTURE() (get_render_to_texture_preset() == 1)
 
+// Split-screen viewport support: PVR User Tile Clip. 2P games (Daytona USA
+// multiplayer) draw BOTH players' viewports in ONE render pass, tagging each
+// player's polygons with a tile-aligned inside-clip rect (User Tile Clip TA
+// control parameter + PCW.User_Clip mode). On: the clip is captured per
+// PolyParam at TA decode time and applied as a per-strip GX scissor by
+// apply_tile_clip() in the draw loop. Off (default): the clip is ignored —
+// legacy behavior, the two camera views draw fullscreen on top of each other
+// and only one player's view is readable.
+extern "C" int get_split_screen_preset();
+#define SPLIT_SCREEN() (get_split_screen_preset() == 1)
+
 
 int frame_counter;
 
@@ -190,7 +201,7 @@ void ApplyGraphismPreset() {
             bias_clamp = GX_DISABLE; edge_lod = GX_DISABLE; aniso = GX_ANISO_1; break;
     case 2: min_filt = GX_LINEAR; mag_filt = GX_LINEAR; lod_bias = -0.5f;
             bias_clamp = GX_ENABLE; edge_lod = GX_ENABLE; aniso = GX_ANISO_2; break;
-    case 3: min_filt = GX_LINEAR; mag_filt = GX_LINEAR; lod_bias = -1.0f;
+    case 3: min_filt = GX_LINEAR; mag_filt = GX_LINEAR; lod_bias = -0.75f;
             bias_clamp = GX_ENABLE; edge_lod = GX_ENABLE; aniso = GX_ANISO_4; break;
     default: min_filt = GX_LINEAR; mag_filt = GX_LINEAR; lod_bias = 0.0f;
               bias_clamp = GX_DISABLE; edge_lod = GX_DISABLE; aniso = GX_ANISO_1; break;
@@ -297,6 +308,12 @@ struct PolyParam
 
   TSP tsp;
   TCW tcw;
+  // PVR user tile clip in effect for this polygon, captured at TA decode time
+  // by glob_param_bdc: mode<<30 | xmin<<24 | ymin<<16 | xmax<<8 | ymax.
+  // Rect is in 32-pixel tile units, max inclusive; mode is PCW.User_Clip
+  // (0=disabled, 2=inside, 3=outside). Consumed by apply_tile_clip() in the
+  // draw loop when SPLIT_SCREEN() is on. (+4 bytes * 8K entries = +32KB BSS.)
+  u32 tileclip;
 };
 
 struct TextureCacheDesc
@@ -591,6 +608,16 @@ Vertex *PT_VTX = 0;
 PolyParam *PT_Mod = 0;
 PolyParam *curMod = listModes;
 bool global_regd;
+
+// PVR User Tile Clip state, latched from the TA stream (VertexDecoder::
+// SetTileClip / TileClipMode) and captured into each PolyParam by
+// glob_param_bdc. The rect persists until the game sends a new User Tile Clip
+// control parameter; the mode is only updated by global params with
+// Group_En=1, like real hardware. Splitscreen games (Daytona USA multiplayer)
+// draw BOTH players' viewports in one render pass and rely on inside-clipping
+// to confine each camera to its half of the screen.
+u32 ta_tileclip_rect = 0;
+u32 ta_tileclip_mode = 0;
 float vtx_min_Z;
 float vtx_max_Z;
 
@@ -3158,6 +3185,51 @@ static bool s_rtt_pass = false;
 static u32  s_rtt_w = 0;   // RTT target size, from FB_X_CLIP / FB_Y_CLIP
 static u32  s_rtt_h = 0;
 
+// ── Per-strip user tile clip (PolyParam::tileclip) ───────────────────────────
+// DC-pixel → EFB-pixel mapping of the current DoRender() pass, stored by the
+// viewport block below and used by apply_tile_clip() to turn a strip's user
+// tile clip into a GX scissor.
+static float s_clip_sx = 1.f, s_clip_sy = 1.f; // DC px → EFB px scale
+static float s_clip_ox = 0.f, s_clip_oy = 0.f; // EFB px offset (viewport origin)
+static u32 s_tileclip_applied = 0; // packed tileclip currently in the GX scissor
+
+// Apply a strip's user tile clip as a GX scissor. Mode 2 (inside): scissor =
+// rect, clamped to the EFB. Mode 0/1 (disabled/reserved): full EFB. Mode 3
+// (outside — draw only OUTSIDE the rect) cannot be expressed as one GX
+// scissor rect and is drawn unclipped; splitscreen games only use inside mode.
+static void apply_tile_clip(u32 tc)
+{
+  if ((tc >> 30) != 2)
+    tc = 0;
+  if (tc == s_tileclip_applied)
+    return;
+  s_tileclip_applied = tc;
+  if (tc == 0)
+  {
+    GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+    return;
+  }
+  // Tile units are 32 DC pixels; max is inclusive.
+  float x0 = (float)((tc >> 24) & 63) * 32.f;
+  float y0 = (float)((tc >> 16) & 31) * 32.f;
+  float x1 = (float)(((tc >> 8) & 63) + 1) * 32.f;
+  float y1 = (float)((tc & 31) + 1) * 32.f;
+  s32 ex0 = (s32)(s_clip_ox + x0 * s_clip_sx);
+  s32 ey0 = (s32)(s_clip_oy + y0 * s_clip_sy);
+  s32 ex1 = (s32)(s_clip_ox + x1 * s_clip_sx + 0.5f);
+  s32 ey1 = (s32)(s_clip_oy + y1 * s_clip_sy + 0.5f);
+  if (ex0 < 0) ex0 = 0;
+  if (ey0 < 0) ey0 = 0;
+  if (ex1 > (s32)rmode->fbWidth)   ex1 = (s32)rmode->fbWidth;
+  if (ey1 > (s32)rmode->efbHeight) ey1 = (s32)rmode->efbHeight;
+  if (ex1 <= ex0 || ey1 <= ey0)
+  {
+    // Fully clipped away: park the scissor on a 1px corner so nothing shows.
+    ex0 = 0; ey0 = 0; ex1 = 1; ey1 = 1;
+  }
+  GX_SetScissor((u32)ex0, (u32)ey0, (u32)(ex1 - ex0), (u32)(ey1 - ey0));
+}
+
 // Copy the finished EFB scene back into emulated VRAM at FB_W_SOF1, the way
 // the real PVR writes an RTT frame, then leave the EFB cleared for the next
 // frame (the display path gets that clear from GX_CopyDisp's clear flag).
@@ -3288,10 +3360,15 @@ void DoRender()
     // 1:1 pixels into the EFB top-left corner; rtt_copy_efb_to_vram() reads
     // exactly this rect back out.
     GX_SetViewport(0, 0, (float)s_rtt_w, (float)s_rtt_h, 0, 1);
+    s_clip_sx = 1.f; s_clip_sy = 1.f;
+    s_clip_ox = 0.f; s_clip_oy = 0.f;
   }
   else if (FULLSCREEN())
   {
     GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
+    s_clip_sx = (float)rmode->fbWidth / dc_width;
+    s_clip_sy = (float)rmode->efbHeight / dc_height;
+    s_clip_ox = 0.f; s_clip_oy = 0.f;
   }
   else
   {
@@ -3299,7 +3376,14 @@ void DoRender()
     const float vp_w   = rmode->fbWidth * ratio;
     const float vp_x   = (rmode->fbWidth - vp_w) * 0.5f;
     GX_SetViewport(vp_x, 0, vp_w, rmode->efbHeight, 0, 1);
+    s_clip_sx = vp_w / dc_width;
+    s_clip_sy = (float)rmode->efbHeight / dc_height;
+    s_clip_ox = vp_x; s_clip_oy = 0.f;
   }
+  // GX scissor state persists across frames — re-open it in case the last
+  // strip of the previous frame left a user tile clip sub-rect applied.
+  s_tileclip_applied = 0;
+  GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
   GX_InvVtxCache();
   GX_InvalidateTexAll();
 
@@ -3324,6 +3408,10 @@ void DoRender()
   // presets; the setting cannot change while a game is running, so the VCD
   // stays identical from frame to frame (see the FIFO warnings above).
   const bool offset_fix = OFFSET_COLOR_FIX();
+
+  // Per-strip user tile clip (splitscreen games draw both players' viewports
+  // in one pass, confining each with an inside clip). Read once per frame.
+  const bool tileclip_on = SPLIT_SCREEN();
 
   GX_SetNumChans(offset_fix ? 2 : 1);
   GX_SetNumTexGens(1);
@@ -3791,6 +3879,11 @@ void DoRender()
 
       if (stripMod)
       {
+        // Honor the polygon's user tile clip (GX scissor). Cached inside
+        // apply_tile_clip(), so params sharing the same clip cost one compare.
+        if (tileclip_on)
+          apply_tile_clip(stripMod->tileclip);
+
         int is_textured = stripMod->pcw.Texture ? 1 : 0;
         if (is_textured != last_textured)
         {
@@ -4123,6 +4216,15 @@ void PresentFramebuffer()
   guMtxIdentity(mv);
   GX_LoadPosMtxImm(mv, GX_PNMTX0);
 
+  // A user-tile-clipped strip may have left a sub-rect scissor applied (see
+  // apply_tile_clip); this fullscreen quad must not inherit it. Preset-gated
+  // so the legacy state flow is untouched.
+  if (SPLIT_SCREEN())
+  {
+    GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
+    GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+  }
+
   // In 4:3 mode, draw the 2D framebuffer into a centred 4:3 sub-rectangle
   // so logo screens and 2D content have the same correct framing as 3D.
   float x0_2d, x1_2d;
@@ -4380,6 +4482,7 @@ struct VertexDecoder
   curMod->isp = pp->isp;               \
   curMod->tsp = pp->tsp;               \
   curMod->tcw = pp->tcw;               \
+  curMod->tileclip = (ta_tileclip_mode << 30) | ta_tileclip_rect; \
   curPolyOffsMask = (g_offset_color_fix_cached && pp->pcw.Offset) ? 0xFFFFFFFFu : 0u;
 
   __forceinline static void fastcall AppendPolyParam0(TA_PolyParam0 *pp)
@@ -4777,9 +4880,15 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
   }
   __forceinline static void SetTileClip(u32 xmin, u32 ymin, u32 xmax, u32 ymax)
   {
+    // User Tile Clip control parameter: rect in 32-pixel tile units, max
+    // inclusive (already masked to 6/5 bits by the ta.h caller).
+    ta_tileclip_rect = (xmin << 24) | (ymin << 16) | (xmax << 8) | ymax;
   }
   __forceinline static void TileClipMode(u32 mode)
   {
+    // PCW.User_Clip of a global param — ta.h only calls this when Group_En=1,
+    // so the mode persists across ungrouped params like real hardware.
+    ta_tileclip_mode = mode;
   }
   // Misc
   __forceinline static void ListCont()

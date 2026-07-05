@@ -157,6 +157,12 @@ extern "C" {
   int get_render_to_texture_preset() { return g_render_to_texture_preset; }
 }
 
+int g_split_screen_preset = 0; // 0=off (every render pass presented fullscreen, legacy), 1=on (partial-clip passes scissored into the EFB, presented once per vblank — 2P splitscreen)
+
+extern "C" {
+  int get_split_screen_preset() { return g_split_screen_preset; }
+}
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -541,7 +547,8 @@ void displayAccuracyMenu()
 #define OPT_OFFSET_COLOR 25
 #define OPT_TRANS_SORT  26
 #define OPT_RENDER_TO_TEXTURE 27
-#define OPT_ROW_COUNT   28
+#define OPT_SPLIT_SCREEN 28
+#define OPT_ROW_COUNT   29
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -800,6 +807,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
     printf(" (mirrors/TV screens)");
+    printf("\n");
+
+    // --- Row 30: Split-screen multiplayer ---
+    printf("%s SPLIT SCREEN    : ", (selectedRow == OPT_SPLIT_SCREEN) ? ">" : " ");
+    switch (g_split_screen_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" (2P viewports, Daytona)");
 
 
     WPAD_ScanPads();
@@ -844,6 +860,7 @@ bool displayOptionsMenu()
         case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
         case OPT_TRANS_SORT: g_trans_sort_preset = (g_trans_sort_preset + 1) % 2; break;
         case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 2; break;
+        case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         default: break;
       }
     }
@@ -874,6 +891,7 @@ bool displayOptionsMenu()
         case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
         case OPT_TRANS_SORT: g_trans_sort_preset = (g_trans_sort_preset + 1) % 2; break;
         case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 2; break;
+        case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         default: break;
       }
     }
@@ -1298,6 +1316,7 @@ int main(int argc, wchar *argv[])
     printf("Offset Color   : %s\n", g_offset_color_preset ? "ON (SPECULAR)" : "OFF (LEGACY)");
     printf("Trans Sort     : %s\n", g_trans_sort_preset ? "ON (SORTED)" : "OFF (LEGACY)");
     printf("Render To Tex  : %s\n", g_render_to_texture_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
+    printf("Split Screen   : %s\n", g_split_screen_preset ? "ON (2P VIEWPORTS)" : "OFF (LEGACY)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
