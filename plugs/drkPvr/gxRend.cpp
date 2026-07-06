@@ -3274,8 +3274,16 @@ static bool ShouldSkipFrame() // Returns true when the current frame should be d
     }
     if (FRAMESKIP_AUTO())
     {
-
-        return s_last_render_time > VBLANK_BUDGET_SEC;
+        // Skip at most ONE frame per over-budget render.  A skipped frame
+        // never reaches DoRender(), so s_last_render_time would keep its
+        // over-budget value forever — clear the debt here, otherwise a single
+        // slow frame would skip every frame after it (frozen screen).
+        if (s_last_render_time > VBLANK_BUDGET_SEC)
+        {
+            s_last_render_time = 0.0;
+            return true;
+        }
+        return false;
     }
 
     return false;
@@ -4456,14 +4464,14 @@ void StartRender()
   if (render_end_pending_cycles < 50000)
     render_end_pending_cycles = 50000;
 
-  // ── Frame-skip early-out ─────────────────────────────────────────────────
-  // Must come AFTER render_end_pending_cycles is set so the game's timing
-  // loop receives the render-done interrupt on schedule even for skipped frames.
-  if (ShouldSkipFrame())
-  {
-    reset_vtx_state();   // discard this frame's geometry; free the buffers
-    return;              // no GX calls — saves ~10-15 ms on a heavy frame
-  }
+  // NOTE on frame-skip: the ShouldSkipFrame() checks below must come AFTER
+  // render_end_pending_cycles is set so the game's timing loop receives the
+  // render-done interrupt on schedule even for skipped frames.  They must
+  // also come AFTER the render-to-texture dispatch: RTT passes produce
+  // texture data the game reads back, not displayed frames — skipping one
+  // corrupts the texture, and letting it advance the FRAMESKIP_1/2 counter
+  // can phase-lock the skip onto every *displayed* frame in games that do
+  // one RTT pass + one main render per frame.
 
   if (FB_W_SOF1 & 0x1000000)
   {
@@ -4511,6 +4519,9 @@ void StartRender()
         return;
       }
 
+      if (ShouldSkipFrame())
+        return;   // skip the 2D present, same as the VBlank() path
+
       if(DEBUG_MESSAGE()) printf("[PATH] 2D-blit: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
         FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
 
@@ -4520,6 +4531,13 @@ void StartRender()
     } else {
       return; // just return
     }
+  }
+
+  // ── Frame-skip early-out (3D display frames only, see NOTE above) ─────────
+  if (ShouldSkipFrame())
+  {
+    reset_vtx_state();   // discard this frame's geometry; free the buffers
+    return;              // no GX calls — saves ~10-15 ms on a heavy frame
   }
 
   if(DEBUG_MESSAGE()) printf("[PATH] 3D: FB_W_SOF1=%08X FB_R_SOF1=%08X VtxCnt=%d lists=%d\n",
