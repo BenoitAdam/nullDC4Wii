@@ -1893,6 +1893,106 @@ static void YUV422_to_RGB565_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
   }
 }
 
+// =========================
+// GX mip-chain generation
+// =========================
+//
+// DC mipmapped textures ship their own mip levels (small→large), but every
+// decode path above only converts the full-size level. Instead of teaching
+// each of the ~15 format paths to decode the DC mip levels too, we box-filter
+// the already-decoded base level (GX 4x4-block 16bpp — the output format of
+// texture_TW/texture_VQ and the palette-baking paths alike) into a proper GX
+// mip chain: levels packed contiguously after the base, smallest level 4x4
+// (so every level is a whole 32-byte block — no sub-block padding games).
+// This kills distant-poly shimmer and improves texture-cache locality.
+
+// Extra bytes the generated chain needs beyond the base level for a square
+// 16bpp texture: levels w/2 .. 4, each w*h*2 bytes.
+static u32 MipChainExtraBytes16(u32 w)
+{
+  u32 bytes = 0;
+  for (u32 lw = w >> 1; lw >= 4; lw >>= 1)
+    bytes += lw * lw * 2;
+  return bytes;
+}
+
+static INLINE void RGB5A3_Decode(u16 p, u32 *a, u32 *r, u32 *g, u32 *b)
+{
+  if (p & 0x8000) // opaque RGB555
+  {
+    *a = 255;
+    *r = ((p >> 10) & 31) << 3;
+    *g = ((p >>  5) & 31) << 3;
+    *b = ( p        & 31) << 3;
+  }
+  else            // A3RGB444
+  {
+    *a = ((p >> 12) &  7) << 5;
+    *r = ((p >>  8) & 15) << 4;
+    *g = ((p >>  4) & 15) << 4;
+    *b = ( p        & 15) << 4;
+  }
+}
+
+static INLINE u16 RGB5A3_Encode(u32 a, u32 r, u32 g, u32 b)
+{
+  if (a >= 0xE0) // effectively opaque → use the 555 encoding
+    return (u16)(0x8000 | ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3));
+  return (u16)(((a >> 5) << 12) | ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+}
+
+// Box-filters `base` (square, GX-tiled 16bpp, width w) into successive mip
+// levels written directly after it. Returns the number of levels generated
+// (0 for w <= 4). Caller must have allocated MipChainExtraBytes16(w) bytes
+// of room past the base level.
+static u32 GenerateMipChain16(u16 *base, u32 w, bool is565)
+{
+  u32 levels = 0;
+  u16 *src = base;
+  u16 *dst = base + w * w;
+
+  for (u32 sw = w; sw > 4; sw >>= 1)
+  {
+    u32 dw = sw >> 1;
+    for (u32 y = 0; y < dw; y++)
+    {
+      for (u32 x = 0; x < dw; x++)
+      {
+        u16 p0 = src[GX_TexOffs(x * 2,     y * 2,     sw)];
+        u16 p1 = src[GX_TexOffs(x * 2 + 1, y * 2,     sw)];
+        u16 p2 = src[GX_TexOffs(x * 2,     y * 2 + 1, sw)];
+        u16 p3 = src[GX_TexOffs(x * 2 + 1, y * 2 + 1, sw)];
+
+        u16 o;
+        if (is565)
+        {
+          u32 r = ((p0 >> 11) & 31) + ((p1 >> 11) & 31) + ((p2 >> 11) & 31) + ((p3 >> 11) & 31);
+          u32 g = ((p0 >>  5) & 63) + ((p1 >>  5) & 63) + ((p2 >>  5) & 63) + ((p3 >>  5) & 63);
+          u32 b = ( p0        & 31) + ( p1        & 31) + ( p2        & 31) + ( p3        & 31);
+          o = (u16)(((r >> 2) << 11) | ((g >> 2) << 5) | (b >> 2));
+        }
+        else // RGB5A3: mixed 555/A3444 encodings — average in 8-bit ARGB
+        {
+          u32 a0, r0, g0, b0, a1, r1, g1, b1, a2, r2, g2, b2, a3, r3, g3, b3;
+          RGB5A3_Decode(p0, &a0, &r0, &g0, &b0);
+          RGB5A3_Decode(p1, &a1, &r1, &g1, &b1);
+          RGB5A3_Decode(p2, &a2, &r2, &g2, &b2);
+          RGB5A3_Decode(p3, &a3, &r3, &g3, &b3);
+          o = RGB5A3_Encode((a0 + a1 + a2 + a3) >> 2,
+                            (r0 + r1 + r2 + r3) >> 2,
+                            (g0 + g1 + g2 + g3) >> 2,
+                            (b0 + b1 + b2 + b3) >> 2);
+        }
+        dst[GX_TexOffs(x, y, dw)] = o;
+      }
+    }
+    src  = dst;
+    dst += dw * dw;
+    levels++;
+  }
+  return levels;
+}
+
 // =================================
 // Dreamcast Texture => Wii textures
 // =================================
@@ -1931,10 +2031,17 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   u32 decode_bytes;
   {
     bool is_yuv422 = (mod->tcw.NO_PAL.PixelFmt == 3);
+    // Mipmapped textures decode square: every mip path forces h = w, which
+    // can exceed the h = 8<<TexV this sizing would otherwise use.
+    u32 eff_h = mod->tcw.NO_PAL.MipMapped ? w : h;
     if (is_yuv422 && FMV_FORMAT_RGBA8())
-      decode_bytes = (u32)w * h * 4; // RGBA8: 4 bytes/pixel
+      decode_bytes = (u32)w * eff_h * 4; // RGBA8: 4 bytes/pixel
     else
-      decode_bytes = (u32)w * h * 2; // 16bpp worst-case (covers CMPR and RGB565)
+      decode_bytes = (u32)w * eff_h * 2; // 16bpp worst-case (covers CMPR and RGB565)
+    // 16bpp mipmapped textures grow a generated GX mip chain after the base
+    // level (~1/3 extra) — see GenerateMipChain16 above.
+    if (mod->tcw.NO_PAL.MipMapped && !is_yuv422)
+      decode_bytes += MipChainExtraBytes16(w);
   }
   u32 *pixel_buf   = nullptr;
   TextureCacheDesc *pbuff = nullptr;
@@ -1959,6 +2066,26 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       u32 off   = s_fastmap[fidx].bump_offset;
       pbuff     = (TextureCacheDesc*)&vram_buffer[off];
       pixel_buf = (u32*)&vram_buffer[off + desc_sz];
+      // The slot was sized for whatever shape this address held when it was
+      // allocated. If the texture at this address changed shape and now
+      // decodes bigger (e.g. non-mip → mipmapped, which appends a generated
+      // mip chain), decoding in place would overrun the next slot — grab a
+      // fresh, correctly sized allocation instead.
+      if (pbuff->slot_size < desc_sz + ((decode_bytes + 31) & ~31u))
+      {
+        u32 alloc_off;
+        pbuff = fast_bump_alloc(decode_bytes, &pixel_buf, &alloc_off);
+        // fast_bump_alloc may have wrapped and cleared the map — re-locate.
+        bool refound;
+        fidx = fast_map_locate(tex_addr, &refound);
+        if (fidx != FASTMAP_SIZE)
+        {
+          s_fastmap[fidx].key         = tex_addr;
+          s_fastmap[fidx].bump_offset = alloc_off;
+        }
+        // pbuff->addr is 0 from the alloc memset → validity check below
+        // treats this as a miss and re-decodes into the new slot.
+      }
     }
     else
     {
@@ -2962,6 +3089,26 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       pbuff->has_pal = false;
     }
 
+    // Generate a GX mip chain from the decoded base level (see the helpers
+    // above). Only for mipmapped textures whose decoded form is plain tiled
+    // 16bpp — that covers 1555/565/4444, twiddled + VQ, and the palette-baked
+    // CI presets. Skipped for:
+    //   * CACHE_VERY_FAST — skimp slots have no size accounting, and the
+    //     chain's extra ~1/3 would raise the preset's known overlap risk;
+    //   * index-only CI4/CI8 and I4/I8 outputs — palette indices can't be
+    //     averaged (and intensity mips aren't worth a third code path);
+    //   * YUV422 (PixelFmt 3) — FMV surfaces, allocated without chain room.
+    u32 mip_levels = 0;
+    u32 mip_bytes  = 0;
+    if (mod->tcw.NO_PAL.MipMapped && !CACHE_VERY_FAST() && !pbuff->has_pal
+        && (FMT == GX_TF_RGB565 || FMT == GX_TF_RGB5A3)
+        && mod->tcw.NO_PAL.PixelFmt != 3
+        && w == h && w >= 8)
+    {
+      mip_levels = GenerateMipChain16((u16*)dst, w, FMT == GX_TF_RGB565);
+      mip_bytes  = MipChainExtraBytes16(w);
+    }
+
     //// 4. Hardware Handover ////
 
     void *gx_pixels = (void*)dst;
@@ -2974,6 +3121,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       else if (FMT == GX_TF_RGBA8)                   flush_sz = w * h * 4; // 32bpp
       else if (FMT == GX_TF_CMPR)                    flush_sz = w * h / 2; // DXT1 4bpp
       else                                            flush_sz = w * h * 2; // 16bpp default
+      flush_sz += mip_bytes; // generated GX mip chain lives right after the base level
       DCFlushRange(gx_pixels, (flush_sz + 31) & ~31u);
     }
 
@@ -2986,20 +3134,32 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     }
     else
     {
-      // GX_TRUE for mip maps would require ALL mip levels (base down to 1x1)
-      // packed sequentially in GX block format in gx_pixels. We only decoded
-      // the base level (skipping smaller mips via MipPoint offset), so passing
-      // GX_TRUE causes GX to read garbage data → corrupted / checkerboard texture.
-      // Always pass GX_FALSE: the DC mip offset already selected the correct
-      // (largest) level, and GX filtering handles the rest without mip data.
+      // GX_TRUE requires the mip levels packed sequentially in GX block
+      // format right after the base level — exactly what GenerateMipChain16
+      // produced when mip_levels > 0. Without a generated chain (indexed
+      // formats, VERY_FAST, non-mipmapped), keep GX_FALSE: the DC mip offset
+      // already selected the largest level and GX samples it directly.
       GX_InitTexObj(&pbuff->tex, gx_pixels, w, h, FMT,
                     TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
-                    TexUV(mod->tsp.FlipV, mod->tsp.ClampV), GX_FALSE);
+                    TexUV(mod->tsp.FlipV, mod->tsp.ClampV),
+                    mip_levels ? GX_TRUE : GX_FALSE);
     }
 
-    GX_InitTexObjLOD(&pbuff->tex, min_filt, mag_filt,
-                  0.0f, 10.0f, lod_bias,
-                  bias_clamp, edge_lod, aniso);
+    if (mip_levels)
+    {
+      // Trilinear (or point-mip for the unfiltered preset) across the
+      // generated chain; maxlod clamps to the smallest level we produced (4x4).
+      u8 mip_min_filt = (min_filt == GX_NEAR) ? GX_NEAR_MIP_NEAR : GX_LIN_MIP_LIN;
+      GX_InitTexObjLOD(&pbuff->tex, mip_min_filt, mag_filt,
+                    0.0f, (f32)mip_levels, lod_bias,
+                    bias_clamp, edge_lod, aniso);
+    }
+    else
+    {
+      GX_InitTexObjLOD(&pbuff->tex, min_filt, mag_filt,
+                    0.0f, 10.0f, lod_bias,
+                    bias_clamp, edge_lod, aniso);
+    }
 
     // Write sentinel.
     if (CACHE_VERY_FAST())
