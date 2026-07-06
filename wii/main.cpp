@@ -121,7 +121,7 @@ extern "C" {
   int get_blend_mode_preset() { return g_blend_mode_preset; }
 }
 
-int g_rgb565_opaque_alpha_preset = 1; // 1=force opaque for fmt0(ARGB1555)+fmt1(RGB565), 0=only fmt0
+int g_rgb565_opaque_alpha_preset = 0; // 1=force opaque for fmt0(ARGB1555)+fmt1(RGB565), 0=only fmt0 (Fixes POD 2)
 
 extern "C" {
   int get_rgb565_opaque_alpha_preset() { return g_rgb565_opaque_alpha_preset; }
@@ -139,7 +139,7 @@ extern "C" {
   int get_punch_through_preset() { return g_punch_through_preset; }
 }
 
-int g_offset_color_preset = 0; // 0=off (offset/specular color dropped, legacy), 1=on (PIX = base*tex + offset via 2nd TEV stage)
+int g_offset_color_preset = 1; // 0=off (offset/specular color dropped, legacy), 1=on (PIX = base*tex + offset via 2nd TEV stage)
 
 extern "C" {
   int get_offset_color_preset() { return g_offset_color_preset; }
@@ -591,7 +591,7 @@ bool displayOptionsMenu()
     printf("\033[2J\033[H");
 
     // --- Row 0: Launch ---
-    printf("%s LAUNCH GAME      (A: Launch | B: Back | 1: More Info | 2: Page %d/%d) a0.40\n",
+    printf("%s LAUNCH GAME      (A: Launch | B: Back | 1: More Info | 2: Page %d/%d) a0.41\n",
            (selectedRow == OPT_LAUNCH) ? ">" : " ", optionsPage + 1, OPT_PAGE_COUNT);
 
     // --- Row 1: Game name (display only) ---
@@ -770,7 +770,7 @@ bool displayOptionsMenu()
     // --- Row 26: Punch-Through ---
     printf("%s PUNCH THROUGH   : ", (selectedRow == OPT_PUNCH_THROUGH) ? ">" : " ");
     switch (g_punch_through_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
     printf(" (PT list alpha test)");
@@ -788,16 +788,16 @@ bool displayOptionsMenu()
     // --- Row 28: Translucent depth sort ---
     printf("%s TRANS SORT      : ", (selectedRow == OPT_TRANS_SORT) ? ">" : " ");
     switch (g_trans_sort_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
-    printf(" (sort translucent polys)");
+    printf(" (translucent polys / No flickers)");
     printf("\n");
 
     // --- Row 29: Render to texture ---
     printf("%s RENDER TO TEX   : ", (selectedRow == OPT_RENDER_TO_TEXTURE) ? ">" : " ");
     switch (g_render_to_texture_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
     printf(" (mirrors/TV screens)");
@@ -806,10 +806,10 @@ bool displayOptionsMenu()
     // --- Row 30: Split-screen multiplayer ---
     printf("%s SPLIT SCREEN    : ", (selectedRow == OPT_SPLIT_SCREEN) ? ">" : " ");
     switch (g_split_screen_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
-    printf(" (2P viewports, Daytona)");
+    printf(" (2P viewports, Daytona USA)");
     printf("\n");
     } // end page 0
 
@@ -844,7 +844,7 @@ bool displayOptionsMenu()
     // --- Row 17b: Intensity Color Fix ---
     printf("%s VERTEX COLOR    : ", (selectedRow == OPT_VERTEX_COLOR_FIX) ? ">" : " ");
     switch (g_vertex_color_fix_preset) {
-      case 0: printf("[< OFF               >]"); break;
+      case 0: printf("[< OFF (GRAY SCALE)  >]"); break;
       case 1: printf("[< ON                >]"); break;
     }
     printf(" (for Crazy Taxi's arrow)");
@@ -969,7 +969,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - Alpha 0.40   ");
+    printf("\nNullDC4Wii - Alpha 0.41   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("(-) GRAPHICS: ");
@@ -1325,7 +1325,7 @@ int main(int argc, wchar *argv[])
     printf("Texture Cache  : ");
     switch(g_texture_cache_preset) {
       case 0: printf("VERY FAST\n"); break;
-      case 1: printf("FAST\n");      break;
+      case 1: printf("FAST (DEFAULT)\n");      break;
       case 2: printf("NORMAL\n");    break;
       case 3: printf("QUALITY\n");   break;
     }
