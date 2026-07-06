@@ -69,6 +69,14 @@
                                 bind the result as a texture, at the cost of an
                                 EFB copy + CPU convert per RTT frame;
                                 0 (default, legacy) drops those frames.
+        fog=1               <- 0/1, PVR hardware fog (see gxRend.cpp FOG()).
+                                Distance haze in racing/adventure games. 1
+                                evaluates the PVR fog table per vertex at
+                                decode time and blends the fog color in an
+                                extra TEV stage (per-vertex, so slightly
+                                coarser than the real per-pixel fog, and a
+                                small CPU + fill-rate cost); 0 (default,
+                                legacy) ignores fog entirely.
         split_screen=1      <- 0/1, split-screen multiplayer (see gxRend.cpp
                                 SPLIT_SCREEN()). 2P games (Daytona USA
                                 multiplayer) render one pass per player
@@ -116,6 +124,7 @@ extern int g_offset_color_preset;
 extern int g_trans_sort_preset;
 extern int g_render_to_texture_preset;
 extern int g_split_screen_preset;
+extern int g_fog_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -158,6 +167,7 @@ struct GamePreset
     int trans_sort;
     int render_to_texture;
     int split_screen;
+    int fog;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -336,6 +346,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "trans_sort"))     p->trans_sort     = atoi(val);
     else if (key_eq(key, "render_to_texture")) p->render_to_texture = atoi(val);
     else if (key_eq(key, "split_screen"))   p->split_screen   = atoi(val);
+    else if (key_eq(key, "fog"))            p->fog            = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -406,6 +417,7 @@ void game_presets_load(const char* cfg_path)
             cur->trans_sort = -1;
             cur->render_to_texture = -1;
             cur->split_screen = -1;
+            cur->fog = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -498,6 +510,7 @@ void game_presets_apply(const char* filepath)
         if (p->trans_sort     >= 0) { g_trans_sort_preset    = p->trans_sort;      printf("  trans_sort     -> %d\n", p->trans_sort);     }
         if (p->render_to_texture >= 0) { g_render_to_texture_preset = p->render_to_texture; printf("  render_to_texture -> %d\n", p->render_to_texture); }
         if (p->split_screen   >= 0) { g_split_screen_preset  = p->split_screen;    printf("  split_screen   -> %d\n", p->split_screen);   }
+        if (p->fog            >= 0) { g_fog_preset           = p->fog;             printf("  fog            -> %d\n", p->fog);            }
 
         return; // First match only
     }

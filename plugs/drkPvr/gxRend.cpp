@@ -163,6 +163,18 @@ extern "C" int get_render_to_texture_preset();
 extern "C" int get_split_screen_preset();
 #define SPLIT_SCREEN() (get_split_screen_preset() == 1)
 
+// Fog: PVR hardware fog (TSP.FogCtrl), used by racing/adventure games for
+// distance haze. On: the 128-entry PVR fog table (FOG_TABLE regs) is
+// evaluated on the CPU at vertex decode time from the vertex's 1/W and
+// FOG_DENSITY, and blended after texturing by a dedicated TEV stage:
+// PIX = (1-a)*PIX + a*FOG_COL_RAM (lookup modes 0/3; mode 1 "per vertex"
+// takes the coefficient from the offset color alpha and FOG_COL_VERT
+// instead — that mode needs offset_color=1 to carry the alpha). Real PVR
+// fogs per-pixel; per-vertex matches it except across very large polygons.
+// Off (default): legacy behavior, fog is ignored.
+extern "C" int get_fog_preset();
+#define FOG() (get_fog_preset() == 1)
+
 
 int frame_counter;
 
@@ -592,6 +604,11 @@ PolyParam ALIGN16 listModes[8*1024];
 // decode and draw loops. Written at decode time and read at draw time only
 // when SPLIT_SCREEN() is on (g_split_screen_cached) — zero cost otherwise.
 u32 listTileClip[8*1024]; // 32KB BSS
+// Per-vertex fog intensity (0-255), parallel to vertices[] (same index).
+// Kept OUT of Vertex for the same cache-alignment reason as listTileClip.
+// Written at decode time and read at draw time only when FOG() is on
+// (g_fog_cached) — zero cost otherwise. 42KB BSS.
+u8 vtx_fog_alpha[42*1024];
 
 Vertex *curVTX = vertices;
 VertexList *curLST = lists;
@@ -654,6 +671,36 @@ bool g_vertex_color_fix_cached = false;
 bool g_offset_color_fix_cached = false; // same idea, for OFFSET_COLOR_FIX()
 bool g_split_screen_cached     = false; // same idea, for SPLIT_SCREEN(): gates
                                         // the listTileClip[] store per param
+bool g_fog_cached              = false; // same idea, for FOG(): gates the
+                                        // vtx_fog_alpha[] store per vertex
+
+// FOG() decode-time state. s_fog_table/s_fog_density snapshot the FOG_TABLE
+// regs and the FOG_DENSITY float once per frame (reset_vtx_state()) so the
+// per-vertex lookup below is pure float-bit math, no reg reads.
+// curPolyFogTable is per-polygon scratch like curPolyOffsMask: nonzero while
+// the polygon being decoded uses table fog (TSP.FogCtrl 0 or 3).
+u8    s_fog_table[128];
+float s_fog_density = 0.0f;
+u32   curPolyFogTable = 0;
+
+// PVR fog table lookup (hardware indexing): the table is indexed on a log2
+// scale of (1/W * FOG_DENSITY) clamped to [1, 256) — 3-bit exponent, 4-bit
+// mantissa, 16 entries per power of two. Each FOG_TABLE entry carries two
+// intensities (bits [15:8] = this index, bits [7:0] = the next one) that the
+// hardware interpolates between; the [15:8] value alone is close enough.
+static INLINE u8 fog_table_lookup(float pvr_z)
+{
+  float z = pvr_z * s_fog_density;
+  if (!(z >= 1.0f))            // "!(>=)" so NaN falls into the clamp too
+    z = 1.0f;
+  else if (z >= 255.9999f)
+    z = 255.9999f;
+  union { float f; u32 i; } u;
+  u.f = z;
+  // z in [1,256): IEEE exponent field is 127..134, so float bits [30:19]
+  // hold (exponent<<4 | top-4-mantissa-bits) = 127*16 + table index.
+  return s_fog_table[((u.i >> 19) & 0xFFF) - (127u << 4)];
+}
 
 char fps_text[512];
 
@@ -782,6 +829,20 @@ void reset_vtx_state()
   g_vertex_color_fix_cached = VERTEX_COLOR_FIX();
   g_offset_color_fix_cached = OFFSET_COLOR_FIX();
   g_split_screen_cached     = SPLIT_SCREEN();
+  g_fog_cached              = FOG();
+  if (g_fog_cached)
+  {
+    // FOG_DENSITY: bits [15:8] = mantissa (value/128), bits [7:0] = signed
+    // exponent. Build the 2^exp factor from raw IEEE bits — no libm needed.
+    u32 fd = FOG_DENSITY;
+    s32 e  = (s8)(fd & 0xFF);
+    if (e < -126) e = -126; // keep the float normal
+    union { float f; u32 i; } p;
+    p.i = (u32)(e + 127) << 23; // 2^e
+    s_fog_density = (((fd >> 8) & 0xFF) * (1.0f / 128.0f)) * p.f;
+    for (int i = 0; i < 128; i++)
+      s_fog_table[i] = (u8)((FOG_TABLE[i] >> 8) & 0xFF);
+  }
 }
 
 #define VTX_TFX(x) (x)
@@ -3421,7 +3482,14 @@ void DoRender()
   // stays identical from frame to frame (see the FIFO warnings above).
   const bool offset_fix = OFFSET_COLOR_FIX();
 
-  GX_SetNumChans(offset_fix ? 2 : 1);
+  // PVR fog support (FOG()). The per-vertex fog coefficient rides CLR1's
+  // alpha byte — the offset stage only reads CLR1's rgb, so the two presets
+  // share the attribute — and the LAST TEV stage lerps the shaded pixel
+  // toward the fog color by it: PIX = (1-a)*PIX + a*KONST.
+  const bool fog_on = FOG();
+  const bool send_clr1 = offset_fix || fog_on;
+
+  GX_SetNumChans(send_clr1 ? 2 : 1);
   GX_SetNumTexGens(1);
 
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
@@ -3431,7 +3499,7 @@ void DoRender()
   GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
   GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
 
-  if (offset_fix)
+  if (send_clr1)
   {
     // 28 bytes/vertex: POS+CLR0+CLR1+TEX0. Every vertex this frame submits
     // CLR1 (spc, 0 when unused) so the VCD never changes mid-stream.
@@ -3439,19 +3507,49 @@ void DoRender()
     GX_SetVtxDesc(GX_VA_CLR1, GX_DIRECT);
     // Channel 1: plain vertex color, no lighting.
     GX_SetChanCtrl(GX_COLOR1A1, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, 0, GX_DF_NONE, GX_AF_NONE);
+  }
+  if (offset_fix)
+  {
     // TEV stage 1 implements the PVR offset term: PIX = stage0 + OffsetCol.
     //   color = CPREV + RASC(COLOR1A1)   (a=RASC, b=0, c=0, d=CPREV)
     //   alpha = APREV                    (offset alpha is unused on real PVR)
     // Configured once here; the per-polygon loop below only toggles the
     // stage count between 1 and 2, so polys without offset color keep the
-    // exact single-stage output (and fill rate) they had before.
+    // exact single-stage output (and fill rate) they had before. (With fog
+    // on the stage count is fixed instead — see GX_SetNumTevStages below —
+    // and this stage no-ops on polys without offset color since their CLR1
+    // rgb is 0.)
     GX_SetTevOrder(GX_TEVSTAGE1, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR1A1);
     GX_SetTevColorIn(GX_TEVSTAGE1, GX_CC_RASC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
     GX_SetTevColorOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
     GX_SetTevAlphaIn(GX_TEVSTAGE1, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_APREV);
     GX_SetTevAlphaOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
   }
-  GX_SetNumTevStages(1);
+  // Fog TEV stage — always the last stage, after the optional offset add.
+  const u8 fog_stage = offset_fix ? GX_TEVSTAGE2 : GX_TEVSTAGE1;
+  if (fog_on)
+  {
+    // Fog colors can be reprogrammed between frames — refresh the konsts.
+    // KONST0 = FOG_COL_RAM (table fog, FogCtrl 0/3); KONST1 = FOG_COL_VERT
+    // (per-vertex fog, FogCtrl 1). Both regs are 0x00RRGGBB.
+    GXColor fog_ram  = { (u8)(FOG_COL_RAM  >> 16), (u8)(FOG_COL_RAM  >> 8), (u8)FOG_COL_RAM,  0xFF };
+    GXColor fog_vert = { (u8)(FOG_COL_VERT >> 16), (u8)(FOG_COL_VERT >> 8), (u8)FOG_COL_VERT, 0xFF };
+    GX_SetTevKColor(GX_KCOLOR0, fog_ram);
+    GX_SetTevKColor(GX_KCOLOR1, fog_vert);
+    GX_SetTevKColorSel(fog_stage, GX_TEV_KCSEL_K0);
+    //   color = (1-RASA)*CPREV + RASA*KONST   (a=CPREV, b=KONST, c=RASA(CLR1))
+    //   alpha = APREV                         (PVR fog never touches alpha)
+    // Un-fogged polys (FogCtrl==2, or preset interactions) carry fog alpha 0,
+    // so this stage passes them through unchanged — no per-polygon TEV churn.
+    GX_SetTevOrder(fog_stage, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR1A1);
+    GX_SetTevColorIn(fog_stage, GX_CC_CPREV, GX_CC_KONST, GX_CC_RASA, GX_CC_ZERO);
+    GX_SetTevColorOp(fog_stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+    GX_SetTevAlphaIn(fog_stage, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_APREV);
+    GX_SetTevAlphaOp(fog_stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+  }
+  // With fog on the stage count stays fixed all frame (the fog stage must be
+  // last, so the offset stage can't be toggled out from under it).
+  GX_SetNumTevStages(fog_on ? (offset_fix ? 3 : 2) : 1);
 
   GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
 
@@ -3663,6 +3761,8 @@ void DoRender()
   const bool decal_alpha_fix = DECAL_ALPHA_FIX(); // read once per frame, not per polygon
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
+  bool fog_use_vtx_alpha = false; // FogCtrl==1: fog alpha comes from the offset color alpha, not the table
+  int last_fog_ksel = 0;          // konst currently selected on fog_stage: 0=K0 (RAM), 1=K1 (VERT)
 
   // DC TSP blend factor → GX blend factor lookup.
   // SrcInstr: "OtherColor" for a source factor means the framebuffer (dst) color.
@@ -3913,14 +4013,31 @@ void DoRender()
 
         // Enable TEV stage 1 (offset color add, configured once above) only
         // for textured polys that actually carry an offset color, so
-        // everything else keeps single-stage fill rate.
-        if (offset_fix)
+        // everything else keeps single-stage fill rate. Skipped when fog is
+        // on: the fog stage is last and the count stays fixed all frame (the
+        // offset stage no-ops on polys whose CLR1 rgb is 0).
+        if (offset_fix && !fog_on)
         {
           int tev_stages = (is_textured && stripMod->pcw.Offset) ? 2 : 1;
           if (tev_stages != last_tev_stages)
           {
             GX_SetNumTevStages(tev_stages);
             last_tev_stages = tev_stages;
+          }
+        }
+
+        // Per-polygon fog mode: 0/3 = table fog (FOG_COL_RAM konst + the
+        // per-vertex table alpha computed at decode time), 1 = per-vertex
+        // fog (FOG_COL_VERT konst + the offset color alpha), 2 = no fog
+        // (decode left the fog alpha at 0, the stage passes through).
+        if (fog_on)
+        {
+          int ksel = (stripMod->tsp.FogCtrl == 1) ? 1 : 0;
+          fog_use_vtx_alpha = (ksel != 0);
+          if (ksel != last_fog_ksel)
+          {
+            GX_SetTevKColorSel(fog_stage, ksel ? GX_TEV_KCSEL_K1 : GX_TEV_KCSEL_K0);
+            last_fog_ksel = ksel;
           }
         }
 
@@ -4034,7 +4151,28 @@ void DoRender()
       if (count)
       {
         GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, count);
-        if (offset_fix)
+        if (fog_on)
+        {
+          // CLR1 = offset color rgb + fog alpha. Table-fog strips take the
+          // per-vertex intensity computed at decode time (0 on FogCtrl==2
+          // strips); FogCtrl==1 strips keep the offset color alpha as-is —
+          // that IS the PVR per-vertex fog coefficient.
+          while (count--)
+          {
+            GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
+            u32 vcol = drawVTX->col;
+            if (force_vtx_alpha_opaque)
+              vcol |= 0xFF000000u;
+            GX_Color1u32(HOST_TO_LE32(vcol));
+            u32 c1 = drawVTX->spc;
+            if (!fog_use_vtx_alpha)
+              c1 = (c1 & 0x00FFFFFFu) | ((u32)vtx_fog_alpha[drawVTX - vertices] << 24);
+            GX_Color1u32(HOST_TO_LE32(c1));
+            GX_TexCoord2f32(drawVTX->u, drawVTX->v);
+            drawVTX++;
+          }
+        }
+        else if (offset_fix)
         {
           // VCD carries CLR1 this frame: every vertex must submit it, in
           // attribute order POS, CLR0, CLR1, TEX0.
@@ -4492,7 +4630,8 @@ struct VertexDecoder
   curMod->tcw = pp->tcw;               \
   if (g_split_screen_cached)           \
     listTileClip[curMod - listModes] = ta_tileclip; \
-  curPolyOffsMask = (g_offset_color_fix_cached && pp->pcw.Offset) ? 0xFFFFFFFFu : 0u;
+  curPolyOffsMask = (g_offset_color_fix_cached && pp->pcw.Offset) ? 0xFFFFFFFFu : 0u; \
+  curPolyFogTable = (g_fog_cached && (curMod->tsp.FogCtrl == 0 || curMod->tsp.FogCtrl == 3)) ? 1u : 0u;
 
   __forceinline static void fastcall AppendPolyParam0(TA_PolyParam0 *pp)
   {
@@ -4590,7 +4729,10 @@ struct VertexDecoder
     vtx_min_Z = W;                                            \
   if (W > 0.0f && W > vtx_max_Z)                             \
     vtx_max_Z = W;                                            \
-  curVTX[dst].z = W; /*Linearly scaled later*/
+  curVTX[dst].z = W; /*Linearly scaled later*/               \
+  if (g_fog_cached) /* table fog intensity, from the raw PVR 1/W */ \
+    vtx_fog_alpha[(curVTX + (dst)) - vertices] =              \
+        curPolyFogTable ? fog_table_lookup(_safe_z) : 0;
 
   // Poly Vertex handlers
 #define vert_cvt_base vert_base(0, vtx->xyz[0], vtx->xyz[1], vtx->xyz[2])
