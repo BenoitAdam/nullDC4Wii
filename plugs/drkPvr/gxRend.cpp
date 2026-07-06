@@ -2004,7 +2004,16 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
   // ── Palette TLUT setup (fmt 5 = CI4, fmt 6 = CI8) ──────────────────────────
 
-  static u16 ATTRIBUTE_ALIGN(32) s_tlut_buf[256];
+  // Ring of TLUT staging buffers. GX_LoadTlut only queues a TMEM-load command
+  // in the GX FIFO — the GP reads the source buffer asynchronously, possibly
+  // long after this function returns. With a single static buffer, the CPU
+  // could rewrite it for the next CI4/CI8 palette before the GP consumed the
+  // previous load, making two palettized textures drawn back-to-back
+  // intermittently share the second palette. 16 slots (512B each, 8KB total)
+  // keeps every buffer untouched long enough for the FIFO to drain.
+  #define TLUT_RING_SLOTS 16
+  static u16 ATTRIBUTE_ALIGN(32) s_tlut_ring[TLUT_RING_SLOTS][256];
+  static u32 s_tlut_ring_idx = 0;
 
   u32 pixel_fmt = mod->tcw.NO_PAL.PixelFmt;
   // Only the CI4/CI8 presets sample through a GX TLUT. Every other 4/8BPP
@@ -2054,6 +2063,12 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
     if (need_reupload)
     {
+      // Each 256-entry row is 512 bytes, a multiple of 32, so every slot in
+      // the 32-byte-aligned ring is itself 32-byte aligned (required by both
+      // DCFlushRange and GX_InitTlutObj).
+      u16 *tlut = s_tlut_ring[s_tlut_ring_idx];
+      s_tlut_ring_idx = (s_tlut_ring_idx + 1) & (TLUT_RING_SLOTS - 1);
+
       for (u32 i = 0; i < n_entries; i++)
       {
         u32 pe = pal[i];
@@ -2069,12 +2084,12 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
           }
           default: px = ABGR1555((u16)(pe & 0xFFFF)); break;         // ARGB1555-> RGB5A3
         }
-        s_tlut_buf[i] = px;
+        tlut[i] = px;
       }
 
-      DCFlushRange(s_tlut_buf, n_entries * sizeof(u16));
+      DCFlushRange(tlut, n_entries * sizeof(u16));
       GXTlutObj tlut_obj;
-      GX_InitTlutObj(&tlut_obj, s_tlut_buf, gx_tlut_fmt, (u16)n_entries);
+      GX_InitTlutObj(&tlut_obj, tlut, gx_tlut_fmt, (u16)n_entries);
       GX_LoadTlut(&tlut_obj, GX_TLUT0);
     }
   }
