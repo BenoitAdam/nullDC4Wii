@@ -433,6 +433,14 @@ GitHub (for timings Gekko/CPU) : https://github.com/dolphin-emu/dolphin
 Emulation Page : https://wiibrew.org/wiki/Emulation  
 Homebrew tutorials : https://wiibrew.org/wiki/Main_Page
 
+## Media Coverage
+
+France :  
+https://www.programmez.com/actualites/programmez-numero-gaming-et-developpement-de-jeux-est-disponible-39720
+
+Italy :  
+https://www.biteyourconsole.net/2026/05/13/nulldc4wii-alpha-v0-22-porta-il-dreamcast-su-wii-con-supporto-usb-multiplayer-e-miglioramenti-prestazionali/
+
 ## Credits
 
 - skmp (original NullDC creator)
@@ -460,7 +468,7 @@ All together, let's Cast the Dream.
 ### Special no thanks
 
 - To all people not believing in this project
-- People constantly critisizing the fact AI is used in this project, being condescending or worse. Please Grow up.
+- People constantly critisizing the fact AI is used in this project (this project wouldn't have existed otherwise).
 
 
 
