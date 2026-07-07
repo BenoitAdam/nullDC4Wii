@@ -175,6 +175,12 @@ extern "C" {
   int get_mipmap_preset() { return g_mipmap_preset; }
 }
 
+int g_fixed_depth_preset = 0; // 0=off (per-vertex min/max W tracking, legacy), 1=wide fixed planes [0.0001..100000] (safe, coarse Z), 2=tight fixed planes [0.1..25000] (finer Z, extreme near/far geometry clips)
+
+extern "C" {
+  int get_fixed_depth_preset() { return g_fixed_depth_preset; }
+}
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -561,7 +567,8 @@ void displayAccuracyMenu()
 #define OPT_RENDER_TO_TEXTURE 27
 #define OPT_SPLIT_SCREEN 28
 #define OPT_MIPMAP      29
-#define OPT_ROW_COUNT   30
+#define OPT_FIXED_DEPTH 30
+#define OPT_ROW_COUNT   31
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -581,6 +588,7 @@ static int opt_row_page(int row)
     case OPT_FMV_FORMAT:
     case OPT_VERTEX_COLOR_FIX:
     case OPT_MIPMAP:
+    case OPT_FIXED_DEPTH:
       return 1;
     default:
       return 0;
@@ -861,7 +869,7 @@ bool displayOptionsMenu()
       case 0: printf("[< OFF (GRAY SCALE)  >]"); break;
       case 1: printf("[< ON                >]"); break;
     }
-    printf(" (for Crazy Taxi's arrow)");
+    printf(" (Crazy Taxi's arrow or JSR logo)");
     printf("\n");
 
     // --- Row: Mipmap generation ---
@@ -872,6 +880,16 @@ bool displayOptionsMenu()
       case 2: printf("[< TRILINEAR (SLOW)  >]"); break;
     }
     printf(" (less shimmer far away)");
+    printf("\n");
+
+    // --- Row: Fixed depth projection ---
+    printf("%s FIXED DEPTH     : ", (selectedRow == OPT_FIXED_DEPTH) ? ">" : " ");
+    switch (g_fixed_depth_preset) {
+      case 0: printf("[< OFF (DYNAMIC)     >]"); break;
+      case 1: printf("[< WIDE (FASTER?)    >]"); break;
+      case 2: printf("[< TIGHT (FASTER?)   >]"); break;
+    }
+    printf(" fixed near/far planes. Z-Fighting");
     printf("\n");
     } // end page 1
 
@@ -920,6 +938,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 2; break;
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
+        case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 2) % 3; break;
         default: break;
       }
     }
@@ -952,6 +971,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 2; break;
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
+        case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 1) % 3; break;
         default: break;
       }
     }
@@ -1351,8 +1371,8 @@ int main(int argc, wchar *argv[])
     printf("Texture Cache  : ");
     switch(g_texture_cache_preset) {
       case 0: printf("VERY FAST\n"); break;
-      case 1: printf("FAST (DEFAULT)\n");      break;
-      case 2: printf("NORMAL\n");    break;
+      case 1: printf("FAST\n");      break;
+      case 2: printf("NORMAL (DEFAULT)\n");    break;
       case 3: printf("QUALITY\n");   break;
     }
     printf("4BPP Mode      : ");
@@ -1387,6 +1407,12 @@ int main(int argc, wchar *argv[])
       case 0: printf("OFF (FASTEST)\n");    break;
       case 1: printf("FAST\n");             break;
       case 2: printf("TRILINEAR (SLOW)\n"); break;
+    }
+    printf("Fixed Depth    : ");
+    switch (g_fixed_depth_preset) {
+      case 0: printf("OFF (DYNAMIC)\n"); break;
+      case 1: printf("WIDE\n");          break;
+      case 2: printf("TIGHT\n");         break;
     }
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",

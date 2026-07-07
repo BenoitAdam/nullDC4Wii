@@ -271,15 +271,45 @@ if another 2P game ever needs per-pass composition.)
 
 
 
-Optimisation opportunities in gxRend (to ask claude ) :
+ClaudeAI (2026-07): Fixed-depth projection is now implemented behind the
+FIXED_DEPTH preset (gxRend.cpp FIXED_DEPTH_*(), menu "FIXED DEPTH" on options
+page 2, game_presets.cfg key fixed_depth). OFF (default) keeps the legacy
+per-vertex min/max W tracking in vert_base. WIDE (1) / TIGHT (2) skip that
+tracking on every TA vertex (gated by g_fixed_depth_cached, refreshed once
+per frame in reset_vtx_state) and load fixed planes in DoRender instead:
+WIDE = W[0.0001..100000] — the proven sanitize-fallback range, safe
+everywhere but coarse (whole scene squeezed into a small slice of the 24-bit
+Z buffer, distant geometry may Z-fight); TIGHT = W[0.1..25000] — far better
+Z precision, but geometry closer than W=0.1 or farther than W=25000 clips,
+so it is strictly per-game. Expected gain is a few ops per vertex during TA
+decode; the old "4→12 FPS in Daytona menu" claim is unverified — measure on
+real hardware before shipping it in a preset. Default OFF.
 
-======
-For Performance, do this : Fixed-depth projection optimization
+ClaudeAI (2026-07): Twiddled/planar texture decode optimized (no preset —
+output is bit-identical, same precedent as the alpha 0.10 texture_VQ
+rewrite). The 2x2 TW pixel converters (conv565/1555/4444/YUV422_TW) and the
+Plannar<> pixel pairs no longer call GX_TexOffs per pixel: x,y step by the
+block size, so the whole block lands in one 4x4 GX tile whose offset is
+computed once (TW_BLOCK_BASE — within a tile, x+1 is +1 and y+1 is +4).
+convYUV422_TW and Plannar<422> also share the chroma terms per U/V pair via
+YUV422_chroma/YUV422_luma instead of the full 7-multiply YUV422() per pixel.
+Only matters on cache-miss decodes (scene loads, animated textures); the
+per-frame sentinel cache hit path is unchanged. The conv*_PL converters are
+dead code (Plannar<> is the live planar path) and were left untouched.
 
-Replace dynamic per-vertex depth tracking with fixed near/far
-planes. Eliminates 2 branches per vertex for ~15-20% faster
-vertex processing. Daytona menu: 4→12 FPS.
+ClaudeAI (2026-07): DoRender vertex submit loops are now branch-free: the
+per-vertex "if (force_vtx_alpha_opaque) vcol |= 0xFF000000" became a
+loop-invariant OR mask (alpha_or) computed once per strip. Identical FIFO
+bytes, one less branch per vertex. No preset needed.
 
-
-====
-Check twiddle algorythms, please optimiste
+Remaining perf ideas (NOT implemented, for a future session):
+- 1/z reciprocal in vert_base uses fdivs (~17 non-pipelined cycles on
+  Broadway); PPC fres + 1-2 Newton-Raphson steps would cut it to ~6 cycles
+  at slightly reduced precision. Preset-gate if attempted.
+- GX_DrawDone() blocks the CPU until the GPU drains before CopyDisp; going
+  async would overlap SH4 emulation with GPU work, but the texture bump
+  arena is reused next frame, so it needs double-buffering first. Risky
+  (FIFO), needs real-hardware testing.
+- Vertex submission is immediate-mode wgPipe writes (24-28 bytes/vertex);
+  GX display lists / indexed arrays would cut CPU per vertex but change the
+  FIFO stream layout — high desync risk, do not attempt casually.

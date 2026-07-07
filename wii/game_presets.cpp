@@ -78,6 +78,17 @@
                                 quality but takes 2 texture cycles/texel on
                                 Hollywood, halving texture fill rate (-40% FPS
                                 in Test Drive 6).
+        fixed_depth=1       <- 0/1/2, fixed depth projection (see gxRend.cpp
+                                FIXED_DEPTH_*()). 0 (default, legacy) tracks the
+                                scene's min/max depth on every TA vertex to fit
+                                the Z range each frame; 1 (wide) and 2 (tight)
+                                skip that per-vertex tracking and project with
+                                fixed near/far planes — slightly faster vertex
+                                decode, but a coarser Z buffer. wide covers
+                                W=[0.0001..100000] (safe everywhere, may
+                                Z-fight); tight covers W=[0.1..25000] (much
+                                finer Z, but geometry outside that range clips,
+                                so per-game only).
         split_screen=1      <- 0/1, split-screen multiplayer (see gxRend.cpp
                                 SPLIT_SCREEN()). 2P games (Daytona USA
                                 multiplayer) render one pass per player
@@ -126,6 +137,7 @@ extern int g_trans_sort_preset;
 extern int g_render_to_texture_preset;
 extern int g_split_screen_preset;
 extern int g_mipmap_preset;
+extern int g_fixed_depth_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -169,6 +181,7 @@ struct GamePreset
     int render_to_texture;
     int split_screen;
     int mipmap;
+    int fixed_depth;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -357,6 +370,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "render_to_texture")) p->render_to_texture = atoi(val);
     else if (key_eq(key, "split_screen"))   p->split_screen   = atoi(val);
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
+    else if (key_eq(key, "fixed_depth"))    p->fixed_depth    = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -428,6 +442,7 @@ void game_presets_load(const char* cfg_path)
             cur->render_to_texture = -1;
             cur->split_screen = -1;
             cur->mipmap = -1;
+            cur->fixed_depth = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -521,6 +536,7 @@ void game_presets_apply(const char* filepath)
         if (p->render_to_texture >= 0) { g_render_to_texture_preset = p->render_to_texture; printf("  render_to_texture -> %d\n", p->render_to_texture); }
         if (p->split_screen   >= 0) { g_split_screen_preset  = p->split_screen;    printf("  split_screen   -> %d\n", p->split_screen);   }
         if (p->mipmap         >= 0) { g_mipmap_preset        = p->mipmap;          printf("  mipmap         -> %d\n", p->mipmap);         }
+        if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }
 
         return; // First match only
     }

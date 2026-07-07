@@ -146,6 +146,16 @@ extern "C" int get_mipmap_preset();
 #define MIPMAP_FAST()      (get_mipmap_preset() == 1) // Slow
 #define MIPMAP_TRILINEAR() (get_mipmap_preset() == 2) // Slower
 
+// Fixed depth projection: skip the per-vertex min/max W tracking in vert_base
+// and project with fixed near/far planes instead (see DoRender). Saves a few
+// float compares/branches on every single TA vertex; the cost is Z-buffer
+// precision, since the fixed planes must cover the whole possible range
+// instead of hugging the scene like the dynamic tracking does.
+extern "C" int get_fixed_depth_preset();
+#define FIXED_DEPTH_OFF()   (get_fixed_depth_preset() == 0) // legacy dynamic range tracking
+#define FIXED_DEPTH_WIDE()  (get_fixed_depth_preset() == 1) // fixed [0.0001 .. 100000] (safe, coarse Z)
+#define FIXED_DEPTH_TIGHT() (get_fixed_depth_preset() == 2) // fixed [0.1 .. 25000] (finer Z, extremes clip)
+
 
 int frame_counter;
 
@@ -637,6 +647,8 @@ bool g_vertex_color_fix_cached = false;
 bool g_offset_color_fix_cached = false; // same idea, for OFFSET_COLOR_FIX()
 bool g_split_screen_cached     = false; // same idea, for SPLIT_SCREEN(): gates
                                         // the listTileClip[] store per param
+bool g_fixed_depth_cached      = false; // same idea, for FIXED_DEPTH_*(): skips
+                                        // the per-vertex min/max W tracking
 
 char fps_text[512];
 
@@ -765,6 +777,7 @@ void reset_vtx_state()
   g_vertex_color_fix_cached = VERTEX_COLOR_FIX();
   g_offset_color_fix_cached = OFFSET_COLOR_FIX();
   g_split_screen_cached     = SPLIT_SCREEN();
+  g_fixed_depth_cached      = !FIXED_DEPTH_OFF();
 }
 
 #define VTX_TFX(x) (x)
@@ -977,56 +990,55 @@ pixelcvt_next(convYUV_PL, 4, 1)
 pixelcvt_end;
 
 // Pixel Converters for Twiddled textures.
+// x,y are even (stepped by xpp/ypp = 2), so each 2x2 block lies inside one
+// 4x4 GX tile: compute the tile offset ONCE instead of 4 pb_prel/GX_TexOffs
+// calls per block — same trick texture_VQ already uses. Layout recap
+// (GX_TexOffs): dst[((y>>2)*(pbw>>2) + (x>>2))*16 + (y&3)*4 + (x&3)],
+// so within the tile x+1 is +1 and y+1 is +4.
+#define TW_BLOCK_BASE ((((y) >> 2) * ((pbw) >> 2) + ((x) >> 2)) * 16 + ((y) & 3) * 4 + ((x) & 3))
 pixelcvt_start(conv565_TW, 2, 2)
 {
-  // convert 4x1 565 to 4x1 8888
   u16 *p_in = (u16 *)data;
-  pb_prel(pb, pbw, x + 0, y + 0, ABGR0565(p_in[0])); // 0,0
-  pb_prel(pb, pbw, x + 0, y + 1, ABGR0565(p_in[1])); // 0,1
-  pb_prel(pb, pbw, x + 1, y + 0, ABGR0565(p_in[2])); // 1,0
-  pb_prel(pb, pbw, x + 1, y + 1, ABGR0565(p_in[3])); // 1,1
+  u32 base = TW_BLOCK_BASE;
+  pb[base + 0] = ABGR0565(p_in[0]); // 0,0
+  pb[base + 4] = ABGR0565(p_in[1]); // 0,1
+  pb[base + 1] = ABGR0565(p_in[2]); // 1,0
+  pb[base + 5] = ABGR0565(p_in[3]); // 1,1
 }
 pixelcvt_next(conv1555_TW, 2, 2)
 {
-  // convert 4x1 1555 to 4x1 8888
   u16 *p_in = (u16 *)data;
-  pb_prel(pb, pbw, x + 0, y + 0, ABGR1555(p_in[0])); // 0,0
-  pb_prel(pb, pbw, x + 0, y + 1, ABGR1555(p_in[1])); // 0,1
-  pb_prel(pb, pbw, x + 1, y + 0, ABGR1555(p_in[2])); // 1,0
-  pb_prel(pb, pbw, x + 1, y + 1, ABGR1555(p_in[3])); // 1,1
+  u32 base = TW_BLOCK_BASE;
+  pb[base + 0] = ABGR1555(p_in[0]); // 0,0
+  pb[base + 4] = ABGR1555(p_in[1]); // 0,1
+  pb[base + 1] = ABGR1555(p_in[2]); // 1,0
+  pb[base + 5] = ABGR1555(p_in[3]); // 1,1
 }
 pixelcvt_next(conv4444_TW, 2, 2)
 {
-  // convert 4x1 4444 to 4x1 8888
   u16 *p_in = (u16 *)data;
-  pb_prel(pb, pbw, x + 0, y + 0, ABGR4444(p_in[0])); // 0,0
-  pb_prel(pb, pbw, x + 0, y + 1, ABGR4444(p_in[1])); // 0,1
-  pb_prel(pb, pbw, x + 1, y + 0, ABGR4444(p_in[2])); // 1,0
-  pb_prel(pb, pbw, x + 1, y + 1, ABGR4444(p_in[3])); // 1,1
+  u32 base = TW_BLOCK_BASE;
+  pb[base + 0] = ABGR4444(p_in[0]); // 0,0
+  pb[base + 4] = ABGR4444(p_in[1]); // 0,1
+  pb[base + 1] = ABGR4444(p_in[2]); // 1,0
+  pb[base + 5] = ABGR4444(p_in[3]); // 1,1
 }
 pixelcvt_next(convYUV422_TW, 2, 2)
 {
-  // convert 4x1 4444 to 4x1 8888
   u16 *p_in = (u16 *)data;
+  u32 base = TW_BLOCK_BASE;
 
-  s32 Y0 = (p_in[0] >> 8) & 255; //
-  s32 Yu = (p_in[0] >> 0) & 255; // p_in[0]
-  s32 Y1 = (p_in[2] >> 8) & 255; // p_in[3]
-  s32 Yv = (p_in[2] >> 0) & 255; // p_in[2]
+  // Each row's pixel pair shares one U/V: compute the chroma terms once per
+  // pair and reuse them (see YUV422_chroma above) instead of the full 7-mul
+  // YUV422() per pixel.
+  s32 Bc, Gc, Rc;
+  YUV422_chroma((p_in[0] >> 0) & 255, (p_in[2] >> 0) & 255, Bc, Gc, Rc);
+  pb[base + 0] = YUV422_luma((p_in[0] >> 8) & 255, Bc, Gc, Rc); // 0,0
+  pb[base + 1] = YUV422_luma((p_in[2] >> 8) & 255, Bc, Gc, Rc); // 1,0
 
-  pb_prel(pb, pbw, x + 0, y + 0, YUV422(Y0, Yu, Yv)); // 0,0
-  pb_prel(pb, pbw, x + 1, y + 0, YUV422(Y1, Yu, Yv)); // 1,0
-
-  // next 4 bytes
-  // p_in+=2;
-
-  Y0 = (p_in[1] >> 8) & 255; //
-  Yu = (p_in[1] >> 0) & 255; // p_in[0]
-  Y1 = (p_in[3] >> 8) & 255; // p_in[3]
-  Yv = (p_in[3] >> 0) & 255; // p_in[2]
-
-  pb_prel(pb, pbw, x + 0, y + 1, YUV422(Y0, Yu, Yv)); // 0,1
-  pb_prel(pb, pbw, x + 1, y + 1, YUV422(Y1, Yu, Yv)); // 1,1
+  YUV422_chroma((p_in[1] >> 0) & 255, (p_in[3] >> 0) & 255, Bc, Gc, Rc);
+  pb[base + 4] = YUV422_luma((p_in[1] >> 8) & 255, Bc, Gc, Rc); // 0,1
+  pb[base + 5] = YUV422_luma((p_in[3] >> 8) & 255, Bc, Gc, Rc); // 1,1
 }
 pixelcvt_end;
 
@@ -1280,30 +1292,38 @@ void Plannar(u8 *praw, u32 w, u32 h)
       u16 pix0 = (u16)(word & 0xFFFF);
       u16 pix1 = (u16)(word >> 16);
 
+      // x is even, so both pixels of the pair land in the same 4x4 GX tile
+      // at consecutive offsets: one tile-base computation replaces the two
+      // GX_TexOffs calls per pair (same trick as the TW/VQ decoders above).
+      u32 base = ((y >> 2) * (w >> 2) + (x >> 2)) * 16 + (y & 3) * 4 + (x & 3);
+
       switch (type)
       {
       case 1555:
-        dst[GX_TexOffs(x + 0, y, w)] = ABGR1555(pix0);
-        dst[GX_TexOffs(x + 1, y, w)] = ABGR1555(pix1);
+        dst[base + 0] = ABGR1555(pix0);
+        dst[base + 1] = ABGR1555(pix1);
         break;
       case 565:
-        dst[GX_TexOffs(x + 0, y, w)] = ABGR0565(pix0);
-        dst[GX_TexOffs(x + 1, y, w)] = ABGR0565(pix1);
+        dst[base + 0] = ABGR0565(pix0);
+        dst[base + 1] = ABGR0565(pix1);
         break;
       case 4444:
-        dst[GX_TexOffs(x + 0, y, w)] = ABGR4444(pix0);
-        dst[GX_TexOffs(x + 1, y, w)] = ABGR4444(pix1);
+        dst[base + 0] = ABGR4444(pix0);
+        dst[base + 1] = ABGR4444(pix1);
         break;
       case 422:
       {
         // DC YUV422 planar is UYVY: U,Y0,V,Y1 at DC LE bytes 0-3.
         // u32 read on Wii BE gives correct DC LE value; extract accordingly.
+        // The pair shares one U/V, so the chroma terms are computed once.
         s32 Yu = (word >>  0) & 255;  // U (Cb)
         s32 Y0 = (word >>  8) & 255;  // Y0
         s32 Yv = (word >> 16) & 255;  // V (Cr)
         s32 Y1 = (word >> 24) & 255;  // Y1
-        dst[GX_TexOffs(x + 0, y, w)] = YUV422(Y0, Yu, Yv);
-        dst[GX_TexOffs(x + 1, y, w)] = YUV422(Y1, Yu, Yv);
+        s32 Bc, Gc, Rc;
+        YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
+        dst[base + 0] = YUV422_luma(Y0, Bc, Gc, Rc);
+        dst[base + 1] = YUV422_luma(Y1, Bc, Gc, Rc);
       }
       break;
       }
@@ -3756,6 +3776,24 @@ void DoRender()
   // sanitise values
   // Coordinate Projection Logic: Converts Dreamcast 1/W into Wii depth.
 
+  // FIXED_DEPTH: vert_base skipped the per-vertex tracking this frame
+  // (vtx_min_Z / vtx_max_Z still hold reset_vtx_state()'s sentinels), so
+  // load the fixed planes here. WIDE reuses the proven sanitize-fallback
+  // range (what a degenerate frame already renders with, e.g. the Bomberman
+  // intro FMV); TIGHT trades total range for far better Z-buffer precision
+  // on typical scenes — geometry closer than W=0.1 or farther than W=25000
+  // gets clipped, so it is strictly a per-game setting.
+  if (FIXED_DEPTH_WIDE())
+  {
+    vtx_min_Z = 0.0001f;
+    vtx_max_Z = 100000.0f;
+  }
+  else if (FIXED_DEPTH_TIGHT())
+  {
+    vtx_min_Z = 0.1f;
+    vtx_max_Z = 25000.0f;
+  }
+
   // Allow W to be much smaller to push the far plane out for massive environments (like racing games)
   // Important : Keep 0.0001f ! 0.001f is not enough
   if (vtx_min_Z <= 0.0001f)
@@ -4231,6 +4269,13 @@ void DoRender()
 
       if (count)
       {
+        // For ARGB1555/4444 textures the DC game may leave vertex alpha = 0,
+        // expecting the hardware to ignore it. Force alpha = 0xFF so GX_MODULATE
+        // does not multiply the texture alpha away. force_vtx_alpha_opaque is
+        // loop-invariant (it only changes with the strip's PolyParam), so fold
+        // it into an unconditional OR mask and keep the per-vertex loops
+        // branch-free.
+        const u32 alpha_or = force_vtx_alpha_opaque ? 0xFF000000u : 0u;
         GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, count);
         if (offset_fix)
         {
@@ -4239,10 +4284,7 @@ void DoRender()
           while (count--)
           {
             GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
-            u32 vcol = drawVTX->col;
-            if (force_vtx_alpha_opaque)
-              vcol |= 0xFF000000u;
-            GX_Color1u32(HOST_TO_LE32(vcol));
+            GX_Color1u32(HOST_TO_LE32(drawVTX->col | alpha_or));
             GX_Color1u32(HOST_TO_LE32(drawVTX->spc));
             GX_TexCoord2f32(drawVTX->u, drawVTX->v);
             drawVTX++;
@@ -4252,13 +4294,7 @@ void DoRender()
         while (count--)
         {
           GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
-          // For ARGB1555/4444 textures the DC game may leave vertex alpha = 0,
-          // expecting the hardware to ignore it. Force alpha = 0xFF so GX_MODULATE
-          // does not multiply the texture alpha away.
-          u32 vcol = drawVTX->col;
-          if (force_vtx_alpha_opaque)
-            vcol |= 0xFF000000u;
-          GX_Color1u32(HOST_TO_LE32(vcol));
+          GX_Color1u32(HOST_TO_LE32(drawVTX->col | alpha_or));
           GX_TexCoord2f32(drawVTX->u, drawVTX->v);
           drawVTX++;
         }
@@ -4789,15 +4825,22 @@ struct VertexDecoder
 // so that NaN falls into the clamp. Per IEEE-754, every relational comparison
 // against NaN is false, so "NaN < 0.0001f" is false and a "<"-based ternary lets
 // NaN pass through unclamped, defeating the whole point of this guard.
+// FIXED_DEPTH_*(): with fixed near/far planes the scene range is never used,
+// so the min/max tracking (2 float compares + branches on EVERY TA vertex,
+// including sprites) is skipped entirely. g_fixed_depth_cached is refreshed
+// once per frame in reset_vtx_state() like the other cached preset flags.
 #define vert_base(dst, _x, _y, _z) /*VertexCount++;*/         \
   float _safe_z = (_z >= 0.0001f) ? _z : 0.0001f;            \
   float W = 1.0f / _safe_z;                                   \
   curVTX[dst].x = VTX_TFX(_x) * W;                           \
   curVTX[dst].y = VTX_TFY(_y) * W;                           \
-  if (W > 0.0f && W < vtx_min_Z)                             \
-    vtx_min_Z = W;                                            \
-  if (W > 0.0f && W > vtx_max_Z)                             \
-    vtx_max_Z = W;                                            \
+  if (!g_fixed_depth_cached)                                  \
+  {                                                           \
+    if (W > 0.0f && W < vtx_min_Z)                           \
+      vtx_min_Z = W;                                          \
+    if (W > 0.0f && W > vtx_max_Z)                           \
+      vtx_max_Z = W;                                          \
+  }                                                           \
   curVTX[dst].z = W; /*Linearly scaled later*/
 
   // Poly Vertex handlers
