@@ -79,7 +79,13 @@ extern "C" {
   int get_8bpp_preset() { return g_8bpp_preset; }
 }
 
-int g_texture_cache_preset = 1;
+int g_texture_cache_preset = 2;
+// 0 = VERY FAST (skmp algorythm)
+// 1 = FAST
+// 2 = NORMAL
+// 3 = QUALITY
+// 4 = EXTRA (debug)
+// 5 = EXTRA_DEBUG (debug)
 
 extern "C" {
   int get_texture_cache_preset() { return g_texture_cache_preset; }
