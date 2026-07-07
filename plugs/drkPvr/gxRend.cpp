@@ -80,10 +80,11 @@ extern "C" int get_vertex_color_fix_preset();
 extern "C" int get_texture_cache_preset();
 
 #define CACHE_VERY_FAST()   (get_texture_cache_preset() == 0) // Original nullDC4Wii/SKMP algorithm.
-#define CACHE_FAST()        (get_texture_cache_preset() == 1) // Persistent bump-allocated cache (correct sizing, cross-frame)
-#define CACHE_NORMAL()      (get_texture_cache_preset() == 2) // Quality with enhancements
-#define CACHE_QUALITY()     (get_texture_cache_preset() == 3) // Perfect Result (to the cost of FPS)
-#define CACHE_EXTRA()       (get_texture_cache_preset() == 4) // For Debug only
+#define CACHE_FAST()        (get_texture_cache_preset() == 1) // Persistent bump-allocated cache (original, no shape-resize safety)
+#define CACHE_NORMAL()      (get_texture_cache_preset() == 2) // Persistent bump-allocated cache (correct sizing, cross-frame, shape-resize safe)
+#define CACHE_QUALITY()     (get_texture_cache_preset() == 3) // Quality with enhancements
+#define CACHE_EXTRA()       (get_texture_cache_preset() == 4) // Perfect Result (to the cost of FPS) — For Debug only
+#define CACHE_EXTRA_DEBUG() (get_texture_cache_preset() == 5) // Pure bump allocation, always re-decode — For Debug only
 
 // Per Polygon Z Write
 extern "C" int get_ppz_write_preset();
@@ -318,7 +319,7 @@ struct TextureCacheDesc
   bool has_pal;
   u32  vq_codebook_w0;  // VQ fingerprint (cb_w0 ^ idx_w0)
   u32  slot_size;       // bump allocator: total bytes of this allocation
-  u32  shape_key;       // CACHE_FAST: non-address TCW/TSP bits (format/scan/stride/mip/size)
+  u32  shape_key;       // CACHE_FAST/CACHE_NORMAL: non-address TCW/TSP bits (format/scan/stride/mip/size)
 };
 
 // -- CACHE_VERY_FAST: direct nullDC4Wii slot -------------------------------------
@@ -328,7 +329,7 @@ struct TextureCacheDesc
 // the VRAM distance to the next texture's address — false in general (e.g. a
 // small VQ/CI4 source decodes into a much larger RGB565/RGB5A3 buffer), so two
 // unrelated textures can overlap and corrupt each other ("puzzled" textures).
-// CACHE_FAST below replaces this with a correctly-sized bump allocator instead.
+// CACHE_FAST/CACHE_NORMAL below replace this with a correctly-sized bump allocator instead.
 static INLINE TextureCacheDesc* skimp_slot(u32 tex_addr)
 {
   u32 cache_offset = tex_addr * 2;
@@ -337,13 +338,13 @@ static INLINE TextureCacheDesc* skimp_slot(u32 tex_addr)
   return (TextureCacheDesc*)&vram_buffer[cache_offset] - 1;
 }
 
-// CACHE_EXTRA / CACHE_QUALITY / CACHE_NORMAL: per-frame bump allocator
+// CACHE_EXTRA_DEBUG / CACHE_EXTRA / CACHE_QUALITY: per-frame bump allocator
 static const u32 BUMP_TOTAL = 14u * 1024u * 1024u; // 14 MB bump arena
 
 static u32 s_bump_offset = 0;
 static void bump_reset() { s_bump_offset = 0; }
 
-// ── O(1) Hash Map for CACHE_NORMAL bump_find ─────────────────────────────────
+// ── O(1) Hash Map for CACHE_QUALITY bump_find ─────────────────────────────────
 //
 // Replaces the old O(n) linear scan over the bump arena.
 //
@@ -451,23 +452,23 @@ static TextureCacheDesc* bump_alloc(u32 pixel_bytes, u32 **pixel_out)
   return d;
 }
 
-// ── CACHE_FAST: persistent bump arena + hash map ──────────────────────────────
+// ── CACHE_FAST / CACHE_NORMAL: persistent bump arena + hash map ───────────────
 //
 // Fixes the "puzzled" texture corruption from the old skimp_slot scheme (decoded
 // size could overrun into the next address's slot) by giving every texture an
 // allocation sized to what it actually decodes to — the same allocator shape
-// CACHE_NORMAL uses. Unlike CACHE_NORMAL's arena/map, this one is NEVER cleared
+// CACHE_QUALITY uses. Unlike CACHE_QUALITY's arena/map, this one is NEVER cleared
 // on a per-frame basis (tex_frame_reset() only touches s_bump_offset/s_texmap
 // above), so a static texture still skips re-decoding on every later frame —
-// that cross-frame skip is what makes CACHE_FAST fast. Reuses the same 16 MB
-// vram_buffer budget as everything else; only one cache preset is ever active
-// at a time, so there is no real sharing conflict, just a 14 MB sub-budget like
-// CACHE_NORMAL's BUMP_TOTAL.
+// that cross-frame skip is what makes CACHE_FAST/CACHE_NORMAL fast. Reuses the
+// same 16 MB vram_buffer budget as everything else; only one cache preset is
+// ever active at a time, so there is no real sharing conflict, just a 14 MB
+// sub-budget like CACHE_QUALITY's BUMP_TOTAL.
 //
-// Freshness is NOT implied by "found in the map" the way it is for CACHE_NORMAL
+// Freshness is NOT implied by "found in the map" the way it is for CACHE_QUALITY
 // (which redecodes every texture every frame): the caller still runs the usual
-// CACHE_FAST sentinel/shape-key (or VQ fingerprint) check against whatever this
-// map returns before trusting it.
+// CACHE_FAST/CACHE_NORMAL sentinel/shape-key (or VQ fingerprint) check against
+// whatever this map returns before trusting it.
 static const u32 FAST_BUMP_TOTAL = 14u * 1024u * 1024u; // 14 MB, mirrors BUMP_TOTAL
 
 static u32 s_fast_bump_offset = 0;
@@ -504,7 +505,7 @@ static INLINE u32 fast_map_locate(u32 tex_addr, bool *found)
 }
 
 // Allocates `pixel_bytes` worth of room (descriptor+pixels), sized exactly like
-// CACHE_NORMAL's bump_alloc. Wraps (discarding every existing entry) if it
+// CACHE_QUALITY's bump_alloc. Wraps (discarding every existing entry) if it
 // doesn't fit — rare with a 14 MB budget reused across many frames of texture
 // churn, and safe: a wrap means every previously handed-out offset may now be
 // overwritten, so every old map entry must be dropped, not just the new one.
@@ -536,7 +537,7 @@ static void tex_cache_init()
   fast_cache_reset();
 }
 
-// CACHE_FAST shape_key helper: for index-only GX formats (CI4/CI8 via the
+// CACHE_FAST/CACHE_NORMAL shape_key helper: for index-only GX formats (CI4/CI8 via the
 // Fast/Normal presets), the decoded buffer holds palette *indices*, not
 // colors — PalSelect only picks which bank the separately-managed TLUT
 // samples (see the palette setup block above), so most of it must NOT be
@@ -2039,6 +2040,33 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       u32 off   = s_fastmap[fidx].bump_offset;
       pbuff     = (TextureCacheDesc*)&vram_buffer[off];
       pixel_buf = (u32*)&vram_buffer[off + desc_sz];
+    }
+    else
+    {
+      u32 alloc_off;
+      pbuff = fast_bump_alloc(decode_bytes, &pixel_buf, &alloc_off);
+      if (fidx != FASTMAP_SIZE) // table had a free slot for it
+      {
+        s_fastmap[fidx].key         = tex_addr;
+        s_fastmap[fidx].bump_offset = alloc_off;
+      }
+      // pbuff->addr stays 0 from fast_bump_alloc's memset, so the validity
+      // check below naturally treats this as a cache miss and decodes it.
+    }
+  }
+  else if (CACHE_NORMAL())
+  {
+    // Persistent bump arena + hash map: O(1) lookup like skimp_slot, but the
+    // allocation is sized to what this texture actually decodes to, so it
+    // can never overrun into a neighboring texture's data.
+    bool found;
+    u32  fidx   = fast_map_locate(tex_addr, &found);
+    u32  desc_sz = (sizeof(TextureCacheDesc) + 31) & ~31u;
+    if (found)
+    {
+      u32 off   = s_fastmap[fidx].bump_offset;
+      pbuff     = (TextureCacheDesc*)&vram_buffer[off];
+      pixel_buf = (u32*)&vram_buffer[off + desc_sz];
       // The slot was sized for whatever shape this address held when it was
       // allocated. If the texture at this address changed shape and now
       // decodes bigger (e.g. non-mip → mipmapped, which appends a generated
@@ -2075,28 +2103,28 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   }
   else
   {
-    // NORMAL: O(1) hash map dedup (replaces old O(n) bump_find linear scan).
-    if (CACHE_NORMAL())
+    // QUALITY: O(1) hash map dedup (replaces old O(n) bump_find linear scan).
+    if (CACHE_QUALITY())
     {
       pbuff = hash_map_find(orig_tex_addr, &pixel_buf);
       if (pbuff) already_decoded_this_frame = true;
     }
-    // QUALITY: still uses the old linear scan so it can be tuned separately.
-    else if (CACHE_QUALITY())
+    // EXTRA: still uses the old linear scan so it can be tuned separately.
+    else if (CACHE_EXTRA())
     {
-      // NOTE: bump_find removed. QUALITY reuses hash_map_find for now;
+      // NOTE: bump_find removed. EXTRA reuses hash_map_find for now;
       // split into its own path later if needed.
       pbuff = hash_map_find(orig_tex_addr, &pixel_buf);
       if (pbuff) already_decoded_this_frame = true;
     }
-    // EXTRA: pure bump allocation, always re-decode (no dedup).
+    // EXTRA_DEBUG: pure bump allocation, always re-decode (no dedup).
     if (!pbuff)
     {
       u32 alloc_start = s_bump_offset; // capture offset BEFORE bump_alloc advances it
       pbuff = bump_alloc(decode_bytes, &pixel_buf);
       // Register the new slot in the hash map so the next draw call
       // referencing the same tex_addr hits the O(1) fast path.
-      if (CACHE_NORMAL() || CACHE_QUALITY())
+      if (CACHE_QUALITY() || CACHE_EXTRA())
         hash_map_insert(orig_tex_addr, alloc_start);
     }
   }
@@ -2218,7 +2246,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     // stomping tex_addr with the sentinel would corrupt codebook entry 0,
     // and watching only the codebook misses index-only updates (animated
     // VQ textures reusing the same palette). Use the same non-destructive
-    // codebook+index fingerprint as CACHE_NORMAL instead — a couple of
+    // codebook+index fingerprint as CACHE_QUALITY instead — a couple of
     // extra word reads, still O(1), no VRAM writes for VQ.
     if (is_vq)
     {
@@ -2245,7 +2273,12 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   }
   else if (CACHE_NORMAL())
   {
-    // NORMAL: corrected sentinel at orig_tex_addr.
+    // VQ: the codebook lives at tex_addr itself, so the VERY_FAST trick of
+    // stomping tex_addr with the sentinel would corrupt codebook entry 0,
+    // and watching only the codebook misses index-only updates (animated
+    // VQ textures reusing the same palette). Use the same non-destructive
+    // codebook+index fingerprint as below instead — a couple of extra word
+    // reads, still O(1), no VRAM writes for VQ.
     if (is_vq)
     {
       u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
@@ -2254,19 +2287,24 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
       u32 idx_w0 = *(u32*)&params.vram[idx_addr];
       u32 fp = cb_w0 ^ idx_w0;
-      cache_valid = (pbuff->addr == orig_tex_addr) && (pbuff->vq_codebook_w0 == fp);
+      cache_valid = (pbuff->addr == tex_addr) && (pbuff->vq_codebook_w0 == fp);
     }
     else
     {
-      u32 *ptex = (u32*)&params.vram[orig_tex_addr];
-      cache_valid = (*ptex == 0xDEADBEEF)
-                   && (pbuff->addr == orig_tex_addr)
-                   && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
+      // Same sentinel trick as VERY_FAST, plus a shape key (format, scan
+      // order, stride, mip, size bits) so a different texture reusing the
+      // same address/stride combo can't be served stale data — this is
+      // the gap VERY_FAST plugs by disabling its cache entirely for
+      // stride+scan-order textures. Validating the shape instead lets
+      // CACHE_NORMAL keep caching those textures safely.
+      u32 shape_key = tex_shape_key(mod, pixel_fmt);
+      cache_valid = (*ptex_skmp == 0xDEADBEEF) && (pbuff->addr == tex_addr)
+                  && (pbuff->shape_key == shape_key);
     }
   }
   else if (CACHE_QUALITY())
   {
-    // QUALITY: duplicate of NORMAL for now.
+    // QUALITY: corrected sentinel at orig_tex_addr.
     if (is_vq)
     {
       u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
@@ -2285,14 +2323,35 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
                    && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
     }
   }
-  // CACHE_EXTRA: cache_valid stays false, always re-decode.
+  else if (CACHE_EXTRA())
+  {
+    // EXTRA: duplicate of QUALITY for now.
+    if (is_vq)
+    {
+      u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
+      if (mod->tcw.NO_PAL.MipMapped)
+        idx_addr = (orig_tex_addr + VQMipPoint[mod->tsp.TexU + 3]) & VRAM_MASK;
+      u32 cb_w0  = *(u32*)&params.vram[orig_tex_addr];
+      u32 idx_w0 = *(u32*)&params.vram[idx_addr];
+      u32 fp = cb_w0 ^ idx_w0;
+      cache_valid = (pbuff->addr == orig_tex_addr) && (pbuff->vq_codebook_w0 == fp);
+    }
+    else
+    {
+      u32 *ptex = (u32*)&params.vram[orig_tex_addr];
+      cache_valid = (*ptex == 0xDEADBEEF)
+                   && (pbuff->addr == orig_tex_addr)
+                   && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
+    }
+  }
+  // CACHE_EXTRA_DEBUG: cache_valid stays false, always re-decode.
 
   if (!cache_valid)
   {
     u32 *dst = dst_base;
     VramWork  = (u8*)dst;
     pbuff->has_pal = false;
-    pbuff->addr    = (CACHE_VERY_FAST() || CACHE_FAST()) ? tex_addr : orig_tex_addr;
+    pbuff->addr    = (CACHE_VERY_FAST() || CACHE_FAST() || CACHE_NORMAL()) ? tex_addr : orig_tex_addr;
 
     if (is_vq && !CACHE_VERY_FAST())
     {
@@ -2303,12 +2362,12 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       u32 idx_w0 = *(u32*)&params.vram[idx_addr];
       pbuff->vq_codebook_w0 = cb_w0 ^ idx_w0;
     }
-    else if (CACHE_FAST())
+    else if (CACHE_FAST() || CACHE_NORMAL())
     {
       // Non-VQ: remember the format/scan/stride/mip/size bits alongside the
       // sentinel so a future draw at the same address with a different
       // shape (e.g. a stride-selected texture) can't be served this slot's
-      // stale data — see the CACHE_FAST validity check above.
+      // stale data — see the CACHE_FAST/CACHE_NORMAL validity check above.
       pbuff->shape_key = tex_shape_key(mod, pixel_fmt);
     }
 
@@ -3131,7 +3190,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     {
       *ptex_skmp = 0xDEADBEEF;
     }
-    else if (CACHE_FAST())
+    else if (CACHE_FAST() || CACHE_NORMAL())
     {
       // VQ validity is tracked purely via the codebook+index fingerprint
       // (stored above) — no VRAM write, so the codebook/index data the
