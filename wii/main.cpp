@@ -163,6 +163,12 @@ extern "C" {
   int get_split_screen_preset() { return g_split_screen_preset; }
 }
 
+int g_mipmap_preset = 0; // 0=off (legacy base-level-only, fastest), 1=fast (generated GX mip chain + nearest-mip bilinear), 2=trilinear (best quality, halves texture fill rate — e.g. -40% in Test Drive 6)
+
+extern "C" {
+  int get_mipmap_preset() { return g_mipmap_preset; }
+}
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -548,7 +554,8 @@ void displayAccuracyMenu()
 #define OPT_TRANS_SORT  26
 #define OPT_RENDER_TO_TEXTURE 27
 #define OPT_SPLIT_SCREEN 28
-#define OPT_ROW_COUNT   29
+#define OPT_MIPMAP      29
+#define OPT_ROW_COUNT   30
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -567,6 +574,7 @@ static int opt_row_page(int row)
     case OPT_PPZ_WRITE:
     case OPT_FMV_FORMAT:
     case OPT_VERTEX_COLOR_FIX:
+    case OPT_MIPMAP:
       return 1;
     default:
       return 0;
@@ -849,6 +857,16 @@ bool displayOptionsMenu()
     }
     printf(" (for Crazy Taxi's arrow)");
     printf("\n");
+
+    // --- Row: Mipmap generation ---
+    printf("%s MIPMAPS         : ", (selectedRow == OPT_MIPMAP) ? ">" : " ");
+    switch (g_mipmap_preset) {
+      case 0: printf("[< OFF (FASTEST)     >]"); break;
+      case 1: printf("[< FAST              >]"); break;
+      case 2: printf("[< TRILINEAR (SLOW)  >]"); break;
+    }
+    printf(" (less shimmer far away)");
+    printf("\n");
     } // end page 1
 
 
@@ -895,6 +913,7 @@ bool displayOptionsMenu()
         case OPT_TRANS_SORT: g_trans_sort_preset = (g_trans_sort_preset + 1) % 2; break;
         case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 2; break;
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
+        case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
         default: break;
       }
     }
@@ -926,6 +945,7 @@ bool displayOptionsMenu()
         case OPT_TRANS_SORT: g_trans_sort_preset = (g_trans_sort_preset + 1) % 2; break;
         case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 2; break;
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
+        case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
         default: break;
       }
     }
@@ -1356,6 +1376,12 @@ int main(int argc, wchar *argv[])
     printf("Trans Sort     : %s\n", g_trans_sort_preset ? "ON (SORTED)" : "OFF (LEGACY)");
     printf("Render To Tex  : %s\n", g_render_to_texture_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("Split Screen   : %s\n", g_split_screen_preset ? "ON (2P VIEWPORTS)" : "OFF (LEGACY)");
+    printf("Mipmaps        : ");
+    switch (g_mipmap_preset) {
+      case 0: printf("OFF (FASTEST)\n");    break;
+      case 1: printf("FAST\n");             break;
+      case 2: printf("TRILINEAR (SLOW)\n"); break;
+    }
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)

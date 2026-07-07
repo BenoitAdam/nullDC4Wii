@@ -164,6 +164,19 @@ extern "C" int get_render_to_texture_preset();
 extern "C" int get_split_screen_preset();
 #define SPLIT_SCREEN() (get_split_screen_preset() == 1)
 
+// GX mipmap generation: box-filter the decoded base level into a packed GX mip
+// chain (GenerateMipChain16) so mipmapped textures stop shimmering at distance.
+// Off (default): legacy behavior — base level only, GX_FALSE, zero overhead.
+// Fast: chain + GX_LIN_MIP_NEAR (bilinear from the nearest mip level; a single
+// texture cycle on Hollywood, so near-free on the GPU side).
+// Trilinear: chain + GX_LIN_MIP_LIN — best quality, but trilinear takes TWO
+// texture cycles per texel on Hollywood, halving texture fill rate (-40% in
+// fill-heavy games like Test Drive 6).
+extern "C" int get_mipmap_preset();
+#define MIPMAP_OFF()       (get_mipmap_preset() == 0)
+#define MIPMAP_FAST()      (get_mipmap_preset() == 1)
+#define MIPMAP_TRILINEAR() (get_mipmap_preset() == 2)
+
 
 int frame_counter;
 
@@ -2013,8 +2026,9 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     else
       decode_bytes = (u32)w * eff_h * 2; // 16bpp worst-case (covers CMPR and RGB565)
     // 16bpp mipmapped textures grow a generated GX mip chain after the base
-    // level (~1/3 extra) — see GenerateMipChain16 above.
-    if (mod->tcw.NO_PAL.MipMapped && !is_yuv422)
+    // level (~1/3 extra) — see GenerateMipChain16 above. MIPMAP_OFF skips the
+    // chain entirely, so no extra room is needed.
+    if (mod->tcw.NO_PAL.MipMapped && !is_yuv422 && !MIPMAP_OFF())
       decode_bytes += MipChainExtraBytes16(w);
   }
   u32 *pixel_buf   = nullptr;
@@ -3121,10 +3135,12 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     //     chain's extra ~1/3 would raise the preset's known overlap risk;
     //   * index-only CI4/CI8 and I4/I8 outputs — palette indices can't be
     //     averaged (and intensity mips aren't worth a third code path);
-    //   * YUV422 (PixelFmt 3) — FMV surfaces, allocated without chain room.
+    //   * YUV422 (PixelFmt 3) — FMV surfaces, allocated without chain room;
+    //   * MIPMAP_OFF (default) — legacy base-level-only path, zero overhead.
     u32 mip_levels = 0;
     u32 mip_bytes  = 0;
-    if (mod->tcw.NO_PAL.MipMapped && !CACHE_VERY_FAST() && !pbuff->has_pal
+    if (!MIPMAP_OFF()
+        && mod->tcw.NO_PAL.MipMapped && !CACHE_VERY_FAST() && !pbuff->has_pal
         && (FMT == GX_TF_RGB565 || FMT == GX_TF_RGB5A3)
         && mod->tcw.NO_PAL.PixelFmt != 3
         && w == h && w >= 8)
@@ -3171,9 +3187,15 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
     if (mip_levels)
     {
-      // Trilinear (or point-mip for the unfiltered preset) across the
-      // generated chain; maxlod clamps to the smallest level we produced (4x4).
-      u8 mip_min_filt = (min_filt == GX_NEAR) ? GX_NEAR_MIP_NEAR : GX_LIN_MIP_LIN;
+      // MIPMAP_FAST uses GX_LIN_MIP_NEAR: bilinear from the nearest mip level,
+      // a single texture cycle on Hollywood — near-free. MIPMAP_TRILINEAR uses
+      // GX_LIN_MIP_LIN, which takes two cycles per texel and halves texture
+      // fill rate. maxlod clamps to the smallest level we produced (4x4).
+      u8 mip_min_filt;
+      if (min_filt == GX_NEAR)
+        mip_min_filt = GX_NEAR_MIP_NEAR;
+      else
+        mip_min_filt = MIPMAP_TRILINEAR() ? GX_LIN_MIP_LIN : GX_LIN_MIP_NEAR;
       GX_InitTexObjLOD(&pbuff->tex, mip_min_filt, mag_filt,
                     0.0f, (f32)mip_levels, lod_bias,
                     bias_clamp, edge_lod, aniso);
