@@ -117,65 +117,34 @@ extern "C" int get_rgb565_opaque_alpha_preset();
 #define RGB565_OPAQUE_ALPHA() (get_rgb565_opaque_alpha_preset() == 1)
 
 // Blend FPS boost: under ADVANCED_ALPHA()+BLEND_MODE(), skip the alpha-test/
-// Gains a couple of FPS (e.g. Castlevania) at the cost of incorrect alpha on opaque/punch-through polys
 extern "C" int get_blend_fps_boost_preset();
 #define BLEND_FPS_BOOST() (get_blend_fps_boost_preset() == 1)
 
-// Punch-through list fix: draw lists in OP → PT → TR order (like real PVR)
-// with the PT list alpha-tested against PT_ALPHA_REF and blending off.
-// Off keeps the legacy behavior: PT polys drawn last, in the TR blend state.
+// Punch-through list fix
 extern "C" int get_punch_through_preset();
 #define PUNCH_THROUGH_FIX() (get_punch_through_preset() == 1)
 
-// Offset (specular) color: real PVR shades textured polys as
-// PIX = BaseCol * TEX + OffsetCol. On: the per-vertex offset color is kept at
-// decode time (Vertex::spc), sent as GX_VA_CLR1 and added in a second TEV
-// stage (raster color GX_COLOR1A1) — restores specular highlights on cars/
-// water. Off: offset color is dropped as before (one TEV stage, 24B vertices).
+// Offset (specular) color
 extern "C" int get_offset_color_preset();
 #define OFFSET_COLOR_FIX() (get_offset_color_preset() == 1)
 
-// Translucent depth sort: real PVR autosorts translucent pixels per-pixel in
-// hardware; Hollywood can't, so the TR list is normally drawn in TA submission
-// order, giving wrong overlaps in alpha-heavy scenes. On: the TR strips are
-// sorted back-to-front (painter's algorithm) by each strip's farthest vertex
-// before drawing. Off (default): legacy submission-order draw, zero overhead.
+// Translucent depth sort
 extern "C" int get_trans_sort_preset();
 #define TRANS_SORT() (get_trans_sort_preset() == 1)
 
-// Render-to-texture: a RENDER_START whose write address (FB_W_SOF1) has bit 24
-// set targets the 64-bit texture area — the game will bind the result as a
-// texture (mirrors, TV screens, some menu effects). On: the scene is rendered
-// normally, then the EFB is copied out with GX_CopyTex and converted back into
-// emulated VRAM at FB_W_SOF1 (honoring FB_W_CTRL packmode / FB_W_LINESTRIDE)
-// instead of being shown. Off (default): legacy behavior, the frame is dropped
-// (or handled by the FRAMEBUFFER_2D() path when that preset is on).
+// Render-to-texture. May behave differently depending on FRAMEBUFFER_2D()
 extern "C" int get_render_to_texture_preset();
 #define RENDER_TO_TEXTURE() (get_render_to_texture_preset() == 1)
 
-// Split-screen viewport support: PVR User Tile Clip. 2P games (Daytona USA
-// multiplayer) draw BOTH players' viewports in ONE render pass, tagging each
-// player's polygons with a tile-aligned inside-clip rect (User Tile Clip TA
-// control parameter + PCW.User_Clip mode). On: the clip is captured per
-// PolyParam at TA decode time and applied as a per-strip GX scissor by
-// apply_tile_clip() in the draw loop. Off (default): the clip is ignored —
-// legacy behavior, the two camera views draw fullscreen on top of each other
-// and only one player's view is readable.
+// Split-screen viewport support (Slower)
 extern "C" int get_split_screen_preset();
 #define SPLIT_SCREEN() (get_split_screen_preset() == 1)
 
-// GX mipmap generation: box-filter the decoded base level into a packed GX mip
-// chain (GenerateMipChain16) so mipmapped textures stop shimmering at distance.
-// Off (default): legacy behavior — base level only, GX_FALSE, zero overhead.
-// Fast: chain + GX_LIN_MIP_NEAR (bilinear from the nearest mip level; a single
-// texture cycle on Hollywood, so near-free on the GPU side).
-// Trilinear: chain + GX_LIN_MIP_LIN — best quality, but trilinear takes TWO
-// texture cycles per texel on Hollywood, halving texture fill rate (-40% in
-// fill-heavy games like Test Drive 6).
+// GX mipmap generation
 extern "C" int get_mipmap_preset();
-#define MIPMAP_OFF()       (get_mipmap_preset() == 0)
-#define MIPMAP_FAST()      (get_mipmap_preset() == 1)
-#define MIPMAP_TRILINEAR() (get_mipmap_preset() == 2)
+#define MIPMAP_OFF()       (get_mipmap_preset() == 0) // Fast
+#define MIPMAP_FAST()      (get_mipmap_preset() == 1) // Slow
+#define MIPMAP_TRILINEAR() (get_mipmap_preset() == 2) // Slower
 
 
 int frame_counter;
