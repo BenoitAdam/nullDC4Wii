@@ -234,7 +234,16 @@ static const int kControllerTypeCount = 5;
 // DEBUG MODE
 // ============================================================================
 
-int g_debug_loop = 0;
+// Rez freeze investigation: this defaulted to 1 with no menu toggle to turn
+// it off, so every run always paid for its printf traffic (a print on every
+// single JIT cache miss, rdv_FailedToFindBlock, and every compiled static
+// branch, wii_driver.cpp "Static 0x...!"). Normally left at 0. Temporarily
+// back on here: we've traced the freeze to right after Do_Interrupt hands
+// control to the game's own interrupt handler at vbr+0x600, and this flag
+// shows every new address the JIT cold-compiles from here on — exactly the
+// visibility needed to see whether execution settles into a tight loop.
+// Revert to 0 once this specific investigation is done.
+int g_debug_loop = 1;
 extern "C" { int get_debug_loop()    { return g_debug_loop;    } }
 
 int g_debug_message = 0;
@@ -1263,6 +1272,11 @@ int main(int argc, wchar *argv[])
 
   console_init(xfb[0], 20, 20, rmode->fbWidth, rmode->xfbHeight,
                rmode->fbWidth * VI_DISPLAY_PIX_SZ);
+
+  // Rez launch-crash investigation: force stdout unbuffered so every printf
+  // reaches the on-screen console immediately instead of sitting in a libc
+  // stdio buffer that may never get flushed if the emulator hangs/freezes.
+  setvbuf(stdout, NULL, _IONBF, 0);
 
   VIDEO_Configure(rmode);
   VIDEO_SetNextFramebuffer(xfb[fb]);

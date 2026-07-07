@@ -1,6 +1,9 @@
 #include "cdi.h"
 
-#define printf(...) // printf(__VA_ARGS__)
+// Rez launch-crash investigation: this used to silently swallow every printf
+// in this file. Re-enabled so CDI load/read diagnostics actually reach the
+// console; revert to muted once the investigation is done if it's too noisy.
+// #define printf(...) // printf(__VA_ARGS__)
 
 extern "C" int get_debug_loop();
 

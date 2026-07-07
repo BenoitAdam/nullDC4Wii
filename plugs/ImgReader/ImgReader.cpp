@@ -106,11 +106,20 @@ void FASTCALL libGDR_GetSessionInfo(u8* out,u8 ses)
 */
 void FASTCALL libGDR_ReadSector(u8 * buff,u32 StartSector,u32 SectorCount,u32 secsz)
 {
+  // Rez freeze investigation: unconditional (the get_debug_gdrom/get_debug_loop
+  // gated print below never fires now that those default off) — need to see
+  // whether a read attempt even starts, and whether it returns, once the
+  // freeze happens right after the GET_TOC exchange.
+  printf("[GDR] libGDR_ReadSector ENTER FAD=%u count=%u secsz=%u CurrDrive=%p\n",
+         StartSector, SectorCount, secsz, (void*)CurrDrive);
+
   if (get_debug_gdrom() && get_debug_loop()) {
 	  printf("[GDR] libGDR_ReadSector FAD=%u count=%u secsz=%u\n", StartSector, SectorCount, secsz);
   }
 	if (CurrDrive)
 		CurrDrive->ReadSector(buff,StartSector,SectorCount,secsz);
+
+  printf("[GDR] libGDR_ReadSector EXIT FAD=%u\n", StartSector);
 }
 
 void FASTCALL libGDR_GetToc(u32* toc,u32 area)

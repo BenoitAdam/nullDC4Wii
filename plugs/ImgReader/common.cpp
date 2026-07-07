@@ -180,6 +180,7 @@ bool InitDrive(u32 fileflags)
 
 	if (!InitDrive_(fn))
 	{
+		printf("ERROR: InitDrive_ failed for \"%s\" — no reader (cdi/mds/iso) accepted this image, booting with NoDisk\n", fn);
 		msgboxf("Selected image failed to load",0);
 		CurrDrive=0;
 		NullDriveDiscType=NoDisk;

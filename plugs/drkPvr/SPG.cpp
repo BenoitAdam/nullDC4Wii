@@ -13,6 +13,24 @@
 extern "C" int get_speed_limiter_preset();
 #define SPEED_LIMITER() (get_speed_limiter_preset() != 0)
 
+// Rez launch-crash investigation: SH4 dynarec + block-cache counters.
+// Defined in dc/sh4/rec_v2/driver.cpp (ENABLE_PERF_MONITORING) and
+// dc/sh4/rec_v2/blockmanager.cpp (BM_ENABLE_STATS), both enabled for this
+// investigation. Reset every 2s so the numbers printed below are a
+// per-report delta, not a running total.
+void recSh4_GetPerfStats(u32* blocks_compiled, u32* cache_clears, u32* check_failures);
+void recSh4_ResetPerfStats();
+extern "C" void bm_GetStats(u32* hits, u32* misses, u32* cache_hits, u32* total_blocks);
+extern "C" void bm_ResetStats();
+
+// Rez freeze investigation: incremented in dc/gdrom/gdromv3.cpp and
+// plugs/drkPvr/gxRend.cpp. Read here only — this report runs on the main
+// emulation thread, same as the code that increments them, so no cross-
+// thread synchronization is needed (unlike the watchdog-thread approach
+// tried earlier, which raced with this thread's own printf/console use).
+extern "C" volatile u32 g_gdrom_cmd_count;
+extern "C" volatile u32 g_render_call_count;
+
 u32 spg_InVblank = 0;
 s32 spg_ScanlineSh4CycleCounter = 0;
 u32 spg_ScanlineCount = 512;
@@ -155,6 +173,52 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 printf("%s\n", fpsStr);
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
+
+                // Rez launch-crash investigation: dump recompiler/block-cache
+                // deltas for this 2s window right next to the fps line, so a
+                // death-spiral (fps collapsing while these numbers explode)
+                // is visible in the same already-working report channel.
+                u32 blocks_compiled = 0, cache_clears = 0, check_fails = 0;
+                recSh4_GetPerfStats(&blocks_compiled, &cache_clears, &check_fails);
+                recSh4_ResetPerfStats();
+
+                u32 bm_hits = 0, bm_misses = 0, bm_cache_hits = 0, bm_total_blocks = 0;
+                bm_GetStats(&bm_hits, &bm_misses, &bm_cache_hits, &bm_total_blocks);
+                bm_ResetStats();
+
+                static u32 s_last_gdrom_cmds = 0, s_last_render_calls = 0;
+                u32 gdrom_cmds   = g_gdrom_cmd_count;
+                u32 render_calls = g_render_call_count;
+
+                char recStr[256];
+                sprintf(recStr,
+                    "  [rec] compiled=%u cacheClears=%u checkFails=%u | bm hits=%u misses=%u cacheHits=%u totalBlocks=%u | gdrom=%u(+%u) render=%u(+%u)",
+                    blocks_compiled, cache_clears, check_fails,
+                    bm_hits, bm_misses, bm_cache_hits, bm_total_blocks,
+                    gdrom_cmds, gdrom_cmds - s_last_gdrom_cmds,
+                    render_calls, render_calls - s_last_render_calls);
+                printf("%s\n", recStr);
+
+                s_last_gdrom_cmds   = gdrom_cmds;
+                s_last_render_calls = render_calls;
+
+                // Also append both lines to a persistent SD/USB log, flushed
+                // immediately, so the numbers survive a hard freeze that
+                // never lets the on-screen console be read/photographed.
+                static FILE* s_dbg_log = nullptr;
+                static bool s_dbg_log_tried = false;
+                if (!s_dbg_log_tried)
+                {
+                    s_dbg_log_tried = true;
+                    s_dbg_log = fopen("sd:/nulldc_debug.log", "w");
+                    if (!s_dbg_log)
+                        s_dbg_log = fopen("usb:/nulldc_debug.log", "w");
+                }
+                if (s_dbg_log)
+                {
+                    fprintf(s_dbg_log, "%s\n%s\n", fpsStr, recStr);
+                    fflush(s_dbg_log);
+                }
             }
 
             // ── Speed limiter: cap emulation at real-hardware (100%) speed ──
@@ -176,7 +240,22 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
             if (SPEED_LIMITER())
             {
                 double target_sec = (double)spg_FrameSh4Cycles / (double)SH4_CLOCK;
-                double cur        = os_GetSeconds();
+
+                // Rez freeze investigation: target_sec is only ever supposed to be
+                // ~1/60 - 1/50 sec (one video frame). It has no sanity bound, so a
+                // transient garbage SPG_LOAD (hcount/vcount) write — e.g. during a
+                // BIOS-to-game video-timing handoff — can blow this up to something
+                // enormous, which turns the usleep() below into a multi-second (or
+                // much longer) genuine block: near-0% real speed, total silence,
+                // looks exactly like a freeze. Clamp defensively and log if it fires.
+                if (target_sec > 0.5 || target_sec < 0.0)
+                {
+                    printf("[SPG] speed limiter: bogus target_sec=%.6f (spg_FrameSh4Cycles=%u) — clamping to 1/60s\n",
+                           target_sec, spg_FrameSh4Cycles);
+                    target_sec = 1.0 / 60.0;
+                }
+
+                double cur = os_GetSeconds();
 
                 if (s_limiter_next_deadline == 0.0)
                 {
@@ -185,7 +264,15 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 else
                 {
                     if (cur < s_limiter_next_deadline)
-                        usleep((useconds_t)((s_limiter_next_deadline - cur) * 1000000.0));
+                    {
+                        double sleep_sec = s_limiter_next_deadline - cur;
+                        if (sleep_sec > 0.5)
+                        {
+                            printf("[SPG] speed limiter: bogus sleep_sec=%.6f — clamping to 0.1s\n", sleep_sec);
+                            sleep_sec = 0.1;
+                        }
+                        usleep((useconds_t)(sleep_sec * 1000000.0));
+                    }
 
                     s_limiter_next_deadline += target_sec;
 

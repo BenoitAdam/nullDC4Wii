@@ -329,6 +329,15 @@ void ResetInterruptMask(InterruptID intr)
 
 bool fastcall Do_Interrupt(u32 intEvn)
 {
+	// Rez freeze investigation: unconditional — real interrupts are an
+	// event, not a per-instruction hot path, so this should be low-volume.
+	// Confirms whether ANY interrupt (GDROM completion or otherwise) is
+	// still being delivered to the SH4 after the GDROM DMA-completion
+	// sequence, or whether delivery has stopped entirely (e.g. stuck
+	// masked) at that point.
+	printf("[INTC] Do_Interrupt intEvn=%04X pc=%08X vbr=%08X sr.IMASK=%u vpend=%08X vmask=%08X srimask=%08X\n",
+	       intEvn, next_pc, vbr, sr.IMASK, interrupt_vpend, interrupt_vmask, decoded_srimask);
+
 	CCN_INTEVT = intEvn;
 
 	ssr = sr.GetFull();

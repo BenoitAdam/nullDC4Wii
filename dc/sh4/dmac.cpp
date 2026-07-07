@@ -59,7 +59,15 @@ void DMAC_Ch2St()
 		return;
 	}
 
-	//printf("DMAC: Ch2 DMA  SRC=0x%08X  DST=0x%08X  LEN=0x%X\n", src, dst, len);
+	// Rez freeze investigation: this is the DMA that the game's interrupt
+	// handler kicks off right where execution goes silent (SB_C2DST write at
+	// 0x8C0452F0). No upper bound on len here, unlike the GD-ROM DMA path
+	// (which explicitly caps at 32000 bytes/call and spreads the transfer
+	// across many ticks) — if len is huge, this runs to completion
+	// synchronously in one shot: no rendering, no yielding, matching the
+	// observed near-0% speed + total silence exactly.
+	printf("[DMA2] Ch2 DMA start SRC=0x%08X DST=0x%08X LEN=0x%X (%u bytes) isDstTA=%d\n",
+	       src, dst, len, len, isDstTA(dst));
 
 	// --- Transfer to TA (display list) address space ---
 	if (isDstTA(dst))

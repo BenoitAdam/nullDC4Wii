@@ -1825,10 +1825,18 @@ void ngen_ResetBlocks()
 
 void* FASTCALL ngen_LinkBlock_Static(u32 pc,u32* patch)
 {
+	// Rez freeze investigation: unconditional. If pc/patch look wrong here,
+	// the hand-written ngen_LinkBlock_Static_stub asm mis-passed arguments
+	// (FASTCALL/register mismatch). If this never prints at all, the hang
+	// is inside the stub's raw asm before it even reaches this function.
+	printf("[LINK] ngen_LinkBlock_Static ENTER pc=%08X patch=%p\n", pc, (void*)patch);
+
 	next_pc=pc;
-	
+
 	DynarecCodeEntry* rv=rdv_FindOrCompile();
-	
+
+	printf("[LINK] ngen_LinkBlock_Static rdv_FindOrCompile rv=%p\n", (void*)rv);
+
 	emit_ptr=patch;
 	{
 		ppc_jump(rv);
@@ -1836,6 +1844,8 @@ void* FASTCALL ngen_LinkBlock_Static(u32 pc,u32* patch)
 	emit_ptr=0;
 
 	make_address_range_executable(patch, 1*sizeof(u32));
+
+	printf("[LINK] ngen_LinkBlock_Static EXIT rv=%p\n", (void*)rv);
 
 	return (void*)rv;
 }

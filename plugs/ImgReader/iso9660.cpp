@@ -29,6 +29,11 @@ struct file_TrackInfo
 			{
 				u8* ptr=isotemshit;
 				s32 off2=(sector-FAD)*SectorSize + offset;
+				// Rez freeze investigation: unconditional trace right around the
+				// actual SD-card file I/O — if this is a genuine blocked syscall
+				// (fits observed near-0% real Dolphin speed at the freeze point),
+				// ENTER will print but EXIT never will.
+				printf("[TRK] ReadSector ENTER sector=%u FAD=%u off2=%d f=%p\n", sector, FAD, off2, (void*)f);
 				if (off2>=0)
 				{
 					fseek(f,off2,SEEK_SET);
@@ -40,6 +45,7 @@ struct file_TrackInfo
 					fread(ptr,SectorSize-off2,1,f);
 					ptr+=off2;
 				}
+				printf("[TRK] ReadSector EXIT sector=%u\n", sector);
 			//	printf("readed %d bytes from file 0x%X , converting to %d [sec %d]\n",
 			//		SectorSize,f,secsz,sector);
 				ConvertSector(ptr,buff,SectorSize,secsz,sector);
@@ -76,6 +82,9 @@ void rss(u8* buff,u32 ss,FILE* file)
 }
 void iso_DriveReadSector(u8 * buff,u32 StartSector,u32 SectorCount,u32 secsz)
 {
+  // Rez freeze investigation: unconditional (the get_debug_loop-gated print
+  // below never fires now that it defaults off).
+  printf("[ISO] iso_DriveReadSector ENTER StartSector=%u count=%u secsz=%u\n", StartSector, SectorCount, secsz);
 
   // DOLPHIN ERROR LOOP
   if(get_debug_loop() == 1){
@@ -89,6 +98,7 @@ void iso_DriveReadSector(u8 * buff,u32 StartSector,u32 SectorCount,u32 secsz)
 		buff+=secsz;
 		StartSector++;
 	}
+	printf("[ISO] iso_DriveReadSector EXIT\n");
 	return;
 }
 /*
@@ -211,9 +221,15 @@ bool load_gdi(char* file_)
 
 
 	//session 2 : start @ track 3, and its fad
-	gdi_ses.SessionStart[0]=3;
+	gdi_ses.SessionStart[1]=3;
 	gdi_ses.SessionFAD[1]=gdi_toc.tracks[2].FAD;
 	gdi_ses.SessionsEndFAD=549300;
+
+	printf("GDI sessions: count=%u ses1(track=%u fad=%u) ses2(track=%u fad=%u) endFAD=%u\n",
+	       gdi_ses.SessionCount,
+	       gdi_ses.SessionStart[0], gdi_ses.SessionFAD[0],
+	       gdi_ses.SessionStart[1], gdi_ses.SessionFAD[1],
+	       gdi_ses.SessionsEndFAD);
 
 	return true;
 }

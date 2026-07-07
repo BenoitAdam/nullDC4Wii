@@ -3618,8 +3618,15 @@ static void rtt_copy_efb_to_vram()
 // The main rendering loop. Executes GX commands to draw the stored vertex lists.
 // ============================
 
+// Rez freeze investigation: sampled by the watchdog thread in
+// dc/sh4/rec_v2/driver.cpp to tell whether rendering is still happening
+// at all once the game appears to hang.
+extern "C" { volatile u32 g_render_call_count = 0; }
+
 void DoRender()
 {
+  g_render_call_count++;
+
   // ASYNC_RENDER(): wait for the previous queued frame and apply its deferred
   // VIDEO flip before anything else — texture decode below re-writes bump
   // slots the GPU may still be sampling. No-op when nothing is pending.

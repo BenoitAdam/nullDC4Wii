@@ -58,7 +58,9 @@ extern "C" int get_debug_loop();
 // Optional performance counters
 // Uncomment to enable; negligible overhead, useful for tuning cache thresholds
 // ============================================================================
-// #define ENABLE_PERF_MONITORING
+// Rez launch-crash investigation: enabled to expose recSh4_GetPerfStats()
+// to the periodic FPS report in plugs/drkPvr/SPG.cpp.
+#define ENABLE_PERF_MONITORING
 
 #ifdef ENABLE_PERF_MONITORING
 static u32 perf_blocks_compiled    = 0;
@@ -328,6 +330,37 @@ DynarecCodeEntry* rdv_CompileBlock(u32 bpc)
 	}
 
 	AnalyseBlock(blk);
+
+	// Rez freeze investigation: dump raw SH4 opcodes for the specific block
+	// range we've traced the freeze to (0x8C0452EC..0x8C04535E) — execution
+	// enters this block cleanly (compile+patch confirmed via ngen_LinkBlock_
+	// Static logging) but nothing ever runs after it, meaning the compiled
+	// native code itself hangs. Dumping the raw guest opcodes lets us
+	// identify which SH4 instruction the recompiler mistranslated, without
+	// needing a full disassembler.
+	if (blk->start >= 0x8C0452E0 && blk->start <= 0x8C045400)
+	{
+		printf("[DUMP] block start=%08X opcodes=%u cycles=%u BlockType=%d BranchBlock=%08X NextBlock=%08X\n",
+		       blk->start, blk->opcodes, blk->cycles, blk->BlockType, blk->BranchBlock, blk->NextBlock);
+		for (u32 i = 0; i < blk->opcodes; i++)
+		{
+			u32 addr = blk->start + i*2;
+			u16 op = (u16)IReadMem16(addr);
+			printf("[DUMP]   %08X: %04X\n", addr, (u32)op);
+
+			// First opcode here is D12A = MOV.L @(disp,PC),R1 — resolve and
+			// dump the literal-pool constant it loads, since the delay slot
+			// (21C2 = MOV.L R12,@R1) writes R12 to that address. If it's a
+			// hardware register, that write (or its handler) is the prime
+			// suspect for this hang.
+			if ((op & 0xF000) == 0xD000)
+			{
+				u32 rn_disp_pc = (addr & ~3u) + 4 + ((op & 0xFF) << 2);
+				printf("[DUMP]   literal @%08X = %08X  (this is the address R12 gets stored to in the delay slot)\n",
+				       rn_disp_pc, (u32)ReadMem32(rn_disp_pc));
+			}
+		}
+	}
 
 	// Remember where code for this block starts (for I-cache flush)
 #if HOST_OS == OS_WII

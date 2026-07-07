@@ -26,7 +26,9 @@ extern "C" {
 #endif
 
 // Enable statistics tracking (disable in release builds for better performance)
-// #define BM_ENABLE_STATS
+// Rez launch-crash investigation: enabled to expose bm_GetStats() to the
+// periodic FPS report in plugs/drkPvr/SPG.cpp.
+#define BM_ENABLE_STATS
 
 typedef void DynarecCodeEntry();
 

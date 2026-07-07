@@ -12,6 +12,11 @@
 extern "C" int get_debug_loop();
 extern "C" int get_debug_gdrom();
 
+// Rez freeze investigation: sampled by the watchdog thread in
+// dc/sh4/rec_v2/driver.cpp to tell whether the GD-ROM is still being talked
+// to at all once the game appears to hang.
+extern "C" { volatile u32 g_gdrom_cmd_count = 0; }
+
 enum gd_states
 {
 	//Generic
@@ -323,10 +328,13 @@ void gd_set_state(gd_states state)
 			GDStatus.DRQ=0;
 			GDStatus.BSY=0;
 			//Make INTRQ valid
+			printf("[GDR] gds_procpacketdone: raising holly_GDROM_CMD\n");
 			asic_RaiseInterrupt(holly_GDROM_CMD);
+			printf("[GDR] gds_procpacketdone: raised, transitioning to gds_waitcmd\n");
 
 			//command finished !
 			gd_set_state(gds_waitcmd);
+			printf("[GDR] gds_procpacketdone: gds_waitcmd returned\n");
 			break;
 
 		case gds_process_set_mode:
@@ -426,6 +434,8 @@ void gd_spi_pio_read_end(u32 len,gd_states next_state)
 }
 void gd_process_ata_cmd()
 {
+	g_gdrom_cmd_count++;
+
 	//Any ata cmd clears these bits , unless aborted/error :p
 	Error.ABRT=0;
 	GDStatus.CHECK=0;
@@ -497,6 +507,8 @@ void gd_process_ata_cmd()
 
 void gd_process_spi_cmd()
 {
+	g_gdrom_cmd_count++;
+
 	printf_spi("SPI cmd %02x;",packet_cmd.data_8[0]);
 	printf_spi("params: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x \n",
 		packet_cmd.data_8[0], packet_cmd.data_8[1], packet_cmd.data_8[2], packet_cmd.data_8[3], packet_cmd.data_8[4], packet_cmd.data_8[5],
@@ -558,11 +570,34 @@ void gd_process_spi_cmd()
 			printf_spicmd("SPI_GET_TOC\n");
 			//printf("SPI_GET_TOC - %d\n",(packet_cmd.data_8[4]) | (packet_cmd.data_8[3]<<8) );
 			u32 toc_gd[102];
+			u32 area = packet_cmd.data_8[1]&0x1;
+			u32 xfer_len = (packet_cmd.data_8[4]) | (packet_cmd.data_8[3]<<8);
 
 			//toc - dd/sd
-			libGDR_GetToc(&toc_gd[0],packet_cmd.data_8[1]&0x1);
+			libGDR_GetToc(&toc_gd[0],area);
 
-			gd_spi_pio_end((u8*)&toc_gd[0], (packet_cmd.data_8[4]) | (packet_cmd.data_8[3]<<8) );
+			// Rez freeze investigation: dump exactly what we hand back — the
+			// two GET_TOC calls right before the game's own boot hangs are
+			// the last thing every test shows, so log the actual TOC content.
+			// toc_gd is the already-serialized wire format (see ConvToc() in
+			// plugs/ImgReader/common.cpp), not a TocInfo struct: each u32 is
+			// 4 raw bytes — [0]=(ctrl<<4)|addr, [1..3]=FAD (or, for entries
+			// 99/100, [1]=track number instead of a FAD).
+			{
+				u8* e0   = (u8*)&toc_gd[0];   // track 1
+				u8* e2   = (u8*)&toc_gd[2];   // track 3
+				u8* e99  = (u8*)&toc_gd[99];  // first-track entry
+				u8* e100 = (u8*)&toc_gd[100]; // last-track entry
+				u8* e101 = (u8*)&toc_gd[101]; // lead-out entry
+				printf("[GDR] SPI_GET_TOC: area=%u(%s) xfer_len=%u firstTrackNum=%u lastTrackNum=%u leadOutFAD=%u track1.FAD=%u track3.FAD=%u\n",
+				       area, area ? "DoubleDensity" : "SingleDensity", xfer_len,
+				       e99[1], e100[1],
+				       (e101[1]<<16)|(e101[2]<<8)|e101[3],
+				       (e0[1]<<16)|(e0[2]<<8)|e0[3],
+				       (e2[1]<<16)|(e2[2]<<8)|e2[3]);
+			}
+
+			gd_spi_pio_end((u8*)&toc_gd[0], xfer_len);
 		}
 		break;
 
@@ -1124,7 +1159,8 @@ void UpdateGDRom()
 	SB_GDLEND+= len_backup;
 	SB_GDSTARD+= len_backup;//(src + len_backup)&0x1FFFFFFF;
 
-	if (SB_GDLEND==SB_GDLEN)
+	bool dma_len_done = (SB_GDLEND==SB_GDLEN);
+	if (dma_len_done)
 	{
 		//printf("Streamed GDMA end - %d bytes trasnfered\n",SB_GDLEND);
 		SB_GDST=0;//done
@@ -1135,9 +1171,20 @@ void UpdateGDRom()
 	if (read_params.remaining_sectors==0)
 	{
 		u32 buff_size =read_buff.cache_size - read_buff.cache_index;
+		// Rez freeze investigation: this is the exact junction where a
+		// mismatch between "all sectors read" and "DMA byte-length done"
+		// would silently leave the transfer stuck forever (no completion
+		// interrupt raised, game waits on it indefinitely — a genuine
+		// hardware-accurate block, not a spin, matching near-0% real speed
+		// with zero further output). Unconditional, fires only right at the
+		// tail of a transfer so it's not high-volume.
+		printf("[DMA] tail: remaining_sectors=0 dma_len_done=%d SB_GDLEND=%u SB_GDLEN=%u SB_GDST=%u buff_size=%u cache_index=%u cache_size=%u\n",
+		       dma_len_done, SB_GDLEND, SB_GDLEN, SB_GDST, buff_size, read_buff.cache_index, read_buff.cache_size);
 		//And all buffer :p
 		if (buff_size==0)
 		{
+			printf("[DMA] tail: buff drained, SB_GDST&1=%u -> %s\n",
+			       SB_GDST&1, (SB_GDST&1) ? "STUCK (verify will fail)" : "completing (gds_procpacketdone)");
 			verify(!(SB_GDST&1))
 			gd_set_state(gds_procpacketdone);
 		}
