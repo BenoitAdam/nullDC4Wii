@@ -40,7 +40,7 @@ extern "C" int get_debug_message();
 extern "C" int get_debug_loop();
 
 // Specific debug for FMV
-int fmv_debug = 0;
+int fmv_debug = 1;
 
 // Frame skipping
 extern "C" int get_frameskip_preset();
@@ -106,6 +106,22 @@ extern "C" int get_fmv_format_preset();
 #define FMV_FORMAT_CMPR()   (get_fmv_format_preset() == 0)
 #define FMV_FORMAT_RGBA8()  (get_fmv_format_preset() == 1)
 #define FMV_FORMAT_RGB565() (get_fmv_format_preset() == 2)
+// TEV: no CPU color math at all — YUV planes are tile-copied raw into an I8
+// luma texture (TEXMAP0) + IA8 chroma texture (TEXMAP1) and the YUV→RGB
+// matrix runs on the GPU in TEV stages (see tev_yuv_setup_full()).
+#define FMV_FORMAT_TEV()    (get_fmv_format_preset() == 3)
+
+// FMV BOOST ladder — pass-1 side lives in dc/pvr/pvr_if.cpp:
+//   0 = OFF        legacy behavior everywhere (default)
+//   1 = PASS1      optimized YUV pass-1 macroblock converter only
+//   2 = FUSED      pass 1 writes GX-ready TEV planes directly; pass 2 (this
+//                  file's full-frame YUV re-decode) is skipped entirely
+//   3 = FUSED+HALF fused planes at half resolution (GX bilinear upscales)
+//   4 = MAX        level 3 + FMV frame decimation (convert every 2nd frame)
+// Levels >= 2 render matching FMV textures through the same TEV YUV program
+// as FMV_FORMAT_TEV(), regardless of the FMV FORMAT preset.
+extern "C" int get_fmv_boost_preset();
+#define FMV_BOOST_FUSED() (get_fmv_boost_preset() >= 2)
 
 // Blend mode: per-polygon TSP SrcInstr/DstInstr blending (necessary for Resident Evil 3)
 extern "C" int get_blend_mode_preset();
@@ -314,9 +330,11 @@ struct PolyParam
 struct TextureCacheDesc
 {
   GXTexObj  tex;
+  GXTexObj  tex_uv;     // FMV TEV path: IA8 chroma plane; only valid when is_yuv_tev
   GXTlutObj pal;
   u32  addr;            // orig_tex_addr this slot holds (0 = empty)
   bool has_pal;
+  bool is_yuv_tev;      // FMV TEV path: pixel data = raw I8 luma + IA8 chroma planes
   u32  vq_codebook_w0;  // VQ fingerprint (cb_w0 ^ idx_w0)
   u32  slot_size;       // bump allocator: total bytes of this allocation
   u32  shape_key;       // CACHE_FAST/CACHE_NORMAL: non-address TCW/TSP bits (format/scan/stride/mip/size)
@@ -334,7 +352,9 @@ static INLINE TextureCacheDesc* skimp_slot(u32 tex_addr)
 {
   u32 cache_offset = tex_addr * 2;
   cache_offset = (cache_offset + 31) & ~31u;
-  if (cache_offset < 64) cache_offset = 64;
+  // Floor must stay >= sizeof(TextureCacheDesc) (the descriptor sits BEFORE
+  // this offset via the "- 1" below). 128 covers the struct incl. tex_uv.
+  if (cache_offset < 128) cache_offset = 128;
   return (TextureCacheDesc*)&vram_buffer[cache_offset] - 1;
 }
 
@@ -1867,6 +1887,74 @@ static void YUV422_to_RGB565_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
   }
 }
 
+// ── FMV TEV path (fmv_format == 3): raw plane uploads ───────────────────────
+// No per-pixel color math at all. The planar YUYV source is split into:
+//   - a full-res luma plane      -> GX_TF_I8  (8x4 tiles, 1 byte/texel)
+//   - a half-width chroma plane  -> GX_TF_IA8 (4x4 tiles, 2 bytes/texel,
+//     one texel per YUYV pixel pair; byte order [A|I] = [V|U], so in TEV the
+//     texture COLOR channel carries U and the texture ALPHA carries V)
+// The YUV→RGB matrix then runs on the GPU (tev_yuv_setup_full() below), so
+// the CPU cost per FMV frame drops from ~7 multiplies+clamps per pixel to a
+// pure shuffling copy. GX_LINEAR magnification also interpolates the chroma
+// plane, which the CPU converters never did (they duplicated U/V per pair).
+//
+// Source word layout matches the other planar decoders: a u32 load of one
+// YUYV pair yields U = bits[7:0], Y0 = bits[15:8], V = bits[23:16],
+// Y1 = bits[31:24]. Rows past the real video height are filled with black
+// (Y=0) / neutral chroma (U=V=128), mirroring the RGB565 planar zero-fill.
+#define YUV_TEV_YPAIR(wrd)  (((wrd) & 0xFF00u) | ((wrd) >> 24))              // [Y0|Y1] BE u16
+#define YUV_TEV_UVPAIR(wrd) ((((wrd) >> 8) & 0xFF00u) | ((wrd) & 0xFFu))     // [V |U ] BE u16
+
+// YUV422 planar -> GX_TF_I8 luma plane (w x h)
+static void YUV422_Planar_to_Yplane_I8(u8 *src_vram, u32 w, u32 h, u8 *dst)
+{
+  u32 src_stride = g_yuv_src_stride_override ? (u32)g_yuv_src_stride_override : w;
+  u32 real_h     = g_yuv_src_real_h ? (u32)g_yuv_src_real_h : h;
+  u32 tiles_x = w / 8, tiles_y = h / 4; // I8 tile: 8x4 texels = 32 bytes
+  for (u32 ty = 0; ty < tiles_y; ty++)
+  for (u32 tx = 0; tx < tiles_x; tx++)
+  {
+    u8 *tile = dst + (ty*tiles_x + tx) * 32;
+    for (u32 row = 0; row < 4; row++)
+    {
+      u32  y   = ty*4 + row;
+      u32 *out = (u32*)(tile + row*8);
+      if (y >= real_h) { out[0] = 0; out[1] = 0; continue; }
+      const u32 *src = (const u32*)&src_vram[(y*src_stride + tx*8) * 2];
+      // 8 luma bytes per tile row = 4 YUYV source words.
+      u32 w0 = src[0], w1 = src[1], w2 = src[2], w3 = src[3];
+      out[0] = (YUV_TEV_YPAIR(w0) << 16) | YUV_TEV_YPAIR(w1);
+      out[1] = (YUV_TEV_YPAIR(w2) << 16) | YUV_TEV_YPAIR(w3);
+    }
+  }
+}
+
+// YUV422 planar -> GX_TF_IA8 chroma plane ((w/2) x h)
+static void YUV422_Planar_to_UVplane_IA8(u8 *src_vram, u32 w, u32 h, u8 *dst)
+{
+  u32 src_stride = g_yuv_src_stride_override ? (u32)g_yuv_src_stride_override : w;
+  u32 real_h     = g_yuv_src_real_h ? (u32)g_yuv_src_real_h : h;
+  u32 wc = w / 2;                        // one chroma texel per YUYV pixel pair
+  u32 tiles_x = wc / 4, tiles_y = h / 4; // IA8 tile: 4x4 texels = 32 bytes
+  for (u32 ty = 0; ty < tiles_y; ty++)
+  for (u32 tx = 0; tx < tiles_x; tx++)
+  {
+    u8 *tile = dst + (ty*tiles_x + tx) * 32;
+    for (u32 row = 0; row < 4; row++)
+    {
+      u32  y   = ty*4 + row;
+      u32 *out = (u32*)(tile + row*8);
+      if (y >= real_h) { out[0] = 0x80808080u; out[1] = 0x80808080u; continue; }
+      // 4 chroma texels per tile row = 4 source words = 8 source pixels,
+      // so the source x for tile column tx is tx*8 pixels.
+      const u32 *src = (const u32*)&src_vram[(y*src_stride + tx*8) * 2];
+      u32 w0 = src[0], w1 = src[1], w2 = src[2], w3 = src[3];
+      out[0] = (YUV_TEV_UVPAIR(w0) << 16) | YUV_TEV_UVPAIR(w1);
+      out[1] = (YUV_TEV_UVPAIR(w2) << 16) | YUV_TEV_UVPAIR(w3);
+    }
+  }
+}
+
 // =========================
 // GX mip-chain generation
 // =========================
@@ -1973,6 +2061,30 @@ static u32 GenerateMipChain16(u16 *base, u32 w, bool is565)
 // Processes the Dreamcast's TCW (Texture Control Word) to initialize Wii TexObjects.
 // 4 steps
 
+// Set by SetTextureParams on every textured draw: true when the texture just
+// bound is an FMV TEV pair (I8 luma on TEXMAP0 + IA8 chroma on TEXMAP1).
+// DoRender's per-polygon loop uses it to swap the TEV program in and out.
+static bool s_tex_is_yuv_tev = false;
+
+// Texture matrix both YUV texcoords are generated through while the TEV YUV
+// program is active. GX_IDENTITY for pass-2 TEV planes (sized like the
+// declared texture); GX_TEXMTX0 for FMV BOOST fused planes, which are sized
+// to the real video — the matrix (loaded at bind time) rescales the game's
+// UVs so the vertex stream/VCD stays untouched.
+static u32 s_yuv_texmtx = GX_IDENTITY;
+
+// FMV BOOST fused-plane state, produced by the YUV converter's pass 1 in
+// dc/pvr/pvr_if.cpp. Valid (addr != 0) only while boost >= 2 and an FMV is
+// actually being decoded; the planes are GX-tiled, 32-byte aligned and
+// already flushed by the producer.
+extern "C" {
+  extern u32 g_fmv_fused_addr;             // VRAM addr of the FMV texture (0 = none)
+  extern u32 g_fmv_fused_vw, g_fmv_fused_vh; // real video size in DC pixels
+  extern u32 g_fmv_fused_pw, g_fmv_fused_ph; // luma plane size (halved at boost >= 3)
+  extern u8 *g_fmv_fused_y;                // I8 luma plane  (pw x ph)
+  extern u8 *g_fmv_fused_uv;               // IA8 chroma plane ((pw/2) x ph)
+}
+
 static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 {
   // decal_alpha_fix off: keep the original unconditional GX_MODULATE here so this
@@ -1992,6 +2104,51 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   u8 *vq_codebook;
   u32 w = 8 << mod->tsp.TexU;
   u32 h = 8 << mod->tsp.TexV;
+
+  // ── FMV BOOST fused path (boost >= 2) ──────────────────────────────────────
+  // The YUV converter's pass 1 (dc/pvr/pvr_if.cpp) already produced GX-ready
+  // TEV planes for this exact texture address while decoding the macroblocks,
+  // so pass 2 (cache lookup + full-frame YUV re-decode + flush) is skipped
+  // entirely: bind the planes and return. The planes are sized to the real
+  // video (possibly half-res), not to the 8<<TexU/TexV texture the game
+  // declared, so both texcoords are rescaled by GX_TEXMTX0 (loaded here, used
+  // by the TEV YUV texgen in DoRender) — the vertex stream/VCD is untouched.
+  // Effective declared width: the YUV decode path treats StrideSel as 512
+  // wide (see case 3 below), so the UV rescale must use the same width.
+  u32 fmv_eff_w = mod->tcw.NO_PAL.StrideSel ? 512u : w;
+  if (mod->tcw.NO_PAL.PixelFmt == 3 && mod->tcw.NO_PAL.ScanOrder
+      && !is_vq && !mod->tcw.NO_PAL.MipMapped
+      && FMV_BOOST_FUSED() && g_fmv_fused_addr && tex_addr == g_fmv_fused_addr
+      && g_fmv_fused_vw <= fmv_eff_w && g_fmv_fused_vh <= h)
+  {
+    static GXTexObj s_fused_tex_y, s_fused_tex_uv;
+    GX_InitTexObj(&s_fused_tex_y, g_fmv_fused_y,
+                  (u16)g_fmv_fused_pw, (u16)g_fmv_fused_ph, GX_TF_I8,
+                  GX_CLAMP, GX_CLAMP, GX_FALSE);
+    GX_InitTexObjLOD(&s_fused_tex_y, min_filt, mag_filt,
+                  0.0f, 10.0f, lod_bias, bias_clamp, edge_lod, aniso);
+    GX_InitTexObj(&s_fused_tex_uv, g_fmv_fused_uv,
+                  (u16)(g_fmv_fused_pw / 2), (u16)g_fmv_fused_ph, GX_TF_IA8,
+                  GX_CLAMP, GX_CLAMP, GX_FALSE);
+    GX_InitTexObjLOD(&s_fused_tex_uv, min_filt, mag_filt,
+                  0.0f, 10.0f, lod_bias, bias_clamp, edge_lod, aniso);
+    GX_LoadTexObj(&s_fused_tex_y,  GX_TEXMAP0);
+    GX_LoadTexObj(&s_fused_tex_uv, GX_TEXMAP1);
+
+    // Texcoord rescale: the game's UVs address the declared w x h texture,
+    // the planes only hold the vw x vh video. Half-res planes keep the same
+    // normalized mapping, so the video dims are the right divisor either way.
+    Mtx texmtx = {
+      { (f32)fmv_eff_w / (f32)g_fmv_fused_vw, 0.0f, 0.0f, 0.0f },
+      { 0.0f, (f32)h / (f32)g_fmv_fused_vh, 0.0f, 0.0f },
+      { 0.0f, 0.0f, 1.0f, 0.0f },
+    };
+    GX_LoadTexMtxImm(texmtx, GX_TEXMTX0, GX_MTX2x4);
+
+    s_yuv_texmtx     = GX_TEXMTX0;
+    s_tex_is_yuv_tev = true;
+    return;
+  }
 
   //// 1. Memory Management ////
 
@@ -2230,6 +2387,10 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   if (already_decoded_this_frame)
   {
     GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
+    s_tex_is_yuv_tev = pbuff->is_yuv_tev;
+    s_yuv_texmtx     = GX_IDENTITY;
+    if (s_tex_is_yuv_tev)
+      GX_LoadTexObj(&pbuff->tex_uv, GX_TEXMAP1);
     return;
   }
 
@@ -2378,6 +2539,10 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     }
 
     //// 3. Format Conversion ////
+
+    // FMV TEV path: set inside case 3 when the texture was decoded as raw
+    // Y/UV planes; drives the chroma texobj setup in the handover below.
+    bool yuv_tev_this_tex = false;
 
     switch (mod->tcw.NO_PAL.PixelFmt)
     {
@@ -2537,7 +2702,20 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         }
       }
 
-      if (FMV_FORMAT_RGBA8())
+      if (FMV_FORMAT_TEV() && mod->tcw.NO_PAL.ScanOrder)
+      {
+        // ---- TEV path: raw Y + UV planes, YUV→RGB done by the GPU ----
+        // Planar sources only: the TA YUV converter always writes planar
+        // YUYV, which is what FMVs use. The rare twiddled YUV422 texture
+        // falls through to the CPU RGB565 path below instead.
+        // Buffer layout: I8 luma plane (w*h bytes) then IA8 chroma plane
+        // ((w/2)*h*2 = w*h bytes) — exactly the 16bpp worst-case allocation.
+        YUV422_Planar_to_Yplane_I8(yuv_src, w, h, VramWork);
+        YUV422_Planar_to_UVplane_IA8(yuv_src, w, h, VramWork + (u32)w*h);
+        FMT = GX_TF_I8; // pbuff->tex = luma plane; chroma texobj built in the handover
+        yuv_tev_this_tex = true;
+      }
+      else if (FMV_FORMAT_RGBA8())
       {
         // ---- RGBA8 path ----
         if (mod->tcw.NO_PAL.ScanOrder)
@@ -2552,10 +2730,11 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         }
         FMT = GX_TF_RGBA8;
       }
-      else if (FMV_FORMAT_RGB565())
+      else if (FMV_FORMAT_RGB565() || FMV_FORMAT_TEV())
       {
         // ---- RGB565 path — cheapest per-pixel cost (direct store, no
         // block encoding, no 8-bit channel expansion) ----
+        // (Also the twiddled-source fallback for FMV_FORMAT_TEV above.)
         if (mod->tcw.NO_PAL.ScanOrder)
         {
           // Planar (linear scan-order) source.
@@ -2600,6 +2779,13 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
                  out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[7]);
           printf("[YUV] RGBA8 tile0 GB bytes: %02X%02X %02X%02X %02X%02X %02X%02X\n",
                  out[32], out[33], out[34], out[35], out[36], out[37], out[38], out[39]);
+        }
+        else if (FMT == GX_TF_I8) // TEV path: raw planes
+        {
+          u8 *uv = out + (u32)w*h;
+          printf("[YUV] TEV Yplane tile0: %02X%02X%02X%02X %02X%02X%02X%02X  UVplane tile0: %02X%02X %02X%02X\n",
+                 out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[7],
+                 uv[0], uv[1], uv[2], uv[3]);
         }
         else // GX_TF_RGB565
         {
@@ -3185,6 +3371,23 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
                     bias_clamp, edge_lod, aniso);
     }
 
+    // FMV TEV path: second texobj for the raw chroma plane. The flag is
+    // (re)written on EVERY decode so a slot reused by a non-YUV texture can
+    // never be mistaken for a plane pair. No extra DCFlushRange needed: the
+    // 16bpp default flush above (w*h*2 bytes) covers luma (w*h) + chroma
+    // (w*h) since the two planes are contiguous.
+    pbuff->is_yuv_tev = yuv_tev_this_tex;
+    if (yuv_tev_this_tex)
+    {
+      u8 *uv_plane = (u8*)dst + (u32)w*h;
+      GX_InitTexObj(&pbuff->tex_uv, uv_plane, w/2, h, GX_TF_IA8,
+                    TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
+                    TexUV(mod->tsp.FlipV, mod->tsp.ClampV), GX_FALSE);
+      GX_InitTexObjLOD(&pbuff->tex_uv, min_filt, mag_filt,
+                    0.0f, 10.0f, lod_bias,
+                    bias_clamp, edge_lod, aniso);
+    }
+
     // Write sentinel.
     if (CACHE_VERY_FAST())
     {
@@ -3218,6 +3421,164 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   }
 
   GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
+  s_tex_is_yuv_tev = pbuff->is_yuv_tev;
+  s_yuv_texmtx     = GX_IDENTITY;
+  if (s_tex_is_yuv_tev)
+    GX_LoadTexObj(&pbuff->tex_uv, GX_TEXMAP1);
+}
+
+// ── FMV TEV YUV program (FMV_FORMAT_TEV / FMV BOOST fused) ──────────────────
+// 8-stage GPU implementation of the exact same BT.601 matrix as
+// YUV422_chroma()/YUV422_luma():
+//   R = 1.164*(Y-16) + 1.596*(V-128)
+//   G = 1.164*(Y-16) - 0.391*(U-128) - 0.813*(V-128)
+//   B = 1.164*(Y-16) + 2.018*(U-128)
+// Y comes from TEXMAP0 (I8, TEXC), U from TEXMAP1's color (IA8 intensity,
+// TEXC) and V from TEXMAP1's alpha (GX_CC_TEXA). Both texcoords are generated
+// from the same GX_VA_TEX0 input, so the vertex stream/VCD is UNCHANGED.
+//
+// TEV constraints shape the math: a/b/c combiner inputs are unsigned 8-bit,
+// only the d input is S10, and the per-stage output scale multiplies the
+// whole (d + product) term. So the accumulator runs in GX_TEVPREV at HALF
+// scale with clamping OFF (S10 keeps negative/overflowed intermediates), and
+// the last matrix stage doubles and clamps. All coefficients below are
+// value/255 ≈ coeff/2; worst-case rounding error is ~1-2 LSB vs the CPU path.
+//
+// Per-channel coefficient vectors live in the 4 konst colors, the two
+// additive constant vectors (split by sign, since inputs are unsigned) in
+// TEVREG1/TEVREG2. Nothing else in the renderer uses konst colors or
+// TEVREG1/2, so they are set once on the first FMV poly of the frame.
+
+// Stage 0 is reprogrammed on every FMV strip (not just on entry) because
+// SetTextureParams()/GX_SetTevOp stomp it for each textured param.
+static void tev_yuv_stage0()
+{
+  // S0: PREV = 2*(U * K0.rgb) -> B = 1.012*U. d=ZERO, so the x2 output scale
+  // only touches the product (this is the one coefficient > 1.0 even halved).
+  GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD1, GX_TEXMAP1, GX_COLORNULL);
+  GX_SetTevKColorSel(GX_TEVSTAGE0, GX_TEV_KCSEL_K0);
+  GX_SetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_TEXC, GX_CC_KONST, GX_CC_ZERO);
+  GX_SetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_2, GX_FALSE, GX_TEVPREV);
+  GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO);
+  GX_SetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+}
+
+// Both texcoords come from the same vertex TEX0 attribute (VCD untouched),
+// through s_yuv_texmtx: GX_IDENTITY for pass-2 planes, GX_TEXMTX0 (loaded at
+// bind time) for FMV BOOST fused planes sized to the real video. Re-applied
+// per FMV strip because consecutive FMV textures may differ in mode.
+static void tev_yuv_texgen()
+{
+  GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, s_yuv_texmtx);
+  GX_SetTexCoordGen(GX_TEXCOORD1, GX_TG_MTX2x4, GX_TG_TEX0, s_yuv_texmtx);
+}
+
+// Constants, texgen and stages 1..7: configured once per FMV entry (stages
+// 1+ are only ever touched again by the offset-color restore in
+// tev_yuv_restore, never by the per-poly texture path).
+static void tev_yuv_setup_full()
+{
+  GXColor kc0 = {  0,   0, 129, 148}; // rgb: B +2.018/2 (x2 scale); a: luma 1.164/2
+  GXColor kc1 = {204,   0,   0, 255}; // rgb: R +1.596/2
+  GXColor kc2 = {  0,  50,   0, 255}; // rgb: G -0.391/2
+  GXColor kc3 = {  0, 104,   0, 255}; // rgb: G -0.813/2
+  GXColor rc1 = {111,   0, 138, 255}; // -(1.596*128 + 1.164*16)/2, -(2.018*128 + 1.164*16)/2
+  GXColor rc2 = {  0,  68,   0, 255}; // +((0.391+0.813)*128 - 1.164*16)/2
+  GX_SetTevKColor(GX_KCOLOR0, kc0);
+  GX_SetTevKColor(GX_KCOLOR1, kc1);
+  GX_SetTevKColor(GX_KCOLOR2, kc2);
+  GX_SetTevKColor(GX_KCOLOR3, kc3);
+  GX_SetTevColor(GX_TEVREG1, rc1);
+  GX_SetTevColor(GX_TEVREG2, rc2);
+
+  // Second texcoord for the chroma plane — see tev_yuv_texgen() (called by
+  // the DoRender toggle right after this returns).
+  GX_SetNumTexGens(2);
+
+  // S1: PREV += V * K1.rgb -> R += 0.8*V
+  GX_SetTevOrder(GX_TEVSTAGE1, GX_TEXCOORD1, GX_TEXMAP1, GX_COLORNULL);
+  GX_SetTevKColorSel(GX_TEVSTAGE1, GX_TEV_KCSEL_K1);
+  GX_SetTevColorIn(GX_TEVSTAGE1, GX_CC_ZERO, GX_CC_TEXA, GX_CC_KONST, GX_CC_CPREV);
+  GX_SetTevColorOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_FALSE, GX_TEVPREV);
+  GX_SetTevAlphaIn(GX_TEVSTAGE1, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO);
+  GX_SetTevAlphaOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+
+  // S2: PREV += Y * K0.a -> RGB += 0.580*Y
+  GX_SetTevOrder(GX_TEVSTAGE2, GX_TEXCOORD0, GX_TEXMAP0, GX_COLORNULL);
+  GX_SetTevKColorSel(GX_TEVSTAGE2, GX_TEV_KCSEL_K0_A);
+  GX_SetTevColorIn(GX_TEVSTAGE2, GX_CC_ZERO, GX_CC_TEXC, GX_CC_KONST, GX_CC_CPREV);
+  GX_SetTevColorOp(GX_TEVSTAGE2, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_FALSE, GX_TEVPREV);
+  GX_SetTevAlphaIn(GX_TEVSTAGE2, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO);
+  GX_SetTevAlphaOp(GX_TEVSTAGE2, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+
+  // S3: PREV -= U * K2.rgb -> G -= 0.196*U
+  GX_SetTevOrder(GX_TEVSTAGE3, GX_TEXCOORD1, GX_TEXMAP1, GX_COLORNULL);
+  GX_SetTevKColorSel(GX_TEVSTAGE3, GX_TEV_KCSEL_K2);
+  GX_SetTevColorIn(GX_TEVSTAGE3, GX_CC_ZERO, GX_CC_TEXC, GX_CC_KONST, GX_CC_CPREV);
+  GX_SetTevColorOp(GX_TEVSTAGE3, GX_TEV_SUB, GX_TB_ZERO, GX_CS_SCALE_1, GX_FALSE, GX_TEVPREV);
+  GX_SetTevAlphaIn(GX_TEVSTAGE3, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO);
+  GX_SetTevAlphaOp(GX_TEVSTAGE3, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+
+  // S4: PREV -= V * K3.rgb -> G -= 0.408*V
+  GX_SetTevOrder(GX_TEVSTAGE4, GX_TEXCOORD1, GX_TEXMAP1, GX_COLORNULL);
+  GX_SetTevKColorSel(GX_TEVSTAGE4, GX_TEV_KCSEL_K3);
+  GX_SetTevColorIn(GX_TEVSTAGE4, GX_CC_ZERO, GX_CC_TEXA, GX_CC_KONST, GX_CC_CPREV);
+  GX_SetTevColorOp(GX_TEVSTAGE4, GX_TEV_SUB, GX_TB_ZERO, GX_CS_SCALE_1, GX_FALSE, GX_TEVPREV);
+  GX_SetTevAlphaIn(GX_TEVSTAGE4, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO);
+  GX_SetTevAlphaOp(GX_TEVSTAGE4, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+
+  // S5: PREV -= REG1 (negative constant part: R and B offsets)
+  GX_SetTevOrder(GX_TEVSTAGE5, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLORNULL);
+  GX_SetTevColorIn(GX_TEVSTAGE5, GX_CC_C1, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+  GX_SetTevColorOp(GX_TEVSTAGE5, GX_TEV_SUB, GX_TB_ZERO, GX_CS_SCALE_1, GX_FALSE, GX_TEVPREV);
+  GX_SetTevAlphaIn(GX_TEVSTAGE5, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO);
+  GX_SetTevAlphaOp(GX_TEVSTAGE5, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+
+  // S6: PREV = 2*(PREV + REG2), clamp -> G offset, then back to full scale
+  GX_SetTevOrder(GX_TEVSTAGE6, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLORNULL);
+  GX_SetTevColorIn(GX_TEVSTAGE6, GX_CC_C2, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+  GX_SetTevColorOp(GX_TEVSTAGE6, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_2, GX_TRUE, GX_TEVPREV);
+  GX_SetTevAlphaIn(GX_TEVSTAGE6, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO);
+  GX_SetTevAlphaOp(GX_TEVSTAGE6, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+
+  // S7: PREV = PREV * vertex color, alpha = vertex alpha — same result as the
+  // GX_MODULATE the CPU FMV paths get on TEVSTAGE0.
+  GX_SetTevOrder(GX_TEVSTAGE7, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+  GX_SetTevColorIn(GX_TEVSTAGE7, GX_CC_ZERO, GX_CC_CPREV, GX_CC_RASC, GX_CC_ZERO);
+  GX_SetTevColorOp(GX_TEVSTAGE7, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+  GX_SetTevAlphaIn(GX_TEVSTAGE7, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+  GX_SetTevAlphaOp(GX_TEVSTAGE7, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+
+  tev_yuv_stage0();
+}
+
+// Undo everything the YUV program touched that the normal per-poly path
+// relies on: stage0 order/op, texgen count + TEXCOORD0 matrix, and (when
+// offset_fix is active) the offset-color add on stage 1, which the frame
+// setup only configures once.
+static void tev_yuv_restore(bool textured, bool offset_fix, int stage0_op)
+{
+  GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
+  GX_SetNumTexGens(textured ? 1 : 0);
+  if (textured)
+  {
+    GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
+    GX_SetTevOp(GX_TEVSTAGE0, (u8)stage0_op);
+  }
+  else
+  {
+    GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+    GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+  }
+  if (offset_fix)
+  {
+    // Mirror of the OFFSET_COLOR_FIX() stage-1 setup in DoRender.
+    GX_SetTevOrder(GX_TEVSTAGE1, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR1A1);
+    GX_SetTevColorIn(GX_TEVSTAGE1, GX_CC_RASC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+    GX_SetTevColorOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+    GX_SetTevAlphaIn(GX_TEVSTAGE1, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_APREV);
+    GX_SetTevAlphaOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+  }
 }
 
 static bool s_did_3d_render = false;
@@ -3864,7 +4225,9 @@ void DoRender()
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
 
   int last_textured = -1;  // track texture state to skip redundant GX calls
-  int last_tev_stages = 1; // offset_fix only: 2 while drawing offset-color polys
+  int last_tev_stages = 1; // stage count currently set (2 = offset color, 8 = FMV TEV YUV)
+  const bool fmv_tev = FMV_FORMAT_TEV() || FMV_BOOST_FUSED(); // FMV TEV YUV path, read once per frame
+  bool last_yuv_tev = false;             // true while TEV holds the 8-stage YUV program
   int last_alpha_fmt = -1; // -1 = unset
   int last_shad_instr = -1; // -1 = unset; tracks the GX op currently set on TEVSTAGE0 for textured polys
   const bool decal_alpha_fix = DECAL_ALPHA_FIX(); // read once per frame, not per polygon
@@ -4209,6 +4572,56 @@ void DoRender()
         {
           // Untextured polygon — vertex alpha is meaningful as-is, never override it.
           force_vtx_alpha_opaque = false;
+        }
+
+        // ── FMV TEV YUV program toggle ───────────────────────────────────────
+        // s_tex_is_yuv_tev was set by SetTextureParams above (textured polys
+        // only). Runs AFTER the texture/offset/decal blocks because those
+        // stomp stage 0 and the stage count; all their last_* caches are
+        // resynced here so the first poly after an FMV strip is restored.
+        if (fmv_tev)
+        {
+          bool want_yuv = is_textured && s_tex_is_yuv_tev;
+          if (want_yuv)
+          {
+            if (!last_yuv_tev)
+            {
+              tev_yuv_setup_full();
+              last_yuv_tev = true;
+            }
+            else
+            {
+              // Staying in FMV across a param change: SetTextureParams (and
+              // the decal fix) re-set stage0 to GX_MODULATE/GX_DECAL above,
+              // so put the YUV stage 0 back.
+              tev_yuv_stage0();
+            }
+            // Both texcoords through s_yuv_texmtx (identity, or GX_TEXMTX0
+            // for FMV BOOST fused planes) — re-applied per FMV strip since
+            // the matrix source can change between textures.
+            tev_yuv_texgen();
+            if (last_tev_stages != 8)
+            {
+              GX_SetNumTevStages(8); // the offset block above may have set 1/2
+              last_tev_stages = 8;
+            }
+            last_shad_instr = -1; // stage0 no longer holds a plain tex op
+          }
+          else if (last_yuv_tev)
+          {
+            int op = GX_MODULATE;
+            if (decal_alpha_fix && is_textured && stripMod->tsp.ShadInstr == 2)
+              op = GX_DECAL;
+            tev_yuv_restore(is_textured != 0, offset_fix, op);
+            last_shad_instr = is_textured ? op : -1;
+            int stages = (offset_fix && is_textured && stripMod->pcw.Offset) ? 2 : 1;
+            if (stages != last_tev_stages)
+            {
+              GX_SetNumTevStages(stages);
+              last_tev_stages = stages;
+            }
+            last_yuv_tev = false;
+          }
         }
 
         // ── Per-polygon Z write (ISP.ZWriteDis) ──────────────────────────────

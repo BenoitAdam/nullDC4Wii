@@ -69,6 +69,28 @@
                                 bind the result as a texture, at the cost of an
                                 EFB copy + CPU convert per RTT frame;
                                 0 (default, legacy) drops those frames.
+        fmv_format=tev      <- cmpr / rgba8 / rgb565 / tev. FMV (YUV422) texture
+                                decode target (see gxRend.cpp FMV_FORMAT_*()).
+                                tev uploads raw Y/UV planes and runs the
+                                YUV->RGB matrix on the GPU in 8 TEV stages —
+                                near-zero CPU color math per FMV frame.
+        fmv_boost=max       <- off / pass1 / fused / fused_half / max (or 0-4).
+                                FMV decode speed ladder (see dc/pvr/pvr_if.cpp
+                                and gxRend.cpp FMV_BOOST_FUSED()); default off.
+                                pass1: optimized YUV pass-1 macroblock
+                                  converter (branchless row pointers, hoisted
+                                  TA_YUV_TEX_CTRL read, direct-from-DMA).
+                                fused: pass 1 additionally writes GX-ready TEV
+                                  planes directly, so gxRend skips the whole
+                                  pass-2 full-frame re-decode + cache flush
+                                  (renders via the TEV YUV program regardless
+                                  of fmv_format).
+                                fused_half: fused planes at half resolution
+                                  (~1/4 the conversion + upload work; GX
+                                  bilinear upscaling hides most of it).
+                                max: fused_half + frame decimation — only
+                                  every 2nd FMV frame is converted (video
+                                  ~15 fps, game speed rises).
         split_screen=1      <- 0/1, split-screen multiplayer (see gxRend.cpp
                                 SPLIT_SCREEN()). 2P games (Daytona USA
                                 multiplayer) render one pass per player
@@ -120,6 +142,7 @@ extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
 extern int g_fmv_format_preset;
+extern int g_fmv_boost_preset;
 
 // ---------------------------------------------------------------------------
 // Internal structures
@@ -150,6 +173,7 @@ struct GamePreset
     int controller;
     int framebuffer_2d;
     int fmv_format;
+    int fmv_boost;
     int blend_mode;
     int rgb565_opaque_alpha;
     int blend_fps_boost;
@@ -290,7 +314,21 @@ static int parse_fmv_format(const char* v)
     if (key_eq(v, "cmpr"))   return 0;
     if (key_eq(v, "rgba8"))  return 1;
     if (key_eq(v, "rgb565")) return 2;
+    if (key_eq(v, "tev"))    return 3;
     printf("[game_presets] Unknown fmv_format value: '%s'\n", v);
+    return -1;
+}
+
+static int parse_fmv_boost(const char* v)
+{
+    if (key_eq(v, "off"))        return 0;
+    if (key_eq(v, "pass1"))      return 1;
+    if (key_eq(v, "fused"))      return 2;
+    if (key_eq(v, "fused_half")) return 3;
+    if (key_eq(v, "max"))        return 4;
+    // Numeric form (0-4) also accepted
+    if (v[0] >= '0' && v[0] <= '4' && v[1] == '\0') return v[0] - '0';
+    printf("[game_presets] Unknown fmv_boost value: '%s'\n", v);
     return -1;
 }
 
@@ -328,6 +366,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);
     else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = atoi(val);
     else if (key_eq(key, "fmv_format"))     p->fmv_format     = parse_fmv_format(val);
+    else if (key_eq(key, "fmv_boost"))      p->fmv_boost      = parse_fmv_boost(val);
     else if (key_eq(key, "blend_mode"))     p->blend_mode     = atoi(val);
     else if (key_eq(key, "rgb565_opaque_alpha")) p->rgb565_opaque_alpha = atoi(val);
     else if (key_eq(key, "blend_fps_boost")) p->blend_fps_boost = atoi(val);
@@ -398,6 +437,7 @@ void game_presets_load(const char* cfg_path)
             cur->ppz_write = -1;
             cur->framebuffer_2d = -1;
             cur->fmv_format = -1;
+            cur->fmv_boost = -1;
             cur->blend_mode = -1;
             cur->rgb565_opaque_alpha = -1;
             cur->blend_fps_boost = -1;
@@ -490,6 +530,7 @@ void game_presets_apply(const char* filepath)
         if (p->controller >= 0) { g_controller_type       = p->controller; printf("  controller -> %d\n", p->controller); }
         if (p->framebuffer_2d >= 0) { g_framebuffer_2d    = p->framebuffer_2d; printf("  framebuffer_2d -> %d\n", p->framebuffer_2d); }
         if (p->fmv_format     >= 0) { g_fmv_format_preset = p->fmv_format;     printf("  fmv_format     -> %d\n", p->fmv_format);     }
+        if (p->fmv_boost      >= 0) { g_fmv_boost_preset  = p->fmv_boost;      printf("  fmv_boost      -> %d\n", p->fmv_boost);      }
         if (p->blend_mode     >= 0) { g_blend_mode_preset = p->blend_mode;     printf("  blend_mode     -> %d\n", p->blend_mode);     }
         if (p->rgb565_opaque_alpha >= 0) { g_rgb565_opaque_alpha_preset = p->rgb565_opaque_alpha; printf("  rgb565_opaque_alpha -> %d\n", p->rgb565_opaque_alpha); }
         if (p->blend_fps_boost >= 0) { g_blend_fps_boost_preset = p->blend_fps_boost; printf("  blend_fps_boost -> %d\n", p->blend_fps_boost); }

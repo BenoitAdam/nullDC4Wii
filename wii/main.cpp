@@ -97,10 +97,22 @@ extern "C" {
   int get_framebuffer_2d() { return g_framebuffer_2d; }
 }
 
-int g_fmv_format_preset = 2; // 0=CMPR (DXT1), 1=RGBA8, 2=RGB565
+int g_fmv_format_preset = 2; // 0=CMPR (DXT1), 1=RGBA8, 2=RGB565, 3=TEV (GPU YUV->RGB)
 
 extern "C" {
   int get_fmv_format_preset() { return g_fmv_format_preset; }
+}
+
+// FMV BOOST ladder (see dc/pvr/pvr_if.cpp pass 1 + gxRend.cpp FMV_BOOST_FUSED()):
+// 0=OFF (default), 1=PASS1 (optimized macroblock converter only),
+// 2=FUSED (pass 1 writes GX-ready TEV planes, pass-2 re-decode skipped),
+// 3=FUSED+HALF (fused planes at half resolution), 4=MAX (3 + FMV frame
+// decimation: convert every 2nd frame). Levels >= 2 override FMV FORMAT for
+// matching FMV textures.
+int g_fmv_boost_preset = 0;
+
+extern "C" {
+  int get_fmv_boost_preset() { return g_fmv_boost_preset; }
 }
 
 int g_jojo_fix_preset = 0; // 0=off (pre-fix behavior), 1 = On
@@ -548,7 +560,8 @@ void displayAccuracyMenu()
 #define OPT_TRANS_SORT  26
 #define OPT_RENDER_TO_TEXTURE 27
 #define OPT_SPLIT_SCREEN 28
-#define OPT_ROW_COUNT   29
+#define OPT_FMV_BOOST   29
+#define OPT_ROW_COUNT   30
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -566,6 +579,7 @@ static int opt_row_page(int row)
     case OPT_ACCURACY:
     case OPT_PPZ_WRITE:
     case OPT_FMV_FORMAT:
+    case OPT_FMV_BOOST:
     case OPT_VERTEX_COLOR_FIX:
       return 1;
     default:
@@ -838,7 +852,20 @@ bool displayOptionsMenu()
       case 0: printf("[< CMPR (DXT1)       >]"); break;
       case 1: printf("[< RGBA8             >]"); break;
       case 2: printf("[< RGB565            >]"); break;
+      case 3: printf("[< TEV (GPU YUV)     >]"); break;
     }
+    printf("\n");
+
+    // --- Row 10b: FMV Boost ---
+    printf("%s FMV BOOST       : ", (selectedRow == OPT_FMV_BOOST) ? ">" : " ");
+    switch (g_fmv_boost_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< PASS1 OPT         >]"); break;
+      case 2: printf("[< FUSED TEV         >]"); break;
+      case 3: printf("[< FUSED TEV HALF    >]"); break;
+      case 4: printf("[< MAX (HALF+SKIP)   >]"); break;
+    }
+    printf(" (FMV speed, >=FUSED overrides format)");
     printf("\n");
 
     // --- Row 17b: Intensity Color Fix ---
@@ -877,7 +904,8 @@ bool displayOptionsMenu()
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
-        case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 2) % 3; break;
+        case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 3) % 4; break;
+        case OPT_FMV_BOOST:  g_fmv_boost_preset     = (g_fmv_boost_preset      + 4) % 5; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 3) % 4; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 3) % 4; break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 4) % 5; break;
@@ -908,7 +936,8 @@ bool displayOptionsMenu()
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
-        case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 1) % 3; break;
+        case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 1) % 4; break;
+        case OPT_FMV_BOOST:  g_fmv_boost_preset     = (g_fmv_boost_preset      + 1) % 5; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 1) % 4; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 1) % 4; break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 1) % 5; break;
@@ -1314,6 +1343,15 @@ int main(int argc, wchar *argv[])
       case 0: printf("CMPR (DXT1)\n"); break;
       case 1: printf("RGBA8\n");       break;
       case 2: printf("RGB565\n");      break;
+      case 3: printf("TEV (GPU YUV)\n"); break;
+    }
+    printf("FMV Boost      : ");
+    switch(g_fmv_boost_preset) {
+      case 0: printf("OFF\n");            break;
+      case 1: printf("PASS1 OPT\n");      break;
+      case 2: printf("FUSED TEV\n");      break;
+      case 3: printf("FUSED TEV HALF\n"); break;
+      case 4: printf("MAX (HALF+SKIP)\n");break;
     }
     printf("Frameskipping  : ");
     switch(g_frameskip_preset) {
