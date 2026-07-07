@@ -352,11 +352,11 @@ Please check the compatiblity Wiki : https://wiibrew.org/wiki/NullDC4Wii/Compati
 
 We have a Wii U fowarder that also use the speed boot of the Wii U (overclock). A native port for Wii U could be done if someone wants to do port it.
 
-### Controls are messy / this doesn't work, etc...
+### Controls are messy / this doesn't work / My Propad isn't recognize etc...
 
-Working on it, this will need testing considering the amount of controller possibility existing.
+Working on it, this will need testing considering the amount of controller possibility existing. Any help is welcome.
 
-### Will THAT AMAZING ADVENTURE GAME be supported one day ?
+### Will THAT AMAZING ADVENTURE GAME be considered as "Supported" one day ?
 
 Probably not, this emulator prioritize multiplayer fun games to play friends with. Playing an adventure game like Shenmue or an RPG could be a very frustrating experience that I strongly do not recommand. Use Gamecube/Wii version (if it does exist) or a PC for emulation instead.
 
@@ -371,6 +371,8 @@ Yes and no.
 Currently we are on 60/70% emulator speed in average. We can't really go further than 80%. Maybe if rewriten in assembly partially or totally this could help. Libogc may limit MMU (this is being investigated at the moment).
 
 The port of KallistiOS for Gamecube/Wii could open new possibility and MMU control, but that would also means reprogramming a lot of stuff.
+
+Another good strategy would be to really have a per-game specific emulator. That would take a long time, so for now we have presets & auto-presets implementation trough game_presets.cfg
 
 ### Is 100% speed of the emulator achievable on Wii U?
 
