@@ -181,6 +181,18 @@ extern "C" {
   int get_fixed_depth_preset() { return g_fixed_depth_preset; }
 }
 
+int g_async_render_preset = 0; // 0=off (CPU blocks in GX_DrawDone until the GPU finishes each frame, legacy), 1=on (frame queued, presented one vblank later; SH4 emulates while the GPU draws)
+
+extern "C" {
+  int get_async_render_preset() { return g_async_render_preset; }
+}
+
+int g_tmem_cache_preset = 0; // 0=off (full GPU texture cache invalidate every frame, legacy), 1=on (invalidate only on texture re-decode; unchanged textures stay cached in TMEM across frames)
+
+extern "C" {
+  int get_tmem_cache_preset() { return g_tmem_cache_preset; }
+}
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -568,7 +580,9 @@ void displayAccuracyMenu()
 #define OPT_SPLIT_SCREEN 28
 #define OPT_MIPMAP      29
 #define OPT_FIXED_DEPTH 30
-#define OPT_ROW_COUNT   31
+#define OPT_ASYNC_RENDER 31
+#define OPT_TMEM_CACHE  32
+#define OPT_ROW_COUNT   33
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -589,6 +603,8 @@ static int opt_row_page(int row)
     case OPT_VERTEX_COLOR_FIX:
     case OPT_MIPMAP:
     case OPT_FIXED_DEPTH:
+    case OPT_ASYNC_RENDER:
+    case OPT_TMEM_CACHE:
       return 1;
     default:
       return 0;
@@ -891,6 +907,24 @@ bool displayOptionsMenu()
     }
     printf(" fixed near/far planes. Z-Fighting");
     printf("\n");
+
+    // --- Row: Async render (CPU/GPU overlap) ---
+    printf("%s ASYNC RENDER    : ", (selectedRow == OPT_ASYNC_RENDER) ? ">" : " ");
+    switch (g_async_render_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FASTER?)      >]"); break;
+    }
+    printf(" (CPU emulates while GPU draws)");
+    printf("\n");
+
+    // --- Row: TMEM texture cache ---
+    printf("%s TMEM CACHE      : ", (selectedRow == OPT_TMEM_CACHE) ? ">" : " ");
+    switch (g_tmem_cache_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FASTER?)      >]"); break;
+    }
+    printf(" (keep GPU texture cache warm)");
+    printf("\n");
     } // end page 1
 
 
@@ -939,6 +973,8 @@ bool displayOptionsMenu()
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 2) % 3; break;
+        case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
+        case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
         default: break;
       }
     }
@@ -972,6 +1008,8 @@ bool displayOptionsMenu()
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 1) % 3; break;
+        case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
+        case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
         default: break;
       }
     }
@@ -1414,6 +1452,8 @@ int main(int argc, wchar *argv[])
       case 1: printf("WIDE\n");          break;
       case 2: printf("TIGHT\n");         break;
     }
+    printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
+    printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)

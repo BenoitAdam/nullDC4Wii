@@ -89,6 +89,22 @@
                                 Z-fight); tight covers W=[0.1..25000] (much
                                 finer Z, but geometry outside that range clips,
                                 so per-game only).
+        async_render=1      <- 0/1, async GPU present (see gxRend.cpp
+                                ASYNC_RENDER()). 0 (default, legacy) blocks the
+                                CPU in GX_DrawDone() until the GPU finishes the
+                                frame; 1 queues the frame and returns at once —
+                                the SH4 core emulates the next frame while the
+                                GPU draws, and the finished frame is presented
+                                at the start of the next one. One frame of
+                                extra display latency; big FPS gain whenever
+                                the GPU takes a meaningful slice of the frame.
+        tmem_cache=1        <- 0/1, persistent GPU texture cache (see gxRend.cpp
+                                TMEM_CACHE()). 0 (default, legacy) invalidates
+                                the GPU's 1MB texture cache (TMEM) every frame,
+                                re-fetching every texel from RAM; 1 invalidates
+                                only when a texture is actually re-decoded, so
+                                unchanged textures stay cached across frames —
+                                more texture fill rate.
         split_screen=1      <- 0/1, split-screen multiplayer (see gxRend.cpp
                                 SPLIT_SCREEN()). 2P games (Daytona USA
                                 multiplayer) render one pass per player
@@ -138,6 +154,8 @@ extern int g_render_to_texture_preset;
 extern int g_split_screen_preset;
 extern int g_mipmap_preset;
 extern int g_fixed_depth_preset;
+extern int g_async_render_preset;
+extern int g_tmem_cache_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -182,6 +200,8 @@ struct GamePreset
     int split_screen;
     int mipmap;
     int fixed_depth;
+    int async_render;
+    int tmem_cache;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -371,6 +391,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "split_screen"))   p->split_screen   = atoi(val);
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
     else if (key_eq(key, "fixed_depth"))    p->fixed_depth    = atoi(val);
+    else if (key_eq(key, "async_render"))   p->async_render   = atoi(val);
+    else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -443,6 +465,8 @@ void game_presets_load(const char* cfg_path)
             cur->split_screen = -1;
             cur->mipmap = -1;
             cur->fixed_depth = -1;
+            cur->async_render = -1;
+            cur->tmem_cache = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -537,6 +561,8 @@ void game_presets_apply(const char* filepath)
         if (p->split_screen   >= 0) { g_split_screen_preset  = p->split_screen;    printf("  split_screen   -> %d\n", p->split_screen);   }
         if (p->mipmap         >= 0) { g_mipmap_preset        = p->mipmap;          printf("  mipmap         -> %d\n", p->mipmap);         }
         if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }
+        if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
+        if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
 
         return; // First match only
     }

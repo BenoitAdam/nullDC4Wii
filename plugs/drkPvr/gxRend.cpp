@@ -156,6 +156,23 @@ extern "C" int get_fixed_depth_preset();
 #define FIXED_DEPTH_WIDE()  (get_fixed_depth_preset() == 1) // fixed [0.0001 .. 100000] (safe, coarse Z)
 #define FIXED_DEPTH_TIGHT() (get_fixed_depth_preset() == 2) // fixed [0.1 .. 25000] (finer Z, extremes clip)
 
+// Async render: don't block the CPU in GX_DrawDone() at the end of a 3D display
+// frame. The frame is queued with GX_SetDrawDone() and the wait + VIDEO flip
+// are deferred to the next render/present entry (gx_sync_pending), so the SH4
+// core emulates the next frame while the GPU draws this one. Costs one frame
+// of display latency; RTT passes stay fully synchronous (the game reads the
+// result back immediately).
+extern "C" int get_async_render_preset();
+#define ASYNC_RENDER() (get_async_render_preset() == 1)
+
+// TMEM cache: skip the unconditional per-frame GX_InvalidateTexAll() in
+// DoRender and instead invalidate only when a texture is actually (re)decoded
+// (see SetTextureParams) — unchanged textures then stay resident in the GPU's
+// 1MB TMEM cache across frames instead of being re-fetched from main RAM
+// every frame, freeing texture fill rate.
+extern "C" int get_tmem_cache_preset();
+#define TMEM_CACHE() (get_tmem_cache_preset() == 1)
+
 
 int frame_counter;
 
@@ -181,6 +198,50 @@ static void *frameBuffer[2] = {NULL, NULL};
 static GXRModeObj *rmode;
 static u8 gp_fifo[DEFAULT_FIFO_SIZE] __attribute__((aligned(32)));
 static int fb = 0; // Current framebuffer index
+
+// ── ASYNC_RENDER() state ─────────────────────────────────────────────────────
+// s_gx_pending is true while a queued 3D frame (GX_SetDrawDone after its
+// GX_CopyDisp) has not been waited on / presented yet. gx_sync_pending() must
+// run before the CPU touches anything the GPU may still be reading — i.e. at
+// the top of DoRender() (texture bump slots get re-decoded in place) and at
+// the entry of every other present path, so the deferred VIDEO flip is applied
+// before that path programs its own.
+static bool s_gx_pending = false;
+static int  s_gx_pending_fb = 0;
+
+// Set from the GX draw-done interrupt (callback registered in InitRenderer).
+// Lets VBlank() apply the deferred flip without blocking when the GPU already
+// finished — closes the "game renders once then idles" case where the last
+// queued frame would otherwise never reach the screen.
+static volatile bool s_gx_done_irq = false;
+
+static void gx_drawdone_cb(void)
+{
+  s_gx_done_irq = true;
+}
+
+static void gx_sync_pending()
+{
+  if (!s_gx_pending)
+    return;
+  GX_WaitDrawDone(); // GPU finished the queued frame's draws + display copy
+  VIDEO_SetNextFramebuffer(frameBuffer[s_gx_pending_fb]);
+  VIDEO_Flush();
+  s_gx_pending = false;
+}
+
+// Non-blocking flavor, called every vblank: apply the queued frame's flip only
+// if the GPU already signalled draw-done; otherwise leave it deferred (the
+// next gx_sync_pending() or vblank picks it up).
+static void gx_present_if_done()
+{
+  if (s_gx_pending && s_gx_done_irq)
+  {
+    VIDEO_SetNextFramebuffer(frameBuffer[s_gx_pending_fb]);
+    VIDEO_Flush();
+    s_gx_pending = false;
+  }
+}
 
 // Set once at startup or when preset changes
 static u8 min_filt, mag_filt, bias_clamp, edge_lod, aniso;
@@ -3226,6 +3287,13 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         8 << mod->tsp.TexU, 8 << mod->tsp.TexV,
         orig_tex_addr, (u32)gx_pixels);
     }
+
+    // TMEM_CACHE(): DoRender no longer wipes the texture cache each frame, so
+    // TMEM may hold stale lines for the buffer just re-decoded (same address,
+    // old pixels). Invalidate here — the command lands in the FIFO before the
+    // draw that samples this texture, and frames with no decodes pay nothing.
+    if (TMEM_CACHE())
+      GX_InvalidateTexAll();
   }
 
   GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
@@ -3552,7 +3620,12 @@ static void rtt_copy_efb_to_vram()
 
 void DoRender()
 {
-  /* commented to help prevent FIFO 
+  // ASYNC_RENDER(): wait for the previous queued frame and apply its deferred
+  // VIDEO flip before anything else — texture decode below re-writes bump
+  // slots the GPU may still be sampling. No-op when nothing is pending.
+  gx_sync_pending();
+
+  /* commented to help prevent FIFO
   if(get_debug_loop() == 1) {
     printf("MEM1 free: %.2f MB\n", ((unat)SYS_GetArena1Hi() - (unat)SYS_GetArena1Lo()) / 1024.f / 1024);
     printf("MEM2 free: %.2f MB\n", ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / 1024.f / 1024.f);
@@ -3615,7 +3688,10 @@ void DoRender()
     GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
   }
   GX_InvVtxCache();
-  GX_InvalidateTexAll();
+  // TMEM_CACHE(): keep the GPU texture cache warm across frames; stale entries
+  // are invalidated at decode time instead (see SetTextureParams).
+  if (!TMEM_CACHE())
+    GX_InvalidateTexAll();
 
   // GX ACCURATE
   // Single vertex format, always 24 bytes/vertex (POS+CLR0+TEX0).
@@ -4320,7 +4396,12 @@ void DoRender()
 
   reset_vtx_state();
 
-  GX_DrawDone();
+  // ASYNC_RENDER() (display frames only): skip the blocking GX_DrawDone() —
+  // the queue + deferred wait happens after GX_CopyDisp below. RTT passes
+  // keep the legacy full sync, the game reads the result back right away.
+  const bool async_render = ASYNC_RENDER() && !s_rtt_pass;
+  if (!async_render)
+    GX_DrawDone();
 
   if (s_rtt_pass)
   {
@@ -4333,8 +4414,24 @@ void DoRender()
   }
 
   GX_CopyDisp(frameBuffer[fb], GX_TRUE);
-  VIDEO_SetNextFramebuffer(frameBuffer[fb]);
-  VIDEO_Flush();
+  if (async_render)
+  {
+    // Queue a draw-done token after the display copy and return without
+    // waiting: gx_sync_pending() (next frame / next present path) waits on it
+    // and only then flips VI to this buffer. Toggling fb makes the next frame
+    // render into the other XFB, so the CPU never copies into the buffer VI
+    // is about to scan out — true double buffering.
+    s_gx_done_irq = false; // must clear BEFORE queuing the token (irq race)
+    GX_SetDrawDone();
+    s_gx_pending = true;
+    s_gx_pending_fb = fb;
+    fb ^= 1;
+  }
+  else
+  {
+    VIDEO_SetNextFramebuffer(frameBuffer[fb]);
+    VIDEO_Flush();
+  }
 
   s_did_3d_render = true;
 
@@ -4362,6 +4459,11 @@ void DoRender()
 
 void PresentFramebuffer()
 {
+  // ASYNC_RENDER(): a queued 3D frame may still be in flight — wait and apply
+  // its deferred flip first, or the stale pending flip would override this
+  // present on the next DoRender. This path itself stays fully synchronous.
+  gx_sync_pending();
+
   // ── Derive the source framebuffer geometry from FB_R_SIZE / FB_R_CTRL ──────
   // (devcast RenderFramebuffer).  FB_R_SIZE is a raw u32 here:
   //   bits  0-9  fb_x_size, 10-19 fb_y_size, 20-29 fb_modulus.
@@ -4423,6 +4525,11 @@ void PresentFramebuffer()
     addr += (u32)((src_w + mod_px) * bpp);
   }
   DCFlushRange(fb2d_tex, sizeof(fb2d_tex));
+
+  // TMEM_CACHE(): fb2d_tex is re-decoded at the same address every present and
+  // the per-frame invalidate in DoRender is off — drop its stale TMEM lines.
+  if (TMEM_CACHE())
+    GX_InvalidateTexAll();
 
   // Texture is uniformly RGB565 now.
   GXTexObj texobj;
@@ -4520,6 +4627,11 @@ void PresentFramebuffer()
 //     framebuffer -> scan it out of VRAM and present it.
 void VBlank()
 {
+  // ASYNC_RENDER(): if the queued frame finished since last vblank, put it on
+  // screen now (non-blocking) — without this, a game that stops submitting
+  // frames (static menu) would never show its last rendered frame.
+  gx_present_if_done();
+
   if (!FB_R_CTRL.fb_enable)
     return;   // display output disabled
 
@@ -4595,6 +4707,7 @@ void StartRender()
         if(DEBUG_MESSAGE()) printf("[PATH] 2D-after-3D: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
           FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
         s_did_3d_render = false;
+        gx_sync_pending(); // ASYNC_RENDER(): apply the queued frame's flip first
         GX_DrawDone();
         GX_CopyDisp(frameBuffer[fb], GX_TRUE);
         VIDEO_SetNextFramebuffer(frameBuffer[fb]);
@@ -5244,6 +5357,10 @@ bool InitRenderer()
   memset(gp_fifo, 0, DEFAULT_FIFO_SIZE);
 
   GX_Init(gp_fifo, DEFAULT_FIFO_SIZE);
+  // Draw-done interrupt callback for ASYNC_RENDER()'s non-blocking vblank
+  // present (gx_present_if_done). Registered unconditionally: with the preset
+  // off it only sets an unused flag.
+  GX_SetDrawDoneCallback(gx_drawdone_cb);
   ApplyGraphismPreset();  // LOW/NORMAL/HIGH/EXTRA
 
   printf("vram_buffer: %08X\n", (u32)vram_buffer);
@@ -5288,6 +5405,7 @@ bool InitRenderer()
 
 void TermRenderer()
 {
+  gx_sync_pending(); // don't tear down with a queued async frame in flight
   TileAccel.Term();
 }
 
@@ -5297,6 +5415,7 @@ void TermRenderer()
 
 void ResetRenderer(bool Manual)
 {
+  gx_sync_pending(); // ASYNC_RENDER(): settle the in-flight frame before reset
   TileAccel.Reset(Manual);
   tex_cache_init(); // clear texture cache on reset
   VertexCount = 0;
