@@ -3930,8 +3930,22 @@ void DoRender()
   // Safe here because W is always > 0 (vert_base clamps 1/W to >= 0.0001) so
   // no poly ever crosses w=0, and X/Y stay in DC screen space so the
   // rasterizer guard band + scissor still handle off-screen geometry.
-  // Set every frame (not once) so the option can be toggled in-game.
-  GX_SetClipMode(DEPTH_CLIP_NOCLIP() ? GX_CLIP_DISABLE : GX_CLIP_ENABLE);
+  //
+  // GX_SetClipMode() is NOT a cheap register poke: it makes the XF unit flush
+  // and resync its vertex pipeline, so issuing it unconditionally every frame
+  // (even to reapply the same mode) stalled the GPU and cost ~40% FPS across
+  // the board, regardless of the preset value. Only call it on the frame the
+  // mode actually changes (menu toggle), same caching approach as the other
+  // *_cached preset flags in this file.
+  {
+    static u8 s_last_clip_mode = 0xFF; // sentinel: forces the very first frame to set it
+    u8 want_clip_mode = DEPTH_CLIP_NOCLIP() ? GX_CLIP_DISABLE : GX_CLIP_ENABLE;
+    if (want_clip_mode != s_last_clip_mode)
+    {
+      GX_SetClipMode(want_clip_mode);
+      s_last_clip_mode = want_clip_mode;
+    }
+  }
 
   // load the matrix to GX
   GX_LoadProjectionMtx(mtx, GX_PERSPECTIVE);
