@@ -181,6 +181,12 @@ extern "C" {
   int get_fixed_depth_preset() { return g_fixed_depth_preset; }
 }
 
+int g_depth_clip_preset = 1; // 0=off (legacy: XF Z-clipping on, no near margin), 1=near margin (pad vtx_min_Z 0.1% so the nearest 2D layer can't land exactly on the near clip plane), 2=no clip (GX_SetClipMode(GX_CLIP_DISABLE), matches Dolphin which never Z-clips: out-of-range depth clamps instead of the poly vanishing)
+
+extern "C" {
+  int get_depth_clip_preset() { return g_depth_clip_preset; }
+}
+
 int g_async_render_preset = 0; // 0=off (CPU blocks in GX_DrawDone until the GPU finishes each frame, legacy), 1=on (frame queued, presented one vblank later; SH4 emulates while the GPU draws)
 
 extern "C" {
@@ -580,9 +586,10 @@ void displayAccuracyMenu()
 #define OPT_SPLIT_SCREEN 28
 #define OPT_MIPMAP      29
 #define OPT_FIXED_DEPTH 30
-#define OPT_ASYNC_RENDER 31
-#define OPT_TMEM_CACHE  32
-#define OPT_ROW_COUNT   33
+#define OPT_DEPTH_CLIP  31
+#define OPT_ASYNC_RENDER 32
+#define OPT_TMEM_CACHE  33
+#define OPT_ROW_COUNT   34
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -603,6 +610,7 @@ static int opt_row_page(int row)
     case OPT_VERTEX_COLOR_FIX:
     case OPT_MIPMAP:
     case OPT_FIXED_DEPTH:
+    case OPT_DEPTH_CLIP:
     case OPT_ASYNC_RENDER:
     case OPT_TMEM_CACHE:
       return 1;
@@ -908,6 +916,16 @@ bool displayOptionsMenu()
     printf(" fixed near/far planes. Z-Fighting");
     printf("\n");
 
+    // --- Row: Depth clip behaviour ---
+    printf("%s DEPTH CLIP      : ", (selectedRow == OPT_DEPTH_CLIP) ? ">" : " ");
+    switch (g_depth_clip_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< NEAR MARGIN (WII) >]"); break;
+      case 2: printf("[< NO CLIP (DOLPHIN) >]"); break;
+    }
+    printf(" (2D/menus invisible on real Wii)");
+    printf("\n");
+
     // --- Row: Async render (CPU/GPU overlap) ---
     printf("%s ASYNC RENDER    : ", (selectedRow == OPT_ASYNC_RENDER) ? ">" : " ");
     switch (g_async_render_preset) {
@@ -973,6 +991,7 @@ bool displayOptionsMenu()
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 2) % 3; break;
+        case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 2) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
         default: break;
@@ -1008,6 +1027,7 @@ bool displayOptionsMenu()
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 1) % 3; break;
+        case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 1) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
         default: break;
@@ -1451,6 +1471,12 @@ int main(int argc, wchar *argv[])
       case 0: printf("OFF (DYNAMIC)\n"); break;
       case 1: printf("WIDE\n");          break;
       case 2: printf("TIGHT\n");         break;
+    }
+    printf("Depth Clip     : ");
+    switch (g_depth_clip_preset) {
+      case 0: printf("OFF (LEGACY)\n");      break;
+      case 1: printf("NEAR MARGIN\n");       break;
+      case 2: printf("NO CLIP (DOLPHIN)\n"); break;
     }
     printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");

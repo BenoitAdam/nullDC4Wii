@@ -156,6 +156,16 @@ extern "C" int get_fixed_depth_preset();
 #define FIXED_DEPTH_WIDE()  (get_fixed_depth_preset() == 1) // fixed [0.0001 .. 100000] (safe, coarse Z)
 #define FIXED_DEPTH_TIGHT() (get_fixed_depth_preset() == 2) // fixed [0.1 .. 25000] (finer Z, extremes clip)
 
+// Dolphin does not emulate the XF unit's near/far Z clipping (it depth-clamps
+// instead), so polys whose depth lands on or beyond the projection's near/far
+// planes render fine in Dolphin but are clipped away by a real Wii — the
+// classic "menu/intro shows in Dolphin, invisible on hardware" symptom
+// (Crazy Taxi / ChuChu Rocket menus with FIXED_DEPTH off).
+extern "C" int get_depth_clip_preset();
+#define DEPTH_CLIP_OFF()    (get_depth_clip_preset() == 0) // legacy: XF clipping on, no near margin
+#define DEPTH_CLIP_MARGIN() (get_depth_clip_preset() == 1) // pad vtx_min_Z by 0.1% so the nearest layer can't sit exactly on the near plane
+#define DEPTH_CLIP_NOCLIP() (get_depth_clip_preset() == 2) // GX_SetClipMode(GX_CLIP_DISABLE): behave like Dolphin, out-of-range Z clamps instead of clipping
+
 // Async render: don't block the CPU in GX_DrawDone() at the end of a 3D display
 // frame. The frame is queued with GX_SetDrawDone() and the wait + VIDEO flip
 // are deferred to the next render/present entry (gx_sync_pending), so the SH4
@@ -3891,7 +3901,13 @@ void DoRender()
 
   // extend range
   vtx_max_Z *= 1.001; // to not clip vtx_max verts
-  // vtx_min_Z*=0.999;
+  // Near-side mirror of the 1.001 above. In dynamic mode the nearest layer
+  // (typically the 2D UI/menu, which DEFINES vtx_min_Z) maps exactly onto the
+  // near clip plane; XF float rounding on real hardware then pushes the whole
+  // quad just outside and it is clipped away — Dolphin doesn't Z-clip, so it
+  // still shows there. The margin keeps that layer strictly inside the range.
+  if (DEPTH_CLIP_MARGIN())
+    vtx_min_Z *= 0.999f;
 
   // convert to [-1 .. 0]
   float p6 = -1 / (1 / vtx_max_Z - 1 / vtx_min_Z);
@@ -3908,6 +3924,14 @@ void DoRender()
           {0, 0, p5, p6},
           {0, 0, -1, 0}
         };
+
+  // NOCLIP: disable XF clipping so real hardware matches Dolphin — polys with
+  // depth outside the near/far range get their Z clamped instead of vanishing.
+  // Safe here because W is always > 0 (vert_base clamps 1/W to >= 0.0001) so
+  // no poly ever crosses w=0, and X/Y stay in DC screen space so the
+  // rasterizer guard band + scissor still handle off-screen geometry.
+  // Set every frame (not once) so the option can be toggled in-game.
+  GX_SetClipMode(DEPTH_CLIP_NOCLIP() ? GX_CLIP_DISABLE : GX_CLIP_ENABLE);
 
   // load the matrix to GX
   GX_LoadProjectionMtx(mtx, GX_PERSPECTIVE);

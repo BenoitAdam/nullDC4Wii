@@ -89,6 +89,16 @@
                                 Z-fight); tight covers W=[0.1..25000] (much
                                 finer Z, but geometry outside that range clips,
                                 so per-game only).
+        depth_clip=1        <- 0/1/2, real-Wii Z-clip workaround (see gxRend.cpp
+                                DEPTH_CLIP_*()). Dolphin never Z-clips, so
+                                menus/intros that sit on or beyond the depth
+                                planes show there but vanish on real hardware.
+                                0 (default, legacy) leaves XF clipping on;
+                                1 pads the dynamic near plane by 0.1% so the
+                                nearest 2D layer can't land exactly on it;
+                                2 disables XF clipping entirely (Dolphin
+                                behaviour: out-of-range Z clamps instead of
+                                the poly vanishing).
         async_render=1      <- 0/1, async GPU present (see gxRend.cpp
                                 ASYNC_RENDER()). 0 (default, legacy) blocks the
                                 CPU in GX_DrawDone() until the GPU finishes the
@@ -154,6 +164,7 @@ extern int g_render_to_texture_preset;
 extern int g_split_screen_preset;
 extern int g_mipmap_preset;
 extern int g_fixed_depth_preset;
+extern int g_depth_clip_preset;
 extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
 extern int g_player_count;
@@ -200,6 +211,7 @@ struct GamePreset
     int split_screen;
     int mipmap;
     int fixed_depth;
+    int depth_clip;
     int async_render;
     int tmem_cache;
 };
@@ -391,6 +403,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "split_screen"))   p->split_screen   = atoi(val);
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
     else if (key_eq(key, "fixed_depth"))    p->fixed_depth    = atoi(val);
+    else if (key_eq(key, "depth_clip"))     p->depth_clip     = atoi(val);
     else if (key_eq(key, "async_render"))   p->async_render   = atoi(val);
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
@@ -465,6 +478,7 @@ void game_presets_load(const char* cfg_path)
             cur->split_screen = -1;
             cur->mipmap = -1;
             cur->fixed_depth = -1;
+            cur->depth_clip = -1;
             cur->async_render = -1;
             cur->tmem_cache = -1;
 
@@ -561,6 +575,7 @@ void game_presets_apply(const char* filepath)
         if (p->split_screen   >= 0) { g_split_screen_preset  = p->split_screen;    printf("  split_screen   -> %d\n", p->split_screen);   }
         if (p->mipmap         >= 0) { g_mipmap_preset        = p->mipmap;          printf("  mipmap         -> %d\n", p->mipmap);         }
         if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }
+        if (p->depth_clip     >= 0) { g_depth_clip_preset    = p->depth_clip;      printf("  depth_clip     -> %d\n", p->depth_clip);     }
         if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
         if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
 
