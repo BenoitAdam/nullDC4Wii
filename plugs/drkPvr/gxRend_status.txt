@@ -302,6 +302,107 @@ per-vertex "if (force_vtx_alpha_opaque) vcol |= 0xFF000000" became a
 loop-invariant OR mask (alpha_or) computed once per strip. Identical FIFO
 bytes, one less branch per vertex. No preset needed.
 
+ClaudeAI (2026-07): TA strip/arena bounds guard behind the STRIP_GUARD preset
+(gxRend.cpp STRIP_GUARD(), menu "STRIP GUARD", game_presets.cfg key
+strip_guard). Guards the two accumulation-side failure modes that show as
+"janky vertices going mad" and usually end in a GX FIFO desync:
+1. Strips >= 0x7FFF vertices: the draw loop masks flagged counts with 0x7FFF,
+   so drawVTX falls behind the real data and everything after renders garbage.
+   StripGuardPoly (hooked into vert_cvt_base) now splits at 0x7FFE — even, so
+   repeating the last 2 vertices preserves strip parity; the continuation
+   record is unflagged and reuses the same render state. Works with TRANS_SORT
+   too (the copied overlap keeps the vertex stream contiguous for its walk).
+2. Arena overruns: glob_param_bdc only checks vertices[] at PARAM boundaries,
+   so a runaway strip (garbage TA data that never sets EndOfStrip) can write
+   past vertices[42*1024] into lists[], and lists[8*1024]/listModes[] can
+   overflow on frames with >8k records (sprites make one record each) —
+   corrupted counts then feed GX_Begin = instant FIFO desync. Per-vertex
+   check in StripGuardPoly (vertex arena) + per-record check in EndPolyStrip
+   and the sprite-B inline copy (lists/mods arenas); emergency policy mirrors
+   glob_param_bdc's reset_vtx_state() (one glitched frame, no corruption).
+3. Garbage x/y coordinates (added after 1+2 didn't help Castlevania HALL):
+   the game builds its shadow/reflection pass geometry from EFB readback the
+   emulator never rendered, so the strips are well-formed but the floats in
+   them are random VRAM bits — vert_base only sanitized Z, and NaN/inf x/y
+   reaching the XF is what escalates "mad stretched triangles" into the FIFO
+   error. vert_base now clamps x/y to +/-32768 (fsel-shaped ternaries like
+   the Z guard so NaN falls into the clamp) under the same preset. Covers
+   sprites too. The corrupted-texture half of that symptom is the same
+   readback garbage on the sampling side — that one needs
+   render_to_texture=1, not this guard.
+Cost when ON: 2 pointer compares per TA poly vertex + 2 per record + 4 fsel
+per vertex. Default OFF (legacy untouched; gated by g_strip_guard_cached).
+
+ClaudeAI (2026-07): Castlevania HALL still broke with STRIP_GUARD +
+render_to_texture=1, so the CPU-side framebuffer readback path was inspected.
+Findings:
+1. RTT detection gap: StartRender only treats a pass as RTT when FB_W_SOF1
+   has bit 24 set (64-bit texture area). A pass that renders to a 32-bit-area
+   address falls through to the normal 3D display path: it gets PRESENTED as
+   a visible frame (would explain HALL's good/broken alternation) and its
+   pixels never reach VRAM for the game to read back.
+2. fb_stamp_present_magic() writes 0xDC4F0FB0 into the framebuffer's first
+   pixel after EVERY 3D render. For a readback game this is self-inflicted
+   garbage at exactly the address the game reads. If the [FBREAD] log shows
+   val=DC4F0FB0, the game is consuming our present-marker.
+3. CPU reads of VRAM: area 0x04 is direct-mapped by _vmem (unhookable); area
+   0x05 (32-bit linear path, the one games use for framebuffer reads) goes
+   through pvr_read_area1_16/32 in dc/pvr/pvr_if.cpp.
+[FBREAD] debug added there: per-frame aggregation of 0x05-path CPU reads
+(count16/count32, min..max offset, first 8 addr=val pairs), armed by
+StartRender() while DEBUG MESSAGE is on, printed right before each frame's
+[PATH] line. To diagnose HALL: enable DEBUG MESSAGE, capture the log across a
+good->broken transition, check (a) whether consecutive [PATH] 3D lines
+alternate between two FB_W_SOF1 addresses (bit-24 gap above), (b) what range
+[FBREAD] reads and whether values include DC4F0FB0 (magic consumed) or
+obvious garbage. Silence from [FBREAD] while HALL still breaks = readback via
+the direct-mapped 0x04 area (or TA/DMA), the remaining suspect.
+
+ClaudeAI (2026-07): HALL log analysis — SOLVED (pending test). The captured
+log killed both readback theories: zero [FBREAD] lines (no CPU readback at
+all) and the FB_W_SOF1 alternation (EA000 <-> 4EA000, no bit 24) is normal
+double-buffering. The Dolphin FIFO dump was the real evidence:
+CPReadWriteDistance 0x3BF20 with CPHiWatermark 0x3C000 at the moment of the
+first "Unknown Opcode" — the FIFO was AT the high watermark. VtxCnt grows to
+~7460/frame in the HALL (x28 B + ~1846 strip headers + state changes =
+~240KB of GX commands per frame), i.e. the whole frame's command stream is
+the size of the 256KB FIFO. Frames that cross the watermark rely on the
+libogc overflow suspend; when it fails the write pointer wraps over unread
+data and the GP decodes vertex floats as opcodes (0xc8/0x0e/0xee...). This
+also explains good/broken alternation (VtxCnt hovers around the threshold)
+and why STRIP_GUARD / x-y clamps / render_to_texture changed nothing.
+Fix: FIFO_SIZE preset (menu "GX FIFO SIZE", game_presets.cfg key fifo_size,
+default 0 = 256KB legacy). gp_fifo is no longer a static array — it is
+memalign(32)'d in InitRenderer with the preset-chosen size (256KB or 1MB);
+game_presets_apply() runs at game selection, before plugin init, so the
+preset is valid by then. fifo_size=1 enabled in [castlevania].
+
+ClaudeAI (2026-07): HALL round 3 — 1MB FIFO did NOT fix it either, so the
+overflow theory is (at least) incomplete; the stream itself is being
+corrupted. Dolphin's approximate PC symbolicated (boot.elf + addr2line) to
+libogc __SETVCDFMT, i.e. the CPU was inside GX_Begin's VCD setup — the
+submit path, not conclusive by itself. User data point: an older build had
+the weird geometry WITHOUT the FIFO error — consistent with a host-memory
+stomp whose reach grew as the BSS/heap layout changed. Audit of the
+DC-side write paths found three real memory-corruption bugs in
+dc/pvr/pvr_if.cpp, all fixed (always-on clamps, printf when they fire):
+1. YUV_putpixel2 wrote vram.data[] UNBOUNDED — YUV_dest is masked at init
+   but dest + texture extent (up to 2MB) runs past the 8MB buffer ([YUV]
+   OOB line, write dropped).
+2. YUV_data: if TA_YUV_TEX_CTRL shrinks block_size below the buffered
+   YUV_index, "block_size - YUV_index" underflows (u32) and the
+   partial-block memcpy overruns the 512-byte static YUV_tempdata into
+   neighbouring BSS — the TA vertex arenas live there, and the GX FIFO used
+   to ([YUV] stale-partial line, partial block dropped).
+3. TAWrite/TAWriteSQ direct-VRAM path: base masked but count*32 not —
+   memcpy past the buffer for bursts near the top of VRAM ([VRAM] clamp).
+Plus [CANARY] detector in gxRend.cpp: 32-byte magic pads around the
+memalign'd FIFO + magic in the tails of vertices/lists/listModes, checked
+once per StartRender; a stomp prints which region died first. InitRenderer
+now prints "[GX] FIFO: %u KB" to prove the fifo_size preset applied
+(cross-check CPEnd-CPBase in the next Dolphin dump: 0x40000 = preset did
+not apply, 0x100000 = it did).
+
 Remaining perf ideas (NOT implemented, for a future session):
 - 1/z reciprocal in vert_base uses fdivs (~17 non-pipelined cycles on
   Broadway); PPC fres + 1-2 Newton-Raphson steps would cut it to ~6 cycles

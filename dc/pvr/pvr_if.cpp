@@ -50,9 +50,24 @@ static u32 YUV_y_size = 0;         // Output height in pixels
  * @param y Y offset from current position
  * @param pixdata YUYV packed pixel data (2 pixels)
  */
+static u32 yuv_oob_logged = 0; // one [YUV] line per session, not per pixel
+
 INLINE void YUV_putpixel2(u32 x, u32 y, u32 pixdata)
 {
     u32 offset = YUV_dest + (YUV_x_curr + x + (YUV_y_curr + y) * YUV_x_size) * 2;
+    // Bounds guard: YUV_dest is masked at init, but dest + texture extent
+    // (blocks_x/y up to 64 -> up to 2MB of output) can still run past the
+    // 8MB VRAM buffer and stomp whatever the allocator placed after
+    // vram.data — host memory corruption that shows up as weird geometry
+    // and, if it reaches the GX FIFO, "GFX FIFO: Unknown Opcode".
+    if (offset > VRAM_MASK - 3) {
+        if (!yuv_oob_logged) {
+            printf("[YUV] OOB write dropped: dest=%08X x=%u y=%u xsize=%u\n",
+                   YUV_dest, YUV_x_curr + x, YUV_y_curr + y, YUV_x_size);
+            yuv_oob_logged = 1;
+        }
+        return;
+    }
     *(u32*)(&vram.data[offset]) = pixdata;
 }
 
@@ -207,10 +222,23 @@ void YUV_data(u32* data, u32 count)
     u32 TA_YUV_TEX_CTRL = pvr_readreg_TA(TA_YUV_TEX_CTRL_ADDR, 4);
     
     // Determine block size based on format
-    u32 block_size = ((TA_YUV_TEX_CTRL & (1 << 24)) == 0) 
-                     ? YUV_BLOCK_SIZE_420 
+    u32 block_size = ((TA_YUV_TEX_CTRL & (1 << 24)) == 0)
+                     ? YUV_BLOCK_SIZE_420
                      : YUV_BLOCK_SIZE_422;
-    
+
+    // Guard: TA_YUV_TEX_CTRL can change between partial-block writes. If
+    // block_size shrinks below the already-buffered YUV_index, the
+    // "block_size - YUV_index" below underflows (u32 -> ~4G), the full-block
+    // branch is skipped and the partial-block memcpy runs with an unbounded
+    // count — overrunning the 512-byte YUV_tempdata static buffer into
+    // neighbouring BSS (vertex arenas, formerly the GX FIFO). Drop the
+    // stale partial block instead.
+    if (YUV_index >= block_size) {
+        printf("[YUV] stale partial block dropped: index=%u block_size=%u\n",
+               YUV_index, block_size);
+        YUV_index = 0;
+    }
+
     // Convert count from 32-byte blocks to bytes
     count *= 32;
     
@@ -269,6 +297,53 @@ void pvr_writereg_TA(u32 addr, u32 data, u32 sz)
 // VRAM Access Functions (32-bit to 64-bit address conversion)
 //------------------------------------------------------------------------------
 
+// [FBREAD] debug: per-frame aggregation of CPU reads through the 32-bit VRAM
+// path (0x05xxxxxx) — the linear area games use to read the framebuffer back
+// (Castlevania: Resurrection HALL shadow/reflection pass). The 0x04 area is
+// direct-mapped by _vmem (no handler), so reads there cannot be logged; if a
+// game breaks like a readback game but [FBREAD] stays silent, that is the
+// remaining suspect. Armed once per rendered frame by StartRender() while the
+// DEBUG MESSAGE preset is on (fbread_frame_tick dumps the previous frame's
+// window and re-arms), so the printf cost never runs in normal play.
+static int fbread_armed = 0;
+static u32 fbread_count16, fbread_count32;
+static u32 fbread_min, fbread_max;      // 24-bit VRAM offsets, pre-conversion
+static u32 fbread_first[8][2];          // first N (addr, value) pairs verbatim
+static u32 fbread_first_n;
+
+static void fbread_record(u32 addr, u32 val, u32* count)
+{
+    u32 a = addr & 0x00FFFFFF;
+    if ((fbread_count16 | fbread_count32) == 0)
+        fbread_min = fbread_max = a;
+    else if (a < fbread_min) fbread_min = a;
+    else if (a > fbread_max) fbread_max = a;
+    if (fbread_first_n < 8) {
+        fbread_first[fbread_first_n][0] = a;
+        fbread_first[fbread_first_n][1] = val;
+        fbread_first_n++;
+    }
+    (*count)++;
+}
+
+// Called by the render plugin at every StartRender(). Prints the summary of
+// CPU 32-bit-path VRAM reads seen since the previous StartRender (i.e. while
+// the game computed this frame) — adjacent to that frame's [PATH] line, so
+// the read range can be compared against FB_W_SOF1/FB_R_SOF1 directly.
+extern "C" void fbread_frame_tick(int arm)
+{
+    if (fbread_armed && (fbread_count16 | fbread_count32)) {
+        printf("[FBREAD] n16=%u n32=%u range=%06X..%06X\n",
+               fbread_count16, fbread_count32, fbread_min, fbread_max);
+        for (u32 i = 0; i < fbread_first_n; i++)
+            printf("[FBREAD]   #%u addr=%06X val=%08X\n",
+                   i, fbread_first[i][0], fbread_first[i][1]);
+    }
+    fbread_armed  = arm;
+    fbread_count16 = fbread_count32 = 0;
+    fbread_first_n = 0;
+}
+
 u8 FASTCALL pvr_read_area1_8(u32 addr)
 {
     printf("Warning: 8-bit VRAM reads are not supported by hardware\n");
@@ -277,14 +352,22 @@ u8 FASTCALL pvr_read_area1_8(u32 addr)
 
 u16 FASTCALL pvr_read_area1_16(u32 addr)
 {
+    u32 raw = addr;
     addr = vramlock_ConvOffset32toOffset64(addr);
-    return *host_ptr_xor((u16*)&vram[addr]);
+    u16 data = *host_ptr_xor((u16*)&vram[addr]);
+    if (fbread_armed)
+        fbread_record(raw, data, &fbread_count16);
+    return data;
 }
 
 u32 FASTCALL pvr_read_area1_32(u32 addr)
 {
+    u32 raw = addr;
     addr = vramlock_ConvOffset32toOffset64(addr);
-    return *(u32*)&vram[addr];
+    u32 data = *(u32*)&vram[addr];
+    if (fbread_armed)
+        fbread_record(raw, data, &fbread_count32);
+    return data;
 }
 
 void FASTCALL pvr_write_area1_8(u32 addr, u8 data)
@@ -328,7 +411,16 @@ void FASTCALL TAWrite(u32 address, u32* data, u32 count)
     } else {
         // Direct VRAM write (16MB+ range)
         // Note: This works on real hardware, respects lock modes
-        memcpy(&vram.data[address & VRAM_MASK], data, count * 32);
+        // Clamp: the base is masked but count*32 was not — a burst starting
+        // near the top of VRAM would memcpy past the buffer (host memory
+        // corruption -> weird geometry / GX FIFO desync).
+        u32 vaddr = address & VRAM_MASK;
+        u32 bytes = count * 32;
+        if (bytes > VRAM_SIZE - vaddr) {
+            printf("[VRAM] TAWrite clamped: addr=%08X count=%u\n", address, count);
+            bytes = VRAM_SIZE - vaddr;
+        }
+        memcpy(&vram.data[vaddr], data, bytes);
     }
 }
 
@@ -347,8 +439,11 @@ void FASTCALL TAWriteSQ(u32 address, u32* data)
         // YUV converter
         YUV_data(data, 1);
     } else {
-        // Direct VRAM write
-        memcpy(&vram.data[address & VRAM_MASK], data, 32);
+        // Direct VRAM write (same clamp as TAWrite: masked base + fixed 32
+        // bytes can still cross the end of the buffer by up to 31 bytes)
+        u32 vaddr = address & VRAM_MASK;
+        if (vaddr + 32 <= VRAM_SIZE)
+            memcpy(&vram.data[vaddr], data, 32);
     }
 }
 

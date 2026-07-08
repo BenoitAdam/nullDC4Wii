@@ -183,6 +183,33 @@ extern "C" int get_async_render_preset();
 extern "C" int get_tmem_cache_preset();
 #define TMEM_CACHE() (get_tmem_cache_preset() == 1)
 
+// Strip guard: bounds-check the TA accumulation arenas. Two failure modes,
+// both showing as "janky vertices going mad" and usually a GX FIFO desync:
+//  1. A single strip longer than 0x7FFF vertices: the draw loop masks flagged
+//     counts with 0x7FFF, so drawVTX falls behind the real data and every
+//     strip after it renders garbage. Long strips are split instead.
+//  2. vertices[]/lists[]/listModes[] overrun: glob_param_bdc only checks the
+//     vertex arena at *param* boundaries, so a runaway strip (garbage TA data
+//     that never sets EndOfStrip) writes past vertices[] into lists[],
+//     corrupting counts that then feed GX_Begin — instant FIFO desync.
+// Costs 2 pointer compares per TA poly vertex (+1 per strip) when enabled.
+extern "C" int get_strip_guard_preset();
+#define STRIP_GUARD() (get_strip_guard_preset() == 1)
+
+// [FBREAD] debug hook (dc/pvr/pvr_if.cpp): per-frame CPU VRAM-readback log,
+// armed from StartRender() while DEBUG MESSAGE is on.
+extern "C" void fbread_frame_tick(int arm);
+
+// GX FIFO size. A heavy DC frame (Castlevania HALL: ~7.5K verts x 28 B +
+// ~1.8K strip headers + state changes) produces ~240KB of GX commands —
+// right at the 256KB FIFO's high watermark (0x3C000). Frames that cross it
+// rely on the libogc overflow suspend; when that fails (observed in Dolphin:
+// CPReadWriteDistance 0x3BF20 at the moment of "FIFO: Unknown Opcode") the
+// write pointer wraps over unread data and the GP reads vertex floats as
+// opcodes. 1MB keeps the whole frame far below the watermark.
+extern "C" int get_fifo_size_preset();
+#define FIFO_SIZE_1MB() (get_fifo_size_preset() == 1)
+
 
 int frame_counter;
 
@@ -195,9 +222,14 @@ int frame_counter;
 #include "wii/wii_audio.h"
 #include <stdio.h> // needed for log
 
-// The FIFO is the command buffer for the GX hardware. 
+// The FIFO is the command buffer for the GX hardware.
 // 256KB is a standard size for most homebrew applications. May need more for NullDC4Wii to avoid FIFO error ?
+// -> Confirmed (2026-07, Castlevania HALL): heavy frames hit the 256KB
+//    FIFO's high watermark and can wrap (GX FIFO desync). FIFO_SIZE_1MB()
+//    allocates 1MB instead; the buffer is memalign'd in InitRenderer now
+//    (not a static array) so the preset can pick the size at runtime.
 #define DEFAULT_FIFO_SIZE (256 * 1024)
+#define BIG_FIFO_SIZE     (1024 * 1024)
 
 using namespace TASplitter;
 
@@ -206,7 +238,16 @@ u8 *vram_buffer;
 // Double buffering setup: frameBuffer[0] and [1] prevent screen tearing.
 static void *frameBuffer[2] = {NULL, NULL};
 static GXRModeObj *rmode;
-static u8 gp_fifo[DEFAULT_FIFO_SIZE] __attribute__((aligned(32)));
+static u8 *gp_fifo = NULL;                    // memalign(32) in InitRenderer
+static u32 gp_fifo_size = DEFAULT_FIFO_SIZE;  // DEFAULT_ or BIG_FIFO_SIZE
+
+// [CANARY] memory-stomp detector. 32-byte magic pads before/after the GX
+// FIFO allocation (see InitRenderer) checked once per StartRender along with
+// the tails of the TA arenas. If some buffer overrun is smashing host memory
+// (the suspected cause of "weird geometry -> GFX FIFO Unknown Opcode"), the
+// [CANARY] line names which region got hit first. Prints only on corruption.
+static u32 *fifo_canary_lo = NULL;
+static u32 *fifo_canary_hi = NULL;
 static int fb = 0; // Current framebuffer index
 
 // ── ASYNC_RENDER() state ─────────────────────────────────────────────────────
@@ -720,6 +761,8 @@ bool g_split_screen_cached     = false; // same idea, for SPLIT_SCREEN(): gates
                                         // the listTileClip[] store per param
 bool g_fixed_depth_cached      = false; // same idea, for FIXED_DEPTH_*(): skips
                                         // the per-vertex min/max W tracking
+bool g_strip_guard_cached      = false; // same idea, for STRIP_GUARD(): gates
+                                        // the per-vertex arena/split checks
 
 char fps_text[512];
 
@@ -849,6 +892,7 @@ void reset_vtx_state()
   g_offset_color_fix_cached = OFFSET_COLOR_FIX();
   g_split_screen_cached     = SPLIT_SCREEN();
   g_fixed_depth_cached      = !FIXED_DEPTH_OFF();
+  g_strip_guard_cached      = STRIP_GUARD();
 }
 
 #define VTX_TFX(x) (x)
@@ -4691,8 +4735,65 @@ void VBlank()
 // START RENDERING
 // ============================
 
+// [CANARY] helpers — see the fifo_canary_lo declaration for the idea.
+#define CANARY_MAGIC 0xC0DEDBADu
+
+static void canary_stamp(u32 *p, u32 words)
+{
+  for (u32 i = 0; i < words; i++)
+    p[i] = CANARY_MAGIC;
+}
+
+static void canary_check_one(const char *name, u32 *p, u32 words)
+{
+  if (p == NULL)
+    return;
+  for (u32 i = 0; i < words; i++)
+  {
+    if (p[i] != CANARY_MAGIC)
+    {
+      printf("[CANARY] %s stomped! word %u = %08X (frame %d)\n",
+             name, i, p[i], frame_counter);
+      canary_stamp(p, words); // re-arm so the next hit is reported too
+      return;
+    }
+  }
+}
+
+// Tails of the TA arenas: STRIP_GUARD stops guarded writes 8 verts / 2
+// records early, so these words are never legitimately written. Each canary
+// spans whole elements so it can't run past the array: Vertex is 28 B (7
+// words) -> last 1 element; VertexList is 4 B (1 word) -> last 2 elements
+// (2 words); PolyParam is 16 B (4 words) -> last 1 element.
+static void canary_stamp_all()
+{
+  canary_stamp((u32 *)&vertices[42 * 1024 - 1], 7);
+  canary_stamp((u32 *)&lists[8 * 1024 - 2], 2);
+  canary_stamp((u32 *)&listModes[8 * 1024 - 1], 4);
+  if (fifo_canary_lo) canary_stamp(fifo_canary_lo, 8);
+  if (fifo_canary_hi) canary_stamp(fifo_canary_hi, 8);
+}
+
+static void canary_check_all()
+{
+  canary_check_one("vertices-tail",  (u32 *)&vertices[42 * 1024 - 1], 7);
+  canary_check_one("lists-tail",     (u32 *)&lists[8 * 1024 - 2], 2);
+  canary_check_one("listModes-tail", (u32 *)&listModes[8 * 1024 - 1], 4);
+  canary_check_one("fifo-lo", fifo_canary_lo, 8);
+  canary_check_one("fifo-hi", fifo_canary_hi, 8);
+}
+
 void StartRender()
 {
+  // [CANARY]: cheap (~25 word compares) once per rendered frame; prints
+  // only when a region got stomped since the previous frame.
+  canary_check_all();
+  // [FBREAD] (see dc/pvr/pvr_if.cpp): dump the CPU VRAM-readback summary for
+  // the frame the game just finished computing, then re-arm. The line prints
+  // right before this frame's [PATH] line, so the read range can be compared
+  // with FB_W_SOF1/FB_R_SOF1 at a glance. No-op when DEBUG MESSAGE is off.
+  fbread_frame_tick(DEBUG_MESSAGE() ? 1 : 0);
+
   u32 VtxCnt = curVTX - vertices;
   VertexCount += VtxCnt;
 
@@ -4958,6 +5059,53 @@ struct VertexDecoder
       curMod++;
     }
     curLST++;
+    // STRIP_GUARD(): lists[]/listModes[] nearly full — drop the frame's
+    // geometry now (strip boundary: the splitter re-runs StartPolyStrip, so
+    // this restarts cleanly) rather than let the next strip/param write past
+    // the arenas. The 2-entry headroom keeps StripGuardPoly's mid-strip
+    // split, which appends one record without this check, in bounds too.
+    if (g_strip_guard_cached &&
+        (curLST >= lists + 8 * 1024 - 2 || curMod >= listModes + 8 * 1024 - 2))
+      reset_vtx_state();
+  }
+
+  // ── STRIP_GUARD() per-vertex check ─────────────────────────────────────
+  // Called before every poly vertex lands (see vert_cvt_base). Not used by
+  // sprites: they are fixed 4-vertex records with their own arena check in
+  // AppendSpriteVertexA.
+  __forceinline static void StripGuardPoly()
+  {
+    // Vertex arena stop. Emergency policy mirrors glob_param_bdc: drop the
+    // frame's geometry (one glitched frame instead of lists[] corruption
+    // feeding garbage counts into GX_Begin). Mid-strip the splitter won't
+    // call StartPolyStrip again, so re-anchor the in-flight strip by hand
+    // to keep EndPolyStrip's count sane.
+    if (curVTX >= vertices + 42 * 1024 - 8)
+    {
+      reset_vtx_state();
+      curLST->ptr = curVTX;
+      return;
+    }
+    // Split before the strip count reaches the draw loop's 0x7FFF mask.
+    // 0x7FFE is even and the last 2 vertices are repeated, so triangle-strip
+    // parity is preserved and the seam is invisible. The continuation record
+    // stays unflagged (positive count): it renders with the same state.
+    if ((curVTX - curLST->ptr) >= 0x7FFE)
+    {
+      Vertex *prev = curVTX;
+      curLST->count = (prev - curLST->ptr);
+      if (global_regd)
+      {
+        curLST->count |= 0x80000000;
+        global_regd = false;
+        curMod++;
+      }
+      curLST++;
+      curLST->ptr = curVTX;
+      curVTX[0] = prev[-2];
+      curVTX[1] = prev[-1];
+      curVTX += 2;
+    }
   }
 
 // Standard vertex projection macro. PVR 'Z' is actually 1/W.
@@ -4980,11 +5128,25 @@ struct VertexDecoder
 // so the min/max tracking (2 float compares + branches on EVERY TA vertex,
 // including sprites) is skipped entirely. g_fixed_depth_cached is refreshed
 // once per frame in reset_vtx_state() like the other cached preset flags.
+// STRIP_GUARD(): the same EFB-readback garbage also lands in x/y, which the
+// clamp above never touched — NaN/inf positions reach the XF and eventually
+// desync the FIFO (Castlevania HALL: stretched mile-long triangles alternating
+// with good frames, then a FIFO error). Clamp x/y to ±32768: legit DC screen
+// space is [0..640] and guard-band geometry stays well inside ±32K, while
+// random VRAM bit patterns are mostly huge-exponent floats, inf or NaN. Same
+// ">="-shaped ternaries as the Z guard so NaN falls into the clamp (PPC fsel
+// picks the else operand on NaN).
 #define vert_base(dst, _x, _y, _z) /*VertexCount++;*/         \
   float _safe_z = (_z >= 0.0001f) ? _z : 0.0001f;            \
   float W = 1.0f / _safe_z;                                   \
-  curVTX[dst].x = VTX_TFX(_x) * W;                           \
-  curVTX[dst].y = VTX_TFY(_y) * W;                           \
+  float _sx = (_x), _sy = (_y);                               \
+  if (g_strip_guard_cached)                                   \
+  {                                                           \
+    _sx = (_sx >= -32768.f) ? ((_sx <= 32768.f) ? _sx : 32768.f) : -32768.f; \
+    _sy = (_sy >= -32768.f) ? ((_sy <= 32768.f) ? _sy : 32768.f) : -32768.f; \
+  }                                                           \
+  curVTX[dst].x = VTX_TFX(_sx) * W;                           \
+  curVTX[dst].y = VTX_TFY(_sy) * W;                           \
   if (!g_fixed_depth_cached)                                  \
   {                                                           \
     if (W > 0.0f && W < vtx_min_Z)                           \
@@ -4995,7 +5157,12 @@ struct VertexDecoder
   curVTX[dst].z = W; /*Linearly scaled later*/
 
   // Poly Vertex handlers
-#define vert_cvt_base vert_base(0, vtx->xyz[0], vtx->xyz[1], vtx->xyz[2])
+  // STRIP_GUARD(): the arena/split check must run before the vertex is
+  // written, and only poly handlers route through this macro (sprites are
+  // handled separately), so this is the single hook point for all 15 types.
+#define vert_cvt_base \
+  if (g_strip_guard_cached) StripGuardPoly(); \
+  vert_base(0, vtx->xyz[0], vtx->xyz[1], vtx->xyz[2])
 
   // Handlers for various PVR vertex types (Packed color, Float color, Intensity, etc.)
   //(Non-Textured, Packed Color)
@@ -5220,7 +5387,13 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
   // Sprites are converted to 4-vertex triangle strips.
   __forceinline static void AppendSpriteVertexA(TA_Sprite1A *sv)
   {
-    
+    // STRIP_GUARD(): vertex arena stop, checked once per sprite (4 vertices
+    // land across A+B). Safe point: nothing written yet, StartPolyStrip()
+    // below re-anchors after the reset. The 8-vertex headroom covers the
+    // curVTX[0..3] writes plus the trailing curVTX += 4.
+    if (g_strip_guard_cached && curVTX >= vertices + 42 * 1024 - 8)
+      reset_vtx_state();
+
     StartPolyStrip();
     curVTX[0].col = 0xFFFFFFFF;
     curVTX[1].col = 0xFFFFFFFF;
@@ -5267,6 +5440,12 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
       curMod++;
     }
     curLST++;
+    // STRIP_GUARD(): same lists[]/listModes[] stop as EndPolyStrip — this is
+    // its inlined sprite copy and grows the same arenas (heavy particle
+    // scenes reach 8192 records through here, one per sprite).
+    if (g_strip_guard_cached &&
+        (curLST >= lists + 8 * 1024 - 2 || curMod >= listModes + 8 * 1024 - 2))
+      reset_vtx_state();
   }
 
   // ModVolumes
@@ -5392,9 +5571,29 @@ bool InitRenderer()
   fb ^= 1;
 
   // setup the fifo and then init the flipper
-  memset(gp_fifo, 0, DEFAULT_FIFO_SIZE);
+  // FIFO_SIZE_1MB(): heavy scenes (~240KB of commands per frame) sit right at
+  // the 256KB FIFO's high watermark and can wrap -> GX FIFO desync. The size
+  // is preset-chosen here; game_presets_apply() runs at game selection, well
+  // before the plugin init reaches this point.
+  if (gp_fifo == NULL)
+  {
+    gp_fifo_size = FIFO_SIZE_1MB() ? BIG_FIFO_SIZE : DEFAULT_FIFO_SIZE;
+    // +64: one 32-byte [CANARY] pad on each side of the FIFO, checked every
+    // StartRender — catches heap neighbours (or the GP itself) overwriting
+    // the command buffer.
+    u8 *raw = (u8 *)memalign(32, gp_fifo_size + 64);
+    fifo_canary_lo = (u32 *)raw;
+    gp_fifo = raw + 32;
+    fifo_canary_hi = (u32 *)(gp_fifo + gp_fifo_size);
+  }
+  memset(gp_fifo, 0, gp_fifo_size);
+  canary_stamp_all();
+  // Proof the preset took effect — compare against the Dolphin FIFO dump's
+  // CPEnd-CPBase on the next desync (256KB span = the preset did NOT apply).
+  printf("[GX] FIFO: %u KB @ %p (fifo_size preset=%d)\n",
+         (unsigned)(gp_fifo_size / 1024), gp_fifo, get_fifo_size_preset());
 
-  GX_Init(gp_fifo, DEFAULT_FIFO_SIZE);
+  GX_Init(gp_fifo, gp_fifo_size);
   // Draw-done interrupt callback for ASYNC_RENDER()'s non-blocking vblank
   // present (gx_present_if_done). Registered unconditionally: with the preset
   // off it only sets an unused flag.

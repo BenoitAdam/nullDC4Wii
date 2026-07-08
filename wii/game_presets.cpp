@@ -115,6 +115,20 @@
                                 only when a texture is actually re-decoded, so
                                 unchanged textures stay cached across frames —
                                 more texture fill rate.
+        strip_guard=1       <- 0/1, TA strip/arena bounds guard (see gxRend.cpp
+                                STRIP_GUARD()). 1 splits strips before they
+                                overflow the 15-bit count mask and stops
+                                vertices[]/lists[] overruns — for games showing
+                                mad/janky vertices or GX FIFO desync. Costs 2
+                                compares per TA vertex; 0 (default, legacy)
+                                no bounds checks.
+        fifo_size=1         <- 0/1, GX FIFO size (see gxRend.cpp
+                                FIFO_SIZE_1MB()). 0 (default, legacy) keeps the
+                                256KB FIFO; 1 allocates 1MB. Heavy scenes
+                                (~7.5K verts/frame = ~240KB of GX commands)
+                                sit at the 256KB FIFO's high watermark and can
+                                wrap -> "GFX FIFO: Unknown Opcode" desync
+                                (Castlevania HALL). Costs 768KB of MEM1.
         split_screen=1      <- 0/1, split-screen multiplayer (see gxRend.cpp
                                 SPLIT_SCREEN()). 2P games (Daytona USA
                                 multiplayer) render one pass per player
@@ -167,6 +181,8 @@ extern int g_fixed_depth_preset;
 extern int g_depth_clip_preset;
 extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
+extern int g_strip_guard_preset;
+extern int g_fifo_size_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -214,6 +230,8 @@ struct GamePreset
     int depth_clip;
     int async_render;
     int tmem_cache;
+    int strip_guard;
+    int fifo_size;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -406,6 +424,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "depth_clip"))     p->depth_clip     = atoi(val);
     else if (key_eq(key, "async_render"))   p->async_render   = atoi(val);
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = atoi(val);
+    else if (key_eq(key, "strip_guard"))    p->strip_guard    = atoi(val);
+    else if (key_eq(key, "fifo_size"))      p->fifo_size      = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -481,6 +501,8 @@ void game_presets_load(const char* cfg_path)
             cur->depth_clip = -1;
             cur->async_render = -1;
             cur->tmem_cache = -1;
+            cur->strip_guard = -1;
+            cur->fifo_size = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -578,6 +600,8 @@ void game_presets_apply(const char* filepath)
         if (p->depth_clip     >= 0) { g_depth_clip_preset    = p->depth_clip;      printf("  depth_clip     -> %d\n", p->depth_clip);     }
         if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
         if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
+        if (p->strip_guard    >= 0) { g_strip_guard_preset   = p->strip_guard;     printf("  strip_guard    -> %d\n", p->strip_guard);    }
+        if (p->fifo_size      >= 0) { g_fifo_size_preset     = p->fifo_size;       printf("  fifo_size      -> %d\n", p->fifo_size);      }
 
         return; // First match only
     }

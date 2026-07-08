@@ -199,6 +199,18 @@ extern "C" {
   int get_tmem_cache_preset() { return g_tmem_cache_preset; }
 }
 
+int g_strip_guard_preset = 0; // 0=off (legacy, no bounds checks), 1=on (split strips >32766 verts + stop vertices[]/lists[]/listModes[] overruns; guards against janky-vertex frames turning into GX FIFO desync, costs 2 compares per TA vertex)
+
+extern "C" {
+  int get_strip_guard_preset() { return g_strip_guard_preset; }
+}
+
+int g_fifo_size_preset = 0; // 0=256KB GX FIFO (legacy), 1=1MB (heavy scenes ~240KB of GX commands/frame sit at the 256KB FIFO's high watermark and can wrap -> "GFX FIFO: Unknown Opcode" desync; Castlevania HALL)
+
+extern "C" {
+  int get_fifo_size_preset() { return g_fifo_size_preset; }
+}
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -243,7 +255,7 @@ static const int kControllerTypeCount = 5;
 int g_debug_loop = 0;
 extern "C" { int get_debug_loop()    { return g_debug_loop;    } }
 
-int g_debug_message = 0;
+int g_debug_message = 1;
 extern "C" { int get_debug_message() { return g_debug_message; } }
 
 int g_debug_gdrom = 0;
@@ -589,7 +601,9 @@ void displayAccuracyMenu()
 #define OPT_DEPTH_CLIP  31
 #define OPT_ASYNC_RENDER 32
 #define OPT_TMEM_CACHE  33
-#define OPT_ROW_COUNT   34
+#define OPT_STRIP_GUARD 34
+#define OPT_FIFO_SIZE   35
+#define OPT_ROW_COUNT   36
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -613,6 +627,8 @@ static int opt_row_page(int row)
     case OPT_DEPTH_CLIP:
     case OPT_ASYNC_RENDER:
     case OPT_TMEM_CACHE:
+    case OPT_STRIP_GUARD:
+    case OPT_FIFO_SIZE:
       return 1;
     default:
       return 0;
@@ -943,6 +959,24 @@ bool displayOptionsMenu()
     }
     printf(" (keep GPU texture cache warm)");
     printf("\n");
+
+    // --- Row: TA strip/arena bounds guard ---
+    printf("%s STRIP GUARD     : ", (selectedRow == OPT_STRIP_GUARD) ? ">" : " ");
+    switch (g_strip_guard_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (SAFER)        >]"); break;
+    }
+    printf(" (mad vertices / GX FIFO desync)");
+    printf("\n");
+
+    // --- Row: GX FIFO size ---
+    printf("%s GX FIFO SIZE    : ", (selectedRow == OPT_FIFO_SIZE) ? ">" : " ");
+    switch (g_fifo_size_preset) {
+      case 0: printf("[< 256KB (LEGACY)    >]"); break;
+      case 1: printf("[< 1MB (SAFER)       >]"); break;
+    }
+    printf(" (FIFO overflow on heavy scenes)");
+    printf("\n");
     } // end page 1
 
 
@@ -994,6 +1028,8 @@ bool displayOptionsMenu()
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 2) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
+        case OPT_STRIP_GUARD: g_strip_guard_preset   = (g_strip_guard_preset     + 1) % 2; break;
+        case OPT_FIFO_SIZE: g_fifo_size_preset       = (g_fifo_size_preset       + 1) % 2; break;
         default: break;
       }
     }
@@ -1030,6 +1066,8 @@ bool displayOptionsMenu()
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 1) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
+        case OPT_STRIP_GUARD: g_strip_guard_preset   = (g_strip_guard_preset     + 1) % 2; break;
+        case OPT_FIFO_SIZE: g_fifo_size_preset       = (g_fifo_size_preset       + 1) % 2; break;
         default: break;
       }
     }
@@ -1480,6 +1518,8 @@ int main(int argc, wchar *argv[])
     }
     printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
+    printf("Strip Guard    : %s\n", g_strip_guard_preset ? "ON (SAFER)" : "OFF (LEGACY)");
+    printf("GX FIFO Size   : %s\n", g_fifo_size_preset ? "1MB (SAFER)" : "256KB (LEGACY)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
