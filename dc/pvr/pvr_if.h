@@ -82,6 +82,17 @@ void FASTCALL pvr_write_area1_16(u32 addr, u16 data);
 void FASTCALL pvr_write_area1_32(u32 addr, u32 data);
 
 //------------------------------------------------------------------------------
+// Area 4 Texture-Window Writes (0x11xxxxxx / 0x13xxxxxx)
+//------------------------------------------------------------------------------
+// CPU-store / PVR-DMA writes into the TA texture windows. Land in VRAM over
+// the bus SB_LMMODE0/1 selects when the lmmode preset is on; dropped (legacy
+// unmapped behavior) when it is off. Registered by map_area4() in sh4_mem.cpp.
+
+void FASTCALL pvr_write_area4_8(u32 addr, u8 data);
+void FASTCALL pvr_write_area4_16(u32 addr, u16 data);
+void FASTCALL pvr_write_area4_32(u32 addr, u32 data);
+
+//------------------------------------------------------------------------------
 // Tile Accelerator DMA Interface
 //------------------------------------------------------------------------------
 

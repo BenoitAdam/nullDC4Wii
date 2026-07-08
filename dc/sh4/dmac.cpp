@@ -27,6 +27,42 @@ static inline bool isDstTA(u32 dst)         { return dst >= 0x10000000u && dst <
 static inline bool isDstVRAM_LM0(u32 dst)  { return dst >= 0x11000000u && dst <= 0x11FFFFE0u; }
 static inline bool isDstVRAM_LM1(u32 dst)  { return dst >= 0x13000000u && dst <= 0x13FFFFE0u; }
 
+// LMMODE preset (wii/main.cpp): honor SB_LMMODE0/1 bus select for the
+// 0x11xxxxxx / 0x13xxxxxx VRAM windows. See ch2_copy_ram_to_vram() below.
+extern "C" int get_lmmode_preset();
+extern "C" int get_debug_message();
+#define LMMODE_FIX() (get_lmmode_preset() == 1)
+
+// Copy a Ch2 transfer from system RAM into VRAM through the chosen bus.
+// SB_LMMODEn selects the VRAM bus for the window: 0 = 64-bit linear (area
+// 0x04, the legacy behavior), 1 = 32-bit interleaved (area 0x05, whose
+// pvr_write_area1_32 handler applies the 32->64 offset conversion per word).
+// A game that uploads textures with LMMODE=1 (common in WinCE titles, but any
+// game can program it) gets them written linearly by the legacy path, landing
+// the data at roughly half the intended 64-bit offset, so the textures read
+// back as zeros. Gated behind the lmmode preset: with it off the caller
+// always passes lmmode=0 and this path is byte-identical to the old code.
+// Returns the advanced src address for the register update below.
+static u32 ch2_copy_ram_to_vram(u32 src, u32 dst, u32 len, u32 lmmode)
+{
+	u32 vram_dst = (dst & 0x00FFFFFFu) | (lmmode ? 0xA5000000u : 0xA4000000u);
+
+	while (len)
+	{
+		const u32 p_addr = src & RAM_MASK;
+		const u32 avail  = RAM_SIZE - p_addr;
+		const u32 chunk  = (avail < len) ? avail : len;
+
+		u32 *sys_buf = (u32 *)GetMemPtr(src, chunk);
+		if (sys_buf)
+			WriteMemBlock_nommu_ptr(vram_dst, sys_buf, chunk);
+		len      -= chunk;
+		src      += chunk;
+		vram_dst += chunk;
+	}
+	return src;
+}
+
 // ---------------------------------------------------------------------------
 // DMAC_Ch2St - Channel 2 DMA: feeds the PowerVR TA / VRAM
 // Called when SB_C2DST is written to trigger a Ch2 transfer.
@@ -88,41 +124,32 @@ void DMAC_Ch2St()
 			}
 		}
 	}
-	// --- Transfer to VRAM via LMMODE0 (0x11xxxxxx -> VRAM bank 0) ---
+	// --- Transfer to VRAM via LMMODE0 window (0x11xxxxxx) ---
 	else if (isDstVRAM_LM0(dst))
 	{
-		u32 vram_dst = (dst & 0x00FFFFFFu) | 0xA4000000u;
-
-		while (len)
-		{
-			const u32 p_addr  = src & RAM_MASK;
-			const u32 avail   = RAM_SIZE - p_addr;
-
-			if (avail < len)
-			{
-				u32 *sys_buf = (u32 *)GetMemPtr(src, avail);
-				if (sys_buf)
-					WriteMemBlock_nommu_ptr(vram_dst, sys_buf, avail);
-				len      -= avail;
-				src      += avail;
-				vram_dst += avail;
-			}
-			else
-			{
-				u32 *sys_buf = (u32 *)GetMemPtr(src, len);
-				if (sys_buf)
-					WriteMemBlock_nommu_ptr(vram_dst, sys_buf, len);
-				src += len;
-				break;
-			}
-		}
+		u32 lmmode = LMMODE_FIX() ? (SB_LMMODE0 & 1) : 0;
+		if (get_debug_message())
+			printf("DMAC: Ch2 VRAM DST=0x%08X LEN=0x%X LMMODE0=%d (bus: %s)\n",
+			       dst, len, (int)SB_LMMODE0, lmmode ? "32-bit" : "64-bit");
+		src = ch2_copy_ram_to_vram(src, dst, len, lmmode);
 	}
-	// --- Transfer to VRAM via LMMODE1 (0x13xxxxxx -> VRAM bank 1) ---
+	// --- Transfer to VRAM via LMMODE1 window (0x13xxxxxx) ---
 	else if (isDstVRAM_LM1(dst))
 	{
-		// LMMODE1 path not yet fully implemented; advance src to keep state consistent
-		printf("DMAC: Ch2 LMMODE1 transfer (stub) DST=0x%08X LEN=0x%X\n", dst, len);
-		src += len;
+		if (LMMODE_FIX())
+		{
+			u32 lmmode = SB_LMMODE1 & 1;
+			if (get_debug_message())
+				printf("DMAC: Ch2 VRAM DST=0x%08X LEN=0x%X LMMODE1=%d (bus: %s)\n",
+				       dst, len, (int)SB_LMMODE1, lmmode ? "32-bit" : "64-bit");
+			src = ch2_copy_ram_to_vram(src, dst, len, lmmode);
+		}
+		else
+		{
+			// Legacy: LMMODE1 path not implemented; advance src to keep state consistent
+			printf("DMAC: Ch2 LMMODE1 transfer (stub) DST=0x%08X LEN=0x%X\n", dst, len);
+			src += len;
+		}
 	}
 	else
 	{

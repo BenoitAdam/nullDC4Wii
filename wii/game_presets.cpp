@@ -114,6 +114,17 @@
                                 frame once per vblank; 0 (default, legacy)
                                 presents every pass fullscreen, so only one
                                 player's view shows.
+        lmmode=1            <- 0/1, honor SB_LMMODE0/1 VRAM bus select for the
+                                0x11xxxxxx / 0x13xxxxxx TA direct-VRAM windows
+                                (dc/sh4/dmac.cpp Ch2-DMA + dc/pvr/pvr_if.cpp
+                                SQ writes). Games that upload textures over
+                                the 32-bit interleaved bus (LMMODE=1, common
+                                in WinCE titles but not exclusive to them) get
+                                them written over the 64-bit linear bus by the
+                                legacy path, landing the data at the wrong
+                                offsets so those textures read back as zeros
+                                (black/invisible UI screens — Re-Volt).
+                                0 (default) = legacy, always 64-bit linear.
 
     First matching rule wins.
     Unset fields are left at whatever the user selected in the UI.
@@ -156,6 +167,7 @@ extern int g_mipmap_preset;
 extern int g_fixed_depth_preset;
 extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
+extern int g_lmmode_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -202,6 +214,7 @@ struct GamePreset
     int fixed_depth;
     int async_render;
     int tmem_cache;
+    int lmmode;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -393,6 +406,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "fixed_depth"))    p->fixed_depth    = atoi(val);
     else if (key_eq(key, "async_render"))   p->async_render   = atoi(val);
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = atoi(val);
+    else if (key_eq(key, "lmmode"))         p->lmmode         = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -467,6 +481,7 @@ void game_presets_load(const char* cfg_path)
             cur->fixed_depth = -1;
             cur->async_render = -1;
             cur->tmem_cache = -1;
+            cur->lmmode = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -563,6 +578,7 @@ void game_presets_apply(const char* filepath)
         if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }
         if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
         if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
+        if (p->lmmode         >= 0) { g_lmmode_preset        = p->lmmode;          printf("  lmmode         -> %d\n", p->lmmode);         }
 
         return; // First match only
     }

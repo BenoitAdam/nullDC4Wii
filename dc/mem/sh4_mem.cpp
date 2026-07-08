@@ -77,7 +77,14 @@ static void map_area4_init() {}
 
 static void map_area4(u32 base)
 {
-	// Upper 32 MB mirrors lower 32 MB
+	// Upper 32 MB mirrors lower 32 MB.
+	// NOTE: area 4 stays intentionally UNMAPPED — the handler-id encoding in
+	// _vmem_MemInfo_ptr only supports 8 handler slots (id*4 <= HANDLER_MAX)
+	// and all 8 are taken; registering one more silently corrupts whichever
+	// handler lands past the limit (P4 — instant boot crash). CPU-store /
+	// PVR-DMA writes into the 0x11/0x13 texture windows are instead routed
+	// from the not-mapped default write handlers in _vmem.cpp to
+	// pvr_write_area4_* (dc/pvr/pvr_if.cpp), gated by the lmmode preset.
 	_vmem_mirror_mapping(0x12 | base, 0x10 | base, 0x02);
 }
 

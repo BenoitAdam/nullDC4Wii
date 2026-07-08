@@ -2435,10 +2435,20 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       pbuff->shape_key = tex_shape_key(mod, pixel_fmt);
     }
 
-    if(DEBUG_MESSAGE()) {
+    if(1) {
       printf("[TEX] addr=%06X fmt=%d vq=%d scan=%d mip=%d w=%d h=%d\n",
         orig_tex_addr, (int)mod->tcw.NO_PAL.PixelFmt, (int)mod->tcw.NO_PAL.VQ_Comp,
         (int)mod->tcw.NO_PAL.ScanOrder, (int)mod->tcw.NO_PAL.MipMapped, w, h);
+      // Raw source-VRAM sample at decode time (before the DEADBEEF sentinel is
+      // stamped): start of the texture and a probe 4KB in. All-zero words on
+      // both lines mean the texture data never reached VRAM (upload path
+      // problem); real data here but a black/invisible poly on screen means
+      // the bug is in decode or render state instead.
+      #define RAWB(off) (*host_ptr_xor((u16*)&params.vram[(orig_tex_addr + (off)) & VRAM_MASK]))
+      printf("[RAWBYTES] +0000=%04X %04X %04X %04X  +1000=%04X %04X %04X %04X\n",
+        RAWB(0x0000), RAWB(0x0002), RAWB(0x0004), RAWB(0x0006),
+        RAWB(0x1000), RAWB(0x1002), RAWB(0x1004), RAWB(0x1006));
+      #undef RAWB
     }
 
     //// 3. Format Conversion ////

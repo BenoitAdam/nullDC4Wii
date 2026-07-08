@@ -103,12 +103,25 @@ static inline void complete_dma_transfer(u32 src, u32 len)
  * Transfers data between system RAM and PVR memory.
  * Direction is controlled by SB_PDDIR register.
  */
+// Diagnostic trace for the Re-Volt missing-texture investigation: PVR-DMA
+// (SB_PDST) is a third upload path besides Ch2-DMA and SQ, and had zero
+// visibility before. Rate-limited so a busy game doesn't spam every frame.
+extern "C" int get_debug_message();
+static u32 s_pvr_dma_trace_logs = 0;
+
 static void do_pvr_dma()
 {
 	const u32 dmaor = DMAC_DMAOR.full;
 	const u32 src = SB_PDSTAR;
 	const u32 dst = SB_PDSTAP;
 	const u32 len = SB_PDLEN;
+
+	if (get_debug_message() && s_pvr_dma_trace_logs < 8)
+	{
+		s_pvr_dma_trace_logs++;
+		printf("[pvr] PVR-DMA src=0x%08X dst=0x%08X len=0x%X dir=%s\n",
+		       src, dst, len, SB_PDDIR ? "PVR->RAM" : "RAM->PVR");
+	}
 
 	// Validate configuration
 	if (!validate_dma_config(dmaor, len))

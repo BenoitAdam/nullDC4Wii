@@ -193,6 +193,12 @@ extern "C" {
   int get_tmem_cache_preset() { return g_tmem_cache_preset; }
 }
 
+int g_lmmode_preset = 0; // 0=off (legacy: 0x11/0x13 VRAM DMA/SQ writes always 64-bit linear), 1=on (honor SB_LMMODE0/1: 32-bit interleaved bus when the game selects it — suspected for Re-Volt's black/invisible UI textures)
+
+extern "C" {
+  int get_lmmode_preset() { return g_lmmode_preset; }
+}
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -237,7 +243,7 @@ static const int kControllerTypeCount = 5;
 int g_debug_loop = 0;
 extern "C" { int get_debug_loop()    { return g_debug_loop;    } }
 
-int g_debug_message = 0;
+int g_debug_message = 1;
 extern "C" { int get_debug_message() { return g_debug_message; } }
 
 int g_debug_gdrom = 0;
@@ -582,7 +588,8 @@ void displayAccuracyMenu()
 #define OPT_FIXED_DEPTH 30
 #define OPT_ASYNC_RENDER 31
 #define OPT_TMEM_CACHE  32
-#define OPT_ROW_COUNT   33
+#define OPT_LMMODE      33
+#define OPT_ROW_COUNT   34
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -605,6 +612,7 @@ static int opt_row_page(int row)
     case OPT_FIXED_DEPTH:
     case OPT_ASYNC_RENDER:
     case OPT_TMEM_CACHE:
+    case OPT_LMMODE:
       return 1;
     default:
       return 0;
@@ -902,8 +910,8 @@ bool displayOptionsMenu()
     printf("%s FIXED DEPTH     : ", (selectedRow == OPT_FIXED_DEPTH) ? ">" : " ");
     switch (g_fixed_depth_preset) {
       case 0: printf("[< OFF (DYNAMIC)     >]"); break;
-      case 1: printf("[< WIDE (FASTER?)    >]"); break;
-      case 2: printf("[< TIGHT (FASTER?)   >]"); break;
+      case 1: printf("[< WIDE (CRAZYTAXI1) >]"); break; // Breaks 3D but good for Crazy Taxi Menu & Hud
+      case 2: printf("[< TIGHT (CHUCHU)    >]"); break; // Perfect for Chuchu Rocket
     }
     printf(" fixed near/far planes. Z-Fighting");
     printf("\n");
@@ -924,6 +932,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (FASTER?)      >]"); break;
     }
     printf(" (keep GPU texture cache warm)");
+    printf("\n");
+
+    // --- Row: LMMODE (32-bit VRAM bus for 0x11/0x13 DMA/SQ writes) ---
+    printf("%s LMMODE 32BIT    : ", (selectedRow == OPT_LMMODE) ? ">" : " ");
+    switch (g_lmmode_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" (32bit VRAM bus, Re-Volt UI)");
     printf("\n");
     } // end page 1
 
@@ -975,6 +992,7 @@ bool displayOptionsMenu()
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 2) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
+        case OPT_LMMODE:    g_lmmode_preset          = (g_lmmode_preset          + 1) % 2; break;
         default: break;
       }
     }
@@ -1010,6 +1028,7 @@ bool displayOptionsMenu()
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 1) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
+        case OPT_LMMODE:    g_lmmode_preset          = (g_lmmode_preset          + 1) % 2; break;
         default: break;
       }
     }

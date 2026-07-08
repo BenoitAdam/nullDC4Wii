@@ -3,8 +3,16 @@
 #include "pvrLock.h"
 #include "dc/sh4/intc.h"
 #include "dc/mem/_vmem.h"
+#include "dc/mem/sb.h"
 #include "plugins/plugin_manager.h"
 #include "dc/asic/asic.h"
+
+// LMMODE preset (wii/main.cpp): honor SB_LMMODE0/1 for the direct-VRAM TA
+// windows (0x11xxxxxx / 0x13xxxxxx, reached via SQ writes and DMA). See the
+// matching Ch2-DMA handling in dc/sh4/dmac.cpp for the full story.
+extern "C" int get_lmmode_preset();
+extern "C" int get_debug_message();
+#define LMMODE_FIX() (get_lmmode_preset() == 1)
 
 //==============================================================================
 // PowerVR Interface Implementation
@@ -305,8 +313,102 @@ void FASTCALL pvr_write_area1_32(u32 addr, u32 data)
 }
 
 //------------------------------------------------------------------------------
+// Area 4 texture-window write handlers (0x11xxxxxx / 0x13xxxxxx)
+//------------------------------------------------------------------------------
+// These 16MB pages had NO vmem mapping at all: SQ writes and Ch2-DMA reach the
+// TA windows through dedicated code paths (TAWriteSQ / DMAC_Ch2St), but plain
+// CPU stores and PVR-DMA per-word writes into the texture window fell through
+// to the "not mapped" default and were dropped — any texture a game uploads
+// that way stays zeros in VRAM (black/invisible polys). Mapped by map_area4()
+// in sh4_mem.cpp. Behind the lmmode preset the writes land in VRAM over the
+// bus SB_LMMODE0/1 selects (address bit 25 picks the register, 0x11 vs 0x13);
+// preset off keeps the legacy drop, with a short log so the condition is
+// visible in debug captures.
+
+static u32 s_area4_drop_logs = 0;
+
+static void area4_write_dropped(u32 addr)
+{
+    if (s_area4_drop_logs < 8)
+    {
+        s_area4_drop_logs++;
+        printf("[pvr] Area4 texture-window write 0x%08X dropped (lmmode preset off)\n", addr);
+    }
+}
+
+// Diagnostic: trace every distinct code path that can reach the TA texture
+// windows (0x11/0x13), regardless of the lmmode preset — the earlier
+// investigation found neither the Ch2-DMA nor the CPU-store Area4 branch
+// ever fired for a texture that still read back as zeros, meaning the real
+// upload must go through SQ (do_sqw -> TAWriteSQ) or bulk DMA (TAWrite),
+// whose direct-VRAM branches previously had no logging at all. Rate-limited
+// per call site so a real (working) upload doesn't spam every frame.
+static u32 s_area4_trace_logs[4] = {0, 0, 0, 0};
+enum { TR_TAWRITE = 0, TR_TAWRITESQ = 1, TR_AREA4_16 = 2, TR_AREA4_32 = 3 };
+static void area4_trace(int site, const char* label, u32 addr, u32 bytes)
+{
+    if (!get_debug_message() || s_area4_trace_logs[site] >= 8)
+        return;
+    s_area4_trace_logs[site]++;
+    u32 lmmode = (addr & 0x02000000) ? SB_LMMODE1 : SB_LMMODE0;
+    printf("[pvr] %s addr=0x%08X bytes=%u LMMODE=%d (bus: %s)\n",
+           label, addr, bytes, (int)lmmode, (lmmode & 1) ? "32-bit" : "64-bit");
+}
+
+// Map a texture-window address to a VRAM offset over the selected bus.
+static INLINE u32 area4_vram_offset(u32 addr)
+{
+    u32 lmmode = (addr & 0x02000000) ? SB_LMMODE1 : SB_LMMODE0;
+    u32 offset = addr & VRAM_MASK;
+    if (lmmode & 1)
+        offset = vramlock_ConvOffset32toOffset64(offset);
+    return offset;
+}
+
+void FASTCALL pvr_write_area4_8(u32 addr, u8 data)
+{
+    printf("Warning: 8-bit VRAM writes are not supported by hardware\n");
+}
+
+void FASTCALL pvr_write_area4_16(u32 addr, u16 data)
+{
+    area4_trace(TR_AREA4_16, "Area4 CPU-store write16", addr, 2);
+    if (get_lmmode_preset() != 1) { area4_write_dropped(addr); return; }
+    *host_ptr_xor((u16*)&vram[area4_vram_offset(addr)]) = data;
+}
+
+void FASTCALL pvr_write_area4_32(u32 addr, u32 data)
+{
+    area4_trace(TR_AREA4_32, "Area4 CPU-store write32", addr, 4);
+    if (get_lmmode_preset() != 1) { area4_write_dropped(addr); return; }
+    *(u32*)&vram[area4_vram_offset(addr)] = data;
+}
+
+//------------------------------------------------------------------------------
 // Tile Accelerator DMA Interface
 //------------------------------------------------------------------------------
+
+/**
+ * Direct-VRAM write for the TA windows, honoring the SB_LMMODE bus select.
+ * Window 0x11xxxxxx follows SB_LMMODE0, window 0x13xxxxxx (address bit 25)
+ * follows SB_LMMODE1. LMMODE=0: 64-bit linear bus — plain memcpy, identical
+ * to the legacy behavior. LMMODE=1: 32-bit interleaved bus — each word goes
+ * through the 32->64 offset conversion, same as pvr_write_area1_32. Only
+ * reached when the lmmode preset is on.
+ */
+static void vram_write_lmmode(u32 address, u32* data, u32 bytes)
+{
+    u32 lmmode = (address & 0x02000000) ? SB_LMMODE1 : SB_LMMODE0;
+    if (lmmode & 1) {
+        // 32-bit interleaved bus: convert each word's offset
+        u32 offset32 = address & VRAM_MASK;
+        for (u32 i = 0; i < bytes; i += 4)
+            *(u32*)&vram.data[vramlock_ConvOffset32toOffset64(offset32 + i)] = data[i >> 2];
+    } else {
+        // 64-bit linear bus (legacy path)
+        memcpy(&vram.data[address & VRAM_MASK], data, bytes);
+    }
+}
 
 /**
  * Write data to Tile Accelerator
@@ -318,16 +420,21 @@ void FASTCALL pvr_write_area1_32(u32 addr, u32 data)
 void FASTCALL TAWrite(u32 address, u32* data, u32 count)
 {
     u32 address_masked = address & 0x1FFFFFF;
-    
+
     if (address_masked < 0x800000) {
         // TA polygon data (0-8MB range)
         libPvr_TaDMA(data, count);
     } else if (address_masked < 0x1000000) {
         // YUV converter (8-16MB range)
         YUV_data(data, count);
+    } else if (LMMODE_FIX()) {
+        // Direct VRAM write honoring SB_LMMODE0/1 (lmmode preset on)
+        area4_trace(TR_TAWRITE, "TAWrite DMA", address, count * 32);
+        vram_write_lmmode(address, data, count * 32);
     } else {
         // Direct VRAM write (16MB+ range)
         // Note: This works on real hardware, respects lock modes
+        area4_trace(TR_TAWRITE, "TAWrite DMA (legacy 64-bit)", address, count * 32);
         memcpy(&vram.data[address & VRAM_MASK], data, count * 32);
     }
 }
@@ -339,15 +446,20 @@ void FASTCALL TAWrite(u32 address, u32* data, u32 count)
 void FASTCALL TAWriteSQ(u32 address, u32* data)
 {
     u32 address_masked = address & 0x1FFFFFF;
-    
+
     if (address_masked < 0x800000) {
         // TA polygon data
         libPvr_TaSQ(data);
     } else if (address_masked < 0x1000000) {
         // YUV converter
         YUV_data(data, 1);
+    } else if (LMMODE_FIX()) {
+        // Direct VRAM write honoring SB_LMMODE0/1 (lmmode preset on)
+        area4_trace(TR_TAWRITESQ, "TAWriteSQ", address, 32);
+        vram_write_lmmode(address, data, 32);
     } else {
         // Direct VRAM write
+        area4_trace(TR_TAWRITESQ, "TAWriteSQ (legacy 64-bit)", address, 32);
         memcpy(&vram.data[address & VRAM_MASK], data, 32);
     }
 }

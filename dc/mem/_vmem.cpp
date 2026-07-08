@@ -204,18 +204,51 @@ u32 fastcall _vmem_ReadMem32_not_mapped(u32 addr)
     return (u32)MEM_ERROR_RETURN_VALUE;
 }
 
+// Area 4 TA texture-window writes (0x11xxxxxx / 0x13xxxxxx and their P1-P3
+// mirrors) land here because area 4 is intentionally unmapped — the page
+// table's handler-id encoding has no free slots (see map_area4 in
+// sh4_mem.cpp). Route them to the PVR instead of dropping: CPU stores and
+// PVR-DMA per-word writes are how some games upload textures through the TA
+// window. Implemented in dc/pvr/pvr_if.cpp, gated by the lmmode preset.
+void FASTCALL pvr_write_area4_8 (u32 addr, u8  data);
+void FASTCALL pvr_write_area4_16(u32 addr, u16 data);
+void FASTCALL pvr_write_area4_32(u32 addr, u32 data);
+
+// Physical area 4 (0x10000000-0x13FFFFFF in P0..P3) with bit 24 set = the
+// TA texture window (0x11 / 0x13 pages). Bit 24 clear = the TA FIFO, which
+// keeps the plain unmapped behavior (SQ/Ch2-DMA reach it outside vmem).
+static INLINE bool is_area4_tex_window(u32 addr)
+{
+    return ((addr >> 26) & 7) == 4 && (addr & 0x01000000u) != 0;
+}
+
 void fastcall _vmem_WriteMem8_not_mapped(u32 addr, u8 data)
 {
+    if (is_area4_tex_window(addr))
+    {
+        pvr_write_area4_8(addr, data);
+        return;
+    }
     if (should_log_unmapped(addr))
         printf("[vmem] Write8  to unmapped 0x%08X = 0x%02X\n", addr, data);
 }
 void fastcall _vmem_WriteMem16_not_mapped(u32 addr, u16 data)
 {
+    if (is_area4_tex_window(addr))
+    {
+        pvr_write_area4_16(addr, data);
+        return;
+    }
     if (should_log_unmapped(addr))
         printf("[vmem] Write16 to unmapped 0x%08X = 0x%04X\n", addr, data);
 }
 void fastcall _vmem_WriteMem32_not_mapped(u32 addr, u32 data)
 {
+    if (is_area4_tex_window(addr))
+    {
+        pvr_write_area4_32(addr, data);
+        return;
+    }
     if (should_log_unmapped(addr))
         printf("[vmem] Write32 to unmapped 0x%08X = 0x%08X\n", addr, data);
 }
