@@ -816,15 +816,47 @@ void decode_pvr_vertex(u32 base, u32 ptr, Vertex *cv)
   }
 
   // Handle Vertex Color
+  // Converted to the RGBA8 byte order (R/B swapped from the DC's native
+  // ARGB8888) that the rest of the renderer uses for Vertex::col/spc — see
+  // ABGR8888() and its other callers — so the background path can share the
+  // same interpolation and GX_Color1u32 submission code as regular polys.
   u32 col = vri(ptr);  ptr += 4;
-  cv->col = col; // ABGR8888(col);
+  cv->col = ABGR8888(col);
   cv->spc = 0;
   if (isp.Offset)
   {
-    // Offset (specular) color. Stored raw like cv->col — the only caller
-    // (background poly) only consumes cv->col anyway.
-    cv->spc = vri(ptr);  ptr += 4;
+    cv->spc = ABGR8888(vri(ptr));  ptr += 4;
   }
+}
+
+// Interpolates a scalar attribute using barycentric weights that were derived
+// from the 3 background vertices — the weights are affine in (x,y), so this
+// also produces the correct value when the query point (a screen corner) lies
+// outside the original triangle, matching how the PVR2 rasterizer treats the
+// background "triangle" as an infinite plane rather than a clipped shape.
+static INLINE f32 bg_lerp_f32(f32 a0, f32 a1, f32 a2, f32 w0, f32 w1, f32 w2)
+{
+  return a0 * w0 + a1 * w1 + a2 * w2;
+}
+
+// Interpolates a packed 8/8/8/8 color component-wise (byte order doesn't
+// matter as long as all 3 inputs share it — see bg_lerp_f32). Each channel is
+// clamped because a screen corner extrapolated outside the source triangle
+// can otherwise under/overshoot past 0/255. force_opaque_alpha implements
+// TSP.UseAlpha==0: real hardware forces vertex alpha to 1.0 in that case so it
+// can never zero out a modulated texture's alpha.
+static u32 bg_lerp_color(u32 c0, u32 c1, u32 c2, f32 w0, f32 w1, f32 w2, bool force_opaque_alpha)
+{
+  u32 out = 0;
+  for (int shift = 0; shift < 32; shift += 8)
+  {
+    f32 ch = ((c0 >> shift) & 0xFFu) * w0 + ((c1 >> shift) & 0xFFu) * w1 + ((c2 >> shift) & 0xFFu) * w2;
+    colclamp(0.f, 255.f, ch);
+    out |= ((u32)(ch + 0.5f)) << shift;
+  }
+  if (force_opaque_alpha)
+    out = (out & 0x00FFFFFFu) | 0xFF000000u; // alpha occupies bits 24-31 in this byte order too
+  return out;
 }
 
 // Resets internal pointers for the next frame's vertex list.
@@ -3792,24 +3824,102 @@ void DoRender()
   {
     strip_vs += real_skip * 4; // 2x the size needed for shadow volumes
   }
-  // Get vertex ptr
+  // Get vertex ptr: the background polygon is always a 3-vertex triangle
+  // (v0, v1, v2) stored back-to-back starting at index tag_offset within the
+  // strip. The header word at strip_base is the ISP/TSP instruction for all
+  // 3 (background has no PCW; Texture/Offset/UV_16b come straight from it).
   u32 vertex_ptr = strip_vert_num * strip_vs + strip_base + 3 * 4;
-  // now , all the info is ready :p
 
-  Vertex BGTest;
+  ISP_TSP bg_isp;
+  bg_isp.full = vri(strip_base);
+  TSP bg_tsp;
+  bg_tsp.full = vri(strip_base + 4);
+  TCW bg_tcw;
+  bg_tcw.full = vri(strip_base + 8);
 
-  decode_pvr_vertex(strip_base, vertex_ptr, &BGTest);
+  // decode_pvr_vertex gives the raw hardware fields: x,y in screen space and
+  // z = the PVR's raw "1/W" register. Keep them raw here — the barycentric
+  // weights below must be computed in this same screen-space (x,y), matching
+  // bgCorner (also raw screen space). The W pre-scale vert_base() applies to
+  // regular geometry (x*W, y*W, z=W) is applied per corner further down,
+  // after interpolating raw 1/W — not here, or the weights and the final
+  // screen space end up in mismatched scales.
+  Vertex bgV[3] = {};
+  for (int bgi = 0; bgi < 3; bgi++)
+    decode_pvr_vertex(strip_base, vertex_ptr + bgi * strip_vs, &bgV[bgi]);
 
-  // BGTest.col is in ARGB (Dreamcast PVR) format.
-  // GXColor expects RGBA, so swap R and B channels before passing.
-  u32 raw_col = BGTest.col;
-  GXColor bgColor = {
-    (u8)((raw_col >> 16) & 0xFF), // R (was at B position in ARGB)
-    (u8)((raw_col >>  8) & 0xFF), // G
-    (u8)((raw_col >>  0) & 0xFF), // B (was at R position in ARGB)
-    (u8)((raw_col >> 24) & 0xFF)  // A
+  if (DEBUG_MESSAGE())
+  {
+    printf("[BG] tag_addr=%06X isp=%08X(Tex=%d Off=%d Gour=%d) tsp=%08X(UseAlpha=%d) tcw=%08X(addr=%06X fmt=%d)\n",
+           real_tag_address, bg_isp.full, bg_isp.Texture, bg_isp.Offset, bg_isp.Gouraud,
+           bg_tsp.full, bg_tsp.UseAlpha, bg_tcw.full,
+           (bg_tcw.NO_PAL.TexAddr << 3) & VRAM_MASK, bg_tcw.NO_PAL.PixelFmt);
+    for (int vi = 0; vi < 3; vi++)
+      printf("[BG] v%d x=%.2f y=%.2f raw_z(1/W)=%.6f uv=(%.3f,%.3f) col=%08X\n",
+             vi, bgV[vi].x, bgV[vi].y, bgV[vi].z, bgV[vi].u, bgV[vi].v, bgV[vi].col);
+  }
+
+  // Extrapolate every dynamic attribute (Z, base color, offset color, UV)
+  // across the whole screen using the plane defined by the 3 background
+  // vertices — this is what the PVR2 rasterizer itself does: it treats the
+  // "triangle" as an infinite plane rather than clipping to its edges.
+  // (Real background polys carry no Area1/two-volume UV or color: that pair
+  // only exists on regular ISP/TSP polygons with PCW.Volume set, and
+  // ISP_BACKGND_T's fixed vertex layout never includes it.)
+  struct { float x, y; } bgCorner[4] =
+  {
+    { 0.f,               0.f                }, // Top-Left
+    { 0.f,               dc_height          }, // Bottom-Left
+    { dc_width,          0.f                }, // Top-Right
+    { dc_width,          dc_height          }, // Bottom-Right
   };
-  // Use the background vertex color as the EFB clear color.
+
+  float bg_denom = (bgV[1].y - bgV[2].y) * (bgV[0].x - bgV[2].x)
+                 + (bgV[2].x - bgV[1].x) * (bgV[0].y - bgV[2].y);
+  if (bg_denom == 0.f)
+    bg_denom = 1e-6f; // degenerate background triangle guard
+
+  const bool bg_force_opaque = !bg_tsp.UseAlpha; // TSP.UseAlpha==0 → force alpha=255
+
+  Vertex bgQuad[4];
+  for (int i = 0; i < 4; i++)
+  {
+    float px = bgCorner[i].x, py = bgCorner[i].y;
+    float w0 = ((bgV[1].y - bgV[2].y) * (px - bgV[2].x) + (bgV[2].x - bgV[1].x) * (py - bgV[2].y)) / bg_denom;
+    float w1 = ((bgV[2].y - bgV[0].y) * (px - bgV[2].x) + (bgV[0].x - bgV[2].x) * (py - bgV[2].y)) / bg_denom;
+    float w2 = 1.f - w0 - w1;
+
+    // Interpolate the raw 1/W register affinely (matches the hardware's
+    // plane-equation approach), then apply vert_base()'s W pre-scale.
+    float raw_z  = bg_lerp_f32(bgV[0].z, bgV[1].z, bgV[2].z, w0, w1, w2);
+    float safe_z = (raw_z >= 0.0001f) ? raw_z : 0.0001f;
+    float W      = 1.0f / safe_z;
+
+    if (!g_fixed_depth_cached)
+    {
+      if (W > 0.0f && W < vtx_min_Z) vtx_min_Z = W;
+      if (W > 0.0f && W > vtx_max_Z) vtx_max_Z = W;
+    }
+
+    Vertex &qv = bgQuad[i];
+    qv.x   = px * W;
+    qv.y   = py * W;
+    qv.z   = W;
+    qv.u   = bg_lerp_f32(bgV[0].u, bgV[1].u, bgV[2].u, w0, w1, w2);
+    qv.v   = bg_lerp_f32(bgV[0].v, bgV[1].v, bgV[2].v, w0, w1, w2);
+    qv.col = bg_lerp_color(bgV[0].col, bgV[1].col, bgV[2].col, w0, w1, w2, bg_force_opaque);
+    qv.spc = bg_lerp_color(bgV[0].spc, bgV[1].spc, bgV[2].spc, w0, w1, w2, false);
+  }
+
+  // Fast EFB clear using v0's color: cheap fallback that covers the whole
+  // screen instantly, before the precisely-interpolated quad below is drawn
+  // (with correct depth) on top of it.
+  GXColor bgColor = {
+    (u8)(bgV[0].col & 0xFFu),         // R
+    (u8)((bgV[0].col >> 8) & 0xFFu),  // G
+    (u8)((bgV[0].col >> 16) & 0xFFu), // B
+    (u8)((bgV[0].col >> 24) & 0xFFu)  // A
+  };
   GX_SetCopyClear(bgColor, 0x00000000);
 
   GX_SetZMode(GX_TRUE, GX_GEQUAL, GX_TRUE);
@@ -4054,6 +4164,62 @@ void DoRender()
   PolyParam *ts_end_mod = 0;
   const PolyParam *ts_last_mod = 0; // last state applied while sorted-drawing
 
+  // ── Draw the extrapolated background quad ──────────────────────────────────
+  // Must run after the projection/modelview matrices were loaded above: GX is
+  // a command stream, so vertex positions submitted here are transformed by
+  // whatever matrix load is earliest ahead of them in the FIFO, not whatever
+  // is "current" when this C code executes.
+  {
+    // The background draws before any of this frame's real polygons, so it
+    // would otherwise inherit whatever GX_SetAlphaCompare/GX_SetZCompLoc
+    // state the PREVIOUS frame's last textured polygon left behind
+    // (ADVANCED_ALPHA() below sets GX_GREATER,0 + ZCompLoc(FALSE) for many
+    // textured polys, and that GX hardware state persists across frame
+    // boundaries). Pin down a deterministic state instead.
+    GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+    GX_SetZCompLoc(GX_TRUE);
+
+    if (bg_isp.Texture)
+    {
+      GX_SetNumTexGens(1);
+      GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
+      GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
+
+      PolyParam bgParam = {};
+      bgParam.isp = bg_isp;
+      bgParam.tsp = bg_tsp;
+      bgParam.tcw = bg_tcw;
+      SetTextureParams(&bgParam, decal_alpha_fix);
+    }
+    else
+    {
+      GX_SetNumTexGens(0);
+      GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+      GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+    }
+
+    // Match the main loop's rule: TEV stage 1 (offset color add) is only
+    // wired up for textured polys that carry an offset color. Keep
+    // last_tev_stages in sync so the main loop below (which only reissues
+    // GX_SetNumTevStages on a change) doesn't skip re-applying it for the
+    // first real polygon.
+    if (offset_fix)
+    {
+      last_tev_stages = (bg_isp.Texture && bg_isp.Offset) ? 2 : 1;
+      GX_SetNumTevStages(last_tev_stages);
+    }
+
+    GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, 4);
+    for (int i = 0; i < 4; i++)
+    {
+      GX_Position3f32(bgQuad[i].x, bgQuad[i].y, -bgQuad[i].z);
+      GX_Color1u32(HOST_TO_LE32(bgQuad[i].col));
+      if (offset_fix)
+        GX_Color1u32(HOST_TO_LE32(bgQuad[i].spc));
+      GX_TexCoord2f32(bgQuad[i].u, bgQuad[i].v);
+    }
+    GX_End();
+  }
 
   // ── Draw segments ──────────────────────────────────────────────────────────
   // Legacy: one pass over every list in TA submission order (OP, TR, PT), so
