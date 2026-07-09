@@ -205,6 +205,12 @@ extern "C" {
   int get_speed_limiter_preset() { return g_speed_limiter_preset; }
 }
 
+int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
+
+extern "C" {
+  int get_bg_poly_preset() { return g_bg_poly_preset; }
+}
+
 int g_player_count = 2;
 
 extern "C" {
@@ -589,7 +595,8 @@ void displayAccuracyMenu()
 #define OPT_DEPTH_CLIP  31
 #define OPT_ASYNC_RENDER 32
 #define OPT_TMEM_CACHE  33
-#define OPT_ROW_COUNT   34
+#define OPT_BG_POLY     34
+#define OPT_ROW_COUNT   35
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -613,6 +620,7 @@ static int opt_row_page(int row)
     case OPT_DEPTH_CLIP:
     case OPT_ASYNC_RENDER:
     case OPT_TMEM_CACHE:
+    case OPT_BG_POLY:
       return 1;
     default:
       return 0;
@@ -943,6 +951,15 @@ bool displayOptionsMenu()
     }
     printf(" (keep GPU texture cache warm)");
     printf("\n");
+
+    // --- Row: Background polygon rendering ---
+    printf("%s BG POLYGON      : ", (selectedRow == OPT_BG_POLY) ? ">" : " ");
+    switch (g_bg_poly_preset) {
+      case 0: printf("[< OFF (FASTER)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" (bg gradient/texture)");
+    printf("\n");
     } // end page 1
 
 
@@ -994,6 +1011,7 @@ bool displayOptionsMenu()
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 2) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
+        case OPT_BG_POLY:    g_bg_poly_preset        = (g_bg_poly_preset         + 1) % 2; break;
         default: break;
       }
     }
@@ -1030,6 +1048,7 @@ bool displayOptionsMenu()
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 1) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
+        case OPT_BG_POLY:    g_bg_poly_preset        = (g_bg_poly_preset         + 1) % 2; break;
         default: break;
       }
     }
@@ -1480,6 +1499,7 @@ int main(int argc, wchar *argv[])
     }
     printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
+    printf("BG Polygon     : %s\n", g_bg_poly_preset ? "ON (CORRECT)" : "OFF (FASTER)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)

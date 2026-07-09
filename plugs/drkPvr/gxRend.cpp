@@ -183,6 +183,15 @@ extern "C" int get_async_render_preset();
 extern "C" int get_tmem_cache_preset();
 #define TMEM_CACHE() (get_tmem_cache_preset() == 1)
 
+// Background polygon (ISP_BACKGND_T) rendering: barycentrically extrapolate
+// the 3 background vertices into a full-screen quad (see DoRender) instead of
+// only using v0's color for the EFB clear. Needed for games whose background
+// carries real gradient/texture data (Who Wants to Be a Millionaire), but the
+// extra per-frame texture bind + polygon draw costs FPS in games that don't
+// need it — off by default until enabled per-game.
+extern "C" int get_bg_poly_preset();
+#define BG_POLY_FIX() (get_bg_poly_preset() == 1)
+
 
 int frame_counter;
 
@@ -3844,71 +3853,79 @@ void DoRender()
   // regular geometry (x*W, y*W, z=W) is applied per corner further down,
   // after interpolating raw 1/W — not here, or the weights and the final
   // screen space end up in mismatched scales.
+  // v0 alone is always decoded: it feeds the fast EFB-clear color below
+  // regardless of BG_POLY_FIX().
   Vertex bgV[3] = {};
-  for (int bgi = 0; bgi < 3; bgi++)
-    decode_pvr_vertex(strip_base, vertex_ptr + bgi * strip_vs, &bgV[bgi]);
+  Vertex bgQuad[4] = {};
+  decode_pvr_vertex(strip_base, vertex_ptr, &bgV[0]);
 
-  if (DEBUG_MESSAGE())
+  const bool bg_poly_fix = BG_POLY_FIX();
+  if (bg_poly_fix)
   {
-    printf("[BG] tag_addr=%06X isp=%08X(Tex=%d Off=%d Gour=%d) tsp=%08X(UseAlpha=%d) tcw=%08X(addr=%06X fmt=%d)\n",
-           real_tag_address, bg_isp.full, bg_isp.Texture, bg_isp.Offset, bg_isp.Gouraud,
-           bg_tsp.full, bg_tsp.UseAlpha, bg_tcw.full,
-           (bg_tcw.NO_PAL.TexAddr << 3) & VRAM_MASK, bg_tcw.NO_PAL.PixelFmt);
-    for (int vi = 0; vi < 3; vi++)
-      printf("[BG] v%d x=%.2f y=%.2f raw_z(1/W)=%.6f uv=(%.3f,%.3f) col=%08X\n",
-             vi, bgV[vi].x, bgV[vi].y, bgV[vi].z, bgV[vi].u, bgV[vi].v, bgV[vi].col);
-  }
+    for (int bgi = 1; bgi < 3; bgi++)
+      decode_pvr_vertex(strip_base, vertex_ptr + bgi * strip_vs, &bgV[bgi]);
 
-  // Extrapolate every dynamic attribute (Z, base color, offset color, UV)
-  // across the whole screen using the plane defined by the 3 background
-  // vertices — this is what the PVR2 rasterizer itself does: it treats the
-  // "triangle" as an infinite plane rather than clipping to its edges.
-  // (Real background polys carry no Area1/two-volume UV or color: that pair
-  // only exists on regular ISP/TSP polygons with PCW.Volume set, and
-  // ISP_BACKGND_T's fixed vertex layout never includes it.)
-  struct { float x, y; } bgCorner[4] =
-  {
-    { 0.f,               0.f                }, // Top-Left
-    { 0.f,               dc_height          }, // Bottom-Left
-    { dc_width,          0.f                }, // Top-Right
-    { dc_width,          dc_height          }, // Bottom-Right
-  };
-
-  float bg_denom = (bgV[1].y - bgV[2].y) * (bgV[0].x - bgV[2].x)
-                 + (bgV[2].x - bgV[1].x) * (bgV[0].y - bgV[2].y);
-  if (bg_denom == 0.f)
-    bg_denom = 1e-6f; // degenerate background triangle guard
-
-  const bool bg_force_opaque = !bg_tsp.UseAlpha; // TSP.UseAlpha==0 → force alpha=255
-
-  Vertex bgQuad[4];
-  for (int i = 0; i < 4; i++)
-  {
-    float px = bgCorner[i].x, py = bgCorner[i].y;
-    float w0 = ((bgV[1].y - bgV[2].y) * (px - bgV[2].x) + (bgV[2].x - bgV[1].x) * (py - bgV[2].y)) / bg_denom;
-    float w1 = ((bgV[2].y - bgV[0].y) * (px - bgV[2].x) + (bgV[0].x - bgV[2].x) * (py - bgV[2].y)) / bg_denom;
-    float w2 = 1.f - w0 - w1;
-
-    // Interpolate the raw 1/W register affinely (matches the hardware's
-    // plane-equation approach), then apply vert_base()'s W pre-scale.
-    float raw_z  = bg_lerp_f32(bgV[0].z, bgV[1].z, bgV[2].z, w0, w1, w2);
-    float safe_z = (raw_z >= 0.0001f) ? raw_z : 0.0001f;
-    float W      = 1.0f / safe_z;
-
-    if (!g_fixed_depth_cached)
+    if (DEBUG_MESSAGE())
     {
-      if (W > 0.0f && W < vtx_min_Z) vtx_min_Z = W;
-      if (W > 0.0f && W > vtx_max_Z) vtx_max_Z = W;
+      printf("[BG] tag_addr=%06X isp=%08X(Tex=%d Off=%d Gour=%d) tsp=%08X(UseAlpha=%d) tcw=%08X(addr=%06X fmt=%d)\n",
+             real_tag_address, bg_isp.full, bg_isp.Texture, bg_isp.Offset, bg_isp.Gouraud,
+             bg_tsp.full, bg_tsp.UseAlpha, bg_tcw.full,
+             (bg_tcw.NO_PAL.TexAddr << 3) & VRAM_MASK, bg_tcw.NO_PAL.PixelFmt);
+      for (int vi = 0; vi < 3; vi++)
+        printf("[BG] v%d x=%.2f y=%.2f raw_z(1/W)=%.6f uv=(%.3f,%.3f) col=%08X\n",
+               vi, bgV[vi].x, bgV[vi].y, bgV[vi].z, bgV[vi].u, bgV[vi].v, bgV[vi].col);
     }
 
-    Vertex &qv = bgQuad[i];
-    qv.x   = px * W;
-    qv.y   = py * W;
-    qv.z   = W;
-    qv.u   = bg_lerp_f32(bgV[0].u, bgV[1].u, bgV[2].u, w0, w1, w2);
-    qv.v   = bg_lerp_f32(bgV[0].v, bgV[1].v, bgV[2].v, w0, w1, w2);
-    qv.col = bg_lerp_color(bgV[0].col, bgV[1].col, bgV[2].col, w0, w1, w2, bg_force_opaque);
-    qv.spc = bg_lerp_color(bgV[0].spc, bgV[1].spc, bgV[2].spc, w0, w1, w2, false);
+    // Extrapolate every dynamic attribute (Z, base color, offset color, UV)
+    // across the whole screen using the plane defined by the 3 background
+    // vertices — this is what the PVR2 rasterizer itself does: it treats the
+    // "triangle" as an infinite plane rather than clipping to its edges.
+    // (Real background polys carry no Area1/two-volume UV or color: that pair
+    // only exists on regular ISP/TSP polygons with PCW.Volume set, and
+    // ISP_BACKGND_T's fixed vertex layout never includes it.)
+    struct { float x, y; } bgCorner[4] =
+    {
+      { 0.f,               0.f                }, // Top-Left
+      { 0.f,               dc_height          }, // Bottom-Left
+      { dc_width,          0.f                }, // Top-Right
+      { dc_width,          dc_height          }, // Bottom-Right
+    };
+
+    float bg_denom = (bgV[1].y - bgV[2].y) * (bgV[0].x - bgV[2].x)
+                   + (bgV[2].x - bgV[1].x) * (bgV[0].y - bgV[2].y);
+    if (bg_denom == 0.f)
+      bg_denom = 1e-6f; // degenerate background triangle guard
+
+    const bool bg_force_opaque = !bg_tsp.UseAlpha; // TSP.UseAlpha==0 → force alpha=255
+
+    for (int i = 0; i < 4; i++)
+    {
+      float px = bgCorner[i].x, py = bgCorner[i].y;
+      float w0 = ((bgV[1].y - bgV[2].y) * (px - bgV[2].x) + (bgV[2].x - bgV[1].x) * (py - bgV[2].y)) / bg_denom;
+      float w1 = ((bgV[2].y - bgV[0].y) * (px - bgV[2].x) + (bgV[0].x - bgV[2].x) * (py - bgV[2].y)) / bg_denom;
+      float w2 = 1.f - w0 - w1;
+
+      // Interpolate the raw 1/W register affinely (matches the hardware's
+      // plane-equation approach), then apply vert_base()'s W pre-scale.
+      float raw_z  = bg_lerp_f32(bgV[0].z, bgV[1].z, bgV[2].z, w0, w1, w2);
+      float safe_z = (raw_z >= 0.0001f) ? raw_z : 0.0001f;
+      float W      = 1.0f / safe_z;
+
+      if (!g_fixed_depth_cached)
+      {
+        if (W > 0.0f && W < vtx_min_Z) vtx_min_Z = W;
+        if (W > 0.0f && W > vtx_max_Z) vtx_max_Z = W;
+      }
+
+      Vertex &qv = bgQuad[i];
+      qv.x   = px * W;
+      qv.y   = py * W;
+      qv.z   = W;
+      qv.u   = bg_lerp_f32(bgV[0].u, bgV[1].u, bgV[2].u, w0, w1, w2);
+      qv.v   = bg_lerp_f32(bgV[0].v, bgV[1].v, bgV[2].v, w0, w1, w2);
+      qv.col = bg_lerp_color(bgV[0].col, bgV[1].col, bgV[2].col, w0, w1, w2, bg_force_opaque);
+      qv.spc = bg_lerp_color(bgV[0].spc, bgV[1].spc, bgV[2].spc, w0, w1, w2, false);
+    }
   }
 
   // Fast EFB clear using v0's color: cheap fallback that covers the whole
@@ -4169,6 +4186,9 @@ void DoRender()
   // a command stream, so vertex positions submitted here are transformed by
   // whatever matrix load is earliest ahead of them in the FIFO, not whatever
   // is "current" when this C code executes.
+  // Gated on BG_POLY_FIX(): off by default, since the extra texture bind +
+  // TEV state pinning + polygon draw costs FPS in games that don't need it.
+  if (bg_poly_fix)
   {
     // The background draws before any of this frame's real polygons, so it
     // would otherwise inherit whatever GX_SetAlphaCompare/GX_SetZCompLoc
