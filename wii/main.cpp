@@ -637,7 +637,7 @@ bool displayOptionsMenu()
     printf("\033[2J\033[H");
 
     // --- Row 0: Launch ---
-    printf("%s LAUNCH GAME      (A: Launch | B: Back | 1: More Info | 2: Page %d/%d) a0.44\n",
+    printf("%s LAUNCH GAME      (A: Launch | B: Back | 1: More Info | 2: Page %d/%d) a0.45\n",
            (selectedRow == OPT_LAUNCH) ? ">" : " ", optionsPage + 1, OPT_PAGE_COUNT);
 
     // --- Row 1: Game name (display only) ---
@@ -1073,7 +1073,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - Alpha 0.44   ");
+    printf("\nNullDC4Wii - Alpha 0.45   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("(-) GRAPHICS: ");
