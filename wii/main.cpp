@@ -199,6 +199,12 @@ extern "C" {
   int get_tmem_cache_preset() { return g_tmem_cache_preset; }
 }
 
+int g_cdda_preset = 0; // 0=off (CD audio tracks silent, legacy), 1=on (GD-ROM Red Book audio fed to the AICA EXTS0 mixer input — CDDA music in games; costs ~75 disc-image sector reads/s while a track plays)
+
+extern "C" {
+  int get_cdda_preset() { return g_cdda_preset; }
+}
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -589,7 +595,8 @@ void displayAccuracyMenu()
 #define OPT_DEPTH_CLIP  31
 #define OPT_ASYNC_RENDER 32
 #define OPT_TMEM_CACHE  33
-#define OPT_ROW_COUNT   34
+#define OPT_CDDA        34
+#define OPT_ROW_COUNT   35
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -613,6 +620,7 @@ static int opt_row_page(int row)
     case OPT_DEPTH_CLIP:
     case OPT_ASYNC_RENDER:
     case OPT_TMEM_CACHE:
+    case OPT_CDDA:
       return 1;
     default:
       return 0;
@@ -943,6 +951,15 @@ bool displayOptionsMenu()
     }
     printf(" (keep GPU texture cache warm)");
     printf("\n");
+
+    // --- Row: CDDA music (GD-ROM CD audio tracks) ---
+    printf("%s CDDA MUSIC      : ", (selectedRow == OPT_CDDA) ? ">" : " ");
+    switch (g_cdda_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CD MUSIC)     >]"); break;
+    }
+    printf(" (mix CD audio tracks into sound)");
+    printf("\n");
     } // end page 1
 
 
@@ -994,6 +1011,7 @@ bool displayOptionsMenu()
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 2) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
+        case OPT_CDDA:      g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         default: break;
       }
     }
@@ -1030,6 +1048,7 @@ bool displayOptionsMenu()
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 1) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
+        case OPT_CDDA:      g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         default: break;
       }
     }
@@ -1480,6 +1499,7 @@ int main(int argc, wchar *argv[])
     }
     printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
+    printf("CDDA Music     : %s\n", g_cdda_preset ? "ON (CD MUSIC)" : "OFF (LEGACY)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)

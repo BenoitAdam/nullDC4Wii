@@ -115,6 +115,12 @@
                                 only when a texture is actually re-decoded, so
                                 unchanged textures stay cached across frames —
                                 more texture fill rate.
+        cdda=1              <- 0/1, CD audio (Red Book) music (see sgc_if.cpp
+                                CDDA_FIX()). 0 (default, legacy) leaves the
+                                AICA EXTS0 input silent, so games that play
+                                music as CD audio tracks have no music; 1 pulls
+                                the playing track's sectors from the disc image
+                                (~75 reads/s) and mixes them into the output.
         split_screen=1      <- 0/1, split-screen multiplayer (see gxRend.cpp
                                 SPLIT_SCREEN()). 2P games (Daytona USA
                                 multiplayer) render one pass per player
@@ -167,6 +173,7 @@ extern int g_fixed_depth_preset;
 extern int g_depth_clip_preset;
 extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
+extern int g_cdda_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -214,6 +221,7 @@ struct GamePreset
     int depth_clip;
     int async_render;
     int tmem_cache;
+    int cdda;
 };
 
 static GamePreset s_presets[MAX_PRESETS];
@@ -406,6 +414,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "depth_clip"))     p->depth_clip     = atoi(val);
     else if (key_eq(key, "async_render"))   p->async_render   = atoi(val);
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = atoi(val);
+    else if (key_eq(key, "cdda"))           p->cdda           = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -481,6 +490,7 @@ void game_presets_load(const char* cfg_path)
             cur->depth_clip = -1;
             cur->async_render = -1;
             cur->tmem_cache = -1;
+            cur->cdda = -1;
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -578,6 +588,7 @@ void game_presets_apply(const char* filepath)
         if (p->depth_clip     >= 0) { g_depth_clip_preset    = p->depth_clip;      printf("  depth_clip     -> %d\n", p->depth_clip);     }
         if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
         if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
+        if (p->cdda           >= 0) { g_cdda_preset          = p->cdda;            printf("  cdda           -> %d\n", p->cdda);           }
 
         return; // First match only
     }

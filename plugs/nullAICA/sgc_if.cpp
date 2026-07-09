@@ -960,6 +960,13 @@ void WriteCommonReg8(u32 reg, u32 data)
 s16 cdda_sector[CDDA_SIZE] = {0};
 u32 cdda_index = CDDA_SIZE << 1;
 
+// CDDA_FIX(): feed GD-ROM Red Book audio (CD music tracks) into the AICA
+// EXTS0 mixer input. Preset-gated, default OFF: pulls one 2352-byte sector
+// from the disc image every 588 samples (~75 reads/s while a track plays).
+extern "C" int get_cdda_preset();
+#define CDDA_FIX() (get_cdda_preset() != 0)
+void FASTCALL gdrom_get_cdda(s16* sector);
+
 void AICA_Sample()
 {
     mixl = 0;
@@ -968,12 +975,29 @@ void AICA_Sample()
 
     ChannelEx::GenerateAll();
 
-    // CDDA input — aica_init_params on Wii has no CDDA_Sector callback.
-    // Fill with silence; CDDA audio via GD-ROM is handled elsewhere.
+    // CDDA input — refill the sector buffer every 588 stereo frames.
     if (cdda_index >= CDDA_SIZE)
     {
         cdda_index = 0;
-        memset(cdda_sector, 0, sizeof(cdda_sector));
+        if (CDDA_FIX())
+        {
+            // gdrom_get_cdda gives the raw Red Book sector (s16 L/R
+            // interleaved, little-endian) or silence when no track plays.
+            gdrom_get_cdda(cdda_sector);
+#ifdef WII
+            // Disc bytes are little-endian; swap each sample for the
+            // big-endian CPU.
+            u8* b = (u8*)cdda_sector;
+            for (u32 i = 0; i < sizeof(cdda_sector); i += 2)
+            {
+                u8 t = b[i]; b[i] = b[i + 1]; b[i + 1] = t;
+            }
+#endif
+        }
+        else
+        {
+            memset(cdda_sector, 0, sizeof(cdda_sector));
+        }
     }
     s32 EXTS0L = cdda_sector[cdda_index];
     s32 EXTS0R = cdda_sector[cdda_index + 1];
