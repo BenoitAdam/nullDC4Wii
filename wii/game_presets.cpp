@@ -134,8 +134,14 @@
                                 presents every pass fullscreen, so only one
                                 player's view shows.
 
+    [default] is a special section, not matched against the filename: its
+    fields are applied first, on every launch, before the per-game match
+    below runs. Per-game sections only need to list fields that differ
+    from [default].
+
     First matching rule wins.
-    Unset fields are left at whatever the user selected in the UI.
+    Fields left unset by both [default] and the matched section stay at
+    whatever the user selected in the UI.
 
     IMPORTANT: matching is done by lowercasing BOTH the filename and the keyword,
     then using plain strstr() — no strncasecmp needed (avoids devkitPPC/newlib issues).
@@ -229,6 +235,11 @@ struct GamePreset
 
 static GamePreset s_presets[MAX_PRESETS];
 static int        s_preset_count = 0;
+
+// [default] section — applied before any per-game match, so per-game
+// presets in the .cfg only need to list the fields that differ from it.
+static GamePreset s_default_preset;
+static bool       s_has_default = false;
 
 // Exported so main.cpp can display the matched preset name in the options menu
 char g_matched_preset_name[MAX_KEYWORD_LEN] = "";
@@ -421,6 +432,72 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
+// Mark every field of a preset slot as "not set"
+static void preset_clear(GamePreset* cur)
+{
+    memset(cur, 0, sizeof(*cur));
+    cur->accuracy = cur->graphics  = cur->ratio    = cur->adv_alpha = -1;
+    cur->frameskip= cur->tex_cache = cur->bpp4     = cur->bpp8      = -1;
+    cur->jojo_fix = -1;
+    cur->decal_alpha = -1;
+    cur->speed_limiter = -1;
+    cur->vertex_color_fix = -1;
+    cur->players  = cur->controller                                  = -1;
+    cur->ppz_write = -1;
+    cur->framebuffer_2d = -1;
+    cur->fmv_format = -1;
+    cur->blend_mode = -1;
+    cur->rgb565_opaque_alpha = -1;
+    cur->blend_fps_boost = -1;
+    cur->punch_through = -1;
+    cur->offset_color = -1;
+    cur->trans_sort = -1;
+    cur->render_to_texture = -1;
+    cur->split_screen = -1;
+    cur->mipmap = -1;
+    cur->fixed_depth = -1;
+    cur->depth_clip = -1;
+    cur->async_render = -1;
+    cur->tmem_cache = -1;
+    cur->bg_poly = -1;
+}
+
+// Apply every set field of a preset slot onto the live g_*_preset globals
+static void preset_apply_fields(const GamePreset* p)
+{
+    if (p->accuracy   >= 0) { g_accuracy_preset      = p->accuracy;   printf("  accuracy   -> %d\n", p->accuracy);   }
+    if (p->graphics   >= 0) { g_graphism_preset       = p->graphics;   printf("  graphics   -> %d\n", p->graphics);   }
+    if (p->ratio      >= 0) { g_ratio_preset          = p->ratio;      printf("  ratio      -> %d\n", p->ratio);      }
+    if (p->adv_alpha  >= 0) { g_advanced_alpha_preset = p->adv_alpha;  printf("  adv_alpha  -> %d\n", p->adv_alpha);  }
+    if (p->frameskip  >= 0) { g_frameskip_preset      = p->frameskip;  printf("  frameskip  -> %d\n", p->frameskip);  }
+    if (p->tex_cache  >= 0) { g_texture_cache_preset  = p->tex_cache;  printf("  tex_cache  -> %d\n", p->tex_cache);  }
+    if (p->ppz_write  >= 0) { g_ppz_write_preset      = p->ppz_write;  printf("  ppz_write  -> %d\n", p->ppz_write);  }
+    if (p->bpp4       >= 0) { g_4bpp_preset           = p->bpp4;       printf("  4bpp       -> %d\n", p->bpp4);       }
+    if (p->bpp8       >= 0) { g_8bpp_preset           = p->bpp8;       printf("  8bpp       -> %d\n", p->bpp8);       }
+    if (p->jojo_fix   >= 0) { g_jojo_fix_preset       = p->jojo_fix;   printf("  jojo_fix   -> %d\n", p->jojo_fix);   }
+    if (p->decal_alpha >= 0) { g_decal_alpha_preset   = p->decal_alpha; printf("  decal_alpha -> %d\n", p->decal_alpha); }
+    if (p->speed_limiter >= 0) { g_speed_limiter_preset = p->speed_limiter; printf("  speed_limiter -> %d\n", p->speed_limiter); }
+    if (p->vertex_color_fix >= 0) { g_vertex_color_fix_preset = p->vertex_color_fix; printf("  vertex_color_fix -> %d\n", p->vertex_color_fix); }
+    if (p->players    >= 0) { g_player_count          = p->players;    printf("  players    -> %d\n", p->players);    }
+    if (p->controller >= 0) { g_controller_type       = p->controller; printf("  controller -> %d\n", p->controller); }
+    if (p->framebuffer_2d >= 0) { g_framebuffer_2d    = p->framebuffer_2d; printf("  framebuffer_2d -> %d\n", p->framebuffer_2d); }
+    if (p->fmv_format     >= 0) { g_fmv_format_preset = p->fmv_format;     printf("  fmv_format     -> %d\n", p->fmv_format);     }
+    if (p->blend_mode     >= 0) { g_blend_mode_preset = p->blend_mode;     printf("  blend_mode     -> %d\n", p->blend_mode);     }
+    if (p->rgb565_opaque_alpha >= 0) { g_rgb565_opaque_alpha_preset = p->rgb565_opaque_alpha; printf("  rgb565_opaque_alpha -> %d\n", p->rgb565_opaque_alpha); }
+    if (p->blend_fps_boost >= 0) { g_blend_fps_boost_preset = p->blend_fps_boost; printf("  blend_fps_boost -> %d\n", p->blend_fps_boost); }
+    if (p->punch_through  >= 0) { g_punch_through_preset = p->punch_through;   printf("  punch_through  -> %d\n", p->punch_through);  }
+    if (p->offset_color   >= 0) { g_offset_color_preset  = p->offset_color;    printf("  offset_color   -> %d\n", p->offset_color);   }
+    if (p->trans_sort     >= 0) { g_trans_sort_preset    = p->trans_sort;      printf("  trans_sort     -> %d\n", p->trans_sort);     }
+    if (p->render_to_texture >= 0) { g_render_to_texture_preset = p->render_to_texture; printf("  render_to_texture -> %d\n", p->render_to_texture); }
+    if (p->split_screen   >= 0) { g_split_screen_preset  = p->split_screen;    printf("  split_screen   -> %d\n", p->split_screen);   }
+    if (p->mipmap         >= 0) { g_mipmap_preset        = p->mipmap;          printf("  mipmap         -> %d\n", p->mipmap);         }
+    if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }
+    if (p->depth_clip     >= 0) { g_depth_clip_preset    = p->depth_clip;      printf("  depth_clip     -> %d\n", p->depth_clip);     }
+    if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
+    if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
+    if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
+}
+
 // ---------------------------------------------------------------------------
 // Public: load
 // ---------------------------------------------------------------------------
@@ -428,6 +505,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
 void game_presets_load(const char* cfg_path)
 {
     s_preset_count = 0;
+    s_has_default = false;
     g_matched_preset_name[0] = '\0';
 
     FILE* f = fopen(cfg_path, "r");
@@ -459,6 +537,16 @@ void game_presets_load(const char* cfg_path)
             char* kw = str_trim(s + 1);          // content between [ and ]
             if (!*kw) continue;
 
+            // [default] is a special section applied before any per-game
+            // match, instead of being registered as a matchable preset.
+            if (key_eq(kw, "default"))
+            {
+                cur = &s_default_preset;
+                preset_clear(cur);
+                s_has_default = true;
+                continue;
+            }
+
             if (s_preset_count >= MAX_PRESETS)
             {
                 printf("[game_presets] Max presets (%d) reached, skipping [%s]\n",
@@ -468,32 +556,7 @@ void game_presets_load(const char* cfg_path)
             }
 
             cur = &s_presets[s_preset_count++];
-            memset(cur, 0, sizeof(*cur));
-            // Mark every field as "not set"
-            cur->accuracy = cur->graphics  = cur->ratio    = cur->adv_alpha = -1;
-            cur->frameskip= cur->tex_cache = cur->bpp4     = cur->bpp8      = -1;
-            cur->jojo_fix = -1;
-            cur->decal_alpha = -1;
-            cur->speed_limiter = -1;
-            cur->vertex_color_fix = -1;
-            cur->players  = cur->controller                                  = -1;
-            cur->ppz_write = -1;
-            cur->framebuffer_2d = -1;
-            cur->fmv_format = -1;
-            cur->blend_mode = -1;
-            cur->rgb565_opaque_alpha = -1;
-            cur->blend_fps_boost = -1;
-            cur->punch_through = -1;
-            cur->offset_color = -1;
-            cur->trans_sort = -1;
-            cur->render_to_texture = -1;
-            cur->split_screen = -1;
-            cur->mipmap = -1;
-            cur->fixed_depth = -1;
-            cur->depth_clip = -1;
-            cur->async_render = -1;
-            cur->tmem_cache = -1;
-            cur->bg_poly = -1;
+            preset_clear(cur);
 
             strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
             cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
@@ -533,6 +596,14 @@ void game_presets_apply(const char* filepath)
 {
     g_matched_preset_name[0] = '\0';   // clear previous match
 
+    // Apply [default] first so every launch starts from the same baseline;
+    // a per-game match below then only needs to override what differs.
+    if (s_has_default)
+    {
+        printf("[game_presets] Applying [default]\n");
+        preset_apply_fields(&s_default_preset);
+    }
+
     if (!filepath || !*filepath || s_preset_count == 0)
         return;
 
@@ -561,37 +632,7 @@ void game_presets_apply(const char* filepath)
         strncpy(g_matched_preset_name, p->keyword, MAX_KEYWORD_LEN - 1);
         g_matched_preset_name[MAX_KEYWORD_LEN - 1] = '\0';
 
-        if (p->accuracy   >= 0) { g_accuracy_preset      = p->accuracy;   printf("  accuracy   -> %d\n", p->accuracy);   }
-        if (p->graphics   >= 0) { g_graphism_preset       = p->graphics;   printf("  graphics   -> %d\n", p->graphics);   }
-        if (p->ratio      >= 0) { g_ratio_preset          = p->ratio;      printf("  ratio      -> %d\n", p->ratio);      }
-        if (p->adv_alpha  >= 0) { g_advanced_alpha_preset = p->adv_alpha;  printf("  adv_alpha  -> %d\n", p->adv_alpha);  }
-        if (p->frameskip  >= 0) { g_frameskip_preset      = p->frameskip;  printf("  frameskip  -> %d\n", p->frameskip);  }
-        if (p->tex_cache  >= 0) { g_texture_cache_preset  = p->tex_cache;  printf("  tex_cache  -> %d\n", p->tex_cache);  }
-        if (p->ppz_write  >= 0) { g_ppz_write_preset      = p->ppz_write;  printf("  ppz_write  -> %d\n", p->ppz_write);  }
-        if (p->bpp4       >= 0) { g_4bpp_preset           = p->bpp4;       printf("  4bpp       -> %d\n", p->bpp4);       }
-        if (p->bpp8       >= 0) { g_8bpp_preset           = p->bpp8;       printf("  8bpp       -> %d\n", p->bpp8);       }
-        if (p->jojo_fix   >= 0) { g_jojo_fix_preset       = p->jojo_fix;   printf("  jojo_fix   -> %d\n", p->jojo_fix);   }
-        if (p->decal_alpha >= 0) { g_decal_alpha_preset   = p->decal_alpha; printf("  decal_alpha -> %d\n", p->decal_alpha); }
-        if (p->speed_limiter >= 0) { g_speed_limiter_preset = p->speed_limiter; printf("  speed_limiter -> %d\n", p->speed_limiter); }
-        if (p->vertex_color_fix >= 0) { g_vertex_color_fix_preset = p->vertex_color_fix; printf("  vertex_color_fix -> %d\n", p->vertex_color_fix); }
-        if (p->players    >= 0) { g_player_count          = p->players;    printf("  players    -> %d\n", p->players);    }
-        if (p->controller >= 0) { g_controller_type       = p->controller; printf("  controller -> %d\n", p->controller); }
-        if (p->framebuffer_2d >= 0) { g_framebuffer_2d    = p->framebuffer_2d; printf("  framebuffer_2d -> %d\n", p->framebuffer_2d); }
-        if (p->fmv_format     >= 0) { g_fmv_format_preset = p->fmv_format;     printf("  fmv_format     -> %d\n", p->fmv_format);     }
-        if (p->blend_mode     >= 0) { g_blend_mode_preset = p->blend_mode;     printf("  blend_mode     -> %d\n", p->blend_mode);     }
-        if (p->rgb565_opaque_alpha >= 0) { g_rgb565_opaque_alpha_preset = p->rgb565_opaque_alpha; printf("  rgb565_opaque_alpha -> %d\n", p->rgb565_opaque_alpha); }
-        if (p->blend_fps_boost >= 0) { g_blend_fps_boost_preset = p->blend_fps_boost; printf("  blend_fps_boost -> %d\n", p->blend_fps_boost); }
-        if (p->punch_through  >= 0) { g_punch_through_preset = p->punch_through;   printf("  punch_through  -> %d\n", p->punch_through);  }
-        if (p->offset_color   >= 0) { g_offset_color_preset  = p->offset_color;    printf("  offset_color   -> %d\n", p->offset_color);   }
-        if (p->trans_sort     >= 0) { g_trans_sort_preset    = p->trans_sort;      printf("  trans_sort     -> %d\n", p->trans_sort);     }
-        if (p->render_to_texture >= 0) { g_render_to_texture_preset = p->render_to_texture; printf("  render_to_texture -> %d\n", p->render_to_texture); }
-        if (p->split_screen   >= 0) { g_split_screen_preset  = p->split_screen;    printf("  split_screen   -> %d\n", p->split_screen);   }
-        if (p->mipmap         >= 0) { g_mipmap_preset        = p->mipmap;          printf("  mipmap         -> %d\n", p->mipmap);         }
-        if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }
-        if (p->depth_clip     >= 0) { g_depth_clip_preset    = p->depth_clip;      printf("  depth_clip     -> %d\n", p->depth_clip);     }
-        if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
-        if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
-        if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
+        preset_apply_fields(p);
 
         return; // First match only
     }
