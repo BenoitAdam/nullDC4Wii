@@ -14,6 +14,11 @@ SD:/apps/nullDC4wii/data/
 Dolphin :
 SD:/data/
 
+Preset file :
+============
+
+Put game_presets.cfg in SD:/discs/
+
 
 Game files :
 ============
