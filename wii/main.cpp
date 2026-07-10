@@ -1351,7 +1351,7 @@ int main(int argc, wchar *argv[])
   // ---------------------------------------------------------------------------
   // Load game presets  (optional — missing file is silently ignored)
   // ---------------------------------------------------------------------------
-  game_presets_load("sd:/data/game_presets.cfg");
+  game_presets_load("sd:/discs/game_presets.cfg");
 
   void SetApplicationPath(const wchar *path);
 

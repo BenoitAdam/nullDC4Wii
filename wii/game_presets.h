@@ -2,7 +2,7 @@
 
 /*
     game_presets.h - Per-game preset system for NullDC4Wii
-    Place game_presets.cfg on sd:/data/game_presets.cfg
+    Place game_presets.cfg on sd:/discs/game_presets.cfg
 */
 
 #ifdef __cplusplus
@@ -12,7 +12,7 @@ extern "C" {
 /**
  * Load preset rules from a config file.
  * Safe to call even if the file doesn't exist (prints a warning, uses defaults).
- * @param cfg_path Full path e.g. "sd:/data/game_presets.cfg"
+ * @param cfg_path Full path e.g. "sd:/discs/game_presets.cfg"
  */
 void game_presets_load(const char* cfg_path);
 

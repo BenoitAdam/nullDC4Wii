@@ -1,7 +1,7 @@
 /*
     game_presets.cpp - Per-game preset system for NullDC4Wii
 
-    Config file format (sd:/data/game_presets.cfg):
+    Config file format (sd:/discs/game_presets.cfg):
 
         ;; comment
         [keyword]           <- case-insensitive substring matched against filename
