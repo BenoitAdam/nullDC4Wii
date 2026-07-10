@@ -8,67 +8,67 @@
         accuracy=fast       <- only fields listed are overridden
         graphics=low
         8bpp=i8_stub
-        jojo_fix=1          <- 0/1, enables the gxRend.cpp TLUT-checksum-skip
+        jojo_fix=on         <- on/off, enables the gxRend.cpp TLUT-checksum-skip
                                 and CACHE_FAST PalSelect-masking optimizations
                                 (see plugs/drkPvr/gxRend.cpp JOJO_FIX()).
-                                Default 0 (off) leaves every other game's
+                                Default off leaves every other game's
                                 texture caching/palette behavior unchanged.
-        decal_alpha=1       <- 0/1, selects ShadInstr==2 (DecalAlpha) blending.
-                                0=legacy GX_MODULATE (faster, wrong transparency)
-                                1=correct DecalAlpha shading (GX_DECAL).
-        speed_limiter=1     <- 0/1, caps emulation at real-hardware (100%) speed.
-                                0=uncapped (may run >100% on light frames, default)
-                                1=sleeps the difference each vblank so speed never
+        decal_alpha=on      <- on/off, selects ShadInstr==2 (DecalAlpha) blending.
+                                off=legacy GX_MODULATE (faster, wrong transparency)
+                                on=correct DecalAlpha shading (GX_DECAL).
+        speed_limiter=on    <- on/off, caps emulation at real-hardware (100%) speed.
+                                off=uncapped (may run >100% on light frames, default)
+                                on=sleeps the difference each vblank so speed never
                                   exceeds 100% (never penalizes frames already at
                                   or below 100%; see plugs/drkPvr/SPG.cpp).
-        vertex_color_fix=1 <- 0/1, real PVR Intensity (Gouraud) shading: each
+        vertex_color_fix=on <- on/off, real PVR Intensity (Gouraud) shading: each
                                 vertex's scalar intensity is multiplied by the
                                 polygon's FaceColor (see gxRend.cpp
-                                VERTEX_COLOR_FIX()). Default 0 (off) keeps the
+                                VERTEX_COLOR_FIX()). Default off keeps the
                                 old flat-grayscale behavior for every other game;
                                 Crazy Taxi needs this on for its HUD arrow/dollar
                                 sign to show their real color instead of gray.
-        blend_mode=1        <- 0/1, per-polygon TSP SrcInstr/DstInstr blend mode
+        blend_mode=on       <- on/off, per-polygon TSP SrcInstr/DstInstr blend mode
                                 for the translucent list (see gxRend.cpp
-                                BLEND_MODE()). 1 (default, correct) applies the
+                                BLEND_MODE()). on (default, correct) applies the
                                 polygon's actual blend factors each frame;
-                                0 (legacy) skips the per-polygon override and uses
+                                off (legacy) skips the per-polygon override and uses
                                 the GX default, which is faster but renders
                                 Resident Evil 3's translucent polygons incorrectly.
-        blend_fps_boost=1   <- 0/1, only used when blend_mode=1 (see gxRend.cpp
-                                BLEND_FPS_BOOST()). 1 forces alpha_fmt=0 (skips the
+        blend_fps_boost=on  <- on/off, only used when blend_mode=on (see gxRend.cpp
+                                BLEND_FPS_BOOST()). on forces alpha_fmt=0 (skips the
                                 alpha-test/ZCompLoc pass) for every polygon outside
                                 the translucent list, saving a couple of FPS (e.g.
                                 Castlevania) at the cost of incorrect alpha on some
-                                opaque/punch-through polys. Default 0 (off, correct).
-        punch_through=1     <- 0/1, punch-through list fix (see gxRend.cpp
-                                PUNCH_THROUGH_FIX()). 1 (default, correct) draws
+                                opaque/punch-through polys. Default off (correct).
+        punch_through=on    <- on/off, punch-through list fix (see gxRend.cpp
+                                PUNCH_THROUGH_FIX()). on (default, correct) draws
                                 lists in OP -> PT -> TR order with the PT list
                                 alpha-tested against PT_ALPHA_REF and blending off,
-                                like real PVR; 0 (legacy) draws PT polys last, in
+                                like real PVR; off (legacy) draws PT polys last, in
                                 the translucent blend state.
-        offset_color=1      <- 0/1, offset (specular) color (see gxRend.cpp
-                                OFFSET_COLOR_FIX()). 1 renders textured polys as
+        offset_color=on     <- on/off, offset (specular) color (see gxRend.cpp
+                                OFFSET_COLOR_FIX()). on renders textured polys as
                                 PIX = base*tex + offset like real PVR (specular
                                 highlights on cars/water), costing 4 bytes/vertex
                                 of FIFO and a second TEV stage on offset polys;
-                                0 (default, legacy) drops the offset color.
-        trans_sort=1        <- 0/1, translucent depth sort (see gxRend.cpp
+                                off (default, legacy) drops the offset color.
+        trans_sort=on       <- on/off, translucent depth sort (see gxRend.cpp
                                 TRANS_SORT()). Real PVR autosorts translucent
-                                pixels in hardware; 1 sorts the TR strips
+                                pixels in hardware; on sorts the TR strips
                                 back-to-front (painter's algorithm) before
                                 drawing, fixing wrong overlaps in alpha-heavy
                                 scenes, at some CPU cost per frame;
-                                0 (default, legacy) draws in submission order.
-        render_to_texture=1 <- 0/1, render-to-texture support (see gxRend.cpp
+                                off (default, legacy) draws in submission order.
+        render_to_texture=on <- on/off, render-to-texture support (see gxRend.cpp
                                 RENDER_TO_TEXTURE()). Frames whose write address
                                 (FB_W_SOF1) has bit 24 set target the 64-bit
                                 texture area — mirrors, TV screens, some menu
-                                effects. 1 renders them and copies the EFB back
+                                effects. on renders them and copies the EFB back
                                 into emulated VRAM at FB_W_SOF1 so the game can
                                 bind the result as a texture, at the cost of an
                                 EFB copy + CPU convert per RTT frame;
-                                0 (default, legacy) drops those frames.
+                                off (default, legacy) drops those frames.
         mipmap=fast         <- off/fast/trilinear (or 0/1/2), GX mipmap
                                 generation (see gxRend.cpp MIPMAP_*()).
                                 off (default) = legacy base-level-only, fastest;
@@ -99,38 +99,38 @@
                                 2 disables XF clipping entirely (Dolphin
                                 behaviour: out-of-range Z clamps instead of
                                 the poly vanishing).
-        async_render=1      <- 0/1, async GPU present (see gxRend.cpp
-                                ASYNC_RENDER()). 0 (default, legacy) blocks the
+        async_render=on     <- on/off, async GPU present (see gxRend.cpp
+                                ASYNC_RENDER()). off (default, legacy) blocks the
                                 CPU in GX_DrawDone() until the GPU finishes the
-                                frame; 1 queues the frame and returns at once —
+                                frame; on queues the frame and returns at once —
                                 the SH4 core emulates the next frame while the
                                 GPU draws, and the finished frame is presented
                                 at the start of the next one. One frame of
                                 extra display latency; big FPS gain whenever
                                 the GPU takes a meaningful slice of the frame.
-        tmem_cache=1        <- 0/1, persistent GPU texture cache (see gxRend.cpp
-                                TMEM_CACHE()). 0 (default, legacy) invalidates
+        tmem_cache=on       <- on/off, persistent GPU texture cache (see gxRend.cpp
+                                TMEM_CACHE()). off (default, legacy) invalidates
                                 the GPU's 1MB texture cache (TMEM) every frame,
-                                re-fetching every texel from RAM; 1 invalidates
+                                re-fetching every texel from RAM; on invalidates
                                 only when a texture is actually re-decoded, so
                                 unchanged textures stay cached across frames —
                                 more texture fill rate.
-        bg_poly=1           <- 0/1, background polygon rendering (see gxRend.cpp
+        bg_poly=on          <- on/off, background polygon rendering (see gxRend.cpp
                                 BG_POLY_FIX()). ISP_BACKGND_T's 3 vertices are
                                 normally only used for the EFB clear color;
-                                1 additionally barycentric-extrapolates them
+                                on additionally barycentric-extrapolates them
                                 into a full-screen textured/Gouraud quad
                                 (needed by Who Wants to Be a Millionaire's
                                 background), at the cost of an extra texture
                                 bind + polygon draw every frame;
-                                0 (default, legacy) draws nothing extra.
-        split_screen=1      <- 0/1, split-screen multiplayer (see gxRend.cpp
+                                off (default, legacy) draws nothing extra.
+        split_screen=on     <- on/off, split-screen multiplayer (see gxRend.cpp
                                 SPLIT_SCREEN()). 2P games (Daytona USA
                                 multiplayer) render one pass per player
                                 viewport, clipped with FB_X_CLIP/FB_Y_CLIP.
-                                1 draws each partial-clip pass scissored into
+                                on draws each partial-clip pass scissored into
                                 its half of the EFB and presents the assembled
-                                frame once per vblank; 0 (default, legacy)
+                                frame once per vblank; off (default, legacy)
                                 presents every pass fullscreen, so only one
                                 player's view shows.
 
@@ -301,6 +301,17 @@ static void strip_inline_comment(char* s)
 // Value parsers — return -1 on unknown token
 // ---------------------------------------------------------------------------
 
+// Binary fields: "on"/"off" is the documented format; "1"/"0" and
+// "true"/"false" are also accepted so hand-edited or older config lines
+// keep working.
+static int parse_bool(const char* v)
+{
+    if (key_eq(v, "on")  || key_eq(v, "true")  || strcmp(v, "1") == 0) return 1;
+    if (key_eq(v, "off") || key_eq(v, "false") || strcmp(v, "0") == 0) return 0;
+    printf("[game_presets] Unknown on/off value: '%s'\n", v);
+    return -1;
+}
+
 static int parse_accuracy(const char* v)
 {
     if (key_eq(v, "fast"))     return 0;
@@ -401,34 +412,34 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     if      (key_eq(key, "accuracy"))   p->accuracy   = parse_accuracy(val);
     else if (key_eq(key, "graphics"))   p->graphics   = parse_graphics(val);
     else if (key_eq(key, "ratio"))      p->ratio      = parse_ratio(val);
-    else if (key_eq(key, "adv_alpha"))  p->adv_alpha  = atoi(val);
+    else if (key_eq(key, "adv_alpha"))  p->adv_alpha  = parse_bool(val);
     else if (key_eq(key, "frameskip"))  p->frameskip  = parse_frameskip(val);
     else if (key_eq(key, "tex_cache"))  p->tex_cache  = parse_tex_cache(val);
-    else if (key_eq(key, "ppz_write"))  p->ppz_write  = atoi(val);
+    else if (key_eq(key, "ppz_write"))  p->ppz_write  = parse_bool(val);
     else if (key_eq(key, "4bpp"))       p->bpp4       = parse_bpp(val);
     else if (key_eq(key, "8bpp"))       p->bpp8       = parse_bpp(val);
-    else if (key_eq(key, "jojo_fix"))   p->jojo_fix   = atoi(val);
-    else if (key_eq(key, "decal_alpha")) p->decal_alpha = atoi(val);
-    else if (key_eq(key, "speed_limiter")) p->speed_limiter = atoi(val);
-    else if (key_eq(key, "vertex_color_fix")) p->vertex_color_fix = atoi(val);
+    else if (key_eq(key, "jojo_fix"))   p->jojo_fix   = parse_bool(val);
+    else if (key_eq(key, "decal_alpha")) p->decal_alpha = parse_bool(val);
+    else if (key_eq(key, "speed_limiter")) p->speed_limiter = parse_bool(val);
+    else if (key_eq(key, "vertex_color_fix")) p->vertex_color_fix = parse_bool(val);
     else if (key_eq(key, "players"))    p->players    = atoi(val);
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);
-    else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = atoi(val);
+    else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = parse_bool(val);
     else if (key_eq(key, "fmv_format"))     p->fmv_format     = parse_fmv_format(val);
-    else if (key_eq(key, "blend_mode"))     p->blend_mode     = atoi(val);
-    else if (key_eq(key, "rgb565_opaque_alpha")) p->rgb565_opaque_alpha = atoi(val);
-    else if (key_eq(key, "blend_fps_boost")) p->blend_fps_boost = atoi(val);
-    else if (key_eq(key, "punch_through"))  p->punch_through  = atoi(val);
-    else if (key_eq(key, "offset_color"))   p->offset_color   = atoi(val);
-    else if (key_eq(key, "trans_sort"))     p->trans_sort     = atoi(val);
-    else if (key_eq(key, "render_to_texture")) p->render_to_texture = atoi(val);
-    else if (key_eq(key, "split_screen"))   p->split_screen   = atoi(val);
+    else if (key_eq(key, "blend_mode"))     p->blend_mode     = parse_bool(val);
+    else if (key_eq(key, "rgb565_opaque_alpha")) p->rgb565_opaque_alpha = parse_bool(val);
+    else if (key_eq(key, "blend_fps_boost")) p->blend_fps_boost = parse_bool(val);
+    else if (key_eq(key, "punch_through"))  p->punch_through  = parse_bool(val);
+    else if (key_eq(key, "offset_color"))   p->offset_color   = parse_bool(val);
+    else if (key_eq(key, "trans_sort"))     p->trans_sort     = parse_bool(val);
+    else if (key_eq(key, "render_to_texture")) p->render_to_texture = parse_bool(val);
+    else if (key_eq(key, "split_screen"))   p->split_screen   = parse_bool(val);
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
     else if (key_eq(key, "fixed_depth"))    p->fixed_depth    = atoi(val);
     else if (key_eq(key, "depth_clip"))     p->depth_clip     = atoi(val);
-    else if (key_eq(key, "async_render"))   p->async_render   = atoi(val);
-    else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = atoi(val);
-    else if (key_eq(key, "bg_poly"))        p->bg_poly        = atoi(val);
+    else if (key_eq(key, "async_render"))   p->async_render   = parse_bool(val);
+    else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = parse_bool(val);
+    else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
