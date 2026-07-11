@@ -546,8 +546,9 @@ void displayAccuracyMenu()
     printf("Note: Change settings if you experience issues or need more speed.\n");
 
     WPAD_ScanPads();
-    u32 pressed = WPAD_ButtonsDown(0);
-    
+    PAD_ScanPads();
+    u32 pressed = WPAD_ButtonsDown(0) | ((PAD_ButtonsDown(0) & PAD_BUTTON_B) ? WPAD_BUTTON_B : 0);
+
     if (pressed & WPAD_BUTTON_B)
     {
       return;
@@ -645,6 +646,17 @@ bool displayOptionsMenu()
 {
   int selectedRow = OPT_LAUNCH;
   int optionsPage = 0;
+
+  // Debounce: the A press used to select the file in the browser can
+  // otherwise bleed through as a fresh "A down" event on the very first
+  // scan here (seen with the GameCube pad), instantly triggering LAUNCH
+  // before the menu is even shown. Wait for A to be released first.
+  while ((WPAD_ButtonsHeld(0) & WPAD_BUTTON_A) || (PAD_ButtonsHeld(0) & PAD_BUTTON_A))
+  {
+    WPAD_ScanPads();
+    PAD_ScanPads();
+    VIDEO_WaitVSync();
+  }
 
   while (true)
   {
@@ -970,7 +982,20 @@ bool displayOptionsMenu()
 
 
     WPAD_ScanPads();
+    PAD_ScanPads();
     u32 pressed = WPAD_ButtonsDown(0);
+
+    // GameCube controller (Player 1) — same mapping convention as in-game
+    // input (see drkMapleDevices.cpp): Y=button1, X=button2.
+    u16 gcPressed = PAD_ButtonsDown(0);
+    if (gcPressed & PAD_BUTTON_UP)    pressed |= WPAD_BUTTON_UP;
+    if (gcPressed & PAD_BUTTON_DOWN)  pressed |= WPAD_BUTTON_DOWN;
+    if (gcPressed & PAD_BUTTON_LEFT)  pressed |= WPAD_BUTTON_LEFT;
+    if (gcPressed & PAD_BUTTON_RIGHT) pressed |= WPAD_BUTTON_RIGHT;
+    if (gcPressed & PAD_BUTTON_A)     pressed |= WPAD_BUTTON_A;
+    if (gcPressed & PAD_BUTTON_B)     pressed |= WPAD_BUTTON_B;
+    if (gcPressed & PAD_BUTTON_Y)     pressed |= WPAD_BUTTON_1;
+    if (gcPressed & PAD_BUTTON_X)     pressed |= WPAD_BUTTON_2;
 
     if (pressed & WPAD_BUTTON_UP)
     {
@@ -1144,7 +1169,20 @@ int displayMenuAndSelectFile()
     printf("INGAME: Press (-) and (+) simultaneously to Exit\n");
 
     WPAD_ScanPads();
+    PAD_ScanPads();
     u32 pressed = WPAD_ButtonsDown(0);
+
+    // GameCube controller (Player 1) — same mapping convention as in-game
+    // input (see drkMapleDevices.cpp): Y=button1, X=button2.
+    u16 gcPressed = PAD_ButtonsDown(0);
+    if (gcPressed & PAD_BUTTON_UP)    pressed |= WPAD_BUTTON_UP;
+    if (gcPressed & PAD_BUTTON_DOWN)  pressed |= WPAD_BUTTON_DOWN;
+    if (gcPressed & PAD_BUTTON_LEFT)  pressed |= WPAD_BUTTON_LEFT;
+    if (gcPressed & PAD_BUTTON_RIGHT) pressed |= WPAD_BUTTON_RIGHT;
+    if (gcPressed & PAD_BUTTON_A)     pressed |= WPAD_BUTTON_A;
+    if (gcPressed & PAD_BUTTON_B)     pressed |= WPAD_BUTTON_B;
+    if (gcPressed & PAD_BUTTON_Y)     pressed |= WPAD_BUTTON_1;
+    if (gcPressed & PAD_BUTTON_X)     pressed |= WPAD_BUTTON_2;
 
     if (pressed & WPAD_BUTTON_MINUS)
       g_graphism_preset = (g_graphism_preset + 1) % 4;
