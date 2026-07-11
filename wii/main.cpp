@@ -1092,18 +1092,60 @@ bool displayOptionsMenu()
 
 #define CTRL_LAUNCH     0
 // row 1 = game name (display only, not selectable)
-#define CTRL_PLAYERS    2
-#define CTRL_TYPE       3
-#define CTRL_ROW_COUNT  4
+#define CTRL_PLAYER1    2
+#define CTRL_PLAYER2    3
+#define CTRL_PLAYER3    4
+#define CTRL_PLAYER4    5
+#define CTRL_TYPE       6
+#define CTRL_ROW_COUNT  7
 
 static bool ctrl_row_is_display(int row)
 {
   return (row == 1);
 }
 
+// Per-player enabled state: true = WIIMOTE/GAMECUBE, false = OFF.
+// Player 1 is always active. Buses must stay contiguous (mcfg_CreateDevices
+// only knows how to activate ports 0..g_player_count-1), so enabling a
+// player forces every lower-numbered player on, and disabling a player
+// cascades to every higher-numbered player.
+static bool g_player_enabled[4] = { true, true, true, true };
+
+static void ctrl_sync_player_enabled_from_count()
+{
+  for (int i = 0; i < 4; i++)
+    g_player_enabled[i] = (i < g_player_count);
+}
+
+static void ctrl_toggle_player_enabled(int idx)
+{
+  if (idx == 0)
+    return; // Player 1 can't be turned off
+
+  bool enabling = !g_player_enabled[idx];
+  g_player_enabled[idx] = enabling;
+
+  if (enabling)
+  {
+    for (int i = 0; i < idx; i++)
+      g_player_enabled[i] = true;
+  }
+  else
+  {
+    for (int i = idx + 1; i < 4; i++)
+      g_player_enabled[i] = false;
+  }
+
+  int count = 1;
+  for (int i = 1; i < 4; i++)
+    if (g_player_enabled[i]) count = i + 1;
+  g_player_count = count;
+}
+
 bool displayControlsMenu()
 {
   int selectedRow = CTRL_LAUNCH;
+  ctrl_sync_player_enabled_from_count();
 
   // Debounce: don't let the A press that confirmed the options menu
   // bleed through as an instant LAUNCH here.
@@ -1131,17 +1173,16 @@ bool displayControlsMenu()
 
     printf("\n    -- CONTROLS --\n\n");
 
-    // --- Row 2: Players ---
-    printf("%s PLAYERS         : ", (selectedRow == CTRL_PLAYERS) ? ">" : " ");
-    switch (g_player_count) {
-      case 1:  printf("[< 1 PLAYER          >]"); break;
-      case 2:  printf("[< 2 PLAYERS         >]"); break;
-      case 3:  printf("[< 3 PLAYERS         >]"); break;
-      default: printf("[< 4 PLAYERS         >]"); break;
+    // --- Rows 2-5: Players ---
+    for (int p = 0; p < 4; p++)
+    {
+      int row = CTRL_PLAYER1 + p;
+      const char *label = g_player_enabled[p] ? "WIIMOTE/GAMECUBE" : "OFF";
+      printf("%s PLAYER %d        : [< %-17s >]\n",
+             (selectedRow == row) ? ">" : " ", p + 1, label);
     }
-    printf("\n");
 
-    // --- Row 3: Controller ---
+    // --- Row 6: Controller ---
     printf("%s CONTROLLER      : ", (selectedRow == CTRL_TYPE) ? ">" : " ");
     switch (g_controller_type) {
       case 0: printf("[< STANDARD          >]"); break;
@@ -1188,7 +1229,10 @@ bool displayControlsMenu()
     else if (pressed & WPAD_BUTTON_LEFT)
     {
       switch (selectedRow) {
-        case CTRL_PLAYERS: g_player_count    = (g_player_count == 1) ? 4 : g_player_count - 1; break;
+        case CTRL_PLAYER1: ctrl_toggle_player_enabled(0); break;
+        case CTRL_PLAYER2: ctrl_toggle_player_enabled(1); break;
+        case CTRL_PLAYER3: ctrl_toggle_player_enabled(2); break;
+        case CTRL_PLAYER4: ctrl_toggle_player_enabled(3); break;
         case CTRL_TYPE:    g_controller_type = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
         default: break;
       }
@@ -1196,7 +1240,10 @@ bool displayControlsMenu()
     else if (pressed & WPAD_BUTTON_RIGHT)
     {
       switch (selectedRow) {
-        case CTRL_PLAYERS: g_player_count    = (g_player_count == 4) ? 1 : g_player_count + 1; break;
+        case CTRL_PLAYER1: ctrl_toggle_player_enabled(0); break;
+        case CTRL_PLAYER2: ctrl_toggle_player_enabled(1); break;
+        case CTRL_PLAYER3: ctrl_toggle_player_enabled(2); break;
+        case CTRL_PLAYER4: ctrl_toggle_player_enabled(3); break;
         case CTRL_TYPE:    g_controller_type = (g_controller_type + 1) % kControllerTypeCount; break;
         default: break;
       }
