@@ -170,8 +170,9 @@ extern "C" int get_player_count();
 //
 // Maracas note:
 //   Each DC port represents one "player" who uses 2 Wiimotes physically.
-//   The maracas device for bus 1 (P2) needs Wiimotes 2 & 3, so 4 Wiimotes
-//   total are required in 2-player maracas mode.
+//   The maracas device for bus N (player N+1) needs Wiimotes 2N & 2N+1, so
+//   2 Wiimotes per player total are required in maracas mode (up to 8 for
+//   4-player mode).
 // ----------------------------------------------------------------------------
 void mcfg_CreateDevices()
 {
@@ -196,14 +197,15 @@ void mcfg_CreateDevices()
 		mcfg_Create(MDT_SegaVMU, 0, 1);  // VMU slot A2
 	}
 
-	// --- Bus 1 : Player 2 (when 2-player mode is active) ---
-	if (get_player_count() >= 2)
+	// --- Buses 1-3 : Players 2-4 (when 2/3/4-player mode is active) ---
+	int players = get_player_count();
+	for (u32 bus = 1; bus < (u32)players && bus < 4; bus++)
 	{
-		mcfg_Create(ctrlType,     1, 5);
+		mcfg_Create(ctrlType,     bus, 5);
 		if (isStandard)
 		{
-			mcfg_Create(MDT_SegaVMU, 1, 0);
-			mcfg_Create(MDT_SegaVMU, 1, 1);
+			mcfg_Create(MDT_SegaVMU, bus, 0);
+			mcfg_Create(MDT_SegaVMU, bus, 1);
 		}
 	}
 }

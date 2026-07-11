@@ -405,6 +405,14 @@ static int parse_mipmap(const char* v)
     return -1;
 }
 
+static int parse_players(const char* v)
+{
+    int n = atoi(v);
+    if (n >= 1 && n <= 4) return n;
+    printf("[game_presets] Unknown players value: '%s'\n", v);
+    return -1;
+}
+
 static int parse_controller(const char* v)
 {
     if (key_eq(v, "standard"))   return 0;
@@ -436,7 +444,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "decal_alpha")) p->decal_alpha = parse_bool(val);
     else if (key_eq(key, "speed_limiter")) p->speed_limiter = parse_bool(val);
     else if (key_eq(key, "vertex_color_fix")) p->vertex_color_fix = parse_bool(val);
-    else if (key_eq(key, "players"))    p->players    = atoi(val);
+    else if (key_eq(key, "players"))    p->players    = parse_players(val);
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);
     else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = parse_bool(val);
     else if (key_eq(key, "fmv_format"))     p->fmv_format     = parse_fmv_format(val);

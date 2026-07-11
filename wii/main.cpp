@@ -217,11 +217,11 @@ extern "C" {
   int get_bg_poly_preset() { return g_bg_poly_preset; }
 }
 
-int g_player_count = 2;
+int g_player_count = 4;
 
 extern "C" {
   int  get_player_count()      { return g_player_count; }
-  void set_player_count(int n) { g_player_count = (n >= 1 && n <= 2) ? n : 1; }
+  void set_player_count(int n) { g_player_count = (n >= 1 && n <= 4) ? n : 1; }
 }
 
 // ============================================================================
@@ -1133,7 +1133,12 @@ bool displayControlsMenu()
 
     // --- Row 2: Players ---
     printf("%s PLAYERS         : ", (selectedRow == CTRL_PLAYERS) ? ">" : " ");
-    printf(g_player_count == 1 ? "[< 1 PLAYER          >]" : "[< 2 PLAYERS         >]");
+    switch (g_player_count) {
+      case 1:  printf("[< 1 PLAYER          >]"); break;
+      case 2:  printf("[< 2 PLAYERS         >]"); break;
+      case 3:  printf("[< 3 PLAYERS         >]"); break;
+      default: printf("[< 4 PLAYERS         >]"); break;
+    }
     printf("\n");
 
     // --- Row 3: Controller ---
@@ -1183,7 +1188,7 @@ bool displayControlsMenu()
     else if (pressed & WPAD_BUTTON_LEFT)
     {
       switch (selectedRow) {
-        case CTRL_PLAYERS: g_player_count    = (g_player_count == 1) ? 2 : 1; break;
+        case CTRL_PLAYERS: g_player_count    = (g_player_count == 1) ? 4 : g_player_count - 1; break;
         case CTRL_TYPE:    g_controller_type = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
         default: break;
       }
@@ -1191,7 +1196,7 @@ bool displayControlsMenu()
     else if (pressed & WPAD_BUTTON_RIGHT)
     {
       switch (selectedRow) {
-        case CTRL_PLAYERS: g_player_count    = (g_player_count == 1) ? 2 : 1; break;
+        case CTRL_PLAYERS: g_player_count    = (g_player_count == 4) ? 1 : g_player_count + 1; break;
         case CTRL_TYPE:    g_controller_type = (g_controller_type + 1) % kControllerTypeCount; break;
         default: break;
       }
@@ -1658,8 +1663,8 @@ int main(int argc, wchar *argv[])
 
     if (g_controller_type == 1)
       printf("               (Light gun: make sure Sensor Bar is on!)\n");
-    if (g_controller_type == 2 && g_player_count == 2)
-      printf("               (Maracas 2P: needs 4 Wiimotes!)\n");
+    if (g_controller_type == 2 && g_player_count > 1)
+      printf("               (Maracas %dP: needs %d Wiimotes!)\n", g_player_count, g_player_count * 2);
     if (g_controller_type == 3)
       printf("               (Keyboard: connect USB keyboard for best experience)\n");
   }
