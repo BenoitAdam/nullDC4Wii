@@ -586,24 +586,22 @@ void displayAccuracyMenu()
 #define OPT_JOJO_FIX    15
 #define OPT_SPEED_LIMIT 16
 #define OPT_VERTEX_COLOR_FIX 17
-#define OPT_PLAYERS     18
-#define OPT_CTRL_TYPE   19
-#define OPT_ADV_ALPHA   20
-#define OPT_BLEND_MODE  21
-#define OPT_BLEND_FPS_BOOST 22
-#define OPT_RGB565_OPAQUE_ALPHA 23
-#define OPT_PUNCH_THROUGH 24
-#define OPT_OFFSET_COLOR 25
-#define OPT_TRANS_SORT  26
-#define OPT_RENDER_TO_TEXTURE 27
-#define OPT_SPLIT_SCREEN 28
-#define OPT_MIPMAP      29
-#define OPT_FIXED_DEPTH 30
-#define OPT_DEPTH_CLIP  31
-#define OPT_ASYNC_RENDER 32
-#define OPT_TMEM_CACHE  33
-#define OPT_BG_POLY     34
-#define OPT_ROW_COUNT   35
+#define OPT_ADV_ALPHA   18
+#define OPT_BLEND_MODE  19
+#define OPT_BLEND_FPS_BOOST 20
+#define OPT_RGB565_OPAQUE_ALPHA 21
+#define OPT_PUNCH_THROUGH 22
+#define OPT_OFFSET_COLOR 23
+#define OPT_TRANS_SORT  24
+#define OPT_RENDER_TO_TEXTURE 25
+#define OPT_SPLIT_SCREEN 26
+#define OPT_MIPMAP      27
+#define OPT_FIXED_DEPTH 28
+#define OPT_DEPTH_CLIP  29
+#define OPT_ASYNC_RENDER 30
+#define OPT_TMEM_CACHE  31
+#define OPT_BG_POLY     32
+#define OPT_ROW_COUNT   33
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -779,29 +777,6 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CAP 100%%)     >]"); break;
     }
     printf(" (Stops speed exceeding 100%%)");
-    printf("\n");
-
-    // --- Row 17: Players ---
-    printf("%s PLAYERS         : ", (selectedRow == OPT_PLAYERS) ? ">" : " ");
-    printf(g_player_count == 1 ? "[< 1 PLAYER          >]" : "[< 2 PLAYERS         >]");
-    printf("\n");
-
-    // --- Row 18: Controller ---
-    printf("%s CONTROLLER      : ", (selectedRow == OPT_CTRL_TYPE) ? ">" : " ");
-    switch (g_controller_type) {
-      case 0: printf("[< STANDARD          >]"); break;
-      case 1: printf("[< LIGHT GUN         >]"); break;
-      case 2: printf("[< MARACAS           >]"); break;
-      case 3: printf("[< KEYBOARD          >]"); break;
-      case 4: printf("[< FISHING ROD       >]"); break;
-    }
-    switch (g_controller_type) {
-      case 1: printf(" (Needs Sensor Bar + IR)"); break;
-      case 2: printf(" (2 Wiimotes per player)"); break;
-      case 3: printf(" (USB keyboard or D-pad)"); break;
-      case 4: printf(" (Motion controls)");        break;
-      default: break;
-    }
     printf("\n");
 
     // --- Row 7: Advanced Alpha ---
@@ -1027,8 +1002,6 @@ bool displayOptionsMenu()
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
-        case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
-        case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
         case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
@@ -1064,8 +1037,6 @@ bool displayOptionsMenu()
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
-        case OPT_PLAYERS:   g_player_count          = (g_player_count == 1) ? 2 : 1; break;
-        case OPT_CTRL_TYPE: g_controller_type       = (g_controller_type + 1) % kControllerTypeCount; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
         case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
@@ -1096,6 +1067,139 @@ bool displayOptionsMenu()
     {
       optionsPage = (optionsPage + 1) % OPT_PAGE_COUNT;
       selectedRow = OPT_LAUNCH;
+    }
+    else if (pressed & WPAD_BUTTON_B)
+    {
+      return false;
+    }
+
+    VIDEO_SetNextFramebuffer(xfb[fb]);
+    VIDEO_Flush();
+    VIDEO_WaitVSync();
+    fb ^= 1;
+    console_init(xfb[fb], 20, 20, rmode->fbWidth, rmode->xfbHeight,
+                 rmode->fbWidth * VI_DISPLAY_PIX_SZ);
+  }
+}
+
+// ============================================================================
+// CONTROLS MENU
+// ============================================================================
+// Shown after the options menu, right before launch. Holds the
+// player-count / controller-type presets that used to live as two rows
+// inside the options menu — split out onto their own screen so they're
+// easy to find and don't scroll off the options page.
+
+#define CTRL_LAUNCH     0
+// row 1 = game name (display only, not selectable)
+#define CTRL_PLAYERS    2
+#define CTRL_TYPE       3
+#define CTRL_ROW_COUNT  4
+
+static bool ctrl_row_is_display(int row)
+{
+  return (row == 1);
+}
+
+bool displayControlsMenu()
+{
+  int selectedRow = CTRL_LAUNCH;
+
+  // Debounce: don't let the A press that confirmed the options menu
+  // bleed through as an instant LAUNCH here.
+  while ((WPAD_ButtonsHeld(0) & WPAD_BUTTON_A) || (PAD_ButtonsHeld(0) & PAD_BUTTON_A))
+  {
+    WPAD_ScanPads();
+    PAD_ScanPads();
+    VIDEO_WaitVSync();
+  }
+
+  while (true)
+  {
+    printf("\033[2J\033[H");
+
+    // --- Row 0: Launch ---
+    printf("%s LAUNCH GAME      (A: Launch | B: Back)\n",
+           (selectedRow == CTRL_LAUNCH) ? ">" : " ");
+
+    // --- Row 1: Game name (display only) ---
+    {
+      const char *gameName = strrchr(selectedFilePath, '/');
+      gameName = (gameName != NULL) ? gameName + 1 : selectedFilePath;
+      printf("    %.60s\n", gameName);
+    }
+
+    printf("\n    -- CONTROLS --\n\n");
+
+    // --- Row 2: Players ---
+    printf("%s PLAYERS         : ", (selectedRow == CTRL_PLAYERS) ? ">" : " ");
+    printf(g_player_count == 1 ? "[< 1 PLAYER          >]" : "[< 2 PLAYERS         >]");
+    printf("\n");
+
+    // --- Row 3: Controller ---
+    printf("%s CONTROLLER      : ", (selectedRow == CTRL_TYPE) ? ">" : " ");
+    switch (g_controller_type) {
+      case 0: printf("[< STANDARD          >]"); break;
+      case 1: printf("[< LIGHT GUN         >]"); break;
+      case 2: printf("[< MARACAS           >]"); break;
+      case 3: printf("[< KEYBOARD          >]"); break;
+      case 4: printf("[< FISHING ROD       >]"); break;
+    }
+    switch (g_controller_type) {
+      case 1: printf(" (Needs Sensor Bar + IR)"); break;
+      case 2: printf(" (2 Wiimotes per player)"); break;
+      case 3: printf(" (USB keyboard or D-pad)"); break;
+      case 4: printf(" (Motion controls)");        break;
+      default: break;
+    }
+    printf("\n");
+
+    WPAD_ScanPads();
+    PAD_ScanPads();
+    u32 pressed = WPAD_ButtonsDown(0);
+
+    // GameCube controller (Player 1) — same mapping convention as the
+    // other menus (see displayOptionsMenu).
+    u16 gcPressed = PAD_ButtonsDown(0);
+    if (gcPressed & PAD_BUTTON_UP)    pressed |= WPAD_BUTTON_UP;
+    if (gcPressed & PAD_BUTTON_DOWN)  pressed |= WPAD_BUTTON_DOWN;
+    if (gcPressed & PAD_BUTTON_LEFT)  pressed |= WPAD_BUTTON_LEFT;
+    if (gcPressed & PAD_BUTTON_RIGHT) pressed |= WPAD_BUTTON_RIGHT;
+    if (gcPressed & PAD_BUTTON_A)     pressed |= WPAD_BUTTON_A;
+    if (gcPressed & PAD_BUTTON_B)     pressed |= WPAD_BUTTON_B;
+
+    if (pressed & WPAD_BUTTON_UP)
+    {
+      do {
+        selectedRow = (selectedRow > 0) ? selectedRow - 1 : CTRL_ROW_COUNT - 1;
+      } while (ctrl_row_is_display(selectedRow));
+    }
+    else if (pressed & WPAD_BUTTON_DOWN)
+    {
+      do {
+        selectedRow = (selectedRow < CTRL_ROW_COUNT - 1) ? selectedRow + 1 : 0;
+      } while (ctrl_row_is_display(selectedRow));
+    }
+    else if (pressed & WPAD_BUTTON_LEFT)
+    {
+      switch (selectedRow) {
+        case CTRL_PLAYERS: g_player_count    = (g_player_count == 1) ? 2 : 1; break;
+        case CTRL_TYPE:    g_controller_type = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
+        default: break;
+      }
+    }
+    else if (pressed & WPAD_BUTTON_RIGHT)
+    {
+      switch (selectedRow) {
+        case CTRL_PLAYERS: g_player_count    = (g_player_count == 1) ? 2 : 1; break;
+        case CTRL_TYPE:    g_controller_type = (g_controller_type + 1) % kControllerTypeCount; break;
+        default: break;
+      }
+    }
+    else if (pressed & WPAD_BUTTON_A)
+    {
+      if (selectedRow == CTRL_LAUNCH)
+        return true;
     }
     else if (pressed & WPAD_BUTTON_B)
     {
@@ -1436,9 +1540,12 @@ int main(int argc, wchar *argv[])
         // sees the recommended values and can still tweak them manually.
         game_presets_apply(selectedFilePath);
 
-        launchGame = displayOptionsMenu();
-        if (!launchGame)
+        if (!displayOptionsMenu())
           continue; // B pressed — back to file list
+
+        launchGame = displayControlsMenu();
+        if (!launchGame)
+          continue; // B pressed — back to options menu
       }
     }
 
