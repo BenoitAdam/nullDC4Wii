@@ -1104,48 +1104,82 @@ static bool ctrl_row_is_display(int row)
   return (row == 1);
 }
 
-// Per-player enabled state: true = WIIMOTE/GAMECUBE, false = OFF.
+// Per-player controller mode:
+//   PLAYER_CTRL_OFF           OFF (bus not created; not available for Player 1)
+//   PLAYER_CTRL_WIIMOTE_GC    WIIMOTE/GAMECUBE   (bare Wiimote + Nunchuk + GameCube pad)
+//   PLAYER_CTRL_WIICLASSIC_GC WIICLASSIC/GAMECUBE (Wii Classic Controller + GameCube pad)
+//
 // Player 1 is always active. Buses must stay contiguous (mcfg_CreateDevices
 // only knows how to activate ports 0..g_player_count-1), so enabling a
 // player forces every lower-numbered player on, and disabling a player
 // cascades to every higher-numbered player.
-static bool g_player_enabled[4] = { true, true, true, true };
+enum { PLAYER_CTRL_OFF = 0, PLAYER_CTRL_WIIMOTE_GC = 1, PLAYER_CTRL_WIICLASSIC_GC = 2 };
+#define PLAYER_CTRL_MODE_COUNT 3
 
-static void ctrl_sync_player_enabled_from_count()
+static int g_player_mode[4] = { PLAYER_CTRL_WIIMOTE_GC, PLAYER_CTRL_WIIMOTE_GC,
+                                 PLAYER_CTRL_WIIMOTE_GC, PLAYER_CTRL_WIIMOTE_GC };
+
+static void ctrl_sync_player_mode_from_count()
 {
   for (int i = 0; i < 4; i++)
-    g_player_enabled[i] = (i < g_player_count);
+  {
+    bool shouldBeOn = (i < g_player_count);
+    bool isOn = (g_player_mode[i] != PLAYER_CTRL_OFF);
+    if (shouldBeOn && !isOn)
+      g_player_mode[i] = PLAYER_CTRL_WIIMOTE_GC;
+    else if (!shouldBeOn)
+      g_player_mode[i] = PLAYER_CTRL_OFF;
+  }
 }
 
-static void ctrl_toggle_player_enabled(int idx)
+// dir: -1 to cycle left/back, +1 to cycle right/forward.
+static void ctrl_cycle_player_mode(int idx, int dir)
 {
   if (idx == 0)
-    return; // Player 1 can't be turned off
-
-  bool enabling = !g_player_enabled[idx];
-  g_player_enabled[idx] = enabling;
-
-  if (enabling)
   {
-    for (int i = 0; i < idx; i++)
-      g_player_enabled[i] = true;
+    // Player 1 can't be turned off; just flip between the two device types.
+    g_player_mode[0] = (g_player_mode[0] == PLAYER_CTRL_WIIMOTE_GC)
+                          ? PLAYER_CTRL_WIICLASSIC_GC : PLAYER_CTRL_WIIMOTE_GC;
+    return;
   }
-  else
+
+  bool wasOff = (g_player_mode[idx] == PLAYER_CTRL_OFF);
+  g_player_mode[idx] = (g_player_mode[idx] + dir + PLAYER_CTRL_MODE_COUNT) % PLAYER_CTRL_MODE_COUNT;
+  bool nowOff = (g_player_mode[idx] == PLAYER_CTRL_OFF);
+
+  if (wasOff && !nowOff)
   {
+    // Enabling: force every lower-numbered player on too.
+    for (int i = 0; i < idx; i++)
+      if (g_player_mode[i] == PLAYER_CTRL_OFF)
+        g_player_mode[i] = PLAYER_CTRL_WIIMOTE_GC;
+  }
+  else if (!wasOff && nowOff)
+  {
+    // Disabling: cascade OFF to every higher-numbered player.
     for (int i = idx + 1; i < 4; i++)
-      g_player_enabled[i] = false;
+      g_player_mode[i] = PLAYER_CTRL_OFF;
   }
 
   int count = 1;
   for (int i = 1; i < 4; i++)
-    if (g_player_enabled[i]) count = i + 1;
+    if (g_player_mode[i] != PLAYER_CTRL_OFF) count = i + 1;
   g_player_count = count;
+}
+
+static const char* ctrl_player_mode_label(int mode)
+{
+  switch (mode) {
+    case PLAYER_CTRL_WIICLASSIC_GC: return "WIICLASSIC/GAMECUBE";
+    case PLAYER_CTRL_OFF:           return "OFF";
+    default:                        return "WIIMOTE/GAMECUBE";
+  }
 }
 
 bool displayControlsMenu()
 {
   int selectedRow = CTRL_LAUNCH;
-  ctrl_sync_player_enabled_from_count();
+  ctrl_sync_player_mode_from_count();
 
   // Debounce: don't let the A press that confirmed the options menu
   // bleed through as an instant LAUNCH here.
@@ -1177,8 +1211,8 @@ bool displayControlsMenu()
     for (int p = 0; p < 4; p++)
     {
       int row = CTRL_PLAYER1 + p;
-      const char *label = g_player_enabled[p] ? "WIIMOTE/GAMECUBE" : "OFF";
-      printf("%s PLAYER %d        : [< %-17s >]\n",
+      const char *label = ctrl_player_mode_label(g_player_mode[p]);
+      printf("%s PLAYER %d        : [< %-20s >]\n",
              (selectedRow == row) ? ">" : " ", p + 1, label);
     }
 
@@ -1229,10 +1263,10 @@ bool displayControlsMenu()
     else if (pressed & WPAD_BUTTON_LEFT)
     {
       switch (selectedRow) {
-        case CTRL_PLAYER1: ctrl_toggle_player_enabled(0); break;
-        case CTRL_PLAYER2: ctrl_toggle_player_enabled(1); break;
-        case CTRL_PLAYER3: ctrl_toggle_player_enabled(2); break;
-        case CTRL_PLAYER4: ctrl_toggle_player_enabled(3); break;
+        case CTRL_PLAYER1: ctrl_cycle_player_mode(0, -1); break;
+        case CTRL_PLAYER2: ctrl_cycle_player_mode(1, -1); break;
+        case CTRL_PLAYER3: ctrl_cycle_player_mode(2, -1); break;
+        case CTRL_PLAYER4: ctrl_cycle_player_mode(3, -1); break;
         case CTRL_TYPE:    g_controller_type = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
         default: break;
       }
@@ -1240,10 +1274,10 @@ bool displayControlsMenu()
     else if (pressed & WPAD_BUTTON_RIGHT)
     {
       switch (selectedRow) {
-        case CTRL_PLAYER1: ctrl_toggle_player_enabled(0); break;
-        case CTRL_PLAYER2: ctrl_toggle_player_enabled(1); break;
-        case CTRL_PLAYER3: ctrl_toggle_player_enabled(2); break;
-        case CTRL_PLAYER4: ctrl_toggle_player_enabled(3); break;
+        case CTRL_PLAYER1: ctrl_cycle_player_mode(0, 1); break;
+        case CTRL_PLAYER2: ctrl_cycle_player_mode(1, 1); break;
+        case CTRL_PLAYER3: ctrl_cycle_player_mode(2, 1); break;
+        case CTRL_PLAYER4: ctrl_cycle_player_mode(3, 1); break;
         case CTRL_TYPE:    g_controller_type = (g_controller_type + 1) % kControllerTypeCount; break;
         default: break;
       }

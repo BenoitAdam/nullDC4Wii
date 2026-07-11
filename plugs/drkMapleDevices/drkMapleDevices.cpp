@@ -12,6 +12,7 @@
 // - Added GameCube D-Pad support
 // - Added Wii Nunchuck analog stick support
 // - Added Wii Nunchuck Z button as Dreamcast L trigger
+// - Added Wii Classic Controller support (buttons, analog stick, shoulders)
 
 #include "plugins/plugin_header.h"
 #include <string.h>
@@ -77,60 +78,77 @@ static inline s8 ClampAnalogValue(s32 value, s32 deadzone)
  * @param wiiButtons Wii Remote button state
  * @param gcButtons GameCube controller button state
  * @param nunchuckButtons Nunchuck button state
+ * @param classicButtons Classic Controller button state (WPAD_CLASSIC_BUTTON_* bits, 0 if not attached)
  */
-static void MapButtons(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButtons)
+static void MapButtons(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButtons, u32 classicButtons)
 {
     // Initialize to all buttons released (bits set = released in Dreamcast format)
     kcode[port] = 0xFFFF;
-    
+
     // Face buttons - A/B/X/Y
-    if (wiiButtons & WPAD_BUTTON_A || gcButtons & PAD_BUTTON_A)
+    if (wiiButtons & WPAD_BUTTON_A || gcButtons & PAD_BUTTON_A || classicButtons & WPAD_CLASSIC_BUTTON_A)
         kcode[port] &= ~key_CONT_A;
-    
-    if (wiiButtons & WPAD_BUTTON_B || gcButtons & PAD_BUTTON_B)
+
+    if (wiiButtons & WPAD_BUTTON_B || gcButtons & PAD_BUTTON_B || classicButtons & WPAD_CLASSIC_BUTTON_B)
         kcode[port] &= ~key_CONT_B;
-    
-    if (wiiButtons & WPAD_BUTTON_1 || gcButtons & PAD_BUTTON_Y)
+
+    if (wiiButtons & WPAD_BUTTON_1 || gcButtons & PAD_BUTTON_Y || classicButtons & WPAD_CLASSIC_BUTTON_Y)
         kcode[port] &= ~key_CONT_Y;
-    
-    if (wiiButtons & WPAD_BUTTON_2 || gcButtons & PAD_BUTTON_X)
+
+    if (wiiButtons & WPAD_BUTTON_2 || gcButtons & PAD_BUTTON_X || classicButtons & WPAD_CLASSIC_BUTTON_X)
         kcode[port] &= ~key_CONT_X;
-    
-    // Start button - HOME on Wiimote, START on GameCube
-    if (wiiButtons & WPAD_BUTTON_HOME || gcButtons & PAD_BUTTON_START)
+
+    // Start button - HOME on Wiimote, START on GameCube/Classic Controller
+    if (wiiButtons & WPAD_BUTTON_HOME || gcButtons & PAD_BUTTON_START || classicButtons & WPAD_CLASSIC_BUTTON_HOME)
         kcode[port] &= ~key_CONT_START;
-    
-    // Shoulder buttons - MINUS=L, PLUS=R on Wiimote; L/R on GameCube; Nunchuck Z=L
-    if (wiiButtons & WPAD_BUTTON_MINUS || gcButtons & PAD_TRIGGER_L || nunchuckButtons & WPAD_NUNCHUK_BUTTON_Z)
+
+    // Shoulder buttons - MINUS=L, PLUS=R on Wiimote; L/R on GameCube; Nunchuck Z=L;
+    // ZL/L=L, ZR/R=R on Classic Controller
+    if (wiiButtons & WPAD_BUTTON_MINUS || gcButtons & PAD_TRIGGER_L || nunchuckButtons & WPAD_NUNCHUK_BUTTON_Z
+        || classicButtons & (WPAD_CLASSIC_BUTTON_ZL | WPAD_CLASSIC_BUTTON_FULL_L))
         kcode[port] &= ~key_CONT_D;  // Left trigger
-    
-    if (wiiButtons & WPAD_BUTTON_PLUS || gcButtons & PAD_TRIGGER_R)
+
+    if (wiiButtons & WPAD_BUTTON_PLUS || gcButtons & PAD_TRIGGER_R
+        || classicButtons & (WPAD_CLASSIC_BUTTON_ZR | WPAD_CLASSIC_BUTTON_FULL_R))
         kcode[port] &= ~key_CONT_C;  // Right trigger
-    
+
     // D-Pad mapping - Wii Remote D-Pad
     if (wiiButtons & WPAD_BUTTON_UP)
         kcode[port] &= ~key_CONT_DPAD_UP;
-    
+
     if (wiiButtons & WPAD_BUTTON_DOWN)
         kcode[port] &= ~key_CONT_DPAD_DOWN;
-    
+
     if (wiiButtons & WPAD_BUTTON_LEFT)
         kcode[port] &= ~key_CONT_DPAD_LEFT;
-    
+
     if (wiiButtons & WPAD_BUTTON_RIGHT)
         kcode[port] &= ~key_CONT_DPAD_RIGHT;
-    
+
     // D-Pad mapping - GameCube Controller D-Pad
     if (gcButtons & PAD_BUTTON_UP)
         kcode[port] &= ~key_CONT_DPAD_UP;
-    
+
     if (gcButtons & PAD_BUTTON_DOWN)
         kcode[port] &= ~key_CONT_DPAD_DOWN;
-    
+
     if (gcButtons & PAD_BUTTON_LEFT)
         kcode[port] &= ~key_CONT_DPAD_LEFT;
-    
+
     if (gcButtons & PAD_BUTTON_RIGHT)
+        kcode[port] &= ~key_CONT_DPAD_RIGHT;
+
+    // D-Pad mapping - Classic Controller D-Pad
+    if (classicButtons & WPAD_CLASSIC_BUTTON_UP)
+        kcode[port] &= ~key_CONT_DPAD_UP;
+
+    if (classicButtons & WPAD_CLASSIC_BUTTON_DOWN)
+        kcode[port] &= ~key_CONT_DPAD_DOWN;
+
+    if (classicButtons & WPAD_CLASSIC_BUTTON_LEFT)
+        kcode[port] &= ~key_CONT_DPAD_LEFT;
+
+    if (classicButtons & WPAD_CLASSIC_BUTTON_RIGHT)
         kcode[port] &= ~key_CONT_DPAD_RIGHT;
 }
 
@@ -139,20 +157,20 @@ static void MapButtons(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButt
  * @param port Controller port (0-3)
  * @param stickX X-axis value
  * @param stickY Y-axis value (corrected for GameCube inversion)
- * @param nunchuckX Nunchuck X-axis value
- * @param nunchuckY Nunchuck Y-axis value
+ * @param expStickX Wiimote expansion (Nunchuck or Classic Controller) X-axis value
+ * @param expStickY Wiimote expansion (Nunchuck or Classic Controller) Y-axis value
  */
-static void MapAnalogStick(u32 port, s32 stickX, s32 stickY, s32 nunchuckX, s32 nunchuckY)
+static void MapAnalogStick(u32 port, s32 stickX, s32 stickY, s32 expStickX, s32 expStickY)
 {
-    // Prioritize GameCube analog stick, fall back to Nunchuck
+    // Prioritize GameCube analog stick, fall back to the Wiimote expansion stick
     s32 finalX = stickX;
     s32 finalY = stickY;
-    
-    // If GameCube stick is not being used (near center), use Nunchuck instead
+
+    // If GameCube stick is not being used (near center), use the expansion stick instead
     if (abs(stickX) < ANALOG_DEADZONE && abs(stickY) < ANALOG_DEADZONE)
     {
-        finalX = nunchuckX;
-        finalY = nunchuckY;
+        finalX = expStickX;
+        finalY = expStickY;
     }
     
     // Apply dead zone and clamp values
@@ -168,21 +186,24 @@ static void MapAnalogStick(u32 port, s32 stickX, s32 stickY, s32 nunchuckX, s32 
 }
 
 /**
- * Maps trigger inputs from GameCube controller, Wiimote +/-, and Nunchuck Z
+ * Maps trigger inputs from GameCube controller, Wiimote +/-, Nunchuck Z, and Classic Controller ZL/ZR
  * @param port Controller port (0-3)
  * @param wiiButtons Wii Remote button state
  * @param gcButtons GameCube button state
  * @param nunchuckButtons Nunchuck button state
+ * @param classicButtons Classic Controller button state (0 if not attached)
  */
-static void MapTriggers(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButtons)
+static void MapTriggers(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButtons, u32 classicButtons)
 {
     // Map L/R triggers (Dreamcast uses 0-255 range)
     // Note: PAD_TriggerL/R would give analog values, but using digital for simplicity
-    // Wiimote PLUS / Nunchuck Z mirror the digital C/D bits set in MapButtons(),
-    // since some games (e.g. Daytona USA, Chu Chu Rocket) read the analog
-    // trigger value instead of the digital button bit.
-    rt[port] = (gcButtons & PAD_TRIGGER_R || wiiButtons & WPAD_BUTTON_PLUS) ? 255 : 0;
-    lt[port] = (gcButtons & PAD_TRIGGER_L || wiiButtons & WPAD_BUTTON_MINUS || nunchuckButtons & WPAD_NUNCHUK_BUTTON_Z) ? 255 : 0;
+    // Wiimote PLUS / Nunchuck Z / Classic ZR,ZL mirror the digital C/D bits set in
+    // MapButtons(), since some games (e.g. Daytona USA, Chu Chu Rocket) read the
+    // analog trigger value instead of the digital button bit.
+    rt[port] = (gcButtons & PAD_TRIGGER_R || wiiButtons & WPAD_BUTTON_PLUS
+                || classicButtons & (WPAD_CLASSIC_BUTTON_ZR | WPAD_CLASSIC_BUTTON_FULL_R)) ? 255 : 0;
+    lt[port] = (gcButtons & PAD_TRIGGER_L || wiiButtons & WPAD_BUTTON_MINUS || nunchuckButtons & WPAD_NUNCHUK_BUTTON_Z
+                || classicButtons & (WPAD_CLASSIC_BUTTON_ZL | WPAD_CLASSIC_BUTTON_FULL_L)) ? 255 : 0;
 }
 
 /**
@@ -202,7 +223,8 @@ static inline void CheckExitCombination(u32 wiiButtons, u32 gcButtons)
 
 /**
  * Updates the input state for a specific controller port
- * Reads from both Wii Remote and GameCube controller and maps to Dreamcast format
+ * Reads from Wii Remote (+ Nunchuck/Classic Controller expansion) and GameCube
+ * controller, and maps everything to Dreamcast format.
  * @param port Controller port (0-3)
  */
 void UpdateInputState(u32 port)
@@ -210,40 +232,53 @@ void UpdateInputState(u32 port)
     // Validate port number
     if (port >= MAX_CONTROLLERS)
         return;
-    
+
     // Scan for new controller input
     PAD_ScanPads();
     WPAD_ScanPads();
-    
+
     // Read current button states
     u32 wiiButtons = WPAD_ButtonsHeld(port);
     u32 gcButtons = PAD_ButtonsHeld(port);
-    
-    // Read Nunchuck state if available
+
+    // Read Wiimote expansion device state (Nunchuck or Classic Controller;
+    // the two are mutually exclusive, only one can be plugged in at a time)
     WPADData *wpadData = WPAD_Data(port);
     u32 nunchuckButtons = 0;
-    s32 nunchuckX = 0;
-    s32 nunchuckY = 0;
-    
+    u32 classicButtons = 0;
+    s32 expStickX = 0;
+    s32 expStickY = 0;
+
     if (wpadData && wpadData->exp.type == WPAD_EXP_NUNCHUK)
     {
         nunchuckButtons = wpadData->exp.nunchuk.btns;
         // Scale Nunchuck joystick (0-255 range) to match GameCube (-128 to 127)
-        nunchuckX = (s32)(wpadData->exp.nunchuk.js.pos.x) - 128;
-        nunchuckY = (s32)(wpadData->exp.nunchuk.js.pos.y) - 128;
+        expStickX = (s32)(wpadData->exp.nunchuk.js.pos.x) - 128;
+        expStickY = (s32)(wpadData->exp.nunchuk.js.pos.y) - 128;
     }
-    
+    else if (wpadData && wpadData->exp.type == WPAD_EXP_CLASSIC)
+    {
+        // WPAD_CLASSIC_BUTTON_* bits alias WPAD_NUNCHUK_BUTTON_* bits within
+        // wiiButtons (both expansions share the upper 16 bits of the word),
+        // so only treat them as Classic Controller buttons once exp.type
+        // confirms a Classic Controller is actually attached.
+        classicButtons = wiiButtons & 0xFFFF0000;
+        // Scale Classic Controller left stick (0-255 range) to match GameCube (-128 to 127)
+        expStickX = (s32)(wpadData->exp.classic.ljs.pos.x) - 128;
+        expStickY = (s32)(wpadData->exp.classic.ljs.pos.y) - 128;
+    }
+
     // Read GameCube analog stick position
     s32 stickX = PAD_StickX(port);
     s32 stickY = PAD_StickY(port);
-    
+
     // Check for exit combination
     CheckExitCombination(wiiButtons, gcButtons);
-    
+
     // Map all inputs to Dreamcast controller format
-    MapButtons(port, wiiButtons, gcButtons, nunchuckButtons);
-    MapAnalogStick(port, stickX, stickY, nunchuckX, nunchuckY);
-    MapTriggers(port, wiiButtons, gcButtons, nunchuckButtons);
+    MapButtons(port, wiiButtons, gcButtons, nunchuckButtons, classicButtons);
+    MapAnalogStick(port, stickX, stickY, expStickX, expStickY);
+    MapTriggers(port, wiiButtons, gcButtons, nunchuckButtons, classicButtons);
 }
 
 /**
