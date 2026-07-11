@@ -10,6 +10,9 @@
 	TODO: Full TA emulation is still needed for accurate rendering.
 */
 
+// PVR X-scaler preset (see wii/game_presets.h, wii/main.cpp).
+extern "C" int get_x_scaler_preset();
+
 u8 regs[RegSize];
 
 u32 FASTCALL libPvr_ReadReg(u32 addr, u32 size)
@@ -79,6 +82,17 @@ void FASTCALL libPvr_WriteReg(u32 paddr, u32 data, u32 size)
 		case SPG_LOAD_addr:
 			PvrReg(addr, u32) = data;
 			CalculateSync();
+			return;
+
+		// ---- SCALER_CTL: hscale bit feeds the renderer's canvas width ----
+		// Only recalculate with the x_scaler preset on: legacy behavior never
+		// resynced on this write, and preset-off must stay bit-identical.
+		// (Omicron The Nomad Soul / Wacky Races set hscale for 1280-wide
+		// 2:1-SSAA rendering — see CalculateSync() in SPG.cpp.)
+		case SCALER_CTL_addr:
+			PvrReg(addr, u32) = data;
+			if (get_x_scaler_preset())
+				CalculateSync();
 			return;
 
 		default:

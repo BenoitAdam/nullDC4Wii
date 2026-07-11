@@ -13,6 +13,10 @@
 extern "C" int get_speed_limiter_preset();
 #define SPEED_LIMITER() (get_speed_limiter_preset() != 0)
 
+// PVR X-scaler preset (see wii/game_presets.h, wii/main.cpp).
+extern "C" int get_x_scaler_preset();
+#define X_SCALER() (get_x_scaler_preset() != 0)
+
 u32 spg_InVblank = 0;
 s32 spg_ScanlineSh4CycleCounter = 0;
 u32 spg_ScanlineCount = 512;
@@ -40,9 +44,13 @@ void CalculateSync()
         (u64)SH4_CLOCK * (u64)(SPG_LOAD.hcount + 1) / (u64)pixel_clock
     );
 
-    // SCALER_CTL.hscale halves the active horizontal resolution (low-res 2D
-    // titles), independently of the vertical interlace/240p scale below.
-    float scale_x = SCALER_CTL.hscale ? 0.5f : 1.0f;
+    // SCALER_CTL.hscale: the TA renders the scene at DOUBLE width (1280) and
+    // the video scaler halves it 2:1 on framebuffer write (horizontal SSAA —
+    // Omicron The Nomad Soul, Wacky Races). With the x_scaler preset on, widen
+    // the projected canvas to 2x so the 1280-wide geometry maps to the full
+    // screen; without it only the left half shows. Preset off keeps the legacy
+    // 640 canvas (SCALER_CTL writes don't even resync then — see regs.cpp).
+    float scale_x = (X_SCALER() && SCALER_CTL.hscale) ? 2.0f : 1.0f;
 
     if (SPG_CONTROL.interlace)
     {

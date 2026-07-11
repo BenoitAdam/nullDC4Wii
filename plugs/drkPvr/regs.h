@@ -303,7 +303,12 @@ union SCALER_CTL_type
 		u32 hscale : 1 ;	//16-16
 		u32 interlace : 1;	//17-17
 		u32 fieldselect : 1;//18-18
+		u32 res : 13;	//31-19
 #else
+		// Big-endian bitfields fill from the MSB down, so the unused top
+		// bits MUST be declared or every field lands 13 bits too high
+		// (hscale read bit 29 instead of 16 — broke the X-scaler preset).
+		u32 res : 13;	//31-19
 		u32 fieldselect : 1;//18-18
 		u32 interlace : 1;	//17-17
 		u32 hscale : 1 ;	//16-16

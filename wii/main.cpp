@@ -97,6 +97,12 @@ extern "C" {
   int get_ppz_write_preset() { return g_ppz_write_preset; }
 }
 
+int g_x_scaler_preset = 1; // 0=off (legacy), 1=PVR SCALER_CTL.hscale support (Omicron / Wacky Races render 1280 wide, scaler halves 2:1)
+
+extern "C" {
+  int get_x_scaler_preset() { return g_x_scaler_preset; }
+}
+
 int g_framebuffer_2d = 0; // 1 to activate 2D Framebuffer
 
 extern "C" {

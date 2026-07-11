@@ -3353,10 +3353,11 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 static bool s_did_3d_render = false;
 
 // Set by SPG.cpp's CalculateSync() from SPG_CONTROL/SCALER_CTL whenever the
-// video timing changes. 240p (non-interlaced NTSC/PAL) modes and SCALER_CTL's
-// hscale bit halve the active resolution on real hardware, so the TA-rendered
-// scene only spans a fraction of the nominal 640x480 canvas. DoRender() uses
-// these to shrink the projected canvas size accordingly.
+// video timing changes. 240p (non-interlaced NTSC/PAL) modes halve the active
+// vertical resolution (scale 0.5), and with the x_scaler preset on,
+// SCALER_CTL's hscale bit means the TA renders at DOUBLE width — 1280 — that
+// the video scaler halves 2:1 on framebuffer write (scale_x 2.0; Omicron,
+// Wacky Races). DoRender() sizes the projected canvas from these.
 static float g_fb_scale_x = 1.0f;
 static float g_fb_scale_y = 1.0f;
 
@@ -3683,10 +3684,10 @@ void DoRender()
   }
     */
 
-  // 240p (non-interlaced NTSC/PAL) and SCALER_CTL.hscale modes only use a
-  // fraction of the nominal 640x480 canvas (real hardware halves the active
-  // scanline/pixel count) — shrink the canvas so geometry submitted in that
-  // smaller space still fills the whole output instead of a quarter/half of it.
+  // 240p (non-interlaced NTSC/PAL) modes only use a fraction of the nominal
+  // 640x480 canvas (shrink it so the scene still fills the output), while
+  // SCALER_CTL.hscale games render 1280 wide for 2:1 horizontal SSAA (grow it
+  // so the whole scene shows instead of just the left half) — see SetFbScale.
   float dc_width = 640.f * g_fb_scale_x;
   float dc_height = 480.f * g_fb_scale_y;
   if (s_rtt_pass)

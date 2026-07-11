@@ -124,6 +124,17 @@
                                 background), at the cost of an extra texture
                                 bind + polygon draw every frame;
                                 off (default, legacy) draws nothing extra.
+        x_scaler=on         <- on/off, PVR horizontal (X) scaler support (see
+                                plugs/drkPvr/SPG.cpp X_SCALER() and regs.cpp
+                                SCALER_CTL). A few games (Omicron The Nomad
+                                Soul, Wacky Races) set SCALER_CTL.hscale and
+                                render the scene 1280 pixels wide; real
+                                hardware's video scaler then halves it 2:1
+                                on framebuffer write (horizontal SSAA).
+                                on widens the projected canvas to 1280 so
+                                the whole scene maps to the screen; off
+                                (default, legacy) leaves the canvas at 640,
+                                showing only the left half in those games.
         split_screen=on     <- on/off, split-screen multiplayer (see gxRend.cpp
                                 SPLIT_SCREEN()). 2P games (Daytona USA
                                 multiplayer) render one pass per player
@@ -163,6 +174,7 @@ extern int g_advanced_alpha_preset;
 extern int g_frameskip_preset;
 extern int g_texture_cache_preset;
 extern int g_ppz_write_preset;
+extern int g_x_scaler_preset;
 extern int g_4bpp_preset;
 extern int g_8bpp_preset;
 extern int g_jojo_fix_preset;
@@ -207,6 +219,7 @@ struct GamePreset
     int frameskip;
     int tex_cache;
     int ppz_write;
+    int x_scaler;
     int bpp4;
     int bpp8;
     int jojo_fix;
@@ -416,6 +429,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "frameskip"))  p->frameskip  = parse_frameskip(val);
     else if (key_eq(key, "tex_cache"))  p->tex_cache  = parse_tex_cache(val);
     else if (key_eq(key, "ppz_write"))  p->ppz_write  = parse_bool(val);
+    else if (key_eq(key, "x_scaler"))   p->x_scaler   = parse_bool(val);
     else if (key_eq(key, "4bpp"))       p->bpp4       = parse_bpp(val);
     else if (key_eq(key, "8bpp"))       p->bpp8       = parse_bpp(val);
     else if (key_eq(key, "jojo_fix"))   p->jojo_fix   = parse_bool(val);
@@ -455,6 +469,7 @@ static void preset_clear(GamePreset* cur)
     cur->vertex_color_fix = -1;
     cur->players  = cur->controller                                  = -1;
     cur->ppz_write = -1;
+    cur->x_scaler = -1;
     cur->framebuffer_2d = -1;
     cur->fmv_format = -1;
     cur->blend_mode = -1;
@@ -483,6 +498,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->frameskip  >= 0) { g_frameskip_preset      = p->frameskip;  printf("  frameskip  -> %d\n", p->frameskip);  }
     if (p->tex_cache  >= 0) { g_texture_cache_preset  = p->tex_cache;  printf("  tex_cache  -> %d\n", p->tex_cache);  }
     if (p->ppz_write  >= 0) { g_ppz_write_preset      = p->ppz_write;  printf("  ppz_write  -> %d\n", p->ppz_write);  }
+    if (p->x_scaler   >= 0) { g_x_scaler_preset       = p->x_scaler;   printf("  x_scaler   -> %d\n", p->x_scaler);   }
     if (p->bpp4       >= 0) { g_4bpp_preset           = p->bpp4;       printf("  4bpp       -> %d\n", p->bpp4);       }
     if (p->bpp8       >= 0) { g_8bpp_preset           = p->bpp8;       printf("  8bpp       -> %d\n", p->bpp8);       }
     if (p->jojo_fix   >= 0) { g_jojo_fix_preset       = p->jojo_fix;   printf("  jojo_fix   -> %d\n", p->jojo_fix);   }
