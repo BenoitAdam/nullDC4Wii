@@ -1,0 +1,9 @@
+put your games (GDI/CDI) here
+
+
+Create 1 folder / GDI it's better
+
+
+Take a look a game_presets.cfg
+
+match your rom name with the preset name.
