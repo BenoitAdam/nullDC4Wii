@@ -1,0 +1,21 @@
+Real wii => put bios here
+
+Dolphin Emulator => put bios in SD:/data
+
+BIOS :
+======
+
+Mandatory BIOS files in SD:/data/
+
+dc_boot.bin
+dc_flash.bin
+fsca-table.bin
+
+Optional BIOS files in SD:/data/
+
+dc_flash_wb.bin
+syscalls.bin
+IP.bin
+
+dc_nvmem.bin
+vmu_default.bin
