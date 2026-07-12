@@ -105,12 +105,25 @@ CXXFLAGS += -fno-exceptions      # Reduce code size
 # Linker Flags
 LDFLAGS  := -g $(MACHDEP) -Wl,-Map,$(TARGET).map
 
-# Enable link-time optimization for cross-module inlining (pvrLock optimization)
-# (compilation didnt worked but keeping for now for info)
-# CFLAGS += -flto
-# LDFLAGS += -flto
-# Optional: More aggressive optimization
-# CFLAGS += -O3 -fomit-frame-pointer
+#---------------------------------------------------------------------------------
+# Link-time optimization (opt-in: uncomment the LTO := 1 line)
+#
+# The earlier bare "CFLAGS += -flto" attempt failed to build; two known causes
+# are fixed here:
+#   1. -save-temps is incompatible with LTO on many GCC versions — it is
+#      filtered out of both flag sets when LTO is enabled.
+#   2. With LTO the actual optimization happens at LINK time, so the linker
+#      invocation needs -flto AND the -O level too, not just the compiles.
+# -ffat-lto-objects keeps normal object code in the .o files so plain ar/ranlib
+# still work without the gcc-ar wrapper.
+# !!! run vs_clean first when toggling this — stale non-LTO objects will not link !!!
+#---------------------------------------------------------------------------------
+# LTO := 1
+ifdef LTO
+CFLAGS   := $(filter-out -save-temps,$(CFLAGS)) -flto -ffat-lto-objects
+CXXFLAGS := $(filter-out -save-temps,$(CXXFLAGS)) -flto -ffat-lto-objects
+LDFLAGS  += -flto -O3
+endif
 #---------------------------------------------------------------------------------
 # Libraries
 #---------------------------------------------------------------------------------

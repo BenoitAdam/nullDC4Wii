@@ -339,7 +339,10 @@ sh4dec(i1111_0011_1111_1101)
 {
 	//fpscr.SZ is bit 20
 	block.Emit(shop_xor,reg_fpscr,reg_fpscr,mk_imm(1<<20));
-	block.Emit(shop_sync_fpscr);
+	// flags=1: SZ-only toggle, FPSCR.FR cannot change -> the recompiler may
+	// skip its pinned-FPU flush/reload bracket around UpdateFPSCR. frchg and
+	// the ldc/lds FPSCR forms keep flags=0 (conservative: FR may change).
+	block.Emit(shop_sync_fpscr,shil_param(),shil_param(),shil_param(),1);
 	state.cpu.FSZ64=!state.cpu.FSZ64;
 	
 	if (!state.cpu.is_delayslot)
@@ -397,6 +400,20 @@ sh4dec(i0100_nnnn_0010_0101)
 	
 	// OR in old T (at bit 31)
 	block.Emit(shop_or, rn, rn, reg_temp);
+}
+
+//xtrct <REG_M>,<REG_N>: Rn = (Rm << 16) | (Rn >> 16)
+//(was interpreter fallback; also correct for n==m — degenerates to a 16-rotate)
+sh4dec(i0010_nnnn_mmmm_1101)
+{
+	u32 n = GetN(op);
+	u32 m = GetM(op);
+	shil_param rn = mk_regi(reg_r0 + n);
+	shil_param rm = mk_regi(reg_r0 + m);
+
+	block.Emit(shop_shr, reg_temp, rn, mk_imm(16));
+	block.Emit(shop_shl, rn, rm, mk_imm(16));
+	block.Emit(shop_or,  rn, rn, reg_temp);
 }
 
 //tas.b @<REG_N>

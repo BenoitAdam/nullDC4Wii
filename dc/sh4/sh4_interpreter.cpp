@@ -93,6 +93,20 @@ static void ApplyAccuracyPreset()
 	}
 }
 
+// Public wrappers so the recompiler can latch the same preset values.
+// The JIT mainloop is emitted ONCE (first run) with the timeslice baked in,
+// so the preset must be applied before ngen_mainloop() emits it — see
+// recSh4_Run() in rec_v2/driver.cpp.
+void Sh4_ApplyAccuracyPreset()
+{
+	ApplyAccuracyPreset();
+}
+
+s32 sh4_GetTimeslice()
+{
+	return s_timeslice;
+}
+
 // -------------------------------------------------------------------------
 // Sh4_int_Run
 // -------------------------------------------------------------------------

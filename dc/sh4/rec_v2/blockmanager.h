@@ -28,6 +28,16 @@ extern "C" {
 // Enable statistics tracking (disable in release builds for better performance)
 // #define BM_ENABLE_STATS
 
+// JIT dispatch lookup counters. When 1, the recompiler's inlined dynamic-jump
+// fast path increments DynarecBlock::lookups on every cache hit (3 extra
+// instructions per dynamic branch: lwz/addi/stw) and bm_GetCode promotes a
+// block into cache[] only when its count exceeds the cached block's by a
+// threshold. When 0, the JIT fast path skips the increment and bm_GetCode
+// uses simple MRU promotion (last slow-path hit owns the cache slot); the
+// C-side lookups++ is kept so bucket-overflow eviction still has a victim
+// policy. Set to 1 to A/B against the old behaviour.
+#define BM_JIT_LOOKUP_STATS 0
+
 typedef void DynarecCodeEntry();
 
 // Core block manager functions (compatible with original API)

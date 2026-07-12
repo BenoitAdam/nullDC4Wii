@@ -102,14 +102,23 @@ DynarecCodeEntry* FASTCALL bm_GetCode(u32 addr)
 		if (block.addr == addr)
 		{
 			block.lookups++;
-			
+
+#if BM_JIT_LOOKUP_STATS
 			// Update cache if this block is accessed more frequently
 			// Use a threshold to prevent thrashing (only update if significantly better)
 			if (block.lookups > cache[idx]->lookups + 2)
 			{
 				cache[idx] = &block;
 			}
-			
+#else
+			// MRU promotion: the JIT fast path no longer maintains lookup
+			// counts, so the threshold compare above would read a stale
+			// cached count. Last slow-path hit simply takes the slot — the
+			// common case (one hot block per bucket) then always hits the
+			// JIT-inlined cache and never comes back here.
+			cache[idx] = &block;
+#endif
+
 #ifdef BM_ENABLE_STATS
 			bm_stats_hits++;
 #endif

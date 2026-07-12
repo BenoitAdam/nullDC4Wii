@@ -540,6 +540,83 @@ shil_opc_end()
 shil_opc(fseteq) BIN_OP_FU(==) shil_opc_end()
 shil_opc(fsetgt) BIN_OP_FU(>)  shil_opc_end()
 
+// ---------------------------------------------------------------------------
+// Carry/borrow arithmetic (SH4 addc / subc / negc) and swap.b.
+//
+// These previously had no SHIL op at all and fell back to the interpreter
+// (shop_ifb — full pinned-register flush/reload + C call per instruction).
+// rd = result, rd2 = carry/borrow out (the T bit, always 0/1 on input).
+// The u64 returns are packed with the same pointer-cast trick as div32u
+// (see the note there): word [0] always lands in the FIRST return register
+// on both endians, which is what CPT_u64rvL stores to rd.
+// ---------------------------------------------------------------------------
+shil_opc(adc)   // rd = r1 + r2 + T ; rd2 = carry out
+shil_canonical(
+    u64, f1, (u32 r1, u32 r2, u32 T),
+    u64 res = (u64)r1 + (u64)r2 + (u64)T;
+    u64 rv;
+    ((u32*)&rv)[0] = (u32)res;
+    ((u32*)&rv)[1] = (u32)(res >> 32);
+    return rv;
+)
+shil_compile(
+    shil_cf_arg_u32(rs3);
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+shil_opc(sbc)   // rd = r1 - r2 - T ; rd2 = borrow out
+shil_canonical(
+    u64, f1, (u32 r1, u32 r2, u32 T),
+    u32 res    = r1 - r2 - T;
+    u32 borrow = (((u64)r2 + (u64)T) > (u64)r1) ? 1u : 0u;
+    u64 rv;
+    ((u32*)&rv)[0] = res;
+    ((u32*)&rv)[1] = borrow;
+    return rv;
+)
+shil_compile(
+    shil_cf_arg_u32(rs3);
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+shil_opc(negc)  // rd = 0 - r1 - T ; rd2 = borrow out
+shil_canonical(
+    u64, f1, (u32 r1, u32 T),
+    u32 res    = 0u - r1 - T;
+    u32 borrow = (r1 | T) ? 1u : 0u;
+    u64 rv;
+    ((u32*)&rv)[0] = res;
+    ((u32*)&rv)[1] = borrow;
+    return rv;
+)
+shil_compile(
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+shil_opc(swaplb) // rd = swap.b r1: swap the two LOW bytes, high half unchanged
+shil_canonical(
+    u32, f1, (u32 r1),
+    return (r1 & 0xFFFF0000u) | ((r1 & 0xFFu) << 8) | ((r1 >> 8) & 0xFFu);
+)
+shil_compile(
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u32(rd);
+)
+shil_opc_end()
+
 SHIL_END
 
 // ===========================================================================
