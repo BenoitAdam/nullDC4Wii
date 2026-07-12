@@ -106,6 +106,12 @@ extern "C" {
   int get_x_scaler_preset() { return g_x_scaler_preset; }
 }
 
+int g_canvas_width_preset = 0; // 0=off (legacy 640 canvas); else forced canvas width in 240p modes (SF3 Double Impact: 384, the CPS3 arcade width)
+
+extern "C" {
+  int get_canvas_width_preset() { return g_canvas_width_preset; }
+}
+
 int g_framebuffer_2d = 0; // 1 to activate 2D Framebuffer
 
 extern "C" {
@@ -653,7 +659,9 @@ void displayAccuracyMenu()
 #define OPT_ASYNC_RENDER 30
 #define OPT_TMEM_CACHE  31
 #define OPT_BG_POLY     32
-#define OPT_ROW_COUNT   33
+#define OPT_X_SCALER    33
+#define OPT_CANVAS_WIDTH 34
+#define OPT_ROW_COUNT   35
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -678,6 +686,8 @@ static int opt_row_page(int row)
     case OPT_ASYNC_RENDER:
     case OPT_TMEM_CACHE:
     case OPT_BG_POLY:
+    case OPT_X_SCALER:
+    case OPT_CANVAS_WIDTH:
       return 1;
     default:
       return 0;
@@ -1008,6 +1018,24 @@ bool displayOptionsMenu()
     }
     printf(" (bg gradient/texture)");
     printf("\n");
+
+    // --- Row: PVR horizontal X-Scaler ---
+    printf("%s X SCALER        : ", (selectedRow == OPT_X_SCALER) ? ">" : " ");
+    switch (g_x_scaler_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" ON for Omicron/Wacky Races");
+    printf("\n");
+
+    // --- Row: Forced canvas width (240p scenes) ---
+    printf("%s CANVAS WIDTH    : ", (selectedRow == OPT_CANVAS_WIDTH) ? ">" : " ");
+    if (g_canvas_width_preset <= 0)
+      printf("[< OFF (640, LEGACY) >]");
+    else
+      printf("[< %-4d              >]", g_canvas_width_preset);
+    printf(" (SF3 double impact=384)");
+    printf("\n");
     } // end page 1
 
 
@@ -1071,6 +1099,12 @@ bool displayOptionsMenu()
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
         case OPT_BG_POLY:    g_bg_poly_preset        = (g_bg_poly_preset         + 1) % 2; break;
+        case OPT_X_SCALER:   g_x_scaler_preset       = (g_x_scaler_preset        + 1) % 2; break;
+        case OPT_CANVAS_WIDTH:
+          if (g_canvas_width_preset <= 0)        g_canvas_width_preset = 1280;
+          else if (g_canvas_width_preset <= 320) g_canvas_width_preset = 0;
+          else                                   g_canvas_width_preset -= 16;
+          break;
         default: break;
       }
     }
@@ -1106,6 +1140,12 @@ bool displayOptionsMenu()
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
         case OPT_BG_POLY:    g_bg_poly_preset        = (g_bg_poly_preset         + 1) % 2; break;
+        case OPT_X_SCALER:   g_x_scaler_preset       = (g_x_scaler_preset        + 1) % 2; break;
+        case OPT_CANVAS_WIDTH:
+          if (g_canvas_width_preset <= 0)         g_canvas_width_preset = 320;
+          else if (g_canvas_width_preset >= 1280) g_canvas_width_preset = 0;
+          else                                    g_canvas_width_preset += 16;
+          break;
         default: break;
       }
     }
@@ -1802,6 +1842,11 @@ int main(int argc, wchar *argv[])
     printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("BG Polygon     : %s\n", g_bg_poly_preset ? "ON (CORRECT)" : "OFF (FASTER)");
+    printf("X Scaler       : %s\n", g_x_scaler_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
+    if (g_canvas_width_preset <= 0)
+      printf("Canvas Width   : OFF (640, LEGACY)\n");
+    else
+      printf("Canvas Width   : %d\n", g_canvas_width_preset);
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)

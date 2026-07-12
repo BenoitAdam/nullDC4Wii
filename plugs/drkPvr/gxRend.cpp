@@ -192,6 +192,16 @@ extern "C" int get_tmem_cache_preset();
 extern "C" int get_bg_poly_preset();
 #define BG_POLY_FIX() (get_bg_poly_preset() == 1)
 
+// Forced canvas width for 240p modes. Some low-res games (Street Fighter
+// III: 384, the CPS3 arcade width) draw their scene narrower than 640 and
+// pad the rest of the framebuffer with filler polygons, so neither any PVR
+// register (glob tile clip and FB_R_SIZE both read 640) nor measuring the
+// submitted geometry reveals the real scene width. This forces it per-game;
+// applied only in non-interlaced NTSC/PAL (240p) video modes so interlaced
+// boot/logo screens keep the normal 640 canvas. 0 = off (legacy).
+extern "C" int get_canvas_width_preset();
+#define CANVAS_WIDTH() (get_canvas_width_preset())
+
 
 int frame_counter;
 
@@ -3690,6 +3700,14 @@ void DoRender()
   // so the whole scene shows instead of just the left half) — see SetFbScale.
   float dc_width = 640.f * g_fb_scale_x;
   float dc_height = 480.f * g_fb_scale_y;
+  // Forced canvas width (see CANVAS_WIDTH() above), only for 240p modes —
+  // g_fb_scale_y == 0.5 identifies non-interlaced NTSC/PAL (set by
+  // CalculateSync in SPG.cpp). Interlaced/VGA screens keep their canvas.
+  {
+    int forced_w = CANVAS_WIDTH();
+    if (forced_w >= 320 && forced_w <= 1280 && g_fb_scale_y == 0.5f)
+      dc_width = (float)forced_w;
+  }
   if (s_rtt_pass)
   {
     // Render-to-texture: geometry was submitted in the RTT target's own
