@@ -8,7 +8,8 @@
 // build flags or here) to route arm_Run() through the cached/threaded
 // interpreter in arm7_cached.cpp. Leaving it undefined keeps the proven inline
 // interpreter below as the default. Both share the same register file / state.
-#define ARM7_USE_CACHED
+
+//#define ARM7_USE_CACHED    // disabled for bisect: test SH4 JIT changes alone
 
 #ifdef ARM7_USE_CACHED
 void arm_Run_Cached(u32 CycleCount, bool reset);
