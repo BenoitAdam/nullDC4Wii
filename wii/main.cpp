@@ -1109,10 +1109,13 @@ static bool ctrl_row_is_display(int row)
 //   PLAYER_CTRL_WIIMOTE_GC    WIIMOTE/GAMECUBE   (bare Wiimote + Nunchuk + GameCube pad)
 //   PLAYER_CTRL_WIICLASSIC_GC WIICLASSIC/GAMECUBE (Wii Classic Controller + GameCube pad)
 //
-// Player 1 is always active. Buses must stay contiguous (mcfg_CreateDevices
-// only knows how to activate ports 0..g_player_count-1), so enabling a
-// player forces every lower-numbered player on, and disabling a player
-// cascades to every higher-numbered player.
+// Player 1 is always active. Enabling a player forces every lower-numbered
+// player on too, so slots 1..idx stay contiguous from player 1. Disabling a
+// player only affects that player's own slot — it does NOT cascade to
+// higher-numbered players, so e.g. player 3 OFF with player 4 still ON is a
+// valid "gap" configuration. g_player_count is derived as the highest
+// non-OFF player index + 1 (see ctrl_cycle_player_mode), so such a gap still
+// counts as N-player support as long as player N is on.
 enum { PLAYER_CTRL_OFF = 0, PLAYER_CTRL_WIIMOTE_GC = 1, PLAYER_CTRL_WIICLASSIC_GC = 2 };
 #define PLAYER_CTRL_MODE_COUNT 3
 
@@ -1149,16 +1152,13 @@ static void ctrl_cycle_player_mode(int idx, int dir)
 
   if (wasOff && !nowOff)
   {
-    // Enabling: force every lower-numbered player on too.
+    // Enabling: force every lower-numbered player on too, so buses stay
+    // contiguous from player 1. Turning a player OFF only affects that
+    // player's own slot — it does NOT cascade to higher-numbered players,
+    // so e.g. player 3 OFF with player 4 still ON is a valid gap.
     for (int i = 0; i < idx; i++)
       if (g_player_mode[i] == PLAYER_CTRL_OFF)
         g_player_mode[i] = PLAYER_CTRL_WIIMOTE_GC;
-  }
-  else if (!wasOff && nowOff)
-  {
-    // Disabling: cascade OFF to every higher-numbered player.
-    for (int i = idx + 1; i < 4; i++)
-      g_player_mode[i] = PLAYER_CTRL_OFF;
   }
 
   int count = 1;
