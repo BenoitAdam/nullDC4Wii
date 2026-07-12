@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "wiidrc_structs.h"
-#include "wiidrc/wiidrc.h"
+#include "wiidrc.h"
 
 static struct WiiDRCStat __WiiDRC_Status;
 static struct WiiDRCData __WiiDRC_PadData;

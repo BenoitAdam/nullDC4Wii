@@ -50,6 +50,7 @@ SOURCES     += ../plugs/vbaARM/
 SOURCES     += ../plugs/ImgReader/
 SOURCES     += ../plugs/gui/
 SOURCES     += ../plugs/drkPvr/
+SOURCES     += ../plugs/libwiidrc/ # Wii U GamePad (DRC) support in vWii mode
 
 #--- Wii Specific & GUI ---
 SOURCES     += ../wii/

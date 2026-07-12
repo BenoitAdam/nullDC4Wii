@@ -19,6 +19,9 @@
 #include <ogc/usbstorage.h>
 #include "stdclass.h"   // for GetEmuPath() for bios check
 
+// *** WII U GAMEPAD (DRC) SUPPORT (vWii mode) ***
+#include "plugs/libwiidrc/wiidrc.h"
+
 // *** GAME PRESETS ***
 #include "wii/game_presets.h"
 
@@ -450,6 +453,54 @@ void listFilesInDirectory(const char *dirPath)
 }
 
 // ============================================================================
+// WII U GAMEPAD (DRC) MENU INPUT
+// ============================================================================
+//
+// When running on a Wii U in vWii mode (via a forwarder), the GamePad is
+// readable through libwiidrc. These helpers translate its buttons to the
+// WPAD_BUTTON_* convention already used by every menu loop, following the
+// same mapping as the GameCube pad merge (Y=button1, X=button2).
+// On a real Wii, WiiDRC_Init() fails and both helpers return 0.
+// ============================================================================
+
+static u32 DRC_ToWPAD(u32 drc)
+{
+  u32 w = 0;
+  if (drc & WIIDRC_BUTTON_UP)    w |= WPAD_BUTTON_UP;
+  if (drc & WIIDRC_BUTTON_DOWN)  w |= WPAD_BUTTON_DOWN;
+  if (drc & WIIDRC_BUTTON_LEFT)  w |= WPAD_BUTTON_LEFT;
+  if (drc & WIIDRC_BUTTON_RIGHT) w |= WPAD_BUTTON_RIGHT;
+  if (drc & WIIDRC_BUTTON_A)     w |= WPAD_BUTTON_A;
+  if (drc & WIIDRC_BUTTON_B)     w |= WPAD_BUTTON_B;
+  if (drc & WIIDRC_BUTTON_Y)     w |= WPAD_BUTTON_1;
+  if (drc & WIIDRC_BUTTON_X)     w |= WPAD_BUTTON_2;
+  if (drc & WIIDRC_BUTTON_MINUS) w |= WPAD_BUTTON_MINUS;
+  if (drc & WIIDRC_BUTTON_PLUS)  w |= WPAD_BUTTON_PLUS;
+  if (drc & WIIDRC_BUTTON_HOME)  w |= WPAD_BUTTON_HOME;
+  return w;
+}
+
+// Scans the GamePad and returns freshly pressed buttons as WPAD bits.
+// Call exactly once per menu loop iteration (alongside WPAD_ScanPads).
+static u32 DRC_ButtonsDownWPAD()
+{
+  if (!WiiDRC_Inited())
+    return 0;
+  WiiDRC_ScanPads();
+  if (WiiDRC_ShutdownRequested())
+    exit(0);
+  return DRC_ToWPAD(WiiDRC_ButtonsDown());
+}
+
+// Held buttons from the most recent scan (does not scan again).
+static u32 DRC_ButtonsHeldWPAD()
+{
+  if (!WiiDRC_Inited())
+    return 0;
+  return DRC_ToWPAD(WiiDRC_ButtonsHeld());
+}
+
+// ============================================================================
 // BIOS PRESENCE CHECK
 // ============================================================================
 //
@@ -506,7 +557,7 @@ void checkBiosFiles()
     while (true)
     {
       WPAD_ScanPads();
-      if (WPAD_ButtonsDown(0) != 0)
+      if (WPAD_ButtonsDown(0) != 0 || DRC_ButtonsDownWPAD() != 0)
         break;
       VIDEO_WaitVSync();
     }
@@ -547,7 +598,8 @@ void displayAccuracyMenu()
 
     WPAD_ScanPads();
     PAD_ScanPads();
-    u32 pressed = WPAD_ButtonsDown(0) | ((PAD_ButtonsDown(0) & PAD_BUTTON_B) ? WPAD_BUTTON_B : 0);
+    u32 pressed = WPAD_ButtonsDown(0) | DRC_ButtonsDownWPAD()
+                | ((PAD_ButtonsDown(0) & PAD_BUTTON_B) ? WPAD_BUTTON_B : 0);
 
     if (pressed & WPAD_BUTTON_B)
     {
@@ -649,10 +701,13 @@ bool displayOptionsMenu()
   // otherwise bleed through as a fresh "A down" event on the very first
   // scan here (seen with the GameCube pad), instantly triggering LAUNCH
   // before the menu is even shown. Wait for A to be released first.
-  while ((WPAD_ButtonsHeld(0) & WPAD_BUTTON_A) || (PAD_ButtonsHeld(0) & PAD_BUTTON_A))
+  while ((WPAD_ButtonsHeld(0) & WPAD_BUTTON_A) || (PAD_ButtonsHeld(0) & PAD_BUTTON_A)
+         || (DRC_ButtonsHeldWPAD() & WPAD_BUTTON_A))
   {
     WPAD_ScanPads();
     PAD_ScanPads();
+    if (WiiDRC_Inited())
+      WiiDRC_ScanPads();
     VIDEO_WaitVSync();
   }
 
@@ -958,7 +1013,7 @@ bool displayOptionsMenu()
 
     WPAD_ScanPads();
     PAD_ScanPads();
-    u32 pressed = WPAD_ButtonsDown(0);
+    u32 pressed = WPAD_ButtonsDown(0) | DRC_ButtonsDownWPAD();
 
     // GameCube controller (Player 1) — same mapping convention as in-game
     // input (see drkMapleDevices.cpp): Y=button1, X=button2.
@@ -1183,10 +1238,13 @@ bool displayControlsMenu()
 
   // Debounce: don't let the A press that confirmed the options menu
   // bleed through as an instant LAUNCH here.
-  while ((WPAD_ButtonsHeld(0) & WPAD_BUTTON_A) || (PAD_ButtonsHeld(0) & PAD_BUTTON_A))
+  while ((WPAD_ButtonsHeld(0) & WPAD_BUTTON_A) || (PAD_ButtonsHeld(0) & PAD_BUTTON_A)
+         || (DRC_ButtonsHeldWPAD() & WPAD_BUTTON_A))
   {
     WPAD_ScanPads();
     PAD_ScanPads();
+    if (WiiDRC_Inited())
+      WiiDRC_ScanPads();
     VIDEO_WaitVSync();
   }
 
@@ -1236,7 +1294,7 @@ bool displayControlsMenu()
 
     WPAD_ScanPads();
     PAD_ScanPads();
-    u32 pressed = WPAD_ButtonsDown(0);
+    u32 pressed = WPAD_ButtonsDown(0) | DRC_ButtonsDownWPAD();
 
     // GameCube controller (Player 1) — same mapping convention as the
     // other menus (see displayOptionsMenu).
@@ -1360,7 +1418,7 @@ int displayMenuAndSelectFile()
 
     WPAD_ScanPads();
     PAD_ScanPads();
-    u32 pressed = WPAD_ButtonsDown(0);
+    u32 pressed = WPAD_ButtonsDown(0) | DRC_ButtonsDownWPAD();
 
     // GameCube controller (Player 1) — same mapping convention as in-game
     // input (see drkMapleDevices.cpp): Y=button1, X=button2.
@@ -1484,8 +1542,8 @@ int displayMenuAndSelectFile()
         currentPage = 0;
       }
     }
-    else if ((WPAD_ButtonsHeld(0) & WPAD_BUTTON_PLUS) &&
-             (WPAD_ButtonsHeld(0) & WPAD_BUTTON_MINUS))
+    else if (((WPAD_ButtonsHeld(0) | DRC_ButtonsHeldWPAD()) & WPAD_BUTTON_PLUS) &&
+             ((WPAD_ButtonsHeld(0) | DRC_ButtonsHeldWPAD()) & WPAD_BUTTON_MINUS))
     {
       return -1; // Exit
     }
@@ -1527,6 +1585,9 @@ int main(int argc, wchar *argv[])
 
   PAD_Init();
   WPAD_Init();
+
+  // Wii U GamePad (only succeeds on Wii U in vWii mode; harmless on real Wii)
+  WiiDRC_Init();
 
   rmode = VIDEO_GetPreferredMode(NULL);
 

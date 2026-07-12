@@ -13,6 +13,7 @@
 // - Added Wii Nunchuck analog stick support
 // - Added Wii Nunchuck Z button as Dreamcast L trigger
 // - Added Wii Classic Controller support (buttons, analog stick, shoulders)
+// - Added Wii U GamePad (DRC) support via libwiidrc (vWii mode, Player 1)
 
 #include "plugins/plugin_header.h"
 #include <string.h>
@@ -20,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <wiiuse/wpad.h>
+#include "plugs/libwiidrc/wiidrc.h" // Wii U GamePad (vWii mode)
 #include "dc/dc.h"
 
 // Dreamcast controller button definitions
@@ -266,6 +268,46 @@ void UpdateInputState(u32 port)
         // Scale Classic Controller left stick (0-255 range) to match GameCube (-128 to 127)
         expStickX = (s32)(wpadData->exp.classic.ljs.pos.x) - 128;
         expStickY = (s32)(wpadData->exp.classic.ljs.pos.y) - 128;
+    }
+
+    // Wii U GamePad (vWii mode) — drives Player 1 only. Its layout matches
+    // the Classic Controller, so translate WIIDRC_BUTTON_* bits to
+    // WPAD_CLASSIC_BUTTON_* and let the existing mapping logic handle it.
+    if (port == 0 && WiiDRC_Inited())
+    {
+        WiiDRC_ScanPads();
+        u32 drc = WiiDRC_ButtonsHeld();
+
+        if (drc & WIIDRC_BUTTON_A)     classicButtons |= WPAD_CLASSIC_BUTTON_A;
+        if (drc & WIIDRC_BUTTON_B)     classicButtons |= WPAD_CLASSIC_BUTTON_B;
+        if (drc & WIIDRC_BUTTON_X)     classicButtons |= WPAD_CLASSIC_BUTTON_X;
+        if (drc & WIIDRC_BUTTON_Y)     classicButtons |= WPAD_CLASSIC_BUTTON_Y;
+        if (drc & WIIDRC_BUTTON_PLUS)  classicButtons |= WPAD_CLASSIC_BUTTON_HOME; // Start
+        if (drc & WIIDRC_BUTTON_UP)    classicButtons |= WPAD_CLASSIC_BUTTON_UP;
+        if (drc & WIIDRC_BUTTON_DOWN)  classicButtons |= WPAD_CLASSIC_BUTTON_DOWN;
+        if (drc & WIIDRC_BUTTON_LEFT)  classicButtons |= WPAD_CLASSIC_BUTTON_LEFT;
+        if (drc & WIIDRC_BUTTON_RIGHT) classicButtons |= WPAD_CLASSIC_BUTTON_RIGHT;
+        if (drc & (WIIDRC_BUTTON_L | WIIDRC_BUTTON_ZL))
+            classicButtons |= WPAD_CLASSIC_BUTTON_FULL_L;
+        if (drc & (WIIDRC_BUTTON_R | WIIDRC_BUTTON_ZR))
+            classicButtons |= WPAD_CLASSIC_BUTTON_FULL_R;
+
+        // Left stick: calibrated raw range is only about +/-72, so scale
+        // towards +/-127 (ClampAnalogValue clamps any overshoot). Only used
+        // when no Wiimote expansion stick is deflected.
+        if (expStickX == 0 && expStickY == 0)
+        {
+            expStickX = ((s32)WiiDRC_lStickX() * 7) / 4;
+            expStickY = ((s32)WiiDRC_lStickY() * 7) / 4;
+        }
+
+        // Exit combo: MINUS+PLUS (same as Wiimote); GamePad power button
+        // (shutdown request from IOS) also exits.
+        if (((drc & WIIDRC_BUTTON_MINUS) && (drc & WIIDRC_BUTTON_PLUS)) ||
+            WiiDRC_ShutdownRequested())
+        {
+            exit(0);
+        }
     }
 
     // Read GameCube analog stick position
