@@ -1,5 +1,5 @@
-NullDC4Wii - Alpha
-==================
+NullDC4Wii - Alpha 0.49
+=======================
 
 Github :
 
