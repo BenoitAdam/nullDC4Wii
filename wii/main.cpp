@@ -1292,6 +1292,10 @@ bool displayControlsMenu()
     }
     printf("\n");
 
+    // --- Row 7: Wii U GamePad status (display only) ---
+    printf("    WII U GAMEPAD    : %s\n",
+           WiiDRC_Inited() ? "[DETECTED]     (drives Player 1)" : "[NOT DETECTED]");
+
     WPAD_ScanPads();
     PAD_ScanPads();
     u32 pressed = WPAD_ButtonsDown(0) | DRC_ButtonsDownWPAD();
