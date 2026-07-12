@@ -4,6 +4,16 @@
 #define C_CORE
 #define DEV_VERSION
 
+// Switch the active ARM7 execution engine. Define ARM7_USE_CACHED (e.g. in the
+// build flags or here) to route arm_Run() through the cached/threaded
+// interpreter in arm7_cached.cpp. Leaving it undefined keeps the proven inline
+// interpreter below as the default. Both share the same register file / state.
+#define ARM7_USE_CACHED
+
+#ifdef ARM7_USE_CACHED
+void arm_Run_Cached(u32 CycleCount, bool reset);
+#endif
+
 //#define CPUReadHalfWordQuick(addr) arm_ReadMem16(addr & 0x7FFFFF)
 #define CPUReadMemoryQuick(addr) arm_ReadMem32(addr & ARAM_MASK)
 #define CPUReadByte arm_ReadMem8
@@ -67,7 +77,10 @@ typedef union {
 
 u32 arm_ArmNextPC;
 
-reg_pair arm_Reg[45];
+// 45 architectural/banked registers, plus two scratch pseudo-registers used
+// only by the cached interpreter's split shift uops: [45]=C_OUT (shifter carry),
+// [46]=SHIFT_OUT (computed operand2). Harmless to the inline interpreter.
+reg_pair arm_Reg[47];
 
 void CPUSwap(u32 *a, u32 *b)
 {
@@ -344,7 +357,12 @@ void arm_Reset()
 	armNextPC = reg[15].I;
 	reg[15].I += 4;
 
-	//arm_FiqPending = false; 
+	//arm_FiqPending = false;
+
+#ifdef ARM7_USE_CACHED
+	// Flush the predecode cache: the only invalidation point (per design).
+	arm_Run_Cached(0, true);
+#endif
 }
 
 void CPUInterrupt()
@@ -393,11 +411,15 @@ void CPUFiq()
 #ifdef _MUDFLAP
 __attribute__ ((optimize("O0")))
 #endif
+int totalops;
 void arm_Run(u32 CycleCount)
 {
   if (!Arm7Enabled)
 	 return;
 
+#ifdef ARM7_USE_CACHED
+	arm_Run_Cached(CycleCount, false);
+#else
 	u32 clockTicks=0;
 	while (clockTicks<CycleCount)
 	{
@@ -405,11 +427,10 @@ void arm_Run(u32 CycleCount)
 		{
 			CPUFiq();
 		}
-
+		
 		#include "arm-new.h"
 	}
-
-
+#endif
 }
 
 void arm_SetEnabled(bool enabled)
