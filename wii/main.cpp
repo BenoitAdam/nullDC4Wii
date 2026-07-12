@@ -507,6 +507,35 @@ static u32 DRC_ButtonsHeldWPAD()
 }
 
 // ============================================================================
+// WII CLASSIC CONTROLLER MENU INPUT
+// ============================================================================
+//
+// WPAD_ButtonsDown/Held already carry the Classic Controller buttons in the
+// upper bits (WPAD_CLASSIC_BUTTON_*) of the same word, but the menu loops
+// only test the Wiimote core WPAD_BUTTON_* bits. This translates the classic
+// bits to that convention, following the same mapping as the GameCube pad
+// and DRC merges (Y=button1, X=button2). Pass it the raw WPAD word and OR
+// the result back in.
+// ============================================================================
+
+static u32 CLASSIC_ToWPAD(u32 wpad)
+{
+  u32 w = 0;
+  if (wpad & WPAD_CLASSIC_BUTTON_UP)    w |= WPAD_BUTTON_UP;
+  if (wpad & WPAD_CLASSIC_BUTTON_DOWN)  w |= WPAD_BUTTON_DOWN;
+  if (wpad & WPAD_CLASSIC_BUTTON_LEFT)  w |= WPAD_BUTTON_LEFT;
+  if (wpad & WPAD_CLASSIC_BUTTON_RIGHT) w |= WPAD_BUTTON_RIGHT;
+  if (wpad & WPAD_CLASSIC_BUTTON_A)     w |= WPAD_BUTTON_A;
+  if (wpad & WPAD_CLASSIC_BUTTON_B)     w |= WPAD_BUTTON_B;
+  if (wpad & WPAD_CLASSIC_BUTTON_Y)     w |= WPAD_BUTTON_1;
+  if (wpad & WPAD_CLASSIC_BUTTON_X)     w |= WPAD_BUTTON_2;
+  if (wpad & WPAD_CLASSIC_BUTTON_MINUS) w |= WPAD_BUTTON_MINUS;
+  if (wpad & WPAD_CLASSIC_BUTTON_PLUS)  w |= WPAD_BUTTON_PLUS;
+  if (wpad & WPAD_CLASSIC_BUTTON_HOME)  w |= WPAD_BUTTON_HOME;
+  return w;
+}
+
+// ============================================================================
 // BIOS PRESENCE CHECK
 // ============================================================================
 //
@@ -604,7 +633,8 @@ void displayAccuracyMenu()
 
     WPAD_ScanPads();
     PAD_ScanPads();
-    u32 pressed = WPAD_ButtonsDown(0) | DRC_ButtonsDownWPAD()
+    u32 wmPressed = WPAD_ButtonsDown(0);
+    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD()
                 | ((PAD_ButtonsDown(0) & PAD_BUTTON_B) ? WPAD_BUTTON_B : 0);
 
     if (pressed & WPAD_BUTTON_B)
@@ -711,7 +741,8 @@ bool displayOptionsMenu()
   // otherwise bleed through as a fresh "A down" event on the very first
   // scan here (seen with the GameCube pad), instantly triggering LAUNCH
   // before the menu is even shown. Wait for A to be released first.
-  while ((WPAD_ButtonsHeld(0) & WPAD_BUTTON_A) || (PAD_ButtonsHeld(0) & PAD_BUTTON_A)
+  while ((WPAD_ButtonsHeld(0) & (WPAD_BUTTON_A | WPAD_CLASSIC_BUTTON_A))
+         || (PAD_ButtonsHeld(0) & PAD_BUTTON_A)
          || (DRC_ButtonsHeldWPAD() & WPAD_BUTTON_A))
   {
     WPAD_ScanPads();
@@ -1041,7 +1072,8 @@ bool displayOptionsMenu()
 
     WPAD_ScanPads();
     PAD_ScanPads();
-    u32 pressed = WPAD_ButtonsDown(0) | DRC_ButtonsDownWPAD();
+    u32 wmPressed = WPAD_ButtonsDown(0);
+    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD();
 
     // GameCube controller (Player 1) — same mapping convention as in-game
     // input (see drkMapleDevices.cpp): Y=button1, X=button2.
@@ -1278,7 +1310,8 @@ bool displayControlsMenu()
 
   // Debounce: don't let the A press that confirmed the options menu
   // bleed through as an instant LAUNCH here.
-  while ((WPAD_ButtonsHeld(0) & WPAD_BUTTON_A) || (PAD_ButtonsHeld(0) & PAD_BUTTON_A)
+  while ((WPAD_ButtonsHeld(0) & (WPAD_BUTTON_A | WPAD_CLASSIC_BUTTON_A))
+         || (PAD_ButtonsHeld(0) & PAD_BUTTON_A)
          || (DRC_ButtonsHeldWPAD() & WPAD_BUTTON_A))
   {
     WPAD_ScanPads();
@@ -1338,7 +1371,8 @@ bool displayControlsMenu()
 
     WPAD_ScanPads();
     PAD_ScanPads();
-    u32 pressed = WPAD_ButtonsDown(0) | DRC_ButtonsDownWPAD();
+    u32 wmPressed = WPAD_ButtonsDown(0);
+    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD();
 
     // GameCube controller (Player 1) — same mapping convention as the
     // other menus (see displayOptionsMenu).
@@ -1462,7 +1496,8 @@ int displayMenuAndSelectFile()
 
     WPAD_ScanPads();
     PAD_ScanPads();
-    u32 pressed = WPAD_ButtonsDown(0) | DRC_ButtonsDownWPAD();
+    u32 wmPressed = WPAD_ButtonsDown(0);
+    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD();
 
     // GameCube controller (Player 1) — same mapping convention as in-game
     // input (see drkMapleDevices.cpp): Y=button1, X=button2.
@@ -1586,8 +1621,10 @@ int displayMenuAndSelectFile()
         currentPage = 0;
       }
     }
-    else if (((WPAD_ButtonsHeld(0) | DRC_ButtonsHeldWPAD()) & WPAD_BUTTON_PLUS) &&
-             ((WPAD_ButtonsHeld(0) | DRC_ButtonsHeldWPAD()) & WPAD_BUTTON_MINUS))
+    else if (((WPAD_ButtonsHeld(0) | CLASSIC_ToWPAD(WPAD_ButtonsHeld(0))
+               | DRC_ButtonsHeldWPAD()) & WPAD_BUTTON_PLUS) &&
+             ((WPAD_ButtonsHeld(0) | CLASSIC_ToWPAD(WPAD_ButtonsHeld(0))
+               | DRC_ButtonsHeldWPAD()) & WPAD_BUTTON_MINUS))
     {
       return -1; // Exit
     }
