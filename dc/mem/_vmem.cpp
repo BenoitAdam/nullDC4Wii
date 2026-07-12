@@ -44,7 +44,7 @@ static _vmem_ReadMem32FP*  _vmem_RF32[HANDLER_COUNT];
 static _vmem_WriteMem32FP* _vmem_WF32[HANDLER_COUNT];
 
 // Top-level dispatch table: 256 entries, one per 16 MB page.
-void* _vmem_MemInfo_ptr[0x100];
+void* _vmem_MemInfo_ptr[0x100]; // ALIGN(65536) void* _vmem_MemInfo_ptr[0x100];
 
 // ---------------------------------------------------------------------------
 // Internal helpers
