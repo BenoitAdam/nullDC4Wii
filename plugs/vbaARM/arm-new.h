@@ -1552,13 +1552,16 @@
     break;
 
   u32 opcode = CPUReadMemoryQuick(armNextPC);
-
+  
+  /*
+  // SKMP Stuff I guess !
   if (opcode != 0 && armNextPC == 0x0000C84) totalops=1;
 
   if (opcode != 0 && totalops != 0) {
       printf("Decoding %08X for pc %08X\n", opcode, armNextPC);
     if (totalops++> 64) { for(;;);}
   }
+  */
 
   clockTicks += 6;
 
