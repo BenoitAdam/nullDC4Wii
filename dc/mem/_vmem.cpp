@@ -44,7 +44,7 @@ static _vmem_ReadMem32FP*  _vmem_RF32[HANDLER_COUNT];
 static _vmem_WriteMem32FP* _vmem_WF32[HANDLER_COUNT];
 
 // Top-level dispatch table: 256 entries, one per 16 MB page.
-void* _vmem_MemInfo_ptr[0x100];
+ALIGN(65536) void* _vmem_MemInfo_ptr[0x100];
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -391,8 +391,8 @@ bool _vmem_reserve()
     u32 level = IRQ_Disable();
 
     u8* ram_alloc = (u8*)SYS_GetArena2Lo();
-    // Align to 256 bytes (required by _vmem_map_block).
-    ram_alloc = (u8*)(((unat)ram_alloc + 255) & ~(unat)255);
+    // Align to 65536 bytes (required by _vmem_map_block).
+    ram_alloc = (u8*)(((unat)ram_alloc + 65535) & ~(unat)65535);
     SYS_SetArena2Lo(ram_alloc + ARAM_SIZE + VRAM_SIZE + RAM_SIZE);
 
     extern u8* vram_buffer;
