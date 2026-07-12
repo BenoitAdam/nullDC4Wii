@@ -5,6 +5,11 @@
 
         ;; comment
         [keyword]           <- case-insensitive substring matched against filename
+        [kw1][kw2][kw3]     <- a section may list several aliases; the section
+                                applies if ANY of them matches the filename
+                                (e.g. [streetfighter32][doubleimpact][double impact]).
+                                The FIRST alias is the canonical name shown in
+                                the options menu. Up to 8 aliases per section.
         accuracy=fast       <- only fields listed are overridden
         graphics=low
         8bpp=i8_stub
@@ -218,10 +223,15 @@ extern int g_fmv_format_preset;
 
 #define MAX_PRESETS     64
 #define MAX_KEYWORD_LEN 64
+#define MAX_ALIASES     8    // max [name1][name2]... aliases per section header
 
 struct GamePreset
 {
-    char keyword[MAX_KEYWORD_LEN];   // already lowercased at load time
+    // One section can carry several aliases: [streetfighter32][doubleimpact][double impact]
+    // A filename matching ANY of them applies the section. keywords[0] is the
+    // canonical name shown in the options menu. All lowercased at load time.
+    char keywords[MAX_ALIASES][MAX_KEYWORD_LEN];
+    int  keyword_count;
 
     // -1 = not set (leave user default untouched)
     int accuracy;
@@ -578,19 +588,43 @@ void game_presets_load(const char* cfg_path)
         // Blank or full-line comment (;; or # or ;)
         if (!*s || *s == '#' || *s == ';') continue;
 
-        // Section header [keyword]
+        // Section header: [keyword] or several aliases [name1][name2][name3]
         if (*s == '[')
         {
-            // Find the closing bracket
-            char* end_bracket = strchr(s, ']');
-            if (!end_bracket) continue;
-            *end_bracket = '\0';                 // terminate at ']'
-            char* kw = str_trim(s + 1);          // content between [ and ]
-            if (!*kw) continue;
+            // Collect every [alias] group on the line; stop at the first
+            // thing that isn't another '[' (e.g. a trailing ; comment).
+            char aliases[MAX_ALIASES][MAX_KEYWORD_LEN];
+            int  alias_count = 0;
+            char* pos = s;
+            while (*pos == '[')
+            {
+                char* end_bracket = strchr(pos, ']');
+                if (!end_bracket) break;
+                *end_bracket = '\0';             // terminate this group
+                char* kw = str_trim(pos + 1);    // content between [ and ]
+                if (*kw)
+                {
+                    if (alias_count >= MAX_ALIASES)
+                    {
+                        printf("[game_presets] Max aliases (%d) reached, ignoring [%s]\n",
+                               MAX_ALIASES, kw);
+                    }
+                    else
+                    {
+                        strncpy(aliases[alias_count], kw, MAX_KEYWORD_LEN - 1);
+                        aliases[alias_count][MAX_KEYWORD_LEN - 1] = '\0';
+                        str_tolower_inplace(aliases[alias_count]); // lowercase once at load time
+                        alias_count++;
+                    }
+                }
+                pos = end_bracket + 1;
+                while (*pos && isspace((unsigned char)*pos)) pos++;
+            }
+            if (alias_count == 0) continue;
 
             // [default] is a special section applied before any per-game
             // match, instead of being registered as a matchable preset.
-            if (key_eq(kw, "default"))
+            if (key_eq(aliases[0], "default"))
             {
                 cur = &s_default_preset;
                 preset_clear(cur);
@@ -601,7 +635,7 @@ void game_presets_load(const char* cfg_path)
             if (s_preset_count >= MAX_PRESETS)
             {
                 printf("[game_presets] Max presets (%d) reached, skipping [%s]\n",
-                       MAX_PRESETS, kw);
+                       MAX_PRESETS, aliases[0]);
                 cur = NULL;
                 continue;
             }
@@ -609,11 +643,11 @@ void game_presets_load(const char* cfg_path)
             cur = &s_presets[s_preset_count++];
             preset_clear(cur);
 
-            strncpy(cur->keyword, kw, MAX_KEYWORD_LEN - 1);
-            cur->keyword[MAX_KEYWORD_LEN - 1] = '\0';
-            str_tolower_inplace(cur->keyword);   // lowercase once at load time
+            cur->keyword_count = alias_count;
+            for (int a = 0; a < alias_count; a++)
+                strcpy(cur->keywords[a], aliases[a]);
 
-            // printf("[game_presets]   Registered: [%s]\n", cur->keyword);
+            // printf("[game_presets]   Registered: [%s] (%d alias(es))\n", cur->keywords[0], cur->keyword_count);
             continue;
         }
 
@@ -670,17 +704,28 @@ void game_presets_apply(const char* filepath)
 
     printf("[game_presets] Trying to match: '%s'\n", lower);
 
-    // First match wins
+    // First match wins — a section matches if ANY of its aliases is a
+    // substring of the filename.
     for (int i = 0; i < s_preset_count; i++)
     {
         GamePreset* p = &s_presets[i];
-        if (!str_contains(lower, p->keyword))
+        const char* hit = NULL;
+        for (int k = 0; k < p->keyword_count; k++)
+        {
+            if (str_contains(lower, p->keywords[k]))
+            {
+                hit = p->keywords[k];
+                break;
+            }
+        }
+        if (!hit)
             continue;
 
-        printf("[game_presets] Matched [%s] for file: %s\n", p->keyword, filename);
+        printf("[game_presets] Matched [%s] (via '%s') for file: %s\n",
+               p->keywords[0], hit, filename);
 
-        // Save matched name for display in options menu
-        strncpy(g_matched_preset_name, p->keyword, MAX_KEYWORD_LEN - 1);
+        // Save canonical name (first alias) for display in options menu
+        strncpy(g_matched_preset_name, p->keywords[0], MAX_KEYWORD_LEN - 1);
         g_matched_preset_name[MAX_KEYWORD_LEN - 1] = '\0';
 
         preset_apply_fields(p);
