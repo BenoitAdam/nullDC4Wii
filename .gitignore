@@ -24,3 +24,5 @@ apps/*
 # Ignore dol/elf file
 apps/nulldc4wii/boot.dol
 apps/nulldc4wii/boot.elf
+apps/apps/nulldc4wii/boot.dol
+apps/apps/nulldc4wii/boot.elf
