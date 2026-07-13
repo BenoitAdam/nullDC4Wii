@@ -14,7 +14,6 @@ apps/*
 # But allow Git to look inside the subfolders so it can find your exceptions
 !apps/nulldc4wii/
 !apps/nulldc4wii/data/
-!apps/apps/
 !apps/discs/
 
 # Whitelist the specific files you want to keep
