@@ -170,8 +170,13 @@ struct ARM7CACHEOP {
 };
 
 #define ARM7_CACHE_SIZE   (192*1024)
-#define ARM7_EP_SIZE      (2*1024*1024)
-#define ARM7_EP_MASK      (ARAM_MASK)        // logical_pc & MASK -> entrypoint slot
+// ARM7 opcodes are always word-aligned, so indexing the entrypoint table by
+// raw byte address (old: ARM7_EP_SIZE = ARAM_SIZE, masked with ARAM_MASK)
+// wastes 3 of every 4 slots -- an 8MB static array for a 2MB ARAM range.
+// Index by word (pc>>2) instead: 1/4 the slots, same coverage.
+#define ARM7_EP_SIZE      (ARAM_SIZE / 4)
+#define ARM7_EP_MASK      (ARM7_EP_SIZE - 1)
+#define ARM7_EP_INDEX(pc) (((pc) >> 2) & ARM7_EP_MASK)
 
 static ARM7CACHEOP  ARM7_CACHE[ARM7_CACHE_SIZE];
 static ARM7CACHEOP* ARM7_ENTRYPOINTS[ARM7_EP_SIZE];
@@ -494,7 +499,7 @@ void arm_Run_Cached(u32 CycleCount, bool reset)
 			if ((u32)clockTicks >= CycleCount) goto lbl_exit; \
 			clockTicks += 6;                              \
 			PROF_HIT(dispatch_pc);                        \
-			pc_op = ARM7_ENTRYPOINTS[dispatch_pc & ARM7_EP_MASK]; \
+			pc_op = ARM7_ENTRYPOINTS[ARM7_EP_INDEX(dispatch_pc)]; \
 			goto *pc_op->dispatch;                        \
 		} while(0)
 
@@ -825,14 +830,14 @@ lbl_unknown_block:
 			if (cond != 0xE) {
 				ARM7CACHEOP* guard = &ARM7_CACHE[ARM7_CACHE_LAST_OP];
 				guard->dispatch = cond_labels[cond];
-				ARM7_ENTRYPOINTS[decode_pc & ARM7_EP_MASK] = guard;
+				ARM7_ENTRYPOINTS[ARM7_EP_INDEX(decode_pc)] = guard;
 				ARM7_CACHE_LAST_OP++;
 			}
 
 			ARM7CACHEOP* cop = &ARM7_CACHE[ARM7_CACHE_LAST_OP];
 			if (cond == 0xE) {
 				// AL: the op uop IS the entrypoint.
-				ARM7_ENTRYPOINTS[decode_pc & ARM7_EP_MASK] = cop;
+				ARM7_ENTRYPOINTS[ARM7_EP_INDEX(decode_pc)] = cop;
 			}
 			cop->cond = cond;
 			cop->imm = opcode;          // default: keep raw opcode
