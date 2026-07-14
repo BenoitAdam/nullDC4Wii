@@ -3688,11 +3688,12 @@ void DoRender()
   gx_sync_pending();
 
   /* commented to help prevent FIFO */
+  /*
   if(1) {
     printf("MEM1 free: %.2f MB\n", ((unat)SYS_GetArena1Hi() - (unat)SYS_GetArena1Lo()) / 1024.f / 1024);
     printf("MEM2 free: %.2f MB\n", ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / 1024.f / 1024.f);
   }
-    
+    */
 
   // 240p (non-interlaced NTSC/PAL) modes only use a fraction of the nominal
   // 640x480 canvas (shrink it so the scene still fills the output), while
