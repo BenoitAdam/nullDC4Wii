@@ -183,9 +183,9 @@ https://wiibrew.org/wiki/NullDC4Wii/Compatibility
 | **BALANCED** | Good balance between speed and accuracy |
 | **ACCURATE (default)** | Closest behavior to original hardware |
 
-If you experience Freeze in some heavy games like Shenmue, put FAST or BALANCED. BALANCED may be the default setting in future versions
+If you experience Freeze in some heavy games like Shenmue, put FAST or BALANCED. FAST may be the default setting in future versions
 
-If you experience various bugs (example that may happens : weird AI controled NPC) put ACCURATE
+If you experience various bugs (example that may happens : weird AI controled NPC, weird timing) put ACCURATE
 
 ---
 
@@ -193,8 +193,8 @@ If you experience various bugs (example that may happens : weird AI controled NP
 
 | Mode | Settings | Best platform | 
 |------|----------| ------------------------- | 
-| **LOW (default from a0.06 to a0.09)** | `GX_NEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
-| **NORMAL (default from a0.10)** | `GX_LINEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
+| **LOW** | `GX_NEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
+| **NORMAL (default)** | `GX_LINEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
 | **HIGH** | `GX_LINEAR` · `lod_bias -0.5f` · `GX_ENABLE` · Anisotropic x2 | Wii U |
 | **EXTRA** | `GX_LINEAR` · `lod_bias -1.0f` *(may need to adjust to -0.75)* · `GX_ENABLE` · Anisotropic x4 | Wii U |
 
@@ -208,19 +208,19 @@ While the emulator is still in alpha, the visual difference is limited for now.
 | Mode (4BPP/8BPP) | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **I4_STUB/I8_STUB** | Dummy algorythm  | Some element doesn't display at all, for max FPS |
-| **OPTIMIZED** | ? algorythm  | ?? Please test ! |
-| **CI4 (FAST)/CI8 (FAST)** | Basic algorythm | Display mostly correctly (consume a bit of FPS on some games) |
-| **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Should display better |
+| **OPTIMIZED (defaut)** | Best performance/quality | Very good FPS |
+| **CI4 (FAST)/CI8 (FAST)** | Basic algorythm Display mostly correctly | Very good FPS |
+| **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Mid FPS |
 | **RGB565** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
 
-####  Cache setting (starting alpha 0.21)
+####  Cache setting
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **CACHE_VERY_FAST** | skmp original algorythm (magic numbers). Very fast but buggy  | Max FPS |
-| **CACHE_FAST** | from alpha0.34 this is the default setting  | Almost Max FPS |
-| **CACHE_NORMAL** | Best accuracy. Display mostly correctly | Mid FPS |
-| **CACHE_QUALITY** | Best accuracy. Display mostly correctly | Mid FPS |
+| **CACHE_FAST** | Works better  | Almost Max FPS |
+| **CACHE_NORMAL (default)** | Best performance/accuracy. Display mostly correctly | Mid FPS |
+| **CACHE_QUALITY** | Best accuracy. Display correctly | Mid FPS |
 | **CACHE_EXTRA** | Redraw every frame. Accurate (Only for dev & Debug) | Low FPS |
 
 #### ADVANCED_ALPHA
