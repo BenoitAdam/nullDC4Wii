@@ -549,7 +549,7 @@ https://www.biteyourconsole.net/2026/05/13/nulldc4wii-alpha-v0-22-porta-il-dream
 - Xeihro (Xiro28 PSP Port)
 - Flyinghead/Flycast Team  
 - AI because this project would have never existed otherwise lol
-- Probably Reicast Team also who knows
+- Probably Reicast Team also
 - Welcome to the IA-age guys and good luck everyone.
 
 All together, let's Cast the Dream.
@@ -558,7 +558,8 @@ All together, let's Cast the Dream.
 
 - skmp because he's the god
 - Senryoku, develloper of Deecy emulator
-- Everyone on emuvdev/ discord
+- OriginalDave developer of Jocasta
+- Everyone helping on emuvdev/discord
 - Jilou04 for constantly testing on Wii U and reporting
 - All testers and all futur testers
 - People actually helping me on the wiibrew wiki
@@ -566,86 +567,4 @@ All together, let's Cast the Dream.
 ### Special no thanks
 
 - To all people not believing in this project
-- People constantly critisizing the fact AI is used in this project (this project wouldn't have existed otherwise).
-
-
-
-
-
-
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+- People constantly critisizing the fact AI is used in this project (this project wouldn't have existed otherwise...).
