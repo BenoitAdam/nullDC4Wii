@@ -13,7 +13,6 @@
 #include <ogc/lwp_watchdog.h>	// gettime() / ticks_to_microsecs() for os_GetSeconds()
 #include <asndlib.h>
 #include <mp3player.h> // Was for testing playing an MP3 on menu. 
-#include "sample_mp3.h" // Was for testing playing an MP3 on menu. 
 #include "wii/wii_audio.h"
 #include <sdcard/wiisd_io.h>
 #include <ogc/usbstorage.h>
@@ -298,7 +297,6 @@ char selectedFilePath[512] = "";
 char currentPath[512] = "sd:/discs/";
 const int ITEMS_PER_PAGE = 10;
 int currentPage = 0;
-int mp3mainmenu = 0;
 
 // Double-buffer globals
 static void *xfb[2];
@@ -1668,8 +1666,6 @@ int main(int argc, wchar *argv[])
 
   ASND_Init();
   wii_audio_init();
-  if (mp3mainmenu)
-    MP3Player_Init();
 
   PAD_Init();
   WPAD_Init();
@@ -1713,9 +1709,6 @@ int main(int argc, wchar *argv[])
   //     return 1;
   //   }
   // }
-
-  if (mp3mainmenu)
-    MP3Player_PlayBuffer(sample_mp3, sample_mp3_size, NULL);
 
   // ---------------------------------------------------------------------------
   // Mount SD card
@@ -1903,9 +1896,6 @@ int main(int argc, wchar *argv[])
     if (g_controller_type == 3)
       printf("               (Keyboard: connect USB keyboard for best experience)\n");
   }
-
-  if (mp3mainmenu)
-    MP3Player_Stop();
 
   int rv = EmuMain(argc, argv);
   return rv;

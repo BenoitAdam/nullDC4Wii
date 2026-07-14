@@ -14,7 +14,7 @@ include $(DEVKITPPC)/wii_rules
 # BUILD is the directory where object files & intermediate files will be placed
 # SOURCES is a list of directories containing source code
 # INCLUDES is a list of directories containing extra header files
-# DATA is for the MP3 file
+# DATA is a list of directories containing binary data files
 #---------------------------------------------------------------------------------
 TARGET      := boot
 BUILD       := build
