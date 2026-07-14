@@ -221,7 +221,7 @@ extern int g_fmv_format_preset;
 // Internal structures
 // ---------------------------------------------------------------------------
 
-#define MAX_PRESETS     64
+#define MAX_PRESETS     4096
 #define MAX_KEYWORD_LEN 64
 #define MAX_ALIASES     8    // max [name1][name2]... aliases per section header
 
