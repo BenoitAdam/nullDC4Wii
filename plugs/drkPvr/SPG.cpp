@@ -72,13 +72,13 @@ void CalculateSync()
     // vcount+1. If a game programs vbstart beyond that wrap point, the
     // internal vblank event never fires and the stats go silent while the
     // game itself keeps running (its interrupts use SPG_VBLANK_INT instead).
-    printf("[SPG] sync: vcount=%d hcount=%d interlace=%d NTSC=%d PAL=%d lines=%d line_cycles=%d vbstart=%d vbend=%d%s\n",
-        (int)SPG_LOAD.vcount, (int)SPG_LOAD.hcount, (int)SPG_CONTROL.interlace,
-        (int)SPG_CONTROL.NTSC, (int)SPG_CONTROL.PAL,
-        (int)spg_ScanlineCount, (int)spg_LineSh4Cycles,
-        (int)SPG_VBLANK.vbstart, (int)SPG_VBLANK.vbend,
-        (SPG_VBLANK.vbstart >= spg_ScanlineCount) ? "  <-- vbstart OUT OF RANGE, vblank event will NEVER fire!" : "");
-    fflush(stdout); // mode changes are rare; make sure this survives a hard power-off
+    // printf("[SPG] sync: vcount=%d hcount=%d interlace=%d NTSC=%d PAL=%d lines=%d line_cycles=%d vbstart=%d vbend=%d%s\n",
+    //     (int)SPG_LOAD.vcount, (int)SPG_LOAD.hcount, (int)SPG_CONTROL.interlace,
+    //     (int)SPG_CONTROL.NTSC, (int)SPG_CONTROL.PAL,
+    //     (int)spg_ScanlineCount, (int)spg_LineSh4Cycles,
+    //     (int)SPG_VBLANK.vbstart, (int)SPG_VBLANK.vbend,
+    //     (SPG_VBLANK.vbstart >= spg_ScanlineCount) ? "  <-- vbstart OUT OF RANGE, vblank event will NEVER fire!" : "");
+    // fflush(stdout); // mode changes are rare; make sure this survives a hard power-off
 }
 
 s32 render_end_pending_cycles = 0;

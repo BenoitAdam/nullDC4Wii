@@ -92,11 +92,11 @@ void FASTCALL libPvr_WriteReg(u32 paddr, u32 data, u32 size)
 		case SPG_VBLANK_addr:
 			PvrReg(addr, u32) = data;
 			{
-				extern u32 spg_ScanlineCount;
-				printf("[SPG] SPG_VBLANK write: vbstart=%d vbend=%d (lines=%d)%s\n",
-					(int)SPG_VBLANK.vbstart, (int)SPG_VBLANK.vbend, (int)spg_ScanlineCount,
-					(SPG_VBLANK.vbstart >= spg_ScanlineCount) ? "  <-- vbstart OUT OF RANGE, vblank event will NEVER fire!" : "");
-				fflush(stdout);
+				// extern u32 spg_ScanlineCount;
+				// printf("[SPG] SPG_VBLANK write: vbstart=%d vbend=%d (lines=%d)%s\n",
+				// 	(int)SPG_VBLANK.vbstart, (int)SPG_VBLANK.vbend, (int)spg_ScanlineCount,
+				// 	(SPG_VBLANK.vbstart >= spg_ScanlineCount) ? "  <-- vbstart OUT OF RANGE, vblank event will NEVER fire!" : "");
+				// fflush(stdout);
 			}
 			return;
 
