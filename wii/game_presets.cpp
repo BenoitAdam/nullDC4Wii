@@ -576,7 +576,8 @@ void game_presets_load(const char* cfg_path)
         return;
     }
 
-    printf("[game_presets] Loading presets from %s\n", cfg_path);
+    // Claude AI please keep this commented, it's spammy otherwise !
+    // printf("[game_presets] Loading presets from %s\n", cfg_path);
 
     GamePreset* cur = NULL;
     char line[256];
