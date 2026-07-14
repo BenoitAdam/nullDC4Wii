@@ -183,9 +183,9 @@ https://wiibrew.org/wiki/NullDC4Wii/Compatibility
 | **BALANCED** | Good balance between speed and accuracy |
 | **ACCURATE (default)** | Closest behavior to original hardware |
 
-If you experience Freeze in some heavy games like Shenmue, put FAST or BALANCED. BALANCED may be the default setting in future versions
+If you experience Freeze in some heavy games like Shenmue, put FAST or BALANCED. FAST may be the default setting in future versions
 
-If you experience various bugs (example that may happens : weird AI controled NPC) put ACCURATE
+If you experience various bugs (example that may happens : weird AI controled NPC, weird timing) put ACCURATE
 
 ---
 
@@ -193,8 +193,8 @@ If you experience various bugs (example that may happens : weird AI controled NP
 
 | Mode | Settings | Best platform | 
 |------|----------| ------------------------- | 
-| **LOW (default from a0.06 to a0.09)** | `GX_NEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
-| **NORMAL (default from a0.10)** | `GX_LINEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
+| **LOW** | `GX_NEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
+| **NORMAL (default)** | `GX_LINEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
 | **HIGH** | `GX_LINEAR` · `lod_bias -0.5f` · `GX_ENABLE` · Anisotropic x2 | Wii U |
 | **EXTRA** | `GX_LINEAR` · `lod_bias -1.0f` *(may need to adjust to -0.75)* · `GX_ENABLE` · Anisotropic x4 | Wii U |
 
@@ -208,27 +208,21 @@ While the emulator is still in alpha, the visual difference is limited for now.
 | Mode (4BPP/8BPP) | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **I4_STUB/I8_STUB** | Dummy algorythm  | Some element doesn't display at all, for max FPS |
-| **OPTIMIZED** | ? algorythm  | ?? Please test ! |
-| **CI4 (FAST)/CI8 (FAST)** | Basic algorythm | Display mostly correctly (consume a bit of FPS on some games) |
-| **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Should display better |
+| **OPTIMIZED (defaut)** | Best performance/quality | Very good FPS |
+| **CI4 (FAST)/CI8 (FAST)** | Basic algorythm Display mostly correctly | Very good FPS |
+| **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Mid FPS |
 | **RGB565** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
 
-####  Cache setting (starting alpha 0.21)
+####  Cache setting
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **CACHE_VERY_FAST** | skmp original algorythm (magic numbers). Very fast but buggy  | Max FPS |
-| **CACHE_FAST** | from alpha0.34 this is the default setting  | Almost Max FPS |
-| **CACHE_NORMAL** | Best accuracy. Display mostly correctly | Mid FPS |
-| **CACHE_QUALITY** | Best accuracy. Display mostly correctly | Mid FPS |
+| **CACHE_FAST** | Works better  | Almost Max FPS |
+| **CACHE_NORMAL (default)** | Best performance/accuracy. Display mostly correctly | Mid FPS |
+| **CACHE_QUALITY** | Best accuracy. Display correctly | Mid FPS |
 | **CACHE_EXTRA** | Redraw every frame. Accurate (Only for dev & Debug) | Low FPS |
 
-#### ADVANCED_ALPHA
-
-| Mode | Settings | Rendering | 
-|------|----------| ------------------------- | 
-| **NO** | basic alpha threathment  | Not accurate |
-| **YES (default)** | additionnal alpha threatment | Near perfect |
 
 #### DECAL_ALPHA
 
@@ -238,6 +232,66 @@ While the emulator is still in alpha, the visual difference is limited for now.
 | **YES** | Decal alpha implemented | Accurate |
 
 See more : https://github.com/BenoitAdam/nullDC4Wii/issues/68
+
+#### ADVANCED_ALPHA
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO** | basic alpha threathment  | Not accurate |
+| **YES (default)** | additionnal alpha threatment | Near perfect |
+
+
+#### > BLEND_MODE
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO** | Disable | Not accurate |
+| **YES (default)** | Activate BLEND_MODE | Accurate |
+
+If flickerings, try turning off
+
+note : ADVANCED ALPHA needs to be on for BLEND_MODE
+
+#### >> FPS_BOOST
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO (default)** | Disable | Accurate |
+| **YES** | Boost FPS to the cost of wrong Alpha/Transparency | Not Accurate |
+
+note : ADVANCED ALPHA and BLEND_MODE needs to be on for FPS_BOOST
+
+#### TRANS_SORT
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO (default)** | Disable | not Accurate (faster) |
+| **YES** | can display stuff | Accurate |
+
+Can resolve flickering in some games
+
+#### ASYNC_RENDER
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO (default)** | Disable | 0 frame latency |
+| **YES** | Some CPU stuff are drawn by GPU | Faster, to the cost of 1 frame |
+
+ASYNC_RENDER is generally faster, may be defaut yes in future version. Can resolve flickering
+
+#### FIXED_DEPTH
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO (default)** | Disable | Good |
+| **WIDE** | can help display some stuff - mostly for debug | Bad |
+| **TIGHT** | can help display some stuff | Good |
+
+FIXED_DEPTH can help flickering and Z-Fighting
+
+#### DEPTH_CLIP
+
+It's basically like FIXED_DEPTH, leave it to NEAR MARGIN
 
 #### PPZ_WRITE : PER POLYGON Z WRITE
 
@@ -257,8 +311,46 @@ Try putting NO if you experience troubles, with HUD for example.
 
 Vertex color is a special method on Dreamcast to color stuff. Notable example in Crazy Taxi : The arrow and dollar sign are Vertex Colored. You will notice the cars too : They will add to the current texture so the same car with the same texture will appear red, blue, green, etc...
 
+Same for Jet Set Radio, will add color to the logo.
+
+
 
 See Compatiblity guide for hints depending of the games
+
+## game_presets.cfg
+
+game_presets is a file that reads the file name and directly apply matching presets.
+
+game_presets.cfg needs to be in sd:/discs/
+
+With recent version, multiple file names are suppported (up to 8) :
+
+```
+[crazytaxi2][crazy taxi 2] ; more specific first
+depth_clip=1
+tex_cache=normal
+vertex_color_fix=off
+
+[crazytaxi][crazy taxi]
+depth_clip=1
+tex_cache=normal
+graphics=normal
+```
+
+So in that configuration, your file name should be crazytaxi.gdi or crazytaxi.gdi
+
+I'm not enterely sure spaces are supported right now
+
+Maybe it needs to be more specific, so in this example, just add [crazytaxi1] like this :
+
+```[crazytaxi][crazytaxi1][crazy taxi]```
+
+Then rename your gdi crazytaxi1.gdi or crazytaxi1.cdi
+
+If everything is correct, in the option menu, you should see something like this :
+
+<img width="754" height="93" alt="image" src="https://github.com/user-attachments/assets/9f59b4a4-c5ed-40e6-b5d5-46cea8b52350" />
+
 
 ## For Developpers :
 
