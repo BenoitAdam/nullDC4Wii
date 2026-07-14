@@ -279,6 +279,20 @@ Can resolve flickering in some games
 
 ASYNC_RENDER is generally faster, may be defaut yes in future version. Can resolve flickering
 
+#### FIXED_DEPTH
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO (default)** | Disable | Good |
+| **WIDE** | can help display some stuff - mostly for debug | Bad |
+| **TIGHT** | can help display some stuff | Good |
+
+FIXED_DEPTH can help flickering and Z-Fighting
+
+#### DEPTH_CLIP
+
+It's basically like FIXED_DEPTH, leave it to NEAR MARGIN
+
 #### PPZ_WRITE : PER POLYGON Z WRITE
 
 | Mode | Settings | Rendering | 
