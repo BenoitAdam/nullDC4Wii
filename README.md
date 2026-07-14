@@ -260,6 +260,41 @@ Vertex color is a special method on Dreamcast to color stuff. Notable example in
 
 See Compatiblity guide for hints depending of the games
 
+## game_presets.cfg
+
+game_presets is a file that reads the file name and directly apply matching presets.
+
+game_presets.cfg needs to be in sd:/discs/
+
+With recent version, multiple file names are suppported (up to 8) :
+
+```
+[crazytaxi2][crazy taxi 2] ; more specific first
+depth_clip=1
+tex_cache=normal
+vertex_color_fix=off
+
+[crazytaxi][crazy taxi]
+depth_clip=1
+tex_cache=normal
+graphics=normal
+```
+
+So in that configuration, your file name should be crazytaxi.gdi or crazytaxi.gdi
+
+I'm not enterely sure spaces are supported right now
+
+Maybe it needs to be more specific, so in this example, just add [crazytaxi1] like this :
+
+```[crazytaxi][crazytaxi1][crazy taxi]```
+
+Then rename your gdi crazytaxi1.gdi or crazytaxi1.cdi
+
+If everything is correct, in the option menu, you should see something like this :
+
+<img width="754" height="93" alt="image" src="https://github.com/user-attachments/assets/9f59b4a4-c5ed-40e6-b5d5-46cea8b52350" />
+
+
 ## For Developpers :
 
 ### Compilation Process (Windows)
