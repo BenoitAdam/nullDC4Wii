@@ -477,6 +477,15 @@ DynarecCodeEntry* rdv_FindOrCompile()
 void recSh4_Run()
 {
 	sh4_int_bCpuRun = true;
+
+	// Latch the accuracy-preset timing parameters BEFORE ngen_mainloop():
+	// the mainloop is emitted once, on first entry, with the timeslice baked
+	// into the generated code. Without this the JIT always ran the ACCURATE
+	// 448-cycle timeslice while UpdateSystem advanced peripherals by
+	// s_timeslice — consistent only because the preset was never applied in
+	// rec mode. Now FAST/BALANCED cut the UpdateSystem call rate 4x/2x.
+	Sh4_ApplyAccuracyPreset();
+
 	printf("recSh4: starting dynarec execution\n");
 
 #ifdef ENABLE_PERF_MONITORING

@@ -112,5 +112,13 @@ int FASTCALL UpdateSystem();
 int FASTCALL UpdateSystem_no_event();
 int FASTCALL UpdateSystem_handle_event();
 
+// Accuracy-preset plumbing for the recompiler. Sh4_ApplyAccuracyPreset()
+// latches the timing parameters from the current preset (same routine the
+// interpreter runs at the top of Sh4_int_Run); sh4_GetTimeslice() returns the
+// latched timeslice so the JIT mainloop can be emitted with a matching cycle
+// budget instead of a hardcoded SH4_TIMESLICE.
+void Sh4_ApplyAccuracyPreset();
+s32  sh4_GetTimeslice();
+
 // Coarse timer (~13,216 kHz) used for block lifecycle tracking
 extern u32 gcp_timer;

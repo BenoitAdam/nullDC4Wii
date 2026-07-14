@@ -65,6 +65,20 @@ void CalculateSync()
     }
 
     spg_FrameSh4Cycles = spg_ScanlineCount * spg_LineSh4Cycles;
+
+    // [SPG] diagnostic: dump the sync setup on every mode change. The FPS
+    // stats line, the speed limiter and rend_vblank() all key off the
+    // scanline counter hitting SPG_VBLANK.vbstart — and the counter wraps at
+    // vcount+1. If a game programs vbstart beyond that wrap point, the
+    // internal vblank event never fires and the stats go silent while the
+    // game itself keeps running (its interrupts use SPG_VBLANK_INT instead).
+    printf("[SPG] sync: vcount=%d hcount=%d interlace=%d NTSC=%d PAL=%d lines=%d line_cycles=%d vbstart=%d vbend=%d%s\n",
+        (int)SPG_LOAD.vcount, (int)SPG_LOAD.hcount, (int)SPG_CONTROL.interlace,
+        (int)SPG_CONTROL.NTSC, (int)SPG_CONTROL.PAL,
+        (int)spg_ScanlineCount, (int)spg_LineSh4Cycles,
+        (int)SPG_VBLANK.vbstart, (int)SPG_VBLANK.vbend,
+        (SPG_VBLANK.vbstart >= spg_ScanlineCount) ? "  <-- vbstart OUT OF RANGE, vblank event will NEVER fire!" : "");
+    fflush(stdout); // mode changes are rare; make sure this survives a hard power-off
 }
 
 s32 render_end_pending_cycles = 0;
@@ -161,6 +175,7 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
 
 #ifndef TARGET_PSP
                 printf("%s\n", fpsStr);
+                fflush(stdout); // once per 2s: keep the log tail intact if the Wii is powered off
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
             }

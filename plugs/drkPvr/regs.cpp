@@ -84,6 +84,22 @@ void FASTCALL libPvr_WriteReg(u32 paddr, u32 data, u32 size)
 			CalculateSync();
 			return;
 
+		// ---- SPG_VBLANK: store + diagnostic ----
+		// The internal vblank event (FPS stats line, speed limiter,
+		// rend_vblank) fires when the scanline counter — wrapping at
+		// SPG_LOAD.vcount+1 — equals vbstart. Log every write so a game
+		// programming vbstart past the wrap point is visible in ndclog.txt.
+		case SPG_VBLANK_addr:
+			PvrReg(addr, u32) = data;
+			{
+				extern u32 spg_ScanlineCount;
+				printf("[SPG] SPG_VBLANK write: vbstart=%d vbend=%d (lines=%d)%s\n",
+					(int)SPG_VBLANK.vbstart, (int)SPG_VBLANK.vbend, (int)spg_ScanlineCount,
+					(SPG_VBLANK.vbstart >= spg_ScanlineCount) ? "  <-- vbstart OUT OF RANGE, vblank event will NEVER fire!" : "");
+				fflush(stdout);
+			}
+			return;
+
 		// ---- SCALER_CTL: hscale bit feeds the renderer's canvas width ----
 		// Only recalculate with the x_scaler preset on: legacy behavior never
 		// resynced on this write, and preset-off must stay bit-identical.

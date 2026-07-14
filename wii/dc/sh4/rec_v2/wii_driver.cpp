@@ -46,6 +46,7 @@
 #include <stddef.h>	// offsetof — used for jit_scratch context slot addressing
 #include <math.h>	// sqrtf — fsqrt/fsrra native call targets
 #include "dc\sh4\sh4_opcode_list.h"
+#include "dc\sh4\sh4_interpreter.h"	// sh4_GetTimeslice — preset-latched timeslice
 
 #include "dc\sh4\sh4_registers.h"
 #include "dc\sh4\ccn.h"
@@ -2078,8 +2079,16 @@ void ngen_mainloop()
 			// only resync points are shop_ifb and the canonical fallback.
 			reg_reload_all();
 
+			// Cycle budget per timeslice. Latched from the accuracy preset
+			// (FAST=1792 / BALANCED=896 / ACCURATE=448) rather than the fixed
+			// SH4_TIMESLICE: recSh4_Run() applies the preset before this code
+			// is emitted, and UpdateSystem_no_event() advances TMU/PVR by the
+			// same s_timeslice, so the two stay consistent. Baked in at emit
+			// time — the mainloop is generated once per session.
+			const s32 jit_timeslice = sh4_GetTimeslice();
+
 			//cycles
-			ppc_li(ppc_cycles,SH4_TIMESLICE);
+			ppc_li(ppc_cycles,jit_timeslice);
 
 			//and pc!
 			ppc_sh_load(ppc_next_pc,reg_nextpc);
@@ -2096,7 +2105,7 @@ void ngen_mainloop()
 
 			//next_pc _MUST_ be on ram since update system uses it for interrupt processing
 			ppc_sh_store(ppc_next_pc,reg_nextpc);
-			ppc_addi(ppc_cycles,ppc_cycles,SH4_TIMESLICE);	//add cycles ...
+			ppc_addi(ppc_cycles,ppc_cycles,jit_timeslice);	//add cycles (preset-latched timeslice)
 
 			// Split UpdateSystem: the GPR-free peripheral cascade + interrupt
 			// pending-check runs every timeslice WITHOUT flushing the pinned

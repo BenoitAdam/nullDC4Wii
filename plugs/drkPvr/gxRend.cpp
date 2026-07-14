@@ -5529,7 +5529,9 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
 void SetFpsText(char *text)
 {
   strcpy(fps_text, text);
-  printf(text);
+  // No printf here: the text contains literal '%' so printf(text) is UB
+  // (it mangled/doubled the line in the log), and SPG.cpp already prints
+  // the same string with a newline right after calling us.
   // if (!IsFullscreen)
   {
     // SetWindowText((HWND)emu.GetRenderTarget(), fps_text);
