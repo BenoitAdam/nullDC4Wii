@@ -223,12 +223,6 @@ While the emulator is still in alpha, the visual difference is limited for now.
 | **CACHE_QUALITY** | Best accuracy. Display correctly | Mid FPS |
 | **CACHE_EXTRA** | Redraw every frame. Accurate (Only for dev & Debug) | Low FPS |
 
-#### ADVANCED_ALPHA
-
-| Mode | Settings | Rendering | 
-|------|----------| ------------------------- | 
-| **NO** | basic alpha threathment  | Not accurate |
-| **YES (default)** | additionnal alpha threatment | Near perfect |
 
 #### DECAL_ALPHA
 
@@ -238,6 +232,43 @@ While the emulator is still in alpha, the visual difference is limited for now.
 | **YES** | Decal alpha implemented | Accurate |
 
 See more : https://github.com/BenoitAdam/nullDC4Wii/issues/68
+
+#### ADVANCED_ALPHA
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO** | basic alpha threathment  | Not accurate |
+| **YES (default)** | additionnal alpha threatment | Near perfect |
+
+
+#### > BLEND_MODE
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO** | Disable | Not accurate |
+| **YES (default)** | Activate BLEND_MODE | Accurate |
+
+If flickerings, try turning off
+
+note : ADVANCED ALPHA needs to be on for BLEND_MODE
+
+#### >> FPS_BOOST
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO (default)** | Disable | Accurate |
+| **YES** | Boost FPS to the cost of wrong Alpha/Transparency | Not Accurate |
+
+note : ADVANCED ALPHA and BLEND_MODE needs to be on for FPS_BOOST
+
+#### ASYNC_RENDER
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO (default)** | Disable | 0 frame latency |
+| **YES** | Some CPU stuff are drawn by GPU | Faster, to the cost of 1 frame |
+
+ASYNC_RENDER is generally faster, may be defaut yes in future version. Can resolve flickerness
 
 #### PPZ_WRITE : PER POLYGON Z WRITE
 
