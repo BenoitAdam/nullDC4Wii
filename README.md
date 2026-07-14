@@ -261,6 +261,15 @@ note : ADVANCED ALPHA needs to be on for BLEND_MODE
 
 note : ADVANCED ALPHA and BLEND_MODE needs to be on for FPS_BOOST
 
+#### TRANS_SORT
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO (default)** | Disable | not Accurate (faster) |
+| **YES** | can display stuff | Accurate |
+
+Can resolve flickering in some games
+
 #### ASYNC_RENDER
 
 | Mode | Settings | Rendering | 
@@ -268,7 +277,7 @@ note : ADVANCED ALPHA and BLEND_MODE needs to be on for FPS_BOOST
 | **NO (default)** | Disable | 0 frame latency |
 | **YES** | Some CPU stuff are drawn by GPU | Faster, to the cost of 1 frame |
 
-ASYNC_RENDER is generally faster, may be defaut yes in future version. Can resolve flickerness
+ASYNC_RENDER is generally faster, may be defaut yes in future version. Can resolve flickering
 
 #### PPZ_WRITE : PER POLYGON Z WRITE
 
@@ -287,6 +296,9 @@ Try putting NO if you experience troubles, with HUD for example.
 | **YES** | Intensity color | Accurate |
 
 Vertex color is a special method on Dreamcast to color stuff. Notable example in Crazy Taxi : The arrow and dollar sign are Vertex Colored. You will notice the cars too : They will add to the current texture so the same car with the same texture will appear red, blue, green, etc...
+
+Same for Jet Set Radio, will add color to the logo.
+
 
 
 See Compatiblity guide for hints depending of the games
