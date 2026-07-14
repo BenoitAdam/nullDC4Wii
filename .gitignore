@@ -15,10 +15,20 @@ apps/*
 !apps/nulldc4wii/
 !apps/nulldc4wii/data/
 !apps/discs/
+!apps/apps/
+!apps/apps/nulldc4wii/
+!apps/apps/nulldc4wii/data/
 
 # Whitelist the specific files you want to keep
 !apps/nulldc4wii/data/game_presets.cfg
 !apps/nulldc4wii/data/meta.xml
+!apps/apps/nulldc4wii/meta.xml
+!apps/apps/nulldc4wii/License.txt
+!apps/apps/nulldc4wii/README.wii
+!apps/apps/nulldc4wii/Readme.txt
+!apps/apps/nulldc4wii/icon.png
+!apps/apps/nulldc4wii/data/Real_wii_Put_bios_here.txt
+!apps/apps/nulldc4wii/data/fsca-table.bin
 
 # Ignore dol/elf file
 apps/nulldc4wii/boot.dol
