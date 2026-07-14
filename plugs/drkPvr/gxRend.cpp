@@ -4950,27 +4950,34 @@ void StartRender()
         if(DEBUG_MESSAGE()) printf("[PATH] 2D-after-3D: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
           FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
         s_did_3d_render = false;
-        gx_sync_pending(); // ASYNC_RENDER(): apply the queued frame's flip first
-        GX_DrawDone();
-        GX_CopyDisp(frameBuffer[fb], GX_TRUE);
-        VIDEO_SetNextFramebuffer(frameBuffer[fb]);
-        VIDEO_Flush();
+        // The 3D frame is already in frameBuffer[fb] (or queued for flip in
+        // async mode) — just make sure it reaches the screen.  Do NOT
+        // GX_CopyDisp here: DoRender's display copy cleared the EFB, so a
+        // second copy would present the clear color (black frame flash).
+        gx_sync_pending(); // ASYNC_RENDER(): apply the queued frame's flip
+        reset_vtx_state(); // discard this render's geometry — it was never
+                           // drawn and would ghost into the next 3D frame
         wii_audio_frame();
-        // VIDEO_WaitVSync() // Not necessary here (don't block the SH4 thread)
         FrameCount++;
         return;
       }
 
       if (ShouldSkipFrame())
+      {
+        reset_vtx_state(); // discard the skipped frame's geometry too
         return;   // skip the 2D present, same as the VBlank() path
+      }
 
       if(DEBUG_MESSAGE()) printf("[PATH] 2D-blit: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
         FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
 
       PresentFramebuffer();
+      reset_vtx_state(); // geometry of a 2D-blit frame is never drawn;
+                         // without this it ghosts into the next 3D frame
       FrameCount++;
       return;
     } else {
+      reset_vtx_state(); // drop the untaken render's geometry (see above)
       return; // just return
     }
   }
