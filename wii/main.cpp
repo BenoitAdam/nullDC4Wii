@@ -289,7 +289,10 @@ typedef enum {
 StorageSource g_storage_source = STORAGE_SD;
 bool g_usb_mounted = false;
 
-FileEntry fileList[256];
+// Carved from the MEM2 arena on first listFilesInDirectory() call instead of
+// sitting in MEM1 BSS (~197 KB) — MEM1 is nearly exhausted, MEM2 has headroom.
+#define MAX_FILE_LIST 256
+FileEntry* fileList = NULL;
 int fileCount = 0;
 char selectedFilePath[512] = "";
 char currentPath[512] = "sd:/discs/";
@@ -374,11 +377,28 @@ void listFilesInDirectory(const char *dirPath)
   struct dirent *entry;
   struct stat statbuf;
 
+  // Allocate the browser list from MEM2 once (kept for the whole session).
+  // fileCount stays 0 on failure, so the menu never dereferences NULL.
+  if (!fileList)
+  {
+    u32 need = (u32)sizeof(FileEntry) * MAX_FILE_LIST;
+    u8* lo   = (u8*)(((u32)SYS_GetArena2Lo() + 31) & ~31); // 32-byte align
+    if ((u8*)SYS_GetArena2Hi() - lo < (s32)need)
+    {
+      printf("Not enough MEM2 for file browser list (%u KB)\n", need / 1024);
+      fileCount = 0;
+      return;
+    }
+    SYS_SetArena2Lo(lo + need);
+    fileList = (FileEntry*)lo;
+    memset(fileList, 0, need);
+  }
+
   if ((dir = opendir(dirPath)) != NULL)
   {
     fileCount = 0;
 
-    while ((entry = readdir(dir)) != NULL && fileCount < 256)
+    while ((entry = readdir(dir)) != NULL && fileCount < MAX_FILE_LIST)
     {
       if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
         continue;

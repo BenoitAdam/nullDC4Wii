@@ -179,6 +179,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <gccore.h>   // SYS_GetArena2Lo/SYS_SetArena2Lo — s_presets lives in MEM2
 
 // ---------------------------------------------------------------------------
 // Global presets declared in main.cpp
@@ -269,8 +270,11 @@ struct GamePreset
     int bg_poly;
 };
 
-static GamePreset s_presets[MAX_PRESETS];
-static int        s_preset_count = 0;
+// Carved from the MEM2 arena on first game_presets_load() call instead of
+// sitting in MEM1 BSS: 4096 presets x sizeof(GamePreset) is ~2.5 MB, and
+// MEM1 is nearly exhausted while MEM2 has headroom.
+static GamePreset* s_presets     = NULL;
+static int         s_preset_count = 0;
 
 // [default] section — applied before any per-game match, so per-game
 // presets in the .cfg only need to list the fields that differ from it.
@@ -568,6 +572,25 @@ void game_presets_load(const char* cfg_path)
     s_preset_count = 0;
     s_has_default = false;
     g_matched_preset_name[0] = '\0';
+
+    // Allocate the preset table from MEM2 once (kept for the whole session,
+    // reloads reuse it). s_preset_count stays 0 on failure, so nothing else
+    // ever dereferences a NULL s_presets.
+    if (!s_presets)
+    {
+        u32 need = (u32)sizeof(GamePreset) * MAX_PRESETS;
+        u8* lo   = (u8*)(((u32)SYS_GetArena2Lo() + 31) & ~31); // 32-byte align
+        if ((u8*)SYS_GetArena2Hi() - lo < (s32)need)
+        {
+            printf("[game_presets] Not enough MEM2 for preset table (%u KB) — presets disabled\n",
+                   need / 1024);
+            return;
+        }
+        SYS_SetArena2Lo(lo + need);
+        s_presets = (GamePreset*)lo;
+        memset(s_presets, 0, need);
+        printf("[game_presets] Preset table in MEM2: %u KB at %p\n", need / 1024, s_presets);
+    }
 
     FILE* f = fopen(cfg_path, "r");
     if (!f)
