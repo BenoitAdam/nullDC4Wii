@@ -9,7 +9,7 @@
                                 applies if ANY of them matches the filename
                                 (e.g. [streetfighter32][doubleimpact][double impact]).
                                 The FIRST alias is the canonical name shown in
-                                the options menu. Up to 8 aliases per section.
+                                the options menu. Any number of aliases per section.
         accuracy=fast       <- only fields listed are overridden
         graphics=low
         8bpp=i8_stub
@@ -170,6 +170,10 @@
     Fields left unset by both [default] and the matched section stay at
     whatever the user selected in the UI.
 
+    The file is never kept in RAM: game_presets_apply() streams it from SD
+    (one pass for [default], one for the per-game match), parsing into a
+    single scratch slot — the old 4096-entry table cost ~2.6 MB of MEM2.
+
     IMPORTANT: matching is done by lowercasing BOTH the filename and the keyword,
     then using plain strstr() — no strncasecmp needed (avoids devkitPPC/newlib issues).
 */
@@ -179,7 +183,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
-#include <gccore.h>   // SYS_GetArena2Lo/SYS_SetArena2Lo — s_presets lives in MEM2
 
 // ---------------------------------------------------------------------------
 // Global presets declared in main.cpp
@@ -222,18 +225,10 @@ extern int g_fmv_format_preset;
 // Internal structures
 // ---------------------------------------------------------------------------
 
-#define MAX_PRESETS     4096
 #define MAX_KEYWORD_LEN 64
-#define MAX_ALIASES     8    // max [name1][name2]... aliases per section header
 
 struct GamePreset
 {
-    // One section can carry several aliases: [streetfighter32][doubleimpact][double impact]
-    // A filename matching ANY of them applies the section. keywords[0] is the
-    // canonical name shown in the options menu. All lowercased at load time.
-    char keywords[MAX_ALIASES][MAX_KEYWORD_LEN];
-    int  keyword_count;
-
     // -1 = not set (leave user default untouched)
     int accuracy;
     int graphics;
@@ -270,16 +265,13 @@ struct GamePreset
     int bg_poly;
 };
 
-// Carved from the MEM2 arena on first game_presets_load() call instead of
-// sitting in MEM1 BSS: 4096 presets x sizeof(GamePreset) is ~2.5 MB, and
-// MEM1 is nearly exhausted while MEM2 has headroom.
-static GamePreset* s_presets     = NULL;
-static int         s_preset_count = 0;
+// Nothing from the .cfg stays in RAM: game_presets_apply() streams the file
+// from SD and parses the one section it needs into this single scratch slot,
+// so the whole system costs ~130 bytes of BSS instead of a MEM2 table.
+static GamePreset s_scratch;
 
-// [default] section — applied before any per-game match, so per-game
-// presets in the .cfg only need to list the fields that differ from it.
-static GamePreset s_default_preset;
-static bool       s_has_default = false;
+// Path remembered by game_presets_load() for the apply() streaming passes
+static char s_cfg_path[256] = "";
 
 // Exported so main.cpp can display the matched preset name in the options menu
 char g_matched_preset_name[MAX_KEYWORD_LEN] = "";
@@ -564,45 +556,77 @@ static void preset_apply_fields(const GamePreset* p)
 }
 
 // ---------------------------------------------------------------------------
-// Public: load
+// Section header matching
 // ---------------------------------------------------------------------------
 
-void game_presets_load(const char* cfg_path)
+// Parse a section header line (s points at the first '[') and decide whether
+// the section applies. want_default selects the special [default] section;
+// otherwise the section matches when ANY of its aliases is a substring of
+// lower_name (the already-lowercased filename). On a match, canonical and
+// hit (both MAX_KEYWORD_LEN) receive the first alias — the name shown in
+// the options menu — and the alias that actually matched.
+static bool section_matches(char* s, const char* lower_name, bool want_default,
+                            char* canonical, char* hit)
 {
-    s_preset_count = 0;
-    s_has_default = false;
-    g_matched_preset_name[0] = '\0';
+    bool matched = false;
+    bool first   = true;
+    canonical[0] = hit[0] = '\0';
 
-    // Allocate the preset table from MEM2 once (kept for the whole session,
-    // reloads reuse it). s_preset_count stays 0 on failure, so nothing else
-    // ever dereferences a NULL s_presets.
-    if (!s_presets)
+    // Walk every [alias] group on the line; stop at the first thing that
+    // isn't another '[' (e.g. a trailing ; comment).
+    char* pos = s;
+    while (*pos == '[')
     {
-        u32 need = (u32)sizeof(GamePreset) * MAX_PRESETS;
-        u8* lo   = (u8*)(((u32)SYS_GetArena2Lo() + 31) & ~31); // 32-byte align
-        if ((u8*)SYS_GetArena2Hi() - lo < (s32)need)
+        char* end_bracket = strchr(pos, ']');
+        if (!end_bracket) break;
+        *end_bracket = '\0';             // terminate this group
+        char* kw = str_trim(pos + 1);    // content between [ and ]
+        if (*kw)
         {
-            printf("[game_presets] Not enough MEM2 for preset table (%u KB) — presets disabled\n",
-                   need / 1024);
-            return;
+            char alias[MAX_KEYWORD_LEN];
+            strncpy(alias, kw, MAX_KEYWORD_LEN - 1);
+            alias[MAX_KEYWORD_LEN - 1] = '\0';
+            str_tolower_inplace(alias);
+
+            if (first)
+            {
+                strcpy(canonical, alias);
+                first = false;
+
+                // [default] is special: only ever picked by the want_default
+                // pass, never matched against a filename.
+                if (key_eq(canonical, "default"))
+                    return want_default;
+                if (want_default)
+                    return false;
+            }
+
+            if (!matched && str_contains(lower_name, alias))
+            {
+                matched = true;
+                strcpy(hit, alias);
+            }
         }
-        SYS_SetArena2Lo(lo + need);
-        s_presets = (GamePreset*)lo;
-        memset(s_presets, 0, need);
-        printf("[game_presets] Preset table in MEM2: %u KB at %p\n", need / 1024, s_presets);
+        pos = end_bracket + 1;
+        while (*pos && isspace((unsigned char)*pos)) pos++;
     }
+    return matched;
+}
 
-    FILE* f = fopen(cfg_path, "r");
-    if (!f)
-    {
-        printf("[game_presets] No preset file at %s — using UI defaults\n", cfg_path);
-        return;
-    }
+// ---------------------------------------------------------------------------
+// Streaming pass — parse and apply the first section that matches
+// ---------------------------------------------------------------------------
 
-    // Claude AI please keep this commented, it's spammy otherwise !
-    // printf("[game_presets] Loading presets from %s\n", cfg_path);
+// Re-reads the .cfg from SD and applies the first [default] section
+// (want_default) or the first section with an alias matching lower_name.
+// Only the matched section's key=value lines are parsed, into s_scratch.
+// Returns true if a section was found and applied.
+static bool stream_apply(const char* lower_name, bool want_default)
+{
+    FILE* f = fopen(s_cfg_path, "r");
+    if (!f) return false;
 
-    GamePreset* cur = NULL;
+    bool collecting = false;
     char line[256];
 
     while (fgets(line, sizeof(line), f))
@@ -615,68 +639,30 @@ void game_presets_load(const char* cfg_path)
         // Section header: [keyword] or several aliases [name1][name2][name3]
         if (*s == '[')
         {
-            // Collect every [alias] group on the line; stop at the first
-            // thing that isn't another '[' (e.g. a trailing ; comment).
-            char aliases[MAX_ALIASES][MAX_KEYWORD_LEN];
-            int  alias_count = 0;
-            char* pos = s;
-            while (*pos == '[')
+            if (collecting) break;   // next section starts — first match wins
+
+            char canonical[MAX_KEYWORD_LEN], hit[MAX_KEYWORD_LEN];
+            if (section_matches(s, lower_name, want_default, canonical, hit))
             {
-                char* end_bracket = strchr(pos, ']');
-                if (!end_bracket) break;
-                *end_bracket = '\0';             // terminate this group
-                char* kw = str_trim(pos + 1);    // content between [ and ]
-                if (*kw)
+                collecting = true;
+                preset_clear(&s_scratch);
+
+                if (want_default)
+                    printf("[game_presets] Applying [default]\n");
+                else
                 {
-                    if (alias_count >= MAX_ALIASES)
-                    {
-                        printf("[game_presets] Max aliases (%d) reached, ignoring [%s]\n",
-                               MAX_ALIASES, kw);
-                    }
-                    else
-                    {
-                        strncpy(aliases[alias_count], kw, MAX_KEYWORD_LEN - 1);
-                        aliases[alias_count][MAX_KEYWORD_LEN - 1] = '\0';
-                        str_tolower_inplace(aliases[alias_count]); // lowercase once at load time
-                        alias_count++;
-                    }
+                    printf("[game_presets] Matched [%s] (via '%s')\n", canonical, hit);
+
+                    // Save canonical name (first alias) for the options menu
+                    strncpy(g_matched_preset_name, canonical, MAX_KEYWORD_LEN - 1);
+                    g_matched_preset_name[MAX_KEYWORD_LEN - 1] = '\0';
                 }
-                pos = end_bracket + 1;
-                while (*pos && isspace((unsigned char)*pos)) pos++;
             }
-            if (alias_count == 0) continue;
-
-            // [default] is a special section applied before any per-game
-            // match, instead of being registered as a matchable preset.
-            if (key_eq(aliases[0], "default"))
-            {
-                cur = &s_default_preset;
-                preset_clear(cur);
-                s_has_default = true;
-                continue;
-            }
-
-            if (s_preset_count >= MAX_PRESETS)
-            {
-                printf("[game_presets] Max presets (%d) reached, skipping [%s]\n",
-                       MAX_PRESETS, aliases[0]);
-                cur = NULL;
-                continue;
-            }
-
-            cur = &s_presets[s_preset_count++];
-            preset_clear(cur);
-
-            cur->keyword_count = alias_count;
-            for (int a = 0; a < alias_count; a++)
-                strcpy(cur->keywords[a], aliases[a]);
-
-            // printf("[game_presets]   Registered: [%s] (%d alias(es))\n", cur->keywords[0], cur->keyword_count);
             continue;
         }
 
-        // key=value pair (only if inside a section)
-        if (!cur) continue;
+        // key=value pair (only inside the matched section)
+        if (!collecting) continue;
 
         char* eq = strchr(s, '=');
         if (!eq) continue;
@@ -690,11 +676,47 @@ void game_presets_load(const char* cfg_path)
         val = str_trim(val);   // re-trim after comment removal
 
         if (*key && *val)
-            apply_kv(cur, key, val);
+            apply_kv(&s_scratch, key, val);
     }
 
     fclose(f);
-    printf("[game_presets] Done — %d preset(s) loaded\n", s_preset_count);
+
+    if (collecting)
+        preset_apply_fields(&s_scratch);
+    return collecting;
+}
+
+// ---------------------------------------------------------------------------
+// Public: load
+// ---------------------------------------------------------------------------
+
+void game_presets_load(const char* cfg_path)
+{
+    g_matched_preset_name[0] = '\0';
+
+    strncpy(s_cfg_path, cfg_path, sizeof(s_cfg_path) - 1);
+    s_cfg_path[sizeof(s_cfg_path) - 1] = '\0';
+
+    // Nothing is parsed or stored here — apply() streams the file straight
+    // from SD each launch. Just count the sections so the boot log still
+    // shows whether the file was found and how many presets it holds.
+    FILE* f = fopen(s_cfg_path, "r");
+    if (!f)
+    {
+        printf("[game_presets] No preset file at %s — using UI defaults\n", cfg_path);
+        return;
+    }
+
+    int  sections = 0;
+    char line[256];
+    while (fgets(line, sizeof(line), f))
+    {
+        if (*str_trim(line) == '[')
+            sections++;
+    }
+    fclose(f);
+
+    printf("[game_presets] Done — %d section(s) found\n", sections);
 }
 
 // ---------------------------------------------------------------------------
@@ -705,22 +727,22 @@ void game_presets_apply(const char* filepath)
 {
     g_matched_preset_name[0] = '\0';   // clear previous match
 
-    // Apply [default] first so every launch starts from the same baseline;
-    // a per-game match below then only needs to override what differs.
-    if (s_has_default)
-    {
-        printf("[game_presets] Applying [default]\n");
-        preset_apply_fields(&s_default_preset);
-    }
+    if (!s_cfg_path[0])
+        return;
 
-    if (!filepath || !*filepath || s_preset_count == 0)
+    // Pass 1: apply [default] first — wherever it sits in the file — so
+    // every launch starts from the same baseline and a per-game match
+    // below only needs to override what differs.
+    stream_apply(NULL, true);
+
+    if (!filepath || !*filepath)
         return;
 
     // Work on filename only (strip directory part)
     const char* filename = strrchr(filepath, '/');
     filename = filename ? filename + 1 : filepath;
 
-    // Lowercase copy for matching — keywords are already lowercased at load time
+    // Lowercase copy for matching — aliases are lowercased as they're parsed
     char lower[512];
     strncpy(lower, filename, sizeof(lower) - 1);
     lower[sizeof(lower) - 1] = '\0';
@@ -728,34 +750,7 @@ void game_presets_apply(const char* filepath)
 
     printf("[game_presets] Trying to match: '%s'\n", lower);
 
-    // First match wins — a section matches if ANY of its aliases is a
-    // substring of the filename.
-    for (int i = 0; i < s_preset_count; i++)
-    {
-        GamePreset* p = &s_presets[i];
-        const char* hit = NULL;
-        for (int k = 0; k < p->keyword_count; k++)
-        {
-            if (str_contains(lower, p->keywords[k]))
-            {
-                hit = p->keywords[k];
-                break;
-            }
-        }
-        if (!hit)
-            continue;
-
-        printf("[game_presets] Matched [%s] (via '%s') for file: %s\n",
-               p->keywords[0], hit, filename);
-
-        // Save canonical name (first alias) for display in options menu
-        strncpy(g_matched_preset_name, p->keywords[0], MAX_KEYWORD_LEN - 1);
-        g_matched_preset_name[MAX_KEYWORD_LEN - 1] = '\0';
-
-        preset_apply_fields(p);
-
-        return; // First match only
-    }
-
-    printf("[game_presets] No preset matched for: %s\n", filename);
+    // Pass 2: first per-game section with an alias contained in the filename
+    if (!stream_apply(lower, false))
+        printf("[game_presets] No preset matched for: %s\n", filename);
 }

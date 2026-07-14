@@ -10,14 +10,17 @@ extern "C" {
 #endif
 
 /**
- * Load preset rules from a config file.
+ * Remember the preset config file path and log how many sections it holds.
+ * Nothing is parsed or stored in RAM — game_presets_apply() streams the
+ * file from SD each launch.
  * Safe to call even if the file doesn't exist (prints a warning, uses defaults).
  * @param cfg_path Full path e.g. "sd:/discs/game_presets.cfg"
  */
 void game_presets_load(const char* cfg_path);
 
 /**
- * Apply the first matching preset for the given file path.
+ * Stream the config file and apply [default] plus the first matching
+ * preset for the given file path.
  * Must be called AFTER game_presets_load() and BEFORE displayOptionsMenu()
  * so the options screen already shows the preset values.
  * Sets g_matched_preset_name to the matched keyword, or "" if no match.
