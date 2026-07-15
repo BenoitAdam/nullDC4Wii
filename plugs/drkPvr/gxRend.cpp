@@ -149,11 +149,12 @@ extern "C" int get_punch_through_preset();
 // legacy (a low/high VRAM address split was tried and broke the
 // character-select screen by reordering VQ against VQ). No depth-compare
 // tricks: every strip renders with the legacy GEQUAL painter state.
-// SCENE GATE: the tiers only describe the battle composition (VQ grid is
-// ~119 strips there). Lists with fewer than 80 tier-2 strips (menus,
-// intro, presentation: 3..52 measured — their VQ is content, not
-// backdrop) drop all tiers and draw far-W-then-submission-order, which
-// was correct on those screens before tiering existed.
+// SCENE GATE (tier 3 only — tiers 1/2 are unconditional whenever the
+// preset is on, matching pre-gate behavior): tier 3's full-screen plate
+// rule only describes the battle's "truth of retribution" moment (inside
+// a >=80-VQ list). Gating tiers 1/2 too was tried and broke char select
+// and presentation — disabling tier 1 moved crowd-bank content into tier
+// 0, where it could draw over characters that used to sit above it.
 extern "C" int get_isp_depth_preset();
 #define ISP_DEPTH_FIX() (get_isp_depth_preset() == 1)
 
@@ -4574,22 +4575,27 @@ void DoRender()
             wvtx += c;
           }
 
-          // Scene gate: the tier table was derived from (and is only correct
-          // for) the battle composition, where the VQ stage-art grid is
-          // ~119 strips. Menu/intro/presentation scenes carry only a few VQ
-          // strips (3..52 measured) that are CONTENT, not backdrop —
-          // tiering them to the bottom made Kenshiro vanish from the intro
-          // and pushed panels in front on char select/presentation. If this
-          // list doesn't look like a battle, drop every tier and fall back
-          // to plain submission-order painter (the pre-isp_depth behavior,
-          // which was correct on all those screens).
+          // Scene gate for tier 3 (background plate) ONLY. Tiers 1 (crowd)
+          // and 2 (VQ) stay unconditional — this is what v8 did (no gate at
+          // all) and char select/presentation both worked. v9/v10 gated
+          // tier 1 off outside the battle and that's what actually broke
+          // those two screens: disabling tier 1 doesn't fall back to a
+          // neutral order, it moves pal-32-47 content into tier 0 where it
+          // can now draw over characters that used to sit safely above it
+          // (confirmed by A/B: v10 un-gated tier 2 only and fixed
+          // presentation's missing character but left char select exactly
+          // as broken — tier 1 was the untouched, still-gated variable in
+          // both). Tier 3 is the newest, least-proven addition (only ever
+          // needed for the battle's "truth of retribution" full-screen
+          // plate, itself inside a >=80-VQ list), so it alone stays gated.
           int gate_c2 = 0;
           for (int i = 0; i < n; i++)
             if (trans_sort_recs[i].tr_class == 2) gate_c2++;
           const bool tier_gate_open = gate_c2 >= 80; // 52 (menus) << 80 << 119 (battle)
           if (!tier_gate_open)
             for (int i = 0; i < n; i++)
-              trans_sort_recs[i].tr_class = 0;
+              if (trans_sort_recs[i].tr_class == 3)
+                trans_sort_recs[i].tr_class = 0;
 
           if (n > 1)
             qsort(trans_sort_recs, n, sizeof(TransStripRec), trans_strip_cmp);
