@@ -8,7 +8,7 @@ a fork from https://github.com/skmp/nullDCe
 
 - Test current state with every game and report compatibility (see "compatibility" below)
 - Create presets for games
-- Test 2 player mode on wiimote & gamecube also, please report
+- Test 2/3/4 player mode on wiimote & gamecube also, please report
 - Help me finding regression (NOT bugs or glitch, only regression for now please)
 - Comment / Guides / Documentation (WiiBrew Wiki)
 - Test and report Fishing Rod/USB Keyboard/Lightgun/Maracas support
@@ -18,17 +18,15 @@ a fork from https://github.com/skmp/nullDCe
 
 - Controller correct layout, for pro pad and for gamecube pad
 - User custom Preset
-- Player 3/4 Gamecube/Wiimote
 - Fishing Rod/USB Keyboard/Lightgun/Maracas support (probably unsupported now)
 - Put external config file for controllers (controls.cfg)
-- User custom presets file
 
 ### Developer (Normal)
 
 - Coding routine adjustement for accuracy (FAST/BALANCED/ACCURATE)
 - 4/3 support (implemented, need fix on some games like Shenmue)
 - Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
-- Wii U Gamepad, Dualshock 3 and Wii U Pro Controller support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
+- Dualshock 3support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
 - Support for CHD/ELF game file
 
 ### Developer (Hard)
@@ -40,7 +38,7 @@ a fork from https://github.com/skmp/nullDCe
 - Use LLVM to port code for PowerPC ? (skmp says its not a good idea in this case)
 - Full Dynarec implementation (AI seems to know about this)
 - WinCE Games support https://github.com/BenoitAdam94/nullDC4Wii/issues/37
-
+- Wii direct MMU access implementation
 
 ## Installation
 
@@ -350,6 +348,73 @@ Then rename your gdi crazytaxi1.gdi or crazytaxi1.cdi
 If everything is correct, in the option menu, you should see something like this :
 
 <img width="754" height="93" alt="image" src="https://github.com/user-attachments/assets/9f59b4a4-c5ed-40e6-b5d5-46cea8b52350" />
+
+## Creating the optimal Preset :
+
+Best thing to do : 
+
+1/ Launch with default preset  
+2/ play a little bit the game (default stage, just input A A A), 2/3 minutes is enough  
+3/ If some things doesn't display good, try to change settings. Already we know that works :   
+
+- fine (seam) lines in 2D sprites : put "LOW" as graphics
+- Z fighting : put FIXED DEPTH to "tight"
+- 2 player viewport (or 2 cameras in the same scene) = SPLITSCREEN
+
+4/ Flickering, fix can be  :  
+
+- BLEND_MODE (set to off)
+- TRANS_MODE (set to off)
+- ASYNC_RENDER (set to on)
+- DEPTH-CLIP (set to tight)
+
+5/ Other graphical things not displaying (or black screen) : try flipping all the other setting, particulary :   
+
+- 4BPP/8BPP to CI4_FAST or CI8_FAST
+- BG POLYGON to on
+- PUNCH Trough to ON
+- TRANS_SORT to ON
+- RENDER TO TEX to ON
+- 2D Famebuffer = ON
+
+6/ off Canvas problem (screen too small or too big)  
+
+- try xratio = on (or off)
+- CANVAS_WIDTH (try different values)
+
+7/ Restart the game, try CACHE_VERY_FAST and CACHE_FAST. Find the lowest compatible option for the game. They may crash heavy-scene thus, like Shenmue intro  
+
+8/ Try if FPS_BOOST is possible and don't break too much the game
+
+9/ If you want to dig more, try the game in early version of NullDC4Wii :  
+
+- alpha0.25
+- alpha0.28
+- alpha0.40
+
+Report to me if you seen any regressions
+
+
+### Some examples of common problems : 
+
+Fine (seam) lines in 2D example : 
+
+<img width="1040" height="670" alt="Image" src="https://github.com/user-attachments/assets/23f5ba00-4a21-477f-a885-3789b09f110c" />
+
+CACHE related problem examples : 
+
+<img width="1117" height="835" alt="Image" src="https://github.com/user-attachments/assets/64ad3b87-68e3-48d4-9df0-77f74a3ea7ed" />
+
+<img width="880" height="598" alt="Image" src="https://github.com/user-attachments/assets/b5fc1694-a4d8-4f3d-bc43-329c6989bc23" />
+
+Off Canvas : 
+
+<img width="802" height="639" alt="Image" src="https://github.com/user-attachments/assets/99c2411d-4dd0-4ef2-82ce-e3a69f9d6924" />
+
+Z Fighting example : 
+
+<img width="628" height="268" alt="Image" src="https://github.com/user-attachments/assets/f479152c-74ea-4af9-84d5-e693a929adf4" />
+
 
 
 ## For Developpers :
