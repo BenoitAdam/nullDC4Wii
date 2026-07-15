@@ -42,6 +42,11 @@ extern "C" int get_debug_loop();
 // Specific debug for FMV
 int fmv_debug = 0;
 
+// TR-list depth census (Hokuto no Ken layering hunt). 1 = every 100th frame
+// dumps one [TRZ] line per translucent strip (dm/zw/full-precision Z decide
+// the isp_depth rule). 0 = off. Flip to 0 once the hunt is over.
+int scene_debug = 1;
+
 // Frame skipping
 extern "C" int get_frameskip_preset();
 
@@ -123,6 +128,49 @@ extern "C" int get_blend_fps_boost_preset();
 // Punch-through list fix
 extern "C" int get_punch_through_preset();
 #define PUNCH_THROUGH_FIX() (get_punch_through_preset() == 1)
+
+// isp_depth preset: layer-tiered translucent sort for games that submit
+// their whole 2D scene at ONE depth. Hokuto no Ken sends every TR strip
+// with dm=6 zw=0 at identical W=10000 (only HUD fonts differ, at W=1 =
+// nearest) and relies on PVR per-pixel autosort: a fade quad is even
+// submitted FIRST at W=1, expecting the hardware to composite it last.
+// Drawing in submission order instead lets the mid-list stage-art grid
+// erase the fighters, and that fade quad Z-stamps the frame black. With
+// the preset on, the TRANS_SORT machinery activates (implied — no need for
+// trans_sort=on) and its back-to-front strip sort gains a tie tier at
+// equal depth:
+//   tier 3  untextured full-screen ONE/ZERO plate  background plate, bottom
+//   tier 2  VQ (fmt=2 + VQ_Comp)                   stage art, drawn first
+//   tier 1  8bpp bank 32-47 (PalSelect>>4==2)      stage sprites (crowd)
+//   tier 0  everything else                        submission order (painter)
+// So the backdrop lands under the crowd, the crowd under the fighters/HUD,
+// and fades/dim-bands keep plain painter compositing. Within a tier,
+// submission order is preserved — VQ-vs-VQ compositing stays exactly
+// legacy (a low/high VRAM address split was tried and broke the
+// character-select screen by reordering VQ against VQ). No depth-compare
+// tricks: every strip renders with the legacy GEQUAL painter state.
+// SCENE GATE: the tiers only describe the battle composition (VQ grid is
+// ~119 strips there). Lists with fewer than 80 tier-2 strips (menus,
+// intro, presentation: 3..52 measured — their VQ is content, not
+// backdrop) drop all tiers and draw far-W-then-submission-order, which
+// was correct on those screens before tiering existed.
+extern "C" int get_isp_depth_preset();
+#define ISP_DEPTH_FIX() (get_isp_depth_preset() == 1)
+
+// ignore_tex_alpha preset: real PVR treats TEXTURE alpha as 1.0 (opaque)
+// when TSP.IgnoreTexA is set; legacy TEVSTAGE0 always modulates by TEXA.
+// Games that set IgnoreTexA on textures whose alpha channel holds garbage
+// (why not — hardware ignores it) render those polys fully transparent:
+// Hokuto no Ken's "transparent" VQ stage tiles (UseAlpha=1 IgnoreTexA=1,
+// empty alpha channel) vanished this way. What replaces TexA depends on
+// the PVR alpha equation for TSP.ShadInstr:
+//   0 Decal / 1 Modulate:            A = TexA        -> constant 1.0
+//   2 DecalAlpha / 3 ModulateAlpha:  A = VtxA(*TexA) -> vertex alpha (RASA)
+// Decal/Modulate polys MUST get the constant, not RASA: hardware never
+// reads their vertex alpha, so games leave it at 0 (same pattern as the
+// Test Drive 6 note at the UseAlpha block in the draw loop).
+extern "C" int get_ignore_texa_preset();
+#define IGNORE_TEXA_FIX() (get_ignore_texa_preset() == 1)
 
 // Offset (specular) color
 extern "C" int get_offset_color_preset();
@@ -3503,7 +3551,9 @@ struct TransStripRec
   Vertex *vtx;     // first vertex of the strip
   PolyParam *mod;  // render state in effect for this strip
   u16 count;       // vertex count (sign bit already consumed)
-  u16 _pad;
+  u16 tr_class;    // ISP_DEPTH_FIX() layer tier at equal depth (0 otherwise):
+                   // 3 = full-screen plate, 2 = VQ stage art,
+                   // 1 = 8bpp bank 32-47 (stage sprites), 0 = rest
 };
 
 static TransStripRec trans_sort_recs[8 * 1024];
@@ -3514,6 +3564,11 @@ static int trans_strip_cmp(const void *a, const void *b)
   const TransStripRec *rb = (const TransStripRec *)b;
   if (ra->far_w > rb->far_w) return -1; // farther strips draw first
   if (ra->far_w < rb->far_w) return 1;
+  // isp_depth layer tier: at equal depth, background plates (3) draw before
+  // stage art (2) before stage sprites (1) before everything else (0).
+  // Always 0 with the preset off.
+  if (ra->tr_class > rb->tr_class) return -1;
+  if (ra->tr_class < rb->tr_class) return 1;
   // stable tie-break: original submission order
   if (ra->vtx < rb->vtx) return -1;
   if (ra->vtx > rb->vtx) return 1;
@@ -4148,6 +4203,75 @@ void DoRender()
   }
   */
 
+  // ── TR-list depth census (Hokuto no Ken layering hunt) ────────────────────
+  // scene_debug (top of file): every 100th frame, one [TRZ] line per
+  // TRANSLUCENT strip, in submission order. dm= (ISP.DepthMode) / zw=
+  // (ISP.ZWriteDis) and the full-precision Z range are what decide the
+  // correct isp_depth rule. The header shows ISP_FEED_CFG: bit0=1 means the
+  // game asked for PRESORT (paint in submission order, per-poly DepthMode
+  // honored), bit0=0 = AUTO-SORT (per-pixel depth sort, DepthMode ignored).
+  // Param advance matches the draw loop: a strip whose count carries the
+  // new-param flag is drawn with the NEW param.
+  if (scene_debug)
+  {
+    static u32 scn_frame = 0;
+    if ((++scn_frame % 100) == 0 && TransLST)
+    {
+      const Vertex *dvtx = vertices;
+      PolyParam *dmod = listModes;
+      PolyParam *cur_mod = listModes;
+      u32 tr_idx = 0;
+      printf("[TRZ] ---- frame %u ISP_FEED_CFG=%08X (%s) ----\n",
+             scn_frame, ISP_FEED_CFG, (ISP_FEED_CFG & 1) ? "PRESORT" : "AUTOSORT");
+      for (const VertexList *dlst = lists; dlst != crLST; dlst++)
+      {
+        s32 raw_cnt = dlst->count;
+        if (raw_cnt < 0)
+          cur_mod = dmod++;
+        s32 vcnt = raw_cnt & 0x7FFF;
+
+        bool in_tr = dlst >= TransLST
+                  && (!PTLST || PTLST < TransLST || dlst < PTLST);
+        if (in_tr && vcnt)
+        {
+          float minx = 1e9f, maxx = -1e9f, miny = 1e9f, maxy = -1e9f;
+          float minz = 1e9f, maxz = -1e9f;
+          for (s32 i = 0; i < vcnt; i++)
+          {
+            if (dvtx[i].x < minx) minx = dvtx[i].x;
+            if (dvtx[i].x > maxx) maxx = dvtx[i].x;
+            if (dvtx[i].y < miny) miny = dvtx[i].y;
+            if (dvtx[i].y > maxy) maxy = dvtx[i].y;
+            if (dvtx[i].z < minz) minz = dvtx[i].z;
+            if (dvtx[i].z > maxz) maxz = dvtx[i].z;
+          }
+          if (cur_mod->pcw.Texture)
+            printf("[TRZ] #%u vtx=%d fmt=%d vq=%d addr=%06X pal=%d dm=%d zw=%d blend=%d/%d shad=%d usea=%d ita=%d col=%08X "
+                   "x=[%.0f..%.0f] y=[%.0f..%.0f] z=[%.6f..%.6f]\n",
+                   tr_idx, vcnt,
+                   (int)cur_mod->tcw.NO_PAL.PixelFmt, (int)cur_mod->tcw.NO_PAL.VQ_Comp,
+                   (cur_mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK,
+                   (int)cur_mod->tcw.PAL.PalSelect,
+                   (int)cur_mod->isp.DepthMode, (int)cur_mod->isp.ZWriteDis,
+                   (int)cur_mod->tsp.SrcInstr, (int)cur_mod->tsp.DstInstr,
+                   (int)cur_mod->tsp.ShadInstr, (int)cur_mod->tsp.UseAlpha,
+                   (int)cur_mod->tsp.IgnoreTexA,
+                   dvtx[0].col, minx, maxx, miny, maxy, minz, maxz);
+          else
+            printf("[TRZ] #%u vtx=%d NOTEX dm=%d zw=%d blend=%d/%d col=%08X "
+                   "x=[%.0f..%.0f] y=[%.0f..%.0f] z=[%.6f..%.6f]\n",
+                   tr_idx, vcnt,
+                   (int)cur_mod->isp.DepthMode, (int)cur_mod->isp.ZWriteDis,
+                   (int)cur_mod->tsp.SrcInstr, (int)cur_mod->tsp.DstInstr,
+                   dvtx[0].col, minx, maxx, miny, maxy, minz, maxz);
+          tr_idx++;
+        }
+        dvtx += vcnt;
+      }
+      printf("[TRZ] ---- end: %u TR strips ----\n", tr_idx);
+    }
+  }
+
   GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 
   GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
@@ -4158,6 +4282,10 @@ void DoRender()
   int last_alpha_fmt = -1; // -1 = unset
   int last_shad_instr = -1; // -1 = unset; tracks the GX op currently set on TEVSTAGE0 for textured polys
   const bool decal_alpha_fix = DECAL_ALPHA_FIX(); // read once per frame, not per polygon
+  const bool ignore_texa_fix = IGNORE_TEXA_FIX(); // read once per frame, not per polygon
+  int last_ita_mode = 0; // IGNORE_TEXA_FIX(): TEVSTAGE0 alpha-in (0=TEXA*RASA, 1=RASA, 2=const 1.0)
+  if (ignore_texa_fix)
+    GX_SetTevKAlphaSel(GX_TEVSTAGE0, GX_TEV_KASEL_1); // KONST alpha reads 1.0 (mode 2 below)
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
 
@@ -4193,7 +4321,7 @@ void DoRender()
   // lists/vertices/listModes walk; ts_end_* are the walk cursors at the end
   // of the TR range, restored when the sorted range is done so any strips
   // after it (legacy path: a PT list submitted after TR) still line up.
-  const bool trans_sort = TRANS_SORT(); // read once per frame
+  const bool trans_sort = TRANS_SORT() || ISP_DEPTH_FIX(); // read once per frame (isp_depth implies the sort)
   bool ts_active = false;
   int ts_idx = 0;
   int ts_count = 0;
@@ -4382,6 +4510,7 @@ void DoRender()
           // not happen — TA lists start with a global param — but a valid
           // fallback beats reading a NULL mod).
           PolyParam *cur_mod = (wmod > listModes) ? wmod - 1 : wmod;
+          const bool isp_tier = ISP_DEPTH_FIX(); // layer tiers at equal depth
           int n = 0;
           for (const VertexList *l = drawLST; l != tr_end; l++)
           {
@@ -4395,16 +4524,97 @@ void DoRender()
               if (wvtx[i].z > far_w)
                 far_w = wvtx[i].z;
 
+            // isp_depth: classify one-depth 2D layers by texture state (see
+            // the preset note at the top of the file). ALL VQ shares one
+            // tier: within a tier submission order is preserved, so
+            // VQ-vs-VQ compositing stays legacy-identical (an address-based
+            // low/high VRAM split was tried and broke the character-select
+            // screen by reordering VQ against VQ).
+            u16 tclass = 0;
+            if (isp_tier && cur_mod->pcw.Texture)
+            {
+              if (cur_mod->tcw.NO_PAL.PixelFmt == 2 && cur_mod->tcw.NO_PAL.VQ_Comp)
+                tclass = 2; // VQ stage art: bottom layer
+              else if (cur_mod->tcw.NO_PAL.PixelFmt == 6
+                    && (cur_mod->tcw.PAL.PalSelect >> 4) == 2)
+                tclass = 1; // stage sprites (crowd): above art, below the rest
+            }
+            else if (isp_tier && !cur_mod->pcw.Texture && c >= 3
+                  && cur_mod->tsp.SrcInstr == 1 && cur_mod->tsp.DstInstr == 0
+                  && (wvtx[0].col >> 24) == 0xFF)
+            {
+              // Untextured full-screen REPLACE plate (blend ONE/ZERO, opaque
+              // vertex alpha) submitted at the shared depth: a background
+              // plate the game expects per-pixel autosort to bury (HnK's
+              // "truth of retribution" screen submits a full-screen black
+              // one LAST — painter order blacked out the whole scene).
+              // Vertex::z holds W; screen coords are x/W, y/W.
+              float sminx = 1e9f, smaxx = -1e9f, sminy = 1e9f, smaxy = -1e9f;
+              for (s32 i = 0; i < c; i++)
+              {
+                if (wvtx[i].z <= 0.0f) { sminx = 1e9f; break; } // degenerate W: not a plate
+                float iw = 1.0f / wvtx[i].z;
+                float sx = wvtx[i].x * iw, sy = wvtx[i].y * iw;
+                if (sx < sminx) sminx = sx;
+                if (sx > smaxx) smaxx = sx;
+                if (sy < sminy) sminy = sy;
+                if (sy > smaxy) smaxy = sy;
+              }
+              // DC frame is 640x480 here; smaller-res games just never match.
+              if (sminx <= 1.0f && smaxx >= 639.0f && sminy <= 1.0f && smaxy >= 479.0f)
+                tclass = 3; // behind even the stage art
+            }
+
             trans_sort_recs[n].far_w = far_w;
             trans_sort_recs[n].vtx = wvtx;
             trans_sort_recs[n].mod = cur_mod;
             trans_sort_recs[n].count = (u16)c;
+            trans_sort_recs[n].tr_class = tclass;
             n++;
             wvtx += c;
           }
 
+          // Scene gate: the tier table was derived from (and is only correct
+          // for) the battle composition, where the VQ stage-art grid is
+          // ~119 strips. Menu/intro/presentation scenes carry only a few VQ
+          // strips (3..52 measured) that are CONTENT, not backdrop —
+          // tiering them to the bottom made Kenshiro vanish from the intro
+          // and pushed panels in front on char select/presentation. If this
+          // list doesn't look like a battle, drop every tier and fall back
+          // to plain submission-order painter (the pre-isp_depth behavior,
+          // which was correct on all those screens).
+          int gate_c2 = 0;
+          for (int i = 0; i < n; i++)
+            if (trans_sort_recs[i].tr_class == 2) gate_c2++;
+          const bool tier_gate_open = gate_c2 >= 80; // 52 (menus) << 80 << 119 (battle)
+          if (!tier_gate_open)
+            for (int i = 0; i < n; i++)
+              trans_sort_recs[i].tr_class = 0;
+
           if (n > 1)
             qsort(trans_sort_recs, n, sizeof(TransStripRec), trans_strip_cmp);
+
+          // [TSORT] probe (scene_debug, top of file): proves the tiered sort
+          // ran and how strips classified. Same 100-frame cadence as [TRZ].
+          if (scene_debug)
+          {
+            static u32 ts_dbg = 0;
+            if ((++ts_dbg % 100) == 0)
+            {
+              int c3 = 0, c2 = 0, c1 = 0;
+              for (int i = 0; i < n; i++)
+              {
+                if (trans_sort_recs[i].tr_class == 3) c3++;
+                else if (trans_sort_recs[i].tr_class == 2) c2++;
+                else if (trans_sort_recs[i].tr_class == 1) c1++;
+              }
+              printf("[TSORT] n=%d vq=%d crowd=%d plate=%d gate=%d far_first=%.2f far_last=%.2f isp=%d ts_pref=%d\n",
+                     n, c2, c1, c3, tier_gate_open ? 1 : 0,
+                     n ? trans_sort_recs[0].far_w : 0.0f,
+                     n ? trans_sort_recs[n - 1].far_w : 0.0f,
+                     ISP_DEPTH_FIX() ? 1 : 0, TRANS_SORT() ? 1 : 0);
+            }
+          }
 
           ts_idx = 0;
           ts_count = n;
@@ -4464,6 +4674,7 @@ void DoRender()
             GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
             last_shad_instr = -1; // force TEVSTAGE0 op to be reapplied on the next textured poly
           }
+          last_ita_mode = 0; // GX_SetTevOp rewrote TEVSTAGE0's alpha inputs
           last_textured = is_textured;
         }
 
@@ -4495,6 +4706,37 @@ void DoRender()
             {
               GX_SetTevOp(GX_TEVSTAGE0, tev_op);
               last_shad_instr = tev_op;
+              last_ita_mode = 0; // alpha inputs rewritten by the op change
+            }
+          }
+
+          // IGNORE_TEXA_FIX(): TSP.IgnoreTexA means "texture alpha reads as
+          // 1.0" on real PVR — but what reaches the framebuffer then depends
+          // on TSP.ShadInstr, because the PVR alpha equations differ per op:
+          //   0 Decal / 1 Modulate:           A = TexA        -> 1.0 (opaque)
+          //   2 DecalAlpha / 3 ModulateAlpha: A = VtxA(*TexA) -> vertex alpha
+          // Games leave vertex alpha at 0 on Decal/Modulate polys (hardware
+          // never reads it there), so those MUST get constant 1.0, not RASA.
+          // GX_DECAL-op polys (decal_alpha on) are skipped: alpha already RASA.
+          if (ignore_texa_fix)
+          {
+            int want_mode = 0; // GX_MODULATE default: TEXA*RASA
+            if (stripMod->tsp.IgnoreTexA
+                && !(decal_alpha_fix && stripMod->tsp.ShadInstr == 2))
+              want_mode = (stripMod->tsp.ShadInstr & 2) ? 1 : 2;
+            // With decal_alpha off, SetTextureParams() above just reset
+            // TEVSTAGE0 to full MODULATE, so the alpha inputs are back to
+            // TEXA*RASA regardless of what the previous poly set.
+            int have_mode = decal_alpha_fix ? last_ita_mode : 0;
+            if (want_mode != have_mode)
+            {
+              if (want_mode == 2)      // constant 1.0 (KONST, KASEL_1 set per frame above)
+                GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_KONST);
+              else if (want_mode == 1) // vertex alpha only
+                GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+              else                     // restore MODULATE's TEXA*RASA
+                GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO);
+              last_ita_mode = want_mode;
             }
           }
 

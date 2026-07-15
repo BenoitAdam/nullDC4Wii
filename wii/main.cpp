@@ -81,6 +81,26 @@ extern "C" {
   int get_8bpp_preset() { return g_8bpp_preset; }
 }
 
+int g_isp_depth_preset = 1;
+// 0=off (legacy: one global GEQUAL depth compare), 1=on (VQ-textured TR
+//   polys lose equal-depth ties: GREATER + Z-write, others keep painter
+//   order; Hokuto no Ken's VQ backdrop erased its fighters/HUD without
+//   this — see gxRend.cpp ISP_DEPTH_FIX())
+
+extern "C" {
+  int get_isp_depth_preset() { return g_isp_depth_preset; }
+}
+
+int g_ignore_texa_preset = 1;
+// 0=off (legacy: TEVSTAGE0 always modulates by texture alpha), 1=on (real
+//   PVR forces texture alpha to 1.0 when TSP.IgnoreTexA is set; Hokuto no
+//   Ken's VQ stage tiles with garbage alpha channels vanished without this
+//   — see gxRend.cpp IGNORE_TEXA_FIX())
+
+extern "C" {
+  int get_ignore_texa_preset() { return g_ignore_texa_preset; }
+}
+
 int g_texture_cache_preset = 2;
 // 0 = VERY FAST (skmp algorythm)
 // 1 = FAST

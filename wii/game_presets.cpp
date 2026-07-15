@@ -216,6 +216,8 @@ extern int g_depth_clip_preset;
 extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
 extern int g_bg_poly_preset;
+extern int g_isp_depth_preset;
+extern int g_ignore_texa_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -263,6 +265,8 @@ struct GamePreset
     int async_render;
     int tmem_cache;
     int bg_poly;
+    int isp_depth;
+    int ignore_texa;
 };
 
 // Nothing from the .cfg stays in RAM: game_presets_apply() streams the file
@@ -482,6 +486,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "async_render"))   p->async_render   = parse_bool(val);
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = parse_bool(val);
     else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
+    else if (key_eq(key, "isp_depth"))      p->isp_depth      = parse_bool(val);
+    else if (key_eq(key, "ignore_tex_alpha")) p->ignore_texa   = parse_bool(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -515,6 +521,8 @@ static void preset_clear(GamePreset* cur)
     cur->async_render = -1;
     cur->tmem_cache = -1;
     cur->bg_poly = -1;
+    cur->isp_depth = -1;
+    cur->ignore_texa = -1;
 }
 
 // Apply every set field of a preset slot onto the live g_*_preset globals
@@ -553,6 +561,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
     if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
     if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
+    if (p->isp_depth      >= 0) { g_isp_depth_preset     = p->isp_depth;       printf("  isp_depth      -> %d\n", p->isp_depth);      }
+    if (p->ignore_texa    >= 0) { g_ignore_texa_preset   = p->ignore_texa;     printf("  ignore_texa    -> %d\n", p->ignore_texa);    }
 }
 
 // ---------------------------------------------------------------------------
