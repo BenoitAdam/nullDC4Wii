@@ -158,21 +158,6 @@ extern "C" int get_punch_through_preset();
 extern "C" int get_isp_depth_preset();
 #define ISP_DEPTH_FIX() (get_isp_depth_preset() == 1)
 
-// ignore_tex_alpha preset: real PVR treats TEXTURE alpha as 1.0 (opaque)
-// when TSP.IgnoreTexA is set; legacy TEVSTAGE0 always modulates by TEXA.
-// Games that set IgnoreTexA on textures whose alpha channel holds garbage
-// (why not — hardware ignores it) render those polys fully transparent:
-// Hokuto no Ken's "transparent" VQ stage tiles (UseAlpha=1 IgnoreTexA=1,
-// empty alpha channel) vanished this way. What replaces TexA depends on
-// the PVR alpha equation for TSP.ShadInstr:
-//   0 Decal / 1 Modulate:            A = TexA        -> constant 1.0
-//   2 DecalAlpha / 3 ModulateAlpha:  A = VtxA(*TexA) -> vertex alpha (RASA)
-// Decal/Modulate polys MUST get the constant, not RASA: hardware never
-// reads their vertex alpha, so games leave it at 0 (same pattern as the
-// Test Drive 6 note at the UseAlpha block in the draw loop).
-extern "C" int get_ignore_texa_preset();
-#define IGNORE_TEXA_FIX() (get_ignore_texa_preset() == 1)
-
 // Offset (specular) color
 extern "C" int get_offset_color_preset();
 #define OFFSET_COLOR_FIX() (get_offset_color_preset() == 1)
@@ -4283,10 +4268,6 @@ void DoRender()
   int last_alpha_fmt = -1; // -1 = unset
   int last_shad_instr = -1; // -1 = unset; tracks the GX op currently set on TEVSTAGE0 for textured polys
   const bool decal_alpha_fix = DECAL_ALPHA_FIX(); // read once per frame, not per polygon
-  const bool ignore_texa_fix = IGNORE_TEXA_FIX(); // read once per frame, not per polygon
-  int last_ita_mode = 0; // IGNORE_TEXA_FIX(): TEVSTAGE0 alpha-in (0=TEXA*RASA, 1=RASA, 2=const 1.0)
-  if (ignore_texa_fix)
-    GX_SetTevKAlphaSel(GX_TEVSTAGE0, GX_TEV_KASEL_1); // KONST alpha reads 1.0 (mode 2 below)
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
 
@@ -4680,7 +4661,6 @@ void DoRender()
             GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
             last_shad_instr = -1; // force TEVSTAGE0 op to be reapplied on the next textured poly
           }
-          last_ita_mode = 0; // GX_SetTevOp rewrote TEVSTAGE0's alpha inputs
           last_textured = is_textured;
         }
 
@@ -4712,37 +4692,6 @@ void DoRender()
             {
               GX_SetTevOp(GX_TEVSTAGE0, tev_op);
               last_shad_instr = tev_op;
-              last_ita_mode = 0; // alpha inputs rewritten by the op change
-            }
-          }
-
-          // IGNORE_TEXA_FIX(): TSP.IgnoreTexA means "texture alpha reads as
-          // 1.0" on real PVR — but what reaches the framebuffer then depends
-          // on TSP.ShadInstr, because the PVR alpha equations differ per op:
-          //   0 Decal / 1 Modulate:           A = TexA        -> 1.0 (opaque)
-          //   2 DecalAlpha / 3 ModulateAlpha: A = VtxA(*TexA) -> vertex alpha
-          // Games leave vertex alpha at 0 on Decal/Modulate polys (hardware
-          // never reads it there), so those MUST get constant 1.0, not RASA.
-          // GX_DECAL-op polys (decal_alpha on) are skipped: alpha already RASA.
-          if (ignore_texa_fix)
-          {
-            int want_mode = 0; // GX_MODULATE default: TEXA*RASA
-            if (stripMod->tsp.IgnoreTexA
-                && !(decal_alpha_fix && stripMod->tsp.ShadInstr == 2))
-              want_mode = (stripMod->tsp.ShadInstr & 2) ? 1 : 2;
-            // With decal_alpha off, SetTextureParams() above just reset
-            // TEVSTAGE0 to full MODULATE, so the alpha inputs are back to
-            // TEXA*RASA regardless of what the previous poly set.
-            int have_mode = decal_alpha_fix ? last_ita_mode : 0;
-            if (want_mode != have_mode)
-            {
-              if (want_mode == 2)      // constant 1.0 (KONST, KASEL_1 set per frame above)
-                GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_KONST);
-              else if (want_mode == 1) // vertex alpha only
-                GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
-              else                     // restore MODULATE's TEXA*RASA
-                GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO);
-              last_ita_mode = want_mode;
             }
           }
 
