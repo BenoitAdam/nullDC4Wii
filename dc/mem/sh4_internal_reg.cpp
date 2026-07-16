@@ -48,7 +48,11 @@ INLINE u32 RegSRead(Array<RegisterStruct>& reg, u32 offset)
 #ifdef TRACE
 // Minimum alignment is 4 bytes for all SH4 internal registers
 	if (offset & 3)
-		EMUERROR("Unaligned register read");
+	{
+		// EMUERROR("Unaligned register read");
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("Unaligned register read\n");
+	}
 #endif
 
 	offset >>= 2; // Convert byte offset to register index
@@ -68,19 +72,31 @@ INLINE u32 RegSRead(Array<RegisterStruct>& reg, u32 offset)
 			if (reg[offset].readFunction)
 				return reg[offset].readFunction();
 			else if (!(reg[offset].flags & REG_NOT_IMPL))
-				EMUERROR("Read from write-only register");
+			{
+				// EMUERROR("Read from write-only register");
+				// printf instead of EMUERROR because tiny freeze otherwise
+				printf("Read from write-only register\n");
+			}
 		}
 #ifdef TRACE
 	}
 	else
 	{
 		if (!(reg[offset].flags & REG_NOT_IMPL))
-			EMUERROR("Wrong size read on register");
+		{
+			// EMUERROR("Wrong size read on register");
+			// printf instead of EMUERROR because tiny freeze otherwise
+			printf("Wrong size read on register\n");
+		}
 	}
 #endif
 
 	if (reg[offset].flags & REG_NOT_IMPL)
-		EMUERROR2("Read from unimplemented internal register, offset=0x%x", offset);
+	{
+		// EMUERROR2("Read from unimplemented internal register, offset=0x%x", offset);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("Read from unimplemented internal register, offset=0x%x\n", offset);
+	}
 
 	return 0;
 }
@@ -90,7 +106,11 @@ INLINE void RegSWrite(Array<RegisterStruct>& reg, u32 offset, u32 data)
 {
 #ifdef TRACE
 	if (offset & 3)
-		EMUERROR("Unaligned register write");
+	{
+		// EMUERROR("Unaligned register write");
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("Unaligned register write\n");
+	}
 #endif
 
 	offset >>= 2;
@@ -110,7 +130,9 @@ INLINE void RegSWrite(Array<RegisterStruct>& reg, u32 offset, u32 data)
 		{
 			if (reg[offset].flags & REG_CONST)
 			{
-				EMUERROR("Write to read-only (const) register");
+				// EMUERROR("Write to read-only (const) register");
+				// printf instead of EMUERROR because tiny freeze otherwise
+				printf("Write to read-only (const) register\n");
 			}
 			else if (reg[offset].writeFunction)
 			{
@@ -119,7 +141,9 @@ INLINE void RegSWrite(Array<RegisterStruct>& reg, u32 offset, u32 data)
 			}
 			else if (!(reg[offset].flags & REG_NOT_IMPL))
 			{
-				EMUERROR("Write to read-only register (no write function)");
+				// EMUERROR("Write to read-only register (no write function)");
+				// printf instead of EMUERROR because tiny freeze otherwise
+				printf("Write to read-only register (no write function)\n");
 			}
 		}
 #ifdef TRACE
@@ -127,12 +151,20 @@ INLINE void RegSWrite(Array<RegisterStruct>& reg, u32 offset, u32 data)
 	else
 	{
 		if (!(reg[offset].flags & REG_NOT_IMPL))
-			EMUERROR4("Wrong size write on register; offset=0x%x, data=0x%x, sz=%d", offset, data, size);
+		{
+			// EMUERROR4("Wrong size write on register; offset=0x%x, data=0x%x, sz=%d", offset, data, size);
+			// printf instead of EMUERROR because tiny freeze otherwise
+			printf("Wrong size write on register; offset=0x%x, data=0x%x, sz=%d\n", offset, data, size);
+		}
 	}
 #endif
 
 	if (reg[offset].flags & REG_NOT_IMPL)
-		EMUERROR3("Write to unimplemented internal register, offset=0x%x, data=0x%x", offset, data);
+	{
+		// EMUERROR3("Write to unimplemented internal register, offset=0x%x, data=0x%x", offset, data);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("Write to unimplemented internal register, offset=0x%x, data=0x%x\n", offset, data);
+	}
 }
 
 
@@ -374,72 +406,104 @@ T FASTCALL ReadMem_area7(u32 addr)
 	case A7_REG_HASH(SHENMUE_UNKNOWN_ADDR):
 		if (addr == SHENMUE_UNKNOWN_ADDR)
 			return 0;
-		EMUERROR2("Unknown read from Area7, addr=0x%x", addr);
+		// EMUERROR2("Unknown read from Area7, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("Unknown read from Area7, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(CCN_BASE_addr):
 		if (addr <= 0x1F00003C)
 			return (T)RegSRead<sz>(CCN, addr & 0xFF);
-		EMUERROR2("CCN register out of range, addr=0x%x", addr);
+		// EMUERROR2("CCN register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("CCN register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(UBC_BASE_addr):
 		if (addr <= 0x1F200020)
 			return (T)RegSRead<sz>(UBC, addr & 0xFF);
-		EMUERROR2("UBC register out of range, addr=0x%x", addr);
+		// EMUERROR2("UBC register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("UBC register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(BSC_BASE_addr):
 		if (addr <= 0x1F800048)
 			return (T)RegSRead<sz>(BSC, addr & 0xFF);
 		else if (addr >= BSC_SDMR2_addr && addr <= 0x1F90FFFF)
-			EMUERROR("Read from write-only SDMR2 (DRAM settings)");
+		{
+			// EMUERROR("Read from write-only SDMR2 (DRAM settings)");
+			// printf instead of EMUERROR because tiny freeze otherwise
+			printf("Read from write-only SDMR2 (DRAM settings)\n");
+		}
 		else if (addr >= BSC_SDMR3_addr && addr <= 0x1F94FFFF)
-			EMUERROR("Read from write-only SDMR3 (DRAM settings)");
+		{
+			// EMUERROR("Read from write-only SDMR3 (DRAM settings)");
+			// printf instead of EMUERROR because tiny freeze otherwise
+			printf("Read from write-only SDMR3 (DRAM settings)\n");
+		}
 		else
-			EMUERROR2("BSC register out of range, addr=0x%x", addr);
+		{
+			// EMUERROR2("BSC register out of range, addr=0x%x", addr);
+			// printf instead of EMUERROR because tiny freeze otherwise
+			printf("BSC register out of range, addr=0x%x\n", addr);
+		}
 		break;
 
 	case A7_REG_HASH(DMAC_BASE_addr):
 		if (addr <= 0x1FA00040)
 			return (T)RegSRead<sz>(DMAC, addr & 0xFF);
-		EMUERROR2("DMAC register out of range, addr=0x%x", addr);
+		// EMUERROR2("DMAC register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("DMAC register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(CPG_BASE_addr):
 		if (addr <= 0x1FC00010)
 			return (T)RegSRead<sz>(CPG, addr & 0xFF);
-		EMUERROR2("CPG register out of range, addr=0x%x", addr);
+		// EMUERROR2("CPG register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("CPG register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(RTC_BASE_addr):
 		if (addr <= 0x1FC8003C)
 			return (T)RegSRead<sz>(RTC, addr & 0xFF);
-		EMUERROR2("RTC register out of range, addr=0x%x", addr);
+		// EMUERROR2("RTC register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("RTC register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(INTC_BASE_addr):
 		if (addr <= 0x1FD0000C)
 			return (T)RegSRead<sz>(INTC, addr & 0xFF);
-		EMUERROR2("INTC register out of range, addr=0x%x", addr);
+		// EMUERROR2("INTC register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("INTC register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(TMU_BASE_addr):
 		if (addr <= 0x1FD8002C)
 			return (T)RegSRead<sz>(TMU, addr & 0xFF);
-		EMUERROR2("TMU register out of range, addr=0x%x", addr);
+		// EMUERROR2("TMU register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("TMU register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(SCI_BASE_addr):
 		if (addr <= 0x1FE0001C)
 			return (T)RegSRead<sz>(SCI, addr & 0xFF);
-		EMUERROR2("SCI register out of range, addr=0x%x", addr);
+		// EMUERROR2("SCI register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("SCI register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(SCIF_BASE_addr):
 		if (addr <= 0x1FE80024)
 			return (T)RegSRead<sz>(SCIF, addr & 0xFF);
-		EMUERROR2("SCIF register out of range, addr=0x%x", addr);
+		// EMUERROR2("SCIF register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("SCIF register out of range, addr=0x%x\n", addr);
 		break;
 
 	// UDI (User Debug Interface): not present on Dreamcast, ignore silently
@@ -452,7 +516,9 @@ T FASTCALL ReadMem_area7(u32 addr)
 		break;
 	}
 
-	EMUERROR2("ReadMem_area7 not implemented, addr=0x%x", addr);
+	// EMUERROR2("ReadMem_area7 not implemented, addr=0x%x", addr);
+	// printf instead of EMUERROR because tiny freeze otherwise
+	printf("ReadMem_area7 not implemented, addr=0x%x\n", addr);
 	return 0;
 }
 
@@ -469,7 +535,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 			RegSWrite<sz>(CCN, addr & 0xFF, data);
 			return;
 		}
-		EMUERROR2("CCN register out of range, addr=0x%x", addr);
+		// EMUERROR2("CCN register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("CCN register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(UBC_BASE_addr):
@@ -478,7 +546,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 			RegSWrite<sz>(UBC, addr & 0xFF, data);
 			return;
 		}
-		EMUERROR2("UBC register out of range, addr=0x%x", addr);
+		// EMUERROR2("UBC register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("UBC register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(BSC_BASE_addr):
@@ -491,7 +561,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 			return; // DRAM settings 2 — write-only, no effect needed
 		else if (addr >= BSC_SDMR3_addr && addr <= 0x1F94FFFF)
 			return; // DRAM settings 3 — write-only, no effect needed
-		EMUERROR2("BSC register out of range, addr=0x%x", addr);
+		// EMUERROR2("BSC register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("BSC register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(DMAC_BASE_addr):
@@ -500,7 +572,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 			RegSWrite<sz>(DMAC, addr & 0xFF, data);
 			return;
 		}
-		EMUERROR2("DMAC register out of range, addr=0x%x", addr);
+		// EMUERROR2("DMAC register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("DMAC register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(CPG_BASE_addr):
@@ -509,7 +583,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 			RegSWrite<sz>(CPG, addr & 0xFF, data);
 			return;
 		}
-		EMUERROR2("CPG register out of range, addr=0x%x", addr);
+		// EMUERROR2("CPG register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("CPG register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(RTC_BASE_addr):
@@ -518,7 +594,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 			RegSWrite<sz>(RTC, addr & 0xFF, data);
 			return;
 		}
-		EMUERROR2("RTC register out of range, addr=0x%x", addr);
+		// EMUERROR2("RTC register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("RTC register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(INTC_BASE_addr):
@@ -527,7 +605,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 			RegSWrite<sz>(INTC, addr & 0xFF, data);
 			return;
 		}
-		EMUERROR2("INTC register out of range, addr=0x%x", addr);
+		// EMUERROR2("INTC register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("INTC register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(TMU_BASE_addr):
@@ -536,7 +616,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 			RegSWrite<sz>(TMU, addr & 0xFF, data);
 			return;
 		}
-		EMUERROR2("TMU register out of range, addr=0x%x", addr);
+		// EMUERROR2("TMU register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("TMU register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(SCI_BASE_addr):
@@ -545,7 +627,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 			RegSWrite<sz>(SCI, addr & 0xFF, data);
 			return;
 		}
-		EMUERROR2("SCI register out of range, addr=0x%x", addr);
+		// EMUERROR2("SCI register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("SCI register out of range, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(SCIF_BASE_addr):
@@ -554,7 +638,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 			RegSWrite<sz>(SCIF, addr & 0xFF, data);
 			return;
 		}
-		EMUERROR2("SCIF register out of range, addr=0x%x", addr);
+		// EMUERROR2("SCIF register out of range, addr=0x%x", addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("SCIF register out of range, addr=0x%x\n", addr);
 		break;
 
 	// UDI: not present on Dreamcast, ignore writes silently
@@ -567,7 +653,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 		break;
 	}
 
-	EMUERROR4("WriteMem_area7 not implemented, addr=0x%x, data=0x%x, sz=%d", addr, (u32)data, sz);
+	// EMUERROR4("WriteMem_area7 not implemented, addr=0x%x, data=0x%x, sz=%d", addr, (u32)data, sz);
+	// printf instead of EMUERROR because tiny freeze otherwise
+	printf("WriteMem_area7 not implemented, addr=0x%x, data=0x%x, sz=%d\n", addr, (u32)data, sz);
 }
 
 

@@ -61,7 +61,9 @@ u32 vramlock_ConvOffset32toOffset64(u32 offset32);
 		do { \
 			u32 _a = (addr) & 0xFF000000; \
 			if (_a != 0xA4000000 && _a != 0xA5000000) { \
-				EMUERROR2("Invalid VRAM address: 0x%08X", (addr)); \
+				/* EMUERROR2("Invalid VRAM address: 0x%08X", (addr)); */ \
+				/* printf instead of EMUERROR because tiny freeze otherwise */ \
+				printf("Invalid VRAM address: 0x%08X\n", (addr)); \
 			} \
 		} while(0)
 #else

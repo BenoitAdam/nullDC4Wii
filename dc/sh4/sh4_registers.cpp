@@ -165,7 +165,9 @@ u32* Sh4_int_GetRegisterPtr(Sh4RegType reg)
 
 
 		default:
-			EMUERROR2("Unkown register Id %d",reg);
+			// EMUERROR2("Unkown register Id %d",reg);
+			// printf instead of EMUERROR because tiny freeze otherwise
+			printf("Unkown register Id %d\n",reg);
 			die("invalid reg");
 			return nullptr;
 		}

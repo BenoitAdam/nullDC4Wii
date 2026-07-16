@@ -339,7 +339,9 @@ u32 sb_ReadMem(u32 addr,u32 sz)
 	// All SB registers are 32-bit aligned; warn on unaligned access
 	if (offset & 3) //4-byte minimum alignment
 	{
-		EMUERROR("unallinged System Bus register read");
+		// EMUERROR("unallinged System Bus register read");
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("unallinged System Bus register read\n");
 	}
 #endif
 
@@ -365,7 +367,11 @@ u32 sb_ReadMem(u32 addr,u32 sz)
 			else
 			{
 				if (!(sb_regs[offset].flags& REG_NOT_IMPL))
-					EMUERROR("ERROR [readed write olny register]");
+				{
+					// EMUERROR("ERROR [readed write olny register]");
+					// printf instead of EMUERROR because tiny freeze otherwise
+					printf("ERROR [readed write olny register]\n");
+				}
 			}
 		}
 #ifdef TRACE
@@ -373,11 +379,19 @@ u32 sb_ReadMem(u32 addr,u32 sz)
 	else
 	{
 		if (!(sb_regs[offset].flags& REG_NOT_IMPL))
-			EMUERROR("ERROR [wrong size read on register]");
+		{
+			// EMUERROR("ERROR [wrong size read on register]");
+			// printf instead of EMUERROR because tiny freeze otherwise
+			printf("ERROR [wrong size read on register]\n");
+		}
 	}
 #endif
 	if ((sb_regs[offset].flags& REG_NOT_IMPL))
-		EMUERROR2("Read from System Control Regs , not  implemented , addr=%x",addr);
+	{
+		// EMUERROR2("Read from System Control Regs , not  implemented , addr=%x",addr);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("Read from System Control Regs , not  implemented , addr=%x\n",addr);
+	}
 	return 0;
 }
 
@@ -388,7 +402,9 @@ void sb_WriteMem(u32 addr,u32 data,u32 sz)
 	// All SB registers are 32-bit aligned; warn on unaligned access
 	if (offset & 3) //4-byte minimum alignment
 	{
-		EMUERROR("unallinged System bus register write");
+		// EMUERROR("unallinged System bus register write");
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("unallinged System bus register write\n");
 	}
 #endif
 offset>>=2;
@@ -409,7 +425,11 @@ offset>>=2;
 		else
 		{
 			if (sb_regs[offset].flags & REG_CONST)
-				EMUERROR("Error [Write to read olny register , const]");
+			{
+				// EMUERROR("Error [Write to read olny register , const]");
+				// printf instead of EMUERROR because tiny freeze otherwise
+				printf("Error [Write to read olny register , const]\n");
+			}
 			else
 			{
 				if (sb_regs[offset].writeFunction)
@@ -420,7 +440,11 @@ offset>>=2;
 				else
 				{
 					if (!(sb_regs[offset].flags& REG_NOT_IMPL))
-						EMUERROR("ERROR [Write to read olny register]");
+					{
+						// EMUERROR("ERROR [Write to read olny register]");
+						// printf instead of EMUERROR because tiny freeze otherwise
+						printf("ERROR [Write to read olny register]\n");
+					}
 				}
 			}
 		}
@@ -429,11 +453,19 @@ offset>>=2;
 	else
 	{
 		if (!(sb_regs[offset].flags& REG_NOT_IMPL))
-			EMUERROR4("ERROR :wrong size write on register ; offset=%x , data=%x,sz=%d",offset,data,sz);
+		{
+			// EMUERROR4("ERROR :wrong size write on register ; offset=%x , data=%x,sz=%d",offset,data,sz);
+			// printf instead of EMUERROR because tiny freeze otherwise
+			printf("ERROR :wrong size write on register ; offset=%x , data=%x,sz=%d\n",offset,data,sz);
+		}
 	}
 #endif
 	if ((sb_regs[offset].flags& REG_NOT_IMPL))
-		EMUERROR3("Write to System Control Regs , not  implemented , addr=%x,data=%x",addr,data);
+	{
+		// EMUERROR3("Write to System Control Regs , not  implemented , addr=%x,data=%x",addr,data);
+		// printf instead of EMUERROR because tiny freeze otherwise
+		printf("Write to System Control Regs , not  implemented , addr=%x,data=%x\n",addr,data);
+	}
 }
 
 u32 SB_FFST_rc;

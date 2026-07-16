@@ -868,5 +868,7 @@ sh4op(iNotImplemented)
 // GDROM HLE operation (not supported)
 sh4op(gdrom_hle_op)
 {
-	EMUERROR("GDROM HLE NOT SUPPORTED");
+	// EMUERROR("GDROM HLE NOT SUPPORTED");
+	// printf instead of EMUERROR because tiny freeze otherwise
+	printf("GDROM HLE NOT SUPPORTED\n");
 }

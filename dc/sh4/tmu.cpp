@@ -163,13 +163,17 @@ void TMU_TCR2_write(u32 data) { tmu_regs_CR[2] = (u16)data; UpdateTMUCounts(2); 
 // ---------------------------------------------------------------------------
 u32 TMU_TCPR2_read()
 {
-	EMUERROR("TMU_TCPR2 read — register not used on Dreamcast");
+	// EMUERROR("TMU_TCPR2 read — register not used on Dreamcast");
+	// printf instead of EMUERROR because tiny freeze otherwise
+	printf("TMU_TCPR2 read — register not used on Dreamcast\n");
 	return 0;
 }
 
 void TMU_TCPR2_write(u32 data)
 {
-	EMUERROR2("TMU_TCPR2 write (data=0x%08X) — register not used on Dreamcast", data);
+	// EMUERROR2("TMU_TCPR2 write (data=0x%08X) — register not used on Dreamcast", data);
+	// printf instead of EMUERROR because tiny freeze otherwise
+	printf("TMU_TCPR2 write (data=0x%08X) — register not used on Dreamcast\n", data);
 }
 
 // ---------------------------------------------------------------------------

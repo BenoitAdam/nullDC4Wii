@@ -84,7 +84,9 @@ T FASTCALL ReadMem_area0(u32 addr)
 		// Unassigned: 0x400000 - 0x5F67FF
 		if (addr <= 0x005F67FF)
 		{
-			EMUERROR2("Read from unassigned area0 region, addr=%x", addr);
+			// EMUERROR2("Read from unassigned area0 region, addr=%x", addr);
+      // printf instead of EMUERROR because tiny freeze otherwise    
+      printf("Read from unassigned area0 region, addr=%x", addr);
 			return (T)0;
 		}
 
@@ -106,7 +108,9 @@ T FASTCALL ReadMem_area0(u32 addr)
 			return (T)pvr_readreg_TA(addr, sz);
 		}
 
-		EMUERROR2("Read from unmapped 0x5F area, addr=%x", addr);
+		// EMUERROR2("Read from unmapped 0x5F area, addr=%x", addr);
+    // printf instead of EMUERROR because tiny freeze otherwise    
+    printf("Read from unmapped 0x5F area, addr=%x", addr);
 		return (T)0;
 	}
 
@@ -161,10 +165,12 @@ void FASTCALL WriteMem_area0(u32 addr, T data)
 
 	const u32 base = addr >> 16;
 
-	// --- Boot ROM: read-only, writes are an error ---
+	// --- Boot ROM: read-only, writes are an error ---	
 	if (base <= 0x1F)
 	{
-		EMUERROR4("Write to Boot ROM (read-only), addr=%x, data=%x, sz=%d", addr, data, sz);
+    // EMUERROR4("Write to Boot ROM (read-only), addr=%x, data=%x, sz=%d", addr, data, sz);
+    // printf instead of EMUERROR because tiny freeze otherwise
+		printf("Write to Boot ROM (read-only), addr=%x, data=%x, sz=%d\n", addr, data, sz);
 		return;
 	}
 
@@ -183,7 +189,9 @@ void FASTCALL WriteMem_area0(u32 addr, T data)
 		// Unassigned: 0x400000 - 0x5F67FF
 		if (addr <= 0x005F67FF)
 		{
-			EMUERROR4("Write to unassigned area0 region, addr=%x, data=%x, sz=%d", addr, data, sz);
+			// EMUERROR4("Write to unassigned area0 region, addr=%x, data=%x, sz=%d", addr, data, sz);
+      // printf instead of EMUERROR because tiny freeze otherwise
+      printf("Write to unassigned area0 region, addr=%x, data=%x, sz=%d", addr, data, sz);
 			return;
 		}
 
@@ -208,7 +216,9 @@ void FASTCALL WriteMem_area0(u32 addr, T data)
 			return;
 		}
 
-		EMUERROR4("Write to unmapped 0x5F area, addr=%x, data=%x, sz=%d", addr, data, sz);
+		// EMUERROR4("Write to unmapped 0x5F area, addr=%x, data=%x, sz=%d", addr, data, sz);
+    // printf instead of EMUERROR because tiny freeze otherwise
+    printf("Write to unmapped 0x5F area, addr=%x, data=%x, sz=%d", addr, data, sz);
 		return;
 	}
 
