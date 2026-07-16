@@ -515,14 +515,11 @@ We have a Wii U fowarder that also use the speed boot of the Wii U (overclock). 
 
 ### Does it support Atomiswave ?
 
-Not yet, this could ask 0.5Mb. Doable yes, probably not worth the effort. But you can use Atomiswave hacks for dreamcast, lots of them do work.
+Not yet, this could ask between 0.03 and 0.5Mb of RAM. Doable yes, maybe not really worth the effort. But you can use Atomiswave hacks for dreamcast, lots of them do work.
 
-### Does it support NAOMI ?
+### Will it support NAOMI ?
 
 Definitly not, the recent Dynarec/JIT (= fps boost) and ARM7 cache ask for more RAM, we have no more place to add 16Mb for NAOMI Ram
-
-### Does it support NAOMI ?
-
 
 ### Controls are messy / this doesn't work / My Propad isn't recognize etc...
 
@@ -540,7 +537,7 @@ Try different games, parameters and report in the compatibility wiki : https://w
 
 Yes and no.
 
-Currently we are on 60/70% emulator speed in average. We can't really go further than 80%. Maybe if rewriten in assembly partially or totally this could help. Libogc may limit MMU (this is being investigated at the moment).
+Currently we are on 60/70% emulator speed in average. We reached liogc dev, they say we could use very low level RAM usage (MMU), but this is complicated and risky. But this could add +20 to +50% more performance to actual state.
 
 The port of KallistiOS for Gamecube/Wii could open new possibility and MMU control, but that would also means reprogramming a lot of stuff.
 
