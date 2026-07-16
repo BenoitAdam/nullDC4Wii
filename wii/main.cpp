@@ -1008,7 +1008,7 @@ bool displayOptionsMenu()
     printf(" 2P viewports, Daytona USA");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: More Info | 2: Page 2 | alpha0.52\n");
+    printf("A: Launch | B: Back | 1: More Info | 2: Page 2 | alpha0.53\n");
     } // end page 0
 
     if (optionsPage == 1) {
@@ -1548,7 +1548,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - Alpha 0.52   ");
+    printf("\nNullDC4Wii - Alpha 0.53   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");
