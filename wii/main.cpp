@@ -31,7 +31,7 @@
 // GLOBAL EMULATOR PRESETS
 // ============================================================================
 
-int g_accuracy_preset = 2;     // 0=Fast, 1=Balanced, 2=Accurate (default)
+int g_accuracy_preset = 0;     // 0=Fast, 1=Balanced, 2=Accurate (default)
 
 extern "C" {
   int get_accuracy_preset() { return g_accuracy_preset; }
@@ -987,7 +987,7 @@ bool displayOptionsMenu()
     printf(" 2P viewports, Daytona USA");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: More Info | 2: Page 2 | alpha0.51\n");
+    printf("A: Launch | B: Back | 1: More Info | 2: Page 2 | alpha0.52\n");
     } // end page 0
 
     if (optionsPage == 1) {
@@ -1109,7 +1109,7 @@ bool displayOptionsMenu()
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (TR TIER SORT) >]"); break;
     }
-    printf(" ON for Hokuto no Ken");
+    printf(" ON for Hokuto no Ken (Specific)");
     printf("\n");
     } // end page 1
 
@@ -1503,7 +1503,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - Alpha 0.51   ");
+    printf("\nNullDC4Wii - Alpha 0.52   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");
