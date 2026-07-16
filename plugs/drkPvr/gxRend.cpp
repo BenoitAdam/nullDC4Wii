@@ -151,6 +151,13 @@ extern "C" int get_punch_through_preset();
 // a >=80-VQ list). Gating tiers 1/2 too was tried and broke char select
 // and presentation — disabling tier 1 moved crowd-bank content into tier
 // 0, where it could draw over characters that used to sit above it.
+//
+// A tier for "other 8bpp-palette translucent sprites" (any bank != 32-47,
+// real alpha blend) was tried to move HnK's stage-1 debris pile behind the
+// crowd, but that signature also matches the fighting characters — they
+// pulled into the same tier and ended up behind the crowd too. Reverted;
+// the debris pile is still unfixed and needs a narrower signature (its
+// actual palette bank, not yet captured) to scope correctly.
 extern "C" int get_isp_depth_preset();
 #define ISP_DEPTH_FIX() (get_isp_depth_preset() == 1)
 
@@ -1566,7 +1573,6 @@ static const u32 VQMipPoint[11] = {
     {                                                                                     \
       tex_addr += 2048; /* skip codebook to reach index map */                            \
     }                                                                                     \
-    if(DEBUG_MESSAGE()) { printf("[VQ] codebook=..."); }                                  \
     texture_VQ<conv##format##_VQ> /**/ ((u8 *)&params.vram[tex_addr], w, h, vq_codebook); \
     texVQ = 1;                                                                            \
   }                                                                                       \
@@ -3551,6 +3557,24 @@ static int trans_strip_cmp(const void *a, const void *b)
   // Always 0 with the preset off.
   if (ra->tr_class > rb->tr_class) return -1;
   if (ra->tr_class < rb->tr_class) return 1;
+  // Within tier 2 (VQ stage art) only: some of the grid is opaque
+  // REPLACE (SrcInstr=1/DstInstr=0 — overwrites the pixel regardless of
+  // alpha, e.g. a solid distant backdrop panel) while other tiles in the
+  // SAME tier are real alpha blend (SrcInstr=4/DstInstr=5, e.g. a
+  // translucent scenery layer meant to composite over that backdrop). A
+  // REPLACE tile landing AFTER a blend tile in submission order blots it
+  // out completely regardless of either one's alpha. Sort opaque REPLACE
+  // tiles first (further back) so translucent tiles always composite on
+  // top of them, matching how opaque content sits behind translucent
+  // content in any normal compositing order. No-op for screens whose VQ
+  // tier doesn't mix both blend modes.
+  if (ra->tr_class == 2 && rb->tr_class == 2)
+  {
+    bool ra_replace = ra->mod->tsp.SrcInstr == 1 && ra->mod->tsp.DstInstr == 0;
+    bool rb_replace = rb->mod->tsp.SrcInstr == 1 && rb->mod->tsp.DstInstr == 0;
+    if (ra_replace && !rb_replace) return -1;
+    if (!ra_replace && rb_replace) return 1;
+  }
   // stable tie-break: original submission order
   if (ra->vtx < rb->vtx) return -1;
   if (ra->vtx > rb->vtx) return 1;
@@ -4447,6 +4471,13 @@ void DoRender()
               else if (cur_mod->tcw.NO_PAL.PixelFmt == 6
                     && (cur_mod->tcw.PAL.PalSelect >> 4) == 2)
                 tclass = 1; // stage sprites (crowd): above art, below the rest
+              // A "any other 8bpp bank + real alpha blend" tier was tried
+              // here to move the debris pile behind the crowd, but that
+              // exact signature (fmt=6, non-crowd bank, blend 4/5) also
+              // matches the fighting characters themselves, so it pulled
+              // them behind the crowd too ("crowd ahead of fighters").
+              // Reverted — debris needs a narrower signature (its actual
+              // palette bank) than format+blend alone can provide.
             }
             else if (isp_tier && !cur_mod->pcw.Texture && c >= 3
                   && cur_mod->tsp.SrcInstr == 1 && cur_mod->tsp.DstInstr == 0
