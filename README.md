@@ -513,9 +513,20 @@ Please check the compatiblity Wiki : https://wiibrew.org/wiki/NullDC4Wii/Compati
 
 We have a Wii U fowarder that also use the speed boot of the Wii U (overclock). A native port for Wii U could be done if someone wants to do port it.
 
+### Does it support Atomiswave ?
+
+Not yet, this could ask 0.5Mb. Doable yes, probably not worth the effort. But you can use Atomiswave hacks for dreamcast, lots of them do work.
+
+### Does it support NAOMI ?
+
+Definitly not, the recent Dynarec/JIT (= fps boost) and ARM7 cache ask for more RAM, we have no more place to add 16Mb for NAOMI Ram
+
+### Does it support NAOMI ?
+
+
 ### Controls are messy / this doesn't work / My Propad isn't recognize etc...
 
-Working on it, this will need testing considering the amount of controller possibility existing. Any help is welcome.
+Open an issue, everything should be ok now
 
 ### Will THAT AMAZING ADVENTURE GAME be considered as "Supported" one day ?
 
