@@ -42,11 +42,6 @@ extern "C" int get_debug_loop();
 // Specific debug for FMV
 int fmv_debug = 0;
 
-// TR-list depth census (Hokuto no Ken layering hunt). 1 = every 100th frame
-// dumps one [TRZ] line per translucent strip (dm/zw/full-precision Z decide
-// the isp_depth rule). 0 = off. Flip to 0 once the hunt is over.
-int scene_debug = 1;
-
 // Frame skipping
 extern "C" int get_frameskip_preset();
 
@@ -4189,75 +4184,6 @@ void DoRender()
   }
   */
 
-  // ── TR-list depth census (Hokuto no Ken layering hunt) ────────────────────
-  // scene_debug (top of file): every 100th frame, one [TRZ] line per
-  // TRANSLUCENT strip, in submission order. dm= (ISP.DepthMode) / zw=
-  // (ISP.ZWriteDis) and the full-precision Z range are what decide the
-  // correct isp_depth rule. The header shows ISP_FEED_CFG: bit0=1 means the
-  // game asked for PRESORT (paint in submission order, per-poly DepthMode
-  // honored), bit0=0 = AUTO-SORT (per-pixel depth sort, DepthMode ignored).
-  // Param advance matches the draw loop: a strip whose count carries the
-  // new-param flag is drawn with the NEW param.
-  if (scene_debug)
-  {
-    static u32 scn_frame = 0;
-    if ((++scn_frame % 100) == 0 && TransLST)
-    {
-      const Vertex *dvtx = vertices;
-      PolyParam *dmod = listModes;
-      PolyParam *cur_mod = listModes;
-      u32 tr_idx = 0;
-      printf("[TRZ] ---- frame %u ISP_FEED_CFG=%08X (%s) ----\n",
-             scn_frame, ISP_FEED_CFG, (ISP_FEED_CFG & 1) ? "PRESORT" : "AUTOSORT");
-      for (const VertexList *dlst = lists; dlst != crLST; dlst++)
-      {
-        s32 raw_cnt = dlst->count;
-        if (raw_cnt < 0)
-          cur_mod = dmod++;
-        s32 vcnt = raw_cnt & 0x7FFF;
-
-        bool in_tr = dlst >= TransLST
-                  && (!PTLST || PTLST < TransLST || dlst < PTLST);
-        if (in_tr && vcnt)
-        {
-          float minx = 1e9f, maxx = -1e9f, miny = 1e9f, maxy = -1e9f;
-          float minz = 1e9f, maxz = -1e9f;
-          for (s32 i = 0; i < vcnt; i++)
-          {
-            if (dvtx[i].x < minx) minx = dvtx[i].x;
-            if (dvtx[i].x > maxx) maxx = dvtx[i].x;
-            if (dvtx[i].y < miny) miny = dvtx[i].y;
-            if (dvtx[i].y > maxy) maxy = dvtx[i].y;
-            if (dvtx[i].z < minz) minz = dvtx[i].z;
-            if (dvtx[i].z > maxz) maxz = dvtx[i].z;
-          }
-          if (cur_mod->pcw.Texture)
-            printf("[TRZ] #%u vtx=%d fmt=%d vq=%d addr=%06X pal=%d dm=%d zw=%d blend=%d/%d shad=%d usea=%d ita=%d col=%08X "
-                   "x=[%.0f..%.0f] y=[%.0f..%.0f] z=[%.6f..%.6f]\n",
-                   tr_idx, vcnt,
-                   (int)cur_mod->tcw.NO_PAL.PixelFmt, (int)cur_mod->tcw.NO_PAL.VQ_Comp,
-                   (cur_mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK,
-                   (int)cur_mod->tcw.PAL.PalSelect,
-                   (int)cur_mod->isp.DepthMode, (int)cur_mod->isp.ZWriteDis,
-                   (int)cur_mod->tsp.SrcInstr, (int)cur_mod->tsp.DstInstr,
-                   (int)cur_mod->tsp.ShadInstr, (int)cur_mod->tsp.UseAlpha,
-                   (int)cur_mod->tsp.IgnoreTexA,
-                   dvtx[0].col, minx, maxx, miny, maxy, minz, maxz);
-          else
-            printf("[TRZ] #%u vtx=%d NOTEX dm=%d zw=%d blend=%d/%d col=%08X "
-                   "x=[%.0f..%.0f] y=[%.0f..%.0f] z=[%.6f..%.6f]\n",
-                   tr_idx, vcnt,
-                   (int)cur_mod->isp.DepthMode, (int)cur_mod->isp.ZWriteDis,
-                   (int)cur_mod->tsp.SrcInstr, (int)cur_mod->tsp.DstInstr,
-                   dvtx[0].col, minx, maxx, miny, maxy, minz, maxz);
-          tr_idx++;
-        }
-        dvtx += vcnt;
-      }
-      printf("[TRZ] ---- end: %u TR strips ----\n", tr_idx);
-    }
-  }
-
   GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 
   GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
@@ -4580,28 +4506,6 @@ void DoRender()
 
           if (n > 1)
             qsort(trans_sort_recs, n, sizeof(TransStripRec), trans_strip_cmp);
-
-          // [TSORT] probe (scene_debug, top of file): proves the tiered sort
-          // ran and how strips classified. Same 100-frame cadence as [TRZ].
-          if (scene_debug)
-          {
-            static u32 ts_dbg = 0;
-            if ((++ts_dbg % 100) == 0)
-            {
-              int c3 = 0, c2 = 0, c1 = 0;
-              for (int i = 0; i < n; i++)
-              {
-                if (trans_sort_recs[i].tr_class == 3) c3++;
-                else if (trans_sort_recs[i].tr_class == 2) c2++;
-                else if (trans_sort_recs[i].tr_class == 1) c1++;
-              }
-              printf("[TSORT] n=%d vq=%d crowd=%d plate=%d gate=%d far_first=%.2f far_last=%.2f isp=%d ts_pref=%d\n",
-                     n, c2, c1, c3, tier_gate_open ? 1 : 0,
-                     n ? trans_sort_recs[0].far_w : 0.0f,
-                     n ? trans_sort_recs[n - 1].far_w : 0.0f,
-                     ISP_DEPTH_FIX() ? 1 : 0, TRANS_SORT() ? 1 : 0);
-            }
-          }
 
           ts_idx = 0;
           ts_count = n;
