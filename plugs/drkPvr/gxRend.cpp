@@ -124,35 +124,6 @@ extern "C" int get_blend_fps_boost_preset();
 extern "C" int get_punch_through_preset();
 #define PUNCH_THROUGH_FIX() (get_punch_through_preset() == 1)
 
-// isp_depth preset: layer-tiered translucent sort for games that submit
-// their whole 2D scene at ONE depth. Hokuto no Ken sends every TR strip
-// with dm=6 zw=0 at identical W=10000 (only HUD fonts differ, at W=1 =
-// nearest) and relies on PVR per-pixel autosort: a fade quad is even
-// submitted FIRST at W=1, expecting the hardware to composite it last.
-// Drawing in submission order instead lets the mid-list stage-art grid
-// erase the fighters, and that fade quad Z-stamps the frame black. With
-// the preset on, the TRANS_SORT machinery activates (implied — no need for
-// trans_sort=on) and its back-to-front strip sort gains a tie tier at
-// equal depth:
-//   tier 3  untextured full-screen ONE/ZERO plate  background plate, bottom
-//   tier 2  VQ (fmt=2 + VQ_Comp)                   stage art, drawn first
-//   tier 1  8bpp bank 32-47 (PalSelect>>4==2)      stage sprites (crowd)
-//   tier 0  everything else                        submission order (painter)
-// So the backdrop lands under the crowd, the crowd under the fighters/HUD,
-// and fades/dim-bands keep plain painter compositing. Within a tier,
-// submission order is preserved — VQ-vs-VQ compositing stays exactly
-// legacy (a low/high VRAM address split was tried and broke the
-// character-select screen by reordering VQ against VQ). No depth-compare
-// tricks: every strip renders with the legacy GEQUAL painter state.
-// SCENE GATE (tier 3 only — tiers 1/2 are unconditional whenever the
-// preset is on, matching pre-gate behavior): tier 3's full-screen plate
-// rule only describes the battle's "truth of retribution" moment (inside
-// a >=80-VQ list). Gating tiers 1/2 too was tried and broke char select
-// and presentation — disabling tier 1 moved crowd-bank content into tier
-// 0, where it could draw over characters that used to sit above it.
-extern "C" int get_isp_depth_preset();
-#define ISP_DEPTH_FIX() (get_isp_depth_preset() == 1)
-
 // Offset (specular) color
 extern "C" int get_offset_color_preset();
 #define OFFSET_COLOR_FIX() (get_offset_color_preset() == 1)
@@ -3532,9 +3503,7 @@ struct TransStripRec
   Vertex *vtx;     // first vertex of the strip
   PolyParam *mod;  // render state in effect for this strip
   u16 count;       // vertex count (sign bit already consumed)
-  u16 tr_class;    // ISP_DEPTH_FIX() layer tier at equal depth (0 otherwise):
-                   // 3 = full-screen plate, 2 = VQ stage art,
-                   // 1 = 8bpp bank 32-47 (stage sprites), 0 = rest
+  u16 _pad;
 };
 
 static TransStripRec trans_sort_recs[8 * 1024];
@@ -3545,11 +3514,6 @@ static int trans_strip_cmp(const void *a, const void *b)
   const TransStripRec *rb = (const TransStripRec *)b;
   if (ra->far_w > rb->far_w) return -1; // farther strips draw first
   if (ra->far_w < rb->far_w) return 1;
-  // isp_depth layer tier: at equal depth, background plates (3) draw before
-  // stage art (2) before stage sprites (1) before everything else (0).
-  // Always 0 with the preset off.
-  if (ra->tr_class > rb->tr_class) return -1;
-  if (ra->tr_class < rb->tr_class) return 1;
   // stable tie-break: original submission order
   if (ra->vtx < rb->vtx) return -1;
   if (ra->vtx > rb->vtx) return 1;
@@ -4229,7 +4193,7 @@ void DoRender()
   // lists/vertices/listModes walk; ts_end_* are the walk cursors at the end
   // of the TR range, restored when the sorted range is done so any strips
   // after it (legacy path: a PT list submitted after TR) still line up.
-  const bool trans_sort = TRANS_SORT() || ISP_DEPTH_FIX(); // read once per frame (isp_depth implies the sort)
+  const bool trans_sort = TRANS_SORT(); // read once per frame
   bool ts_active = false;
   int ts_idx = 0;
   int ts_count = 0;
@@ -4418,7 +4382,6 @@ void DoRender()
           // not happen — TA lists start with a global param — but a valid
           // fallback beats reading a NULL mod).
           PolyParam *cur_mod = (wmod > listModes) ? wmod - 1 : wmod;
-          const bool isp_tier = ISP_DEPTH_FIX(); // layer tiers at equal depth
           int n = 0;
           for (const VertexList *l = drawLST; l != tr_end; l++)
           {
@@ -4432,77 +4395,13 @@ void DoRender()
               if (wvtx[i].z > far_w)
                 far_w = wvtx[i].z;
 
-            // isp_depth: classify one-depth 2D layers by texture state (see
-            // the preset note at the top of the file). ALL VQ shares one
-            // tier: within a tier submission order is preserved, so
-            // VQ-vs-VQ compositing stays legacy-identical (an address-based
-            // low/high VRAM split was tried and broke the character-select
-            // screen by reordering VQ against VQ).
-            u16 tclass = 0;
-            if (isp_tier && cur_mod->pcw.Texture)
-            {
-              if (cur_mod->tcw.NO_PAL.PixelFmt == 2 && cur_mod->tcw.NO_PAL.VQ_Comp)
-                tclass = 2; // VQ stage art: bottom layer
-              else if (cur_mod->tcw.NO_PAL.PixelFmt == 6
-                    && (cur_mod->tcw.PAL.PalSelect >> 4) == 2)
-                tclass = 1; // stage sprites (crowd): above art, below the rest
-            }
-            else if (isp_tier && !cur_mod->pcw.Texture && c >= 3
-                  && cur_mod->tsp.SrcInstr == 1 && cur_mod->tsp.DstInstr == 0
-                  && (wvtx[0].col >> 24) == 0xFF)
-            {
-              // Untextured full-screen REPLACE plate (blend ONE/ZERO, opaque
-              // vertex alpha) submitted at the shared depth: a background
-              // plate the game expects per-pixel autosort to bury (HnK's
-              // "truth of retribution" screen submits a full-screen black
-              // one LAST — painter order blacked out the whole scene).
-              // Vertex::z holds W; screen coords are x/W, y/W.
-              float sminx = 1e9f, smaxx = -1e9f, sminy = 1e9f, smaxy = -1e9f;
-              for (s32 i = 0; i < c; i++)
-              {
-                if (wvtx[i].z <= 0.0f) { sminx = 1e9f; break; } // degenerate W: not a plate
-                float iw = 1.0f / wvtx[i].z;
-                float sx = wvtx[i].x * iw, sy = wvtx[i].y * iw;
-                if (sx < sminx) sminx = sx;
-                if (sx > smaxx) smaxx = sx;
-                if (sy < sminy) sminy = sy;
-                if (sy > smaxy) smaxy = sy;
-              }
-              // DC frame is 640x480 here; smaller-res games just never match.
-              if (sminx <= 1.0f && smaxx >= 639.0f && sminy <= 1.0f && smaxy >= 479.0f)
-                tclass = 3; // behind even the stage art
-            }
-
             trans_sort_recs[n].far_w = far_w;
             trans_sort_recs[n].vtx = wvtx;
             trans_sort_recs[n].mod = cur_mod;
             trans_sort_recs[n].count = (u16)c;
-            trans_sort_recs[n].tr_class = tclass;
             n++;
             wvtx += c;
           }
-
-          // Scene gate for tier 3 (background plate) ONLY. Tiers 1 (crowd)
-          // and 2 (VQ) stay unconditional — this is what v8 did (no gate at
-          // all) and char select/presentation both worked. v9/v10 gated
-          // tier 1 off outside the battle and that's what actually broke
-          // those two screens: disabling tier 1 doesn't fall back to a
-          // neutral order, it moves pal-32-47 content into tier 0 where it
-          // can now draw over characters that used to sit safely above it
-          // (confirmed by A/B: v10 un-gated tier 2 only and fixed
-          // presentation's missing character but left char select exactly
-          // as broken — tier 1 was the untouched, still-gated variable in
-          // both). Tier 3 is the newest, least-proven addition (only ever
-          // needed for the battle's "truth of retribution" full-screen
-          // plate, itself inside a >=80-VQ list), so it alone stays gated.
-          int gate_c2 = 0;
-          for (int i = 0; i < n; i++)
-            if (trans_sort_recs[i].tr_class == 2) gate_c2++;
-          const bool tier_gate_open = gate_c2 >= 80; // 52 (menus) << 80 << 119 (battle)
-          if (!tier_gate_open)
-            for (int i = 0; i < n; i++)
-              if (trans_sort_recs[i].tr_class == 3)
-                trans_sort_recs[i].tr_class = 0;
 
           if (n > 1)
             qsort(trans_sort_recs, n, sizeof(TransStripRec), trans_strip_cmp);
