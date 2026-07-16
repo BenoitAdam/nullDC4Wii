@@ -124,8 +124,9 @@ extern "C" int get_blend_fps_boost_preset();
 extern "C" int get_punch_through_preset();
 #define PUNCH_THROUGH_FIX() (get_punch_through_preset() == 1)
 
-// isp_depth preset: layer-tiered translucent sort for games that submit
-// their whole 2D scene at ONE depth. Hokuto no Ken sends every TR strip
+// hokuto_hack preset: layer-tiered translucent sort for games that submit
+// their whole 2D scene at ONE depth. Named after its origin case — Hokuto
+// no Ken sends every TR strip
 // with dm=6 zw=0 at identical W=10000 (only HUD fonts differ, at W=1 =
 // nearest) and relies on PVR per-pixel autosort: a fade quad is even
 // submitted FIRST at W=1, expecting the hardware to composite it last.
@@ -158,8 +159,28 @@ extern "C" int get_punch_through_preset();
 // pulled into the same tier and ended up behind the crowd too. Reverted;
 // the debris pile is still unfixed and needs a narrower signature (its
 // actual palette bank, not yet captured) to scope correctly.
-extern "C" int get_isp_depth_preset();
-#define ISP_DEPTH_FIX() (get_isp_depth_preset() == 1)
+extern "C" int get_hokuto_hack_preset();
+#define HOKUTO_HACK() (get_hokuto_hack_preset() == 1)
+
+// Per-polygon ISP depth compare (isp.DepthMode -> GX depth func). This is a
+// DIFFERENT feature from HOKUTO_HACK above (that one is a translucent
+// layer-tier sort; this one honors the polygon's actual DepthMode register).
+// 0 = off (legacy: every poly uses the GEQUAL painter compare)
+// 1 = honor DepthMode on the opaque/PT lists only (translucent stays GEQUAL,
+//     matching real PVR per-pixel autosort, which overrides DepthMode there)
+// 2 = honor DepthMode on every list.
+// DC DepthMode (0=Never .. 7=Always, compared on 1/W with larger=nearer) maps
+// 1:1 onto GX_NEVER..GX_ALWAYS: vertex z holds W and the projection maps
+// near->screen 1 / far->screen 0, so GX screen Z grows toward the viewer
+// exactly like DC 1/W does, preserving the compare direction.
+extern "C" int get_isp_depth_func_preset();
+#define ISP_DEPTH_FUNC() (get_isp_depth_func_preset())
+
+// Per-polygon backface culling (isp.CullMode -> GX cull mode).
+// 0 = off (legacy: never cull), 1 = on, 2 = on with the two cullable windings
+// swapped (use if 1 makes geometry vanish / render inside-out in a game).
+extern "C" int get_isp_cull_preset();
+#define ISP_CULL() (get_isp_cull_preset())
 
 // Offset (specular) color
 extern "C" int get_offset_color_preset();
@@ -3539,7 +3560,7 @@ struct TransStripRec
   Vertex *vtx;     // first vertex of the strip
   PolyParam *mod;  // render state in effect for this strip
   u16 count;       // vertex count (sign bit already consumed)
-  u16 tr_class;    // ISP_DEPTH_FIX() layer tier at equal depth (0 otherwise):
+  u16 tr_class;    // HOKUTO_HACK() layer tier at equal depth (0 otherwise):
                    // 3 = full-screen plate, 2 = VQ stage art,
                    // 1 = 8bpp bank 32-47 (stage sprites), 0 = rest
 };
@@ -3552,7 +3573,7 @@ static int trans_strip_cmp(const void *a, const void *b)
   const TransStripRec *rb = (const TransStripRec *)b;
   if (ra->far_w > rb->far_w) return -1; // farther strips draw first
   if (ra->far_w < rb->far_w) return 1;
-  // isp_depth layer tier: at equal depth, background plates (3) draw before
+  // hokuto_hack layer tier: at equal depth, background plates (3) draw before
   // stage art (2) before stage sprites (1) before everything else (0).
   // Always 0 with the preset off.
   if (ra->tr_class > rb->tr_class) return -1;
@@ -4221,6 +4242,22 @@ void DoRender()
   const bool decal_alpha_fix = DECAL_ALPHA_FIX(); // read once per frame, not per polygon
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
+  int  last_z_func  = GX_GEQUAL; // matches the GEQUAL established at frame start (GX_SetZMode above)
+
+  // Per-polygon ISP state presets, read once per frame (macros at top of file).
+  const bool ppz_write      = PER_POLYGON_Z_WRITE();
+  const int  isp_depth_func = ISP_DEPTH_FUNC(); // 0=off 1=OP/PT lists 2=all lists
+  const int  isp_cull       = ISP_CULL();       // 0=off 1=on 2=on, swapped winding
+
+  // DC ISP CullMode -> GX cull mode. Mode 0 = no culling; mode 1 "cull if
+  // small" (|det| < FPU_CULL_VAL) has no GX equivalent, treated as no culling;
+  // modes 2/3 ("cull if negative/positive" determinant) each cull one screen
+  // winding. GX's FRONT/BACK naming doesn't follow GL's convention and the
+  // effective winding also depends on this renderer's projection, so the 2/3
+  // pairing is selectable (ISP_CULL()==2 swaps it) instead of hardcoded.
+  u8 dc_cull_to_gx[4] = { GX_CULL_NONE, GX_CULL_NONE, GX_CULL_FRONT, GX_CULL_BACK };
+  if (isp_cull == 2) { dc_cull_to_gx[2] = GX_CULL_BACK; dc_cull_to_gx[3] = GX_CULL_FRONT; }
+  int last_cull = GX_CULL_NONE; // GX_SetCullMode(GX_CULL_NONE) is the frame default
 
   // DC TSP blend factor → GX blend factor lookup.
   // SrcInstr: "OtherColor" for a source factor means the framebuffer (dst) color.
@@ -4254,7 +4291,7 @@ void DoRender()
   // lists/vertices/listModes walk; ts_end_* are the walk cursors at the end
   // of the TR range, restored when the sorted range is done so any strips
   // after it (legacy path: a PT list submitted after TR) still line up.
-  const bool trans_sort = TRANS_SORT() || ISP_DEPTH_FIX(); // read once per frame (isp_depth implies the sort)
+  const bool trans_sort = TRANS_SORT() || HOKUTO_HACK(); // read once per frame (hokuto_hack implies the sort)
   bool ts_active = false;
   int ts_idx = 0;
   int ts_count = 0;
@@ -4412,18 +4449,17 @@ void DoRender()
         last_dst_blend = -1;
         GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
 
-        // TODO: per-polygon ISP state (isp.ZWriteDis, isp.CullMode, isp.DepthMode)
-        // is not yet emulated. Translucent polys may incorrectly stamp the Z-buffer.
-        // See below
-        //
-        // ClaudeAI: attempted on branch feature/per-poly-isp-state — added
-        // per-poly isp.DepthMode (GX depth func) and isp.CullMode (GX cull
-        // mode) behind ISP_DEPTH()/ISP_CULL() presets, merged into the same
-        // GX_SetZMode() call as the existing ZWriteDis handling. Measured a
-        // FPS regression and visual glitches in testing, so it was not
-        // merged to main. Kept on the branch for future investigation
-        // (suspects: per-poly GX state churn, and/or the DC CullMode->GX
-        // FRONT/BACK winding pairing being backwards for this projection).
+        // Per-polygon ISP state (isp.ZWriteDis, isp.DepthMode, isp.CullMode)
+        // is applied in the strip-header block further below, each behind its
+        // own preset: PER_POLYGON_Z_WRITE() / ISP_DEPTH_FUNC() / ISP_CULL().
+        // ISP_DEPTH_FUNC()==1 deliberately leaves this translucent list on the
+        // GEQUAL painter compare (real PVR per-pixel autosort overrides
+        // DepthMode for TR anyway); ==2 honors DepthMode here too. All three
+        // default OFF — earlier testing (branch feature/per-poly-isp-state)
+        // saw FPS regressions and glitches with DepthMode/CullMode always on,
+        // so they stay opt-in per game. Suspects if a game regresses:
+        // per-poly GX state churn, and the DC CullMode->GX FRONT/BACK winding
+        // pairing (try ISP_CULL()==2 to swap it for this projection).
 
         if (trans_sort)
         {
@@ -4443,7 +4479,7 @@ void DoRender()
           // not happen — TA lists start with a global param — but a valid
           // fallback beats reading a NULL mod).
           PolyParam *cur_mod = (wmod > listModes) ? wmod - 1 : wmod;
-          const bool isp_tier = ISP_DEPTH_FIX(); // layer tiers at equal depth
+          const bool isp_tier = HOKUTO_HACK(); // layer tiers at equal depth
           int n = 0;
           for (const VertexList *l = drawLST; l != tr_end; l++)
           {
@@ -4457,7 +4493,7 @@ void DoRender()
               if (wvtx[i].z > far_w)
                 far_w = wvtx[i].z;
 
-            // isp_depth: classify one-depth 2D layers by texture state (see
+            // hokuto_hack: classify one-depth 2D layers by texture state (see
             // the preset note at the top of the file). ALL VQ shares one
             // tier: within a tier submission order is preserved, so
             // VQ-vs-VQ compositing stays legacy-identical (an address-based
@@ -4693,15 +4729,42 @@ void DoRender()
           force_vtx_alpha_opaque = false;
         }
 
-        // ── Per-polygon Z write (ISP.ZWriteDis) ──────────────────────────────
-        // Real DC hardware honors ZWriteDis per polygon. Fix sprites with ZWriteDis=1
-        if(PER_POLYGON_Z_WRITE())
+        // ── Per-polygon Z state (ISP.ZWriteDis + ISP.DepthMode) ──────────────
+        // Real DC hardware honors both per polygon, and GX carries the compare
+        // func and the write mask in a single GX_SetZMode() call, so the two
+        // are cached together and re-issued only when either changes.
+        //   ppz_write      (PER_POLYGON_Z_WRITE): honor ZWriteDis, else always
+        //                  write (fixes e.g. Test Drive 6 sprites).
+        //   isp_depth_func (ISP_DEPTH_FUNC): 0=off (GEQUAL painter, legacy),
+        //                  1=honor DepthMode on the OP/PT lists only (TR stays
+        //                  GEQUAL, real PVR autosorts there), 2=every list.
+        // See the macro comments at the top of the file for the DepthMode->GX
+        // func 1:1 mapping and why the compare direction is preserved.
+        if (ppz_write || isp_depth_func)
         {
-          bool z_write = !stripMod->isp.ZWriteDis;
-          if (z_write != last_z_write)
+          bool z_write = ppz_write ? !stripMod->isp.ZWriteDis : true;
+          int z_func = GX_GEQUAL;
+          if (isp_depth_func == 2 || (isp_depth_func == 1 && !in_trans_list))
+            z_func = (int)stripMod->isp.DepthMode;
+          if (z_write != last_z_write || z_func != last_z_func)
           {
-            GX_SetZMode(GX_TRUE, GX_GEQUAL, z_write ? GX_TRUE : GX_FALSE);
+            GX_SetZMode(GX_TRUE, (u8)z_func, z_write ? GX_TRUE : GX_FALSE);
             last_z_write = z_write;
+            last_z_func  = z_func;
+          }
+        }
+
+        // ── Per-polygon backface culling (ISP.CullMode) ──────────────────────
+        // Fix inside-out geometry in games that lean on hardware culling
+        // instead of submitting both windings. Table + swap option built once
+        // per frame above (dc_cull_to_gx / isp_cull).
+        if (isp_cull)
+        {
+          int cull = dc_cull_to_gx[stripMod->isp.CullMode];
+          if (cull != last_cull)
+          {
+            GX_SetCullMode((u8)cull);
+            last_cull = cull;
           }
         }
 
@@ -4770,6 +4833,11 @@ void DoRender()
       last_alpha_fmt = 0;
     }
   }
+
+  // Per-polygon culling may have left GX culling enabled; the 2D present path
+  // and next frame's background quad both assume GX_CULL_NONE.
+  if (last_cull != GX_CULL_NONE)
+    GX_SetCullMode(GX_CULL_NONE);
 
   reset_vtx_state();
 

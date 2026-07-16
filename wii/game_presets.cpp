@@ -216,7 +216,9 @@ extern int g_depth_clip_preset;
 extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
 extern int g_bg_poly_preset;
-extern int g_isp_depth_preset;
+extern int g_hokuto_hack_preset;
+extern int g_isp_depth_func_preset;
+extern int g_isp_cull_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -264,7 +266,9 @@ struct GamePreset
     int async_render;
     int tmem_cache;
     int bg_poly;
-    int isp_depth;
+    int hokuto_hack;
+    int isp_depth_func;
+    int isp_cull;
 };
 
 // Nothing from the .cfg stays in RAM: game_presets_apply() streams the file
@@ -484,7 +488,9 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "async_render"))   p->async_render   = parse_bool(val);
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = parse_bool(val);
     else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
-    else if (key_eq(key, "isp_depth"))      p->isp_depth      = parse_bool(val);
+    else if (key_eq(key, "hokuto_hack"))    p->hokuto_hack    = parse_bool(val);
+    else if (key_eq(key, "isp_depth_func")) p->isp_depth_func = atoi(val);
+    else if (key_eq(key, "isp_cull"))       p->isp_cull       = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -518,7 +524,9 @@ static void preset_clear(GamePreset* cur)
     cur->async_render = -1;
     cur->tmem_cache = -1;
     cur->bg_poly = -1;
-    cur->isp_depth = -1;
+    cur->hokuto_hack = -1;
+    cur->isp_depth_func = -1;
+    cur->isp_cull = -1;
 }
 
 // Apply every set field of a preset slot onto the live g_*_preset globals
@@ -557,7 +565,9 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
     if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
     if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
-    if (p->isp_depth      >= 0) { g_isp_depth_preset     = p->isp_depth;       printf("  isp_depth      -> %d\n", p->isp_depth);      }
+    if (p->hokuto_hack    >= 0) { g_hokuto_hack_preset   = p->hokuto_hack;     printf("  hokuto_hack    -> %d\n", p->hokuto_hack);    }
+    if (p->isp_depth_func >= 0) { g_isp_depth_func_preset = p->isp_depth_func; printf("  isp_depth_func -> %d\n", p->isp_depth_func); }
+    if (p->isp_cull       >= 0) { g_isp_cull_preset      = p->isp_cull;        printf("  isp_cull       -> %d\n", p->isp_cull);       }
 }
 
 // ---------------------------------------------------------------------------

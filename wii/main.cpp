@@ -81,14 +81,31 @@ extern "C" {
   int get_8bpp_preset() { return g_8bpp_preset; }
 }
 
-int g_isp_depth_preset = 0;
-// 0=off (legacy: one global GEQUAL depth compare), 1=on (VQ-textured TR
-//   polys lose equal-depth ties: GREATER + Z-write, others keep painter
-//   order; Hokuto no Ken's VQ backdrop erased its fighters/HUD without
-//   this — see gxRend.cpp ISP_DEPTH_FIX())
+int g_hokuto_hack_preset = 0;
+// 0=off (legacy: painter order), 1=on (layer-tiered translucent sort for 2D
+//   games that submit their whole scene at one depth — origin case is
+//   Hokuto no Ken's VQ backdrop erasing its fighters/HUD without this; see
+//   gxRend.cpp HOKUTO_HACK())
 
 extern "C" {
-  int get_isp_depth_preset() { return g_isp_depth_preset; }
+  int get_hokuto_hack_preset() { return g_hokuto_hack_preset; }
+}
+
+int g_isp_depth_func_preset = 0;
+// Per-polygon isp.DepthMode -> GX depth compare. 0=off (legacy: every poly
+// GEQUAL), 1=honor DepthMode on the opaque/PT lists only, 2=all lists
+// (see gxRend.cpp ISP_DEPTH_FUNC()).
+
+extern "C" {
+  int get_isp_depth_func_preset() { return g_isp_depth_func_preset; }
+}
+
+int g_isp_cull_preset = 0;
+// Per-polygon isp.CullMode -> GX backface culling. 0=off (legacy: never cull),
+// 1=on, 2=on with the two cullable windings swapped (see gxRend.cpp ISP_CULL())
+
+extern "C" {
+  int get_isp_cull_preset() { return g_isp_cull_preset; }
 }
 
 int g_texture_cache_preset = 2;
@@ -719,8 +736,10 @@ void displayAccuracyMenu()
 #define OPT_BG_POLY     32
 #define OPT_X_SCALER    33
 #define OPT_CANVAS_WIDTH 34
-#define OPT_ISP_DEPTH   35
-#define OPT_ROW_COUNT   36
+#define OPT_HOKUTO_HACK 35
+#define OPT_ISP_DEPTH_FUNC 36
+#define OPT_ISP_CULL    37
+#define OPT_ROW_COUNT   38
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -747,7 +766,9 @@ static int opt_row_page(int row)
     case OPT_BG_POLY:
     case OPT_X_SCALER:
     case OPT_CANVAS_WIDTH:
-    case OPT_ISP_DEPTH:
+    case OPT_HOKUTO_HACK:
+    case OPT_ISP_DEPTH_FUNC:
+    case OPT_ISP_CULL:
       return 1;
     default:
       return 0;
@@ -1103,13 +1124,33 @@ bool displayOptionsMenu()
     printf(" SF3 double impact=384");
     printf("\n");
 
-    // --- Row: ISP depth tiering (layer-tiered translucent sort) ---
-    printf("%s ISP DEPTH      : ", (selectedRow == OPT_ISP_DEPTH) ? ">" : " ");
-    switch (g_isp_depth_preset) {
+    // --- Row: Hokuto Hack (layer-tiered translucent sort) ---
+    printf("%s HOKUTO HACK    : ", (selectedRow == OPT_HOKUTO_HACK) ? ">" : " ");
+    switch (g_hokuto_hack_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (TR TIER SORT) >]"); break;
     }
     printf(" ON for Hokuto no Ken (Specific)");
+    printf("\n");
+
+    // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
+    printf("%s ISP DEPTH FUNC : ", (selectedRow == OPT_ISP_DEPTH_FUNC) ? ">" : " ");
+    switch (g_isp_depth_func_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (OPAQUE/PT)    >]"); break;
+      case 2: printf("[< ON (ALL LISTS)    >]"); break;
+    }
+    printf(" per-poly depth test (experimental)");
+    printf("\n");
+
+    // --- Row: Per-poly ISP backface cull (isp.CullMode) ---
+    printf("%s ISP CULL       : ", (selectedRow == OPT_ISP_CULL) ? ">" : " ");
+    switch (g_isp_cull_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON                >]"); break;
+      case 2: printf("[< ON (SWAP WINDING) >]"); break;
+    }
+    printf(" backface culling (experimental)");
     printf("\n");
     } // end page 1
 
@@ -1181,7 +1222,9 @@ bool displayOptionsMenu()
           else if (g_canvas_width_preset <= 320) g_canvas_width_preset = 0;
           else                                   g_canvas_width_preset -= 16;
           break;
-        case OPT_ISP_DEPTH:  g_isp_depth_preset      = (g_isp_depth_preset       + 1) % 2; break;
+        case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
+        case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 2) % 3; break;
+        case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
         default: break;
       }
     }
@@ -1223,7 +1266,9 @@ bool displayOptionsMenu()
           else if (g_canvas_width_preset >= 1280) g_canvas_width_preset = 0;
           else                                    g_canvas_width_preset += 16;
           break;
-        case OPT_ISP_DEPTH:  g_isp_depth_preset      = (g_isp_depth_preset       + 1) % 2; break;
+        case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
+        case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 1) % 3; break;
+        case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
         default: break;
       }
     }
@@ -1907,7 +1952,11 @@ int main(int argc, wchar *argv[])
       printf("Canvas Width   : OFF (640, LEGACY)\n");
     else
       printf("Canvas Width   : %d\n", g_canvas_width_preset);
-    printf("ISP Depth      : %s\n", g_isp_depth_preset ? "ON (TR TIER SORT)" : "OFF (LEGACY)");
+    printf("Hokuto Hack    : %s\n", g_hokuto_hack_preset ? "ON (TR TIER SORT)" : "OFF (LEGACY)");
+    printf("ISP Depth Func : %s\n", g_isp_depth_func_preset == 0 ? "OFF (LEGACY)"
+                                  : (g_isp_depth_func_preset == 1 ? "ON (OPAQUE/PT)" : "ON (ALL LISTS)"));
+    printf("ISP Cull       : %s\n", g_isp_cull_preset == 0 ? "OFF (LEGACY)"
+                                  : (g_isp_cull_preset == 1 ? "ON" : "ON (SWAP WINDING)"));
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
