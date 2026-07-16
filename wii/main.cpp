@@ -81,7 +81,7 @@ extern "C" {
   int get_8bpp_preset() { return g_8bpp_preset; }
 }
 
-int g_isp_depth_preset = 1;
+int g_isp_depth_preset = 0;
 // 0=off (legacy: one global GEQUAL depth compare), 1=on (VQ-textured TR
 //   polys lose equal-depth ties: GREATER + Z-write, others keep painter
 //   order; Hokuto no Ken's VQ backdrop erased its fighters/HUD without
@@ -719,7 +719,8 @@ void displayAccuracyMenu()
 #define OPT_BG_POLY     32
 #define OPT_X_SCALER    33
 #define OPT_CANVAS_WIDTH 34
-#define OPT_ROW_COUNT   35
+#define OPT_ISP_DEPTH   35
+#define OPT_ROW_COUNT   36
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -746,6 +747,7 @@ static int opt_row_page(int row)
     case OPT_BG_POLY:
     case OPT_X_SCALER:
     case OPT_CANVAS_WIDTH:
+    case OPT_ISP_DEPTH:
       return 1;
     default:
       return 0;
@@ -1100,6 +1102,15 @@ bool displayOptionsMenu()
       printf("[< %-4d              >]", g_canvas_width_preset);
     printf(" SF3 double impact=384");
     printf("\n");
+
+    // --- Row: ISP depth tiering (layer-tiered translucent sort) ---
+    printf("%s ISP DEPTH      : ", (selectedRow == OPT_ISP_DEPTH) ? ">" : " ");
+    switch (g_isp_depth_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (TR TIER SORT) >]"); break;
+    }
+    printf(" ON for Hokuto no Ken");
+    printf("\n");
     } // end page 1
 
 
@@ -1170,6 +1181,7 @@ bool displayOptionsMenu()
           else if (g_canvas_width_preset <= 320) g_canvas_width_preset = 0;
           else                                   g_canvas_width_preset -= 16;
           break;
+        case OPT_ISP_DEPTH:  g_isp_depth_preset      = (g_isp_depth_preset       + 1) % 2; break;
         default: break;
       }
     }
@@ -1211,6 +1223,7 @@ bool displayOptionsMenu()
           else if (g_canvas_width_preset >= 1280) g_canvas_width_preset = 0;
           else                                    g_canvas_width_preset += 16;
           break;
+        case OPT_ISP_DEPTH:  g_isp_depth_preset      = (g_isp_depth_preset       + 1) % 2; break;
         default: break;
       }
     }
@@ -1894,6 +1907,7 @@ int main(int argc, wchar *argv[])
       printf("Canvas Width   : OFF (640, LEGACY)\n");
     else
       printf("Canvas Width   : %d\n", g_canvas_width_preset);
+    printf("ISP Depth      : %s\n", g_isp_depth_preset ? "ON (TR TIER SORT)" : "OFF (LEGACY)");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
