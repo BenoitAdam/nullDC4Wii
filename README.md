@@ -571,6 +571,10 @@ It's ok, you have the right, but without AI this project wouldn't have been resu
 
 Reduce CO2 emission & grow trees is the plan for the planet.
 
+### do you have a discord ?
+
+Yes : https://discord.gg/fZzxdeXrZ
+
 ## Ressources
 
 ### Dreamcast Emulators 
