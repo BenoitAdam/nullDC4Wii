@@ -3567,6 +3567,50 @@ struct TransStripRec
 
 static TransStripRec trans_sort_recs[8 * 1024];
 
+// hokuto_hack: HnK's stage-1 debris pile (small individual rubble sprites,
+// VQ ARGB4444, real alpha blend — identical PixelFmt/VQ_Comp/TSP signature
+// to generic translucent background scenery sharing tier 2, so no
+// format-based rule can separate them) needs to sort BEHIND that scenery,
+// not in front of it. Two things were tried and both failed instructively:
+//   - Deecy-captured VRAM addresses (0001CC00/CF00/D200): never matched at
+//     runtime. Deecy and nullDC4Wii are separate emulators with independent
+//     texture-cache/VRAM allocation, so a snapshot address from one is
+//     meaningless in the other.
+//   - Tile-grid phase (mod-128 screen position vs. the frame's dominant
+//     background phase): worked at a fixed camera position, but the
+//     background scrolls with the fight, so its phase drifts continuously
+//     through all 128 values. Whenever it drifted near the debris island's
+//     own (roughly static) phase, debris got misclassified as grid-aligned
+//     — a genuine periodic aliasing bug, confirmed by a live log showing
+//     the misclassification correlate with camera/fight position.
+// What actually held stable across an entire play session (hundreds of
+// frames, camera panning through the whole fight) was nullDC4Wii's OWN
+// runtime VRAM address for this texture: 0x0E6000/0E7800/0E9000/0EA800/
+// 0EC000/0ED800, unchanged throughout. Unlike Deecy's addresses these are
+// captured from this emulator's own texture upload, and unlike tile phase
+// this isn't a periodic quantity that can alias — so it doesn't have
+// either prior failure mode. Expected caveat: texture upload order (and
+// therefore VRAM address) is scene/stage dependent, so this set may need
+// re-tuning for other HnK stages/battles — not yet verified beyond stage 1.
+
+// Stage 1
+#define HOKUTO_DEBRIS_TEX_ADDR_0 0x000E6000u // top-left corner ~x=242 y=107
+#define HOKUTO_DEBRIS_TEX_ADDR_1 0x000E7800u // top-left corner ~x=370 y=107
+#define HOKUTO_DEBRIS_TEX_ADDR_2 0x000E9000u // top-left corner ~x=498 y=107
+#define HOKUTO_DEBRIS_TEX_ADDR_3 0x000EA800u // top-left corner ~x=242 y=235
+#define HOKUTO_DEBRIS_TEX_ADDR_4 0x000EC000u // top-left corner ~x=370 y=235
+#define HOKUTO_DEBRIS_TEX_ADDR_5 0x000ED800u // top-left corner ~x=498 y=235
+ 
+static inline bool hokuto_is_debris_tex(u32 addr)
+{
+  return addr == HOKUTO_DEBRIS_TEX_ADDR_0
+      || addr == HOKUTO_DEBRIS_TEX_ADDR_1
+      || addr == HOKUTO_DEBRIS_TEX_ADDR_2
+      || addr == HOKUTO_DEBRIS_TEX_ADDR_3
+      || addr == HOKUTO_DEBRIS_TEX_ADDR_4
+      || addr == HOKUTO_DEBRIS_TEX_ADDR_5;
+}
+
 static int trans_strip_cmp(const void *a, const void *b)
 {
   const TransStripRec *ra = (const TransStripRec *)a;
@@ -3595,6 +3639,16 @@ static int trans_strip_cmp(const void *a, const void *b)
     bool rb_replace = rb->mod->tsp.SrcInstr == 1 && rb->mod->tsp.DstInstr == 0;
     if (ra_replace && !rb_replace) return -1;
     if (!ra_replace && rb_replace) return 1;
+    // Within the non-REPLACE (blend) bucket: HnK's debris pile (see
+    // hokuto_is_debris_tex() above) draws before — behind — other
+    // translucent VQ scenery sharing this tier.
+    if (!ra_replace && !rb_replace)
+    {
+      bool ra_debris = hokuto_is_debris_tex((ra->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
+      bool rb_debris = hokuto_is_debris_tex((rb->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
+      if (ra_debris && !rb_debris) return -1;
+      if (!ra_debris && rb_debris) return 1;
+    }
   }
   // stable tie-break: original submission order
   if (ra->vtx < rb->vtx) return -1;
