@@ -5,7 +5,7 @@
 #undef FAR
 
 //#define CLIP_WARN
-#define key_printf(x...)  /*printf(x);*/
+#define key_printf(x...)  printf(x)
 #define aeg_printf(x...)  /*printf(x);*/
 #define step_printf(x...) /*printf(x);*/
 
@@ -504,14 +504,27 @@ struct ChannelEx
             adpcm.Reset(this);
             StepStreamInitial(this);
 
-            key_printf("[%d] KEY_ON %s\n", ChanelNumber, stream_names[ccd->PCMS]);
+            // Filter removed: the buggy SFX never showed up while SA=0x2A04E
+            // was excluded, meaning it likely reuses that same raw waveform
+            // (a single wavetable sample pitched/retriggered for both BGM
+            // notes and some SFX is common). Log everything again and
+            // correlate by timing/channel instead of by address.
+            key_printf("[AICA] KEY_ON  ch=%2d fmt=%s %s SA=0x%05X LSA=%u LEA=%u loopLen=%d TL=%u OCT=%d FNS=%u "
+                       "KRS=%u DL=%u D1R=%u D2R=%u RR=%u effRR=%u\n",
+                       ChanelNumber,
+                       ccd->SSCTL ? "noise" : stream_names[ccd->PCMS],
+                       ccd->LPCTL ? "loop" : "one-shot",
+                       (ccd->SA_hi << 16) | ccd->SA_low,
+                       ccd->LSA, ccd->LEA, (int)ccd->LEA - (int)ccd->LSA,
+                       ccd->TL, ccd->OCT, ccd->FNS,
+                       ccd->KRS, ccd->DL, ccd->D1R, ccd->D2R, ccd->RR, AEG_EffRate(ccd->RR));
         }
     }
     void KEY_OFF()
     {
         if (AEG.state != EG_Release)
         {
-            key_printf("[%d] KEY_OFF\n", ChanelNumber);
+            key_printf("[AICA] KEY_OFF ch=%2d\n", ChanelNumber);
             SetAegState(EG_Release);
         }
     }
@@ -536,10 +549,24 @@ struct ChannelEx
     }
     u32 AEG_EffRate(u32 re)
     {
-        s32 rv = ccd->KRS + (ccd->FNS >> 9) + (re << 1);
-        if (ccd->KRS == 0xF) rv -= 0xF;
-        if (ccd->OCT & 8)    rv -= (16 - ccd->OCT) << 1;
-        else                  rv += ccd->OCT << 1;
+        // Key-rate scaling per verified SCSP/AICA reference: when KRS==0xF,
+        // octave/FNS contribution is disabled entirely (rate = 2*re only).
+        // The previous formula applied the octave term even at KRS==0xF,
+        // which for a KRS=0xF (no key-tracking) instrument at a negative
+        // octave (OCT=15 => oct=-1, exactly what ChuChu Rocket's chime/BGM
+        // instrument uses) skews the computed rate lower than real hardware
+        // — i.e. decays/releases slower than intended. With several
+        // overlapping chime notes fired in quick succession (a button-press
+        // arpeggio), a too-slow release means each note keeps ringing well
+        // after the next starts, smearing into what sounds like an
+        // echo/slow-motion wash instead of a crisp jingle.
+        s32 rate_offset = 0;
+        if (ccd->KRS != 0xF)
+        {
+            s32 oct = (s32)(ccd->OCT ^ 8) - 8;   // sign-extend 4-bit OCT
+            rate_offset = oct + 2 * (s32)ccd->KRS + ((ccd->FNS >> 9) & 1);
+        }
+        s32 rv = (re << 1) + rate_offset;
         if (rv < 0)    rv = 0;
         if (rv > 0x3f) rv = 0x3f;
         return rv;

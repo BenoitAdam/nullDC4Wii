@@ -1780,22 +1780,28 @@ int main(int argc, wchar *argv[])
   // ---------------------------------------------------------------------------
   // ARM7DI core self-test — runs before anything else so a broken AICA ARM
   // core is caught (and visible on screen) before we ever boot a game.
+  //
+  // Temporarily re-enabled (was disabled) to check ARM7 instruction
+  // correctness while investigating a suspected AICA sound-driver timing bug
+  // in ChuChu Rocket — the vendored arm7di-tests-dreamcast conformance suite
+  // is a much more rigorous check than manual code audit. Re-comment once
+  // done, or leave enabled if it proves useful as a standing boot check.
   // ---------------------------------------------------------------------------
-  // {
-  //   int arm7_failures = arm_RunSelfTests();
-  //   if (arm7_failures != 0)
-  //   {
-  //     printf("\nARM7DI SELF-TEST FAILED (%d). Press HOME to exit.\n", arm7_failures);
-  //     while (true)
-  //     {
-  //       WPAD_ScanPads();
-  //       if (WPAD_ButtonsDown(0) & WPAD_BUTTON_HOME)
-  //         break;
-  //       VIDEO_WaitVSync();
-  //     }
-  //     return 1;
-  //   }
-  // }
+  {
+    int arm7_failures = arm_RunSelfTests();
+    if (arm7_failures != 0)
+    {
+      printf("\nARM7DI SELF-TEST FAILED (%d). Press HOME to exit.\n", arm7_failures);
+      while (true)
+      {
+        WPAD_ScanPads();
+        if (WPAD_ButtonsDown(0) & WPAD_BUTTON_HOME)
+          break;
+        VIDEO_WaitVSync();
+      }
+      return 1;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Mount SD card
