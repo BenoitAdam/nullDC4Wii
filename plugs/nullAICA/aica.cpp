@@ -4,6 +4,18 @@
 #include "wii/wii_audio.h"
 #include <math.h>
 
+// config.h (pulled in transitively above) deliberately poisons BIG_ENDIAN and
+// LITTLE_ENDIAN to catch accidental use; must undef before any libogc header,
+// which legitimately defines those same names via machine/endian.h. Same
+// pattern as wii/wii_audio.cpp.
+#ifdef BIG_ENDIAN
+#  undef BIG_ENDIAN
+#endif
+#ifdef LITTLE_ENDIAN
+#  undef LITTLE_ENDIAN
+#endif
+#include <ogc/lwp_watchdog.h>   // gettime(), ticks_to_millisecs()
+
 #define SH4_IRQ_BIT (1<<(u8)holly_SPU_IRQ)
 
 CommonData_struct* CommonData;
@@ -283,4 +295,24 @@ void libAICA_TimeStep()
 
     update_arm_interrupts();
     UpdateSh4Ints();
+
+    // Diagnostic: measure the ACTUAL rate of libAICA_TimeStep() calls (i.e.
+    // AICA_Sample() generation) against a real hardware wall-clock timer,
+    // independent of the emulator's own SH4-cycle accounting. Should read
+    // ~44100/sec if the cycle-to-sample pipeline (armUpdateARM's
+    // AICA_SAMPLE_CYCLES accumulator) is correctly paced; a value far below
+    // that (e.g. ~4000-4500/sec) would mean AICA is being driven at roughly
+    // 1/10 the intended rate, which would explain audio sounding both
+    // pitched too low AND stretched in duration by that same factor.
+    static u32 sample_count = 0;
+    static u64 last_check_ms = 0;
+    sample_count++;
+    u64 now_ms = ticks_to_millisecs(gettime());
+    if (now_ms - last_check_ms >= 1000)
+    {
+        printf("[AICA] real-time sample rate: %u samples/%llums (target 44100/1000ms)\n",
+               sample_count, (unsigned long long)(now_ms - last_check_ms));
+        sample_count = 0;
+        last_check_ms = now_ms;
+    }
 }

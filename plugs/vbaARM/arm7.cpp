@@ -1,6 +1,18 @@
 #include "arm7.h"
 #include "arm_mem.h"
 
+// config.h (pulled in transitively via arm7.h -> ... -> types.h) deliberately
+// poisons BIG_ENDIAN and LITTLE_ENDIAN to catch accidental use; must undef
+// before any libogc header, which legitimately defines those same names via
+// machine/endian.h. Same pattern as wii/wii_audio.cpp / plugs/nullAICA/aica.cpp.
+#ifdef BIG_ENDIAN
+#  undef BIG_ENDIAN
+#endif
+#ifdef LITTLE_ENDIAN
+#  undef LITTLE_ENDIAN
+#endif
+#include <ogc/lwp_watchdog.h>   // gettime(), ticks_to_millisecs()
+
 #define C_CORE
 #define DEV_VERSION
 
@@ -397,6 +409,28 @@ void CPUFiq()
 
 	armNextPC = reg[15].I;
 	reg[15].I += 4;
+
+	// Diagnostic: measure the ACTUAL real-time rate at which the ARM7 core
+	// services FIQs (AICA's interrupt line -> e68k -> FIQ pin), using a real
+	// hardware wall-clock timer. The AICA-side interrupt-pending signal is
+	// updated once per generated sample (~44100/sec if audio generation is
+	// paced correctly); if FIQ SERVICING falls far short of that (e.g. stuck
+	// near a low, roughly-constant rate) that would mean the ARM7 sound
+	// driver's interrupt-driven sequencer is being starved/throttled
+	// somewhere in the FIQ dispatch path (e.g. FIQ not being re-enabled
+	// promptly by the handler, or block-boundary sampling missing events),
+	// which would explain a uniformly slowed-down note sequence.
+	static u32 fiq_count = 0;
+	static u64 last_check_ms = 0;
+	fiq_count++;
+	u64 now_ms = ticks_to_millisecs(gettime());
+	if (now_ms - last_check_ms >= 1000)
+	{
+		printf("[ARM7] real-time FIQ service rate: %u/%llums\n",
+		       fiq_count, (unsigned long long)(now_ms - last_check_ms));
+		fiq_count = 0;
+		last_check_ms = now_ms;
+	}
 }
 
 
