@@ -3635,6 +3635,25 @@ static int trans_strip_cmp(const void *a, const void *b)
   // tier doesn't mix both blend modes.
   if (ra->tr_class == 2 && rb->tr_class == 2)
   {
+    // HOKUTO_DEBRIS_TEX_ADDR_0 (0xE6000) alone was confirmed on real
+    // hardware to render behind a REPLACE backdrop panel it overlaps —
+    // unlike the rest of the debris pile, which only needs to sort behind
+    // other translucent scenery, not REPLACE tiles (see the REPLACE-first
+    // rule right below). Checked ahead of that rule so this one address
+    // outranks even REPLACE, but scoped to just this address so the other
+    // 5 debris tiles' already real-hardware-validated behavior is
+    // untouched. Pure reorder, no deletion — an earlier attempt to hide
+    // this tile outright (skip drawing it whenever its address matched)
+    // caused unrelated content to flicker in/out, because that VRAM
+    // address gets reused for other textures later in the fight and a
+    // false-positive address match just deletes whatever's there.
+    // Reordering doesn't have that failure mode: a false-positive match
+    // just shuffles draw order harmlessly instead of erasing content.
+    bool ra_hidden_tile = ((ra->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) == HOKUTO_DEBRIS_TEX_ADDR_0;
+    bool rb_hidden_tile = ((rb->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) == HOKUTO_DEBRIS_TEX_ADDR_0;
+    if (ra_hidden_tile && !rb_hidden_tile) return -1;
+    if (!ra_hidden_tile && rb_hidden_tile) return 1;
+
     bool ra_replace = ra->mod->tsp.SrcInstr == 1 && ra->mod->tsp.DstInstr == 0;
     bool rb_replace = rb->mod->tsp.SrcInstr == 1 && rb->mod->tsp.DstInstr == 0;
     if (ra_replace && !rb_replace) return -1;
