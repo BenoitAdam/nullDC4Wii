@@ -162,6 +162,15 @@ extern "C" int get_punch_through_preset();
 extern "C" int get_hokuto_hack_preset();
 #define HOKUTO_HACK() (get_hokuto_hack_preset() == 1)
 
+// hokuto_hack debug: flip to 1, rebuild, and play up to the next stage's
+// battle to capture a [HOKUTO_STAGE] log the same way the stage 1 and 2
+// debris clusters were found (see hokuto_is_debris_tex() below) — logs
+// every tier-2 (VQ) strip's address and screen bbox once every 120 frames
+// while in a >=80-VQ battle scene. Flip back to 0 once captured; left on
+// it'd flood real playthroughs with per-frame printf overhead and log
+// spam for no benefit outside an active investigation.
+#define HOKUTO_DEBUG_LOG 0
+
 // Per-polygon ISP depth compare (isp.DepthMode -> GX depth func). This is a
 // DIFFERENT feature from HOKUTO_HACK above (that one is a translucent
 // layer-tier sort; this one honors the polygon's actual DepthMode register).
@@ -3567,31 +3576,7 @@ struct TransStripRec
 
 static TransStripRec trans_sort_recs[8 * 1024];
 
-// hokuto_hack: HnK's stage-1 debris pile (small individual rubble sprites,
-// VQ ARGB4444, real alpha blend — identical PixelFmt/VQ_Comp/TSP signature
-// to generic translucent background scenery sharing tier 2, so no
-// format-based rule can separate them) needs to sort BEHIND that scenery,
-// not in front of it. Two things were tried and both failed instructively:
-//   - Deecy-captured VRAM addresses (0001CC00/CF00/D200): never matched at
-//     runtime. Deecy and nullDC4Wii are separate emulators with independent
-//     texture-cache/VRAM allocation, so a snapshot address from one is
-//     meaningless in the other.
-//   - Tile-grid phase (mod-128 screen position vs. the frame's dominant
-//     background phase): worked at a fixed camera position, but the
-//     background scrolls with the fight, so its phase drifts continuously
-//     through all 128 values. Whenever it drifted near the debris island's
-//     own (roughly static) phase, debris got misclassified as grid-aligned
-//     — a genuine periodic aliasing bug, confirmed by a live log showing
-//     the misclassification correlate with camera/fight position.
-// What actually held stable across an entire play session (hundreds of
-// frames, camera panning through the whole fight) was nullDC4Wii's OWN
-// runtime VRAM address for this texture: 0x0E6000/0E7800/0E9000/0EA800/
-// 0EC000/0ED800, unchanged throughout. Unlike Deecy's addresses these are
-// captured from this emulator's own texture upload, and unlike tile phase
-// this isn't a periodic quantity that can alias — so it doesn't have
-// either prior failure mode. Expected caveat: texture upload order (and
-// therefore VRAM address) is scene/stage dependent, so this set may need
-// re-tuning for other HnK stages/battles — not yet verified beyond stage 1.
+// hokuto_hack
 
 // Stage 1
 #define HOKUTO_DEBRIS_TEX_ADDR_0 0x000E6000u // top-left corner ~x=242 y=107
@@ -3600,7 +3585,14 @@ static TransStripRec trans_sort_recs[8 * 1024];
 #define HOKUTO_DEBRIS_TEX_ADDR_3 0x000EA800u // top-left corner ~x=242 y=235
 #define HOKUTO_DEBRIS_TEX_ADDR_4 0x000EC000u // top-left corner ~x=370 y=235
 #define HOKUTO_DEBRIS_TEX_ADDR_5 0x000ED800u // top-left corner ~x=498 y=235
- 
+
+// Stage 2
+#define HOKUTO_DEBRIS_TEX_ADDR_7 0x000EF000u // top-left corner ~x=192 y=213
+#define HOKUTO_DEBRIS_TEX_ADDR_8 0x000F0800u // top-left corner ~x=320 y=213
+#define HOKUTO_DEBRIS_TEX_ADDR_9 0x000F2000u // top-left corner ~x=448 y=213
+#define HOKUTO_DEBRIS_TEX_ADDR_10 0x000F3800u // top-left corner ~x=576 y=213
+#define HOKUTO_DEBRIS_TEX_ADDR_11 0x000F5000u // top-left corner ~x=704 y=213
+
 static inline bool hokuto_is_debris_tex(u32 addr)
 {
   return addr == HOKUTO_DEBRIS_TEX_ADDR_0
@@ -3608,7 +3600,12 @@ static inline bool hokuto_is_debris_tex(u32 addr)
       || addr == HOKUTO_DEBRIS_TEX_ADDR_2
       || addr == HOKUTO_DEBRIS_TEX_ADDR_3
       || addr == HOKUTO_DEBRIS_TEX_ADDR_4
-      || addr == HOKUTO_DEBRIS_TEX_ADDR_5;
+      || addr == HOKUTO_DEBRIS_TEX_ADDR_5 // also stage 2's first debris tile (0xED800)
+      || addr == HOKUTO_DEBRIS_TEX_ADDR_7
+      || addr == HOKUTO_DEBRIS_TEX_ADDR_8
+      || addr == HOKUTO_DEBRIS_TEX_ADDR_9
+      || addr == HOKUTO_DEBRIS_TEX_ADDR_10
+      || addr == HOKUTO_DEBRIS_TEX_ADDR_11;
 }
 
 static int trans_strip_cmp(const void *a, const void *b)
@@ -3623,32 +3620,9 @@ static int trans_strip_cmp(const void *a, const void *b)
   if (ra->tr_class > rb->tr_class) return -1;
   if (ra->tr_class < rb->tr_class) return 1;
   // Within tier 2 (VQ stage art) only: some of the grid is opaque
-  // REPLACE (SrcInstr=1/DstInstr=0 — overwrites the pixel regardless of
-  // alpha, e.g. a solid distant backdrop panel) while other tiles in the
-  // SAME tier are real alpha blend (SrcInstr=4/DstInstr=5, e.g. a
-  // translucent scenery layer meant to composite over that backdrop). A
-  // REPLACE tile landing AFTER a blend tile in submission order blots it
-  // out completely regardless of either one's alpha. Sort opaque REPLACE
-  // tiles first (further back) so translucent tiles always composite on
-  // top of them, matching how opaque content sits behind translucent
-  // content in any normal compositing order. No-op for screens whose VQ
-  // tier doesn't mix both blend modes.
   if (ra->tr_class == 2 && rb->tr_class == 2)
   {
-    // HOKUTO_DEBRIS_TEX_ADDR_0 (0xE6000) alone was confirmed on real
-    // hardware to render behind a REPLACE backdrop panel it overlaps —
-    // unlike the rest of the debris pile, which only needs to sort behind
-    // other translucent scenery, not REPLACE tiles (see the REPLACE-first
-    // rule right below). Checked ahead of that rule so this one address
-    // outranks even REPLACE, but scoped to just this address so the other
-    // 5 debris tiles' already real-hardware-validated behavior is
-    // untouched. Pure reorder, no deletion — an earlier attempt to hide
-    // this tile outright (skip drawing it whenever its address matched)
-    // caused unrelated content to flicker in/out, because that VRAM
-    // address gets reused for other textures later in the fight and a
-    // false-positive address match just deletes whatever's there.
-    // Reordering doesn't have that failure mode: a false-positive match
-    // just shuffles draw order harmlessly instead of erasing content.
+    // HOKUTO_DEBRIS_TEX_ADDR_0 should not be seen
     bool ra_hidden_tile = ((ra->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) == HOKUTO_DEBRIS_TEX_ADDR_0;
     bool rb_hidden_tile = ((rb->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) == HOKUTO_DEBRIS_TEX_ADDR_0;
     if (ra_hidden_tile && !rb_hidden_tile) return -1;
@@ -4644,6 +4618,46 @@ void DoRender()
             for (int i = 0; i < n; i++)
               if (trans_sort_recs[i].tr_class == 3)
                 trans_sort_recs[i].tr_class = 0;
+
+#if HOKUTO_DEBUG_LOG
+          // hokuto_hack debug (see HOKUTO_DEBUG_LOG above): same approach
+          // that found stage 1 and 2's debris clusters — log every tier-2
+          // (VQ) strip's address and screen bbox, no address filter (each
+          // stage's addresses are different — see the "VRAM address is
+          // scene/stage dependent" caveat on hokuto_is_debris_tex() below).
+          // Gated to tier_gate_open (the >=80-VQ battle-scene gate) and
+          // throttled to 1-in-120 frames so a full playthrough doesn't
+          // flood the log with menus/cutscenes or near-identical frames.
+          // Look for the same signature that gave the first two stages
+          // away: a small, tightly-clustered group of addresses whose
+          // screen position doesn't fit the main background grid's
+          // sprawling, mostly-off-screen pattern.
+          static int s_hokuto_frame_throttle = 0;
+          if (tier_gate_open && (s_hokuto_frame_throttle++ % 120) == 0)
+          {
+            for (int i = 0; i < n; i++)
+            {
+              TransStripRec &r = trans_sort_recs[i];
+              if (r.tr_class != 2)
+                continue;
+              float sminx = 1e9f, smaxx = -1e9f, sminy = 1e9f, smaxy = -1e9f;
+              for (u16 j = 0; j < r.count; j++)
+              {
+                if (r.vtx[j].z <= 0.0f) continue;
+                float iw = 1.0f / r.vtx[j].z;
+                float sx = r.vtx[j].x * iw, sy = r.vtx[j].y * iw;
+                if (sx < sminx) sminx = sx;
+                if (sx > smaxx) smaxx = sx;
+                if (sy < sminy) sminy = sy;
+                if (sy > smaxy) smaxy = sy;
+              }
+              u32 dbg_addr = (r.mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
+              printf("[HOKUTO_STAGE] n=%d addr=%06X src=%d dst=%d x=%.0f..%.0f y=%.0f..%.0f\n",
+                     i, dbg_addr, r.mod->tsp.SrcInstr, r.mod->tsp.DstInstr,
+                     sminx, smaxx, sminy, smaxy);
+            }
+          }
+#endif
 
           if (n > 1)
             qsort(trans_sort_recs, n, sizeof(TransStripRec), trans_strip_cmp);
