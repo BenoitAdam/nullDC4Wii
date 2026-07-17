@@ -198,6 +198,12 @@ extern "C" {
   int get_trans_sort_preset() { return g_trans_sort_preset; }
 }
 
+int g_autosort_preset = 0; // 0=off (legacy); 1..4 = REAL per-pixel PVR autosort via GX depth peeling, value = max translucent depth layers per pixel (see gxRend.cpp AUTOSORT()). Very GPU-heavy (~2 extra TR walks + 2 EFB Z copies per layer) — per-game only.
+
+extern "C" {
+  int get_autosort_preset() { return g_autosort_preset; }
+}
+
 int g_render_to_texture_preset = 0; // 0=off (RTT frames dropped, legacy), 1=on (EFB copied back into VRAM at FB_W_SOF1)
 
 extern "C" {
@@ -739,7 +745,8 @@ void displayAccuracyMenu()
 #define OPT_HOKUTO_HACK 35
 #define OPT_ISP_DEPTH_FUNC 36
 #define OPT_ISP_CULL    37
-#define OPT_ROW_COUNT   38
+#define OPT_AUTOSORT    38
+#define OPT_ROW_COUNT   39
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -769,6 +776,7 @@ static int opt_row_page(int row)
     case OPT_HOKUTO_HACK:
     case OPT_ISP_DEPTH_FUNC:
     case OPT_ISP_CULL:
+    case OPT_AUTOSORT:
       return 1;
     default:
       return 0;
@@ -1152,6 +1160,15 @@ bool displayOptionsMenu()
     }
     printf(" backface culling (experimental)");
     printf("\n");
+
+    // --- Row: Per-pixel autosort (depth peeling) ---
+    printf("%s AUTOSORT       : ", (selectedRow == OPT_AUTOSORT) ? ">" : " ");
+    if (g_autosort_preset <= 0)
+      printf("[< OFF (LEGACY)      >]");
+    else
+      printf("[< %d LAYERS (SLOW)   >]", g_autosort_preset);
+    printf(" real per-pixel TR sort");
+    printf("\n");
     } // end page 1
 
 
@@ -1225,6 +1242,7 @@ bool displayOptionsMenu()
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 2) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
+        case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 4) % 5; break;
         default: break;
       }
     }
@@ -1269,6 +1287,7 @@ bool displayOptionsMenu()
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 1) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
+        case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 1) % 5; break;
         default: break;
       }
     }
@@ -1924,6 +1943,10 @@ int main(int argc, wchar *argv[])
     printf("Punch Through  : %s\n", g_punch_through_preset ? "ON (CORRECT)" : "OFF (FASTER?)");
     printf("Offset Color   : %s\n", g_offset_color_preset ? "ON (SPECULAR)" : "OFF (LEGACY)");
     printf("Trans Sort     : %s\n", g_trans_sort_preset ? "ON (SORTED)" : "OFF (LEGACY)");
+    if (g_autosort_preset > 0)
+      printf("Autosort       : ON (%d LAYERS, PER-PIXEL)\n", g_autosort_preset);
+    else
+      printf("Autosort       : OFF (LEGACY)\n");
     printf("Render To Tex  : %s\n", g_render_to_texture_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("Split Screen   : %s\n", g_split_screen_preset ? "ON (2P VIEWPORTS)" : "OFF (LEGACY)");
     printf("Mipmaps        : ");

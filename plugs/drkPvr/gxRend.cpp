@@ -199,6 +199,52 @@ extern "C" int get_offset_color_preset();
 extern "C" int get_trans_sort_preset();
 #define TRANS_SORT() (get_trans_sort_preset() == 1)
 
+// autosort preset: REAL per-pixel PVR autosort (order-independent
+// transparency) via GX depth peeling. Value = max translucent depth LAYERS
+// peeled per frame: 0 = off (legacy), 1..4 = on. Unlike TRANS_SORT() (a
+// per-STRIP painter sort, wrong wherever strips interleave in depth or
+// intersect), this reproduces what the PVR ISP actually does: each pixel
+// composites its translucent fragments strictly back-to-front, regardless
+// of submission order.
+//
+// GX has no programmable shaders, so each layer costs a full extra walk of
+// the TR list (see the AUTOSORT machinery above DoRender):
+//   select pass  color writes off, Z func LESS over a near-initialized Z
+//                buffer -> Z ends holding the farthest not-yet-peeled
+//                fragment per pixel. "Not yet peeled" is enforced by a TEV
+//                16-bit depth compare (GX_TEV_COMP_GR16_GT) between the
+//                fragment's own screen depth (projective texgen through a
+//                1024-texel ramp texture) and a Z snapshot of the previous
+//                peel (two 8-bit EFB Z copies, bits 23:16 + 15:8), with an
+//                alpha-test kill. Peel 0 compares >= against the OPAQUE
+//                depth instead, so fragments behind opaque geometry never
+//                consume a layer (and coplanar decals still pass).
+//   draw pass    normal textured/blended walk with Z func EQUAL, write off:
+//                only the selected layer's fragments rasterize (identical
+//                geometry rasterizes to identical Z), each with its own
+//                TSP blend mode -- correct even for mixed blend modes,
+//                which no front-to-back scheme can do on this hardware.
+// Co-planar fragments (equal 24-bit Z) pass EQUAL together and blend in
+// submission order, matching the painter tie-break real games expect.
+//
+// Costs and limits:
+//   * ~2N walks of the TR geometry + 2 EFB Z copies per layer: heavy. Use
+//     small N (2-3) and only in games that really need per-pixel sorting.
+//   * Fragment depth is quantized to the 1024-texel ramp (about 10 bits of
+//     the Z range): layers closer than 1/1024 of the depth range to the
+//     PREVIOUS peel are dropped, not re-sorted (biased-down ramp; dropping
+//     beats infinite re-selection). 2D stacks at EXACTLY equal depth are
+//     safe (drawn together via EQUAL); "almost equal" sub-epsilon stacks
+//     belong to trans_sort/hokuto_hack instead.
+//   * Layers beyond N per pixel are dropped (farthest N win).
+//   * Needs the Z24 EFB (rmode->aa off) and MEM2 buffers (~700 KB).
+//   * RTT frames keep the legacy path. hokuto_hack overrides this preset
+//     (those games stack everything at ONE depth, peeling can't help).
+//     Recommended companions: punch_through=on (PT occludes TR correctly),
+//     depth_clip=1 (default; keeps the near-parked Z init off-plane).
+extern "C" int get_autosort_preset();
+#define AUTOSORT() (get_autosort_preset())
+
 // Render-to-texture. May behave differently depending on FRAMEBUFFER_2D()
 extern "C" int get_render_to_texture_preset();
 #define RENDER_TO_TEXTURE() (get_render_to_texture_preset() == 1)
@@ -3712,6 +3758,207 @@ static void apply_tile_clip(u32 tc)
   GX_SetScissor((u32)ex0, (u32)ey0, (u32)(ex1 - ex0), (u32)(ey1 - ey0));
 }
 
+// ── AUTOSORT(): per-pixel translucent depth peeling ─────────────────────────
+// See the preset doc at the top of the file for the algorithm. Everything
+// here is the fixed-function plumbing: the Z snapshot buffers the select
+// pass compares against, the two fragment-depth ramp textures, and the TEV
+// compare chain.
+
+#define AS_MAX_PEELS 4
+
+// Z snapshot of the compare reference: opaque depth for peel 0, previous
+// peel's selection for peels 1+. Two 8-bit planes (EFB Z bits 23:16 and
+// 15:8) instead of one Z16 copy: 8-bit copies sample as I8 (R=G=B=byte),
+// which has no high/low byte-order ambiguity to get wrong on hardware.
+static u8 *s_as_zref_hi;   // GX_TF_Z8    copy: Z bits 23:16
+static u8 *s_as_zref_mid;  // GX_CTF_Z8M  copy: Z bits 15:8
+// Fragment-depth ramps, 1024x1 RGBA8, value = 16-bit screen depth in (G,R)
+// as GX_TEV_COMP_GR16_GT reads it. Texel i covers screen depth [i,i+1)/1024
+// = Z16 [64i, 64i+64):
+//   ramp_gt = 64i-1 : guaranteed <= any true Z16 in the span minus 1, so a
+//             strict GT against the previous peel can never re-select the
+//             very layer it just drew (re-selection would double-blend it
+//             every remaining peel; dropping sub-texel neighbours is the
+//             safe failure mode).
+//   ramp_ge = 64i+64: guaranteed >= any true Z16 in the span plus 1, so
+//             peel 0's compare against the opaque snapshot behaves like >=
+//             and coplanar decals on opaque surfaces still pass.
+static u8 *s_as_ramp_gt;
+static u8 *s_as_ramp_ge;
+static GXTexObj s_as_tex_zhi, s_as_tex_zmid, s_as_tex_rgt, s_as_tex_rge;
+static bool s_as_ready = false;
+
+// RGBA8 tile write, row 0 only (ramps are 1024x1). 4x4 RGBA8 tiles hold a
+// 32-byte AR plane then a 32-byte GB plane.
+static void as_ramp_store(u8 *tex, u32 x, u32 v16)
+{
+  u8 *tile = tex + (x >> 2) * 64;
+  u32 c = (x & 3) * 2;
+  tile[c + 0]      = 0xFF;             // A (unused)
+  tile[c + 1]      = (u8)(v16 & 0xFF); // R = low byte
+  tile[32 + c + 0] = (u8)(v16 >> 8);   // G = high byte
+  tile[32 + c + 1] = 0;                // B (unused)
+}
+
+// MEM2 arena bump allocation. This libogc doesn't export
+// SYS_AllocArena2MemLo, so do exactly what it would: advance Arena2Lo by the
+// aligned size. Runs once at InitRenderer time, before anything else in this
+// process claims Arena2.
+static void *as_arena2_alloc(u32 size, u32 align)
+{
+  u32 lo = (u32)SYS_GetArena2Lo();
+  u32 hi = (u32)SYS_GetArena2Hi();
+  lo = (lo + align - 1) & ~(align - 1);
+  if (lo + size > hi)
+    return NULL;
+  SYS_SetArena2Lo((void *)(lo + size));
+  return (void *)lo;
+}
+
+// One-time setup, called from InitRenderer (after rmode/pixel format exist).
+// Buffers live in MEM2 (~700 KB): MEM1 is the scarce pool (see the budget
+// audit), and GX samples/copies to MEM2 fine on Wii.
+static void as_init()
+{
+  if (rmode->aa)
+  {
+    printf("[AUTOSORT] disabled: AA pixel format has no Z24 buffer\n");
+    return;
+  }
+  u32 zw = rmode->fbWidth, zh = rmode->efbHeight;
+  u32 zbytes = ((zw + 7) & ~7u) * ((zh + 3) & ~3u); // Z8/I8 tiles are 8x4
+  s_as_zref_hi  = (u8 *)as_arena2_alloc(zbytes, 32);
+  s_as_zref_mid = (u8 *)as_arena2_alloc(zbytes, 32);
+  s_as_ramp_gt  = (u8 *)as_arena2_alloc(256 * 64, 32); // 1024x1 RGBA8
+  s_as_ramp_ge  = (u8 *)as_arena2_alloc(256 * 64, 32);
+  if (!s_as_zref_hi || !s_as_zref_mid || !s_as_ramp_gt || !s_as_ramp_ge)
+  {
+    printf("[AUTOSORT] disabled: MEM2 alloc failed\n");
+    return;
+  }
+  memset(s_as_zref_hi, 0, zbytes);
+  memset(s_as_zref_mid, 0, zbytes);
+  for (u32 i = 0; i < 1024; i++)
+  {
+    u32 zlo = i * 64;
+    u32 zhi = i * 64 + 64;
+    as_ramp_store(s_as_ramp_gt, i, zlo ? zlo - 1 : 0);
+    as_ramp_store(s_as_ramp_ge, i, zhi > 65535 ? 65535 : zhi);
+  }
+  DCFlushRange(s_as_zref_hi, zbytes);
+  DCFlushRange(s_as_zref_mid, zbytes);
+  DCFlushRange(s_as_ramp_gt, 256 * 64);
+  DCFlushRange(s_as_ramp_ge, 256 * 64);
+  GX_InitTexObj(&s_as_tex_zhi, s_as_zref_hi, zw, zh, GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);
+  GX_InitTexObjLOD(&s_as_tex_zhi, GX_NEAR, GX_NEAR, 0, 0, 0, GX_FALSE, GX_FALSE, GX_ANISO_1);
+  GX_InitTexObj(&s_as_tex_zmid, s_as_zref_mid, zw, zh, GX_TF_I8, GX_CLAMP, GX_CLAMP, GX_FALSE);
+  GX_InitTexObjLOD(&s_as_tex_zmid, GX_NEAR, GX_NEAR, 0, 0, 0, GX_FALSE, GX_FALSE, GX_ANISO_1);
+  GX_InitTexObj(&s_as_tex_rgt, s_as_ramp_gt, 1024, 1, GX_TF_RGBA8, GX_CLAMP, GX_CLAMP, GX_FALSE);
+  GX_InitTexObjLOD(&s_as_tex_rgt, GX_NEAR, GX_NEAR, 0, 0, 0, GX_FALSE, GX_FALSE, GX_ANISO_1);
+  GX_InitTexObj(&s_as_tex_rge, s_as_ramp_ge, 1024, 1, GX_TF_RGBA8, GX_CLAMP, GX_CLAMP, GX_FALSE);
+  GX_InitTexObjLOD(&s_as_tex_rge, GX_NEAR, GX_NEAR, 0, 0, 0, GX_FALSE, GX_FALSE, GX_ANISO_1);
+  s_as_ready = true;
+  printf("[AUTOSORT] ready: %ux%u Z snapshots, %.0f KB MEM2\n",
+         zw, zh, (2.0f * zbytes + 2 * 256 * 64) / 1024.0f);
+}
+
+// Per-frame setup when peeling is active this frame: the two projective
+// texgens the select pass samples with, plus the GR16 channel-mask konsts.
+// Vertices are in DC screen space pre-multiplied by W (x = sx*W, z = -W),
+// so both texgens ride q = W (row 2) for the perspective divide:
+//   TEXCOORD1  s = (s_clip_ox + sx*s_clip_sx)/fbW, t likewise with y: the
+//              fragment's own EFB pixel, exactly texel-aligned with the Z
+//              snapshot copies (both cover the full EFB rect).
+//   TEXCOORD2  s = 1 - p5 + p6/W: the very screen depth the rasterizer
+//              writes (viewport z, 0=far 1=near), indexing the ramps.
+static void as_setup_frame(float p5, float p6)
+{
+  Mtx m;
+  m[0][0] = s_clip_sx / (float)rmode->fbWidth;
+  m[0][1] = 0.0f;
+  m[0][2] = -s_clip_ox / (float)rmode->fbWidth;
+  m[0][3] = 0.0f;
+  m[1][0] = 0.0f;
+  m[1][1] = s_clip_sy / (float)rmode->efbHeight;
+  m[1][2] = -s_clip_oy / (float)rmode->efbHeight;
+  m[1][3] = 0.0f;
+  m[2][0] = 0.0f; m[2][1] = 0.0f; m[2][2] = -1.0f; m[2][3] = 0.0f;
+  GX_LoadTexMtxImm(m, GX_TEXMTX0, GX_MTX3x4);
+
+  m[0][0] = 0.0f; m[0][1] = 0.0f; m[0][2] = p5 - 1.0f; m[0][3] = p6;
+  m[1][0] = 0.0f; m[1][1] = 0.0f; m[1][2] = 0.0f;      m[1][3] = 0.5f;
+  m[2][0] = 0.0f; m[2][1] = 0.0f; m[2][2] = -1.0f;     m[2][3] = 0.0f;
+  GX_LoadTexMtxImm(m, GX_TEXMTX1, GX_MTX3x4);
+
+  GX_SetTexCoordGen(GX_TEXCOORD1, GX_TG_MTX3x4, GX_TG_POS, GX_TEXMTX0);
+  GX_SetTexCoordGen(GX_TEXCOORD2, GX_TG_MTX3x4, GX_TG_POS, GX_TEXMTX1);
+
+  GXColor k0 = {0, 255, 0, 255};   // keep G (high byte)
+  GXColor k1 = {255, 0, 0, 255};   // keep R (low byte)
+  GX_SetTevKColor(GX_KCOLOR0, k0);
+  GX_SetTevKColor(GX_KCOLOR1, k1);
+}
+
+// Select-pass TEV chain. Stage 0 is left to the per-strip code (the
+// polygon's own texture, MODULATE, so APREV carries texA*vtxA for the
+// transparent-texel kill). Stages 1-3:
+//   s1  REG0.G  = Z snapshot high byte   (TEXC * K0)
+//   s2  REG0.R += Z snapshot mid  byte   (TEXC * K1 + C0)
+//   s3  GR16 compare: ramp(TEXC) > REG0 ? keep : kill. The alpha combiner
+//       in R8/GR16/BGR24 compare modes compares the COLOR a/b inputs of
+//       the same stage and selects between its own c/d alphas (hardware
+//       behavior, mirrored by Dolphin), so the color and alpha ops here
+//       run one and the same comparison: alpha out = pass ? c : 0, with
+//       c = KONST(1.0) normally or APREV when the strip's transparent
+//       texels may be killed too. GX_GREATER 0 alpha test does the kill.
+static void as_setup_select_tev(bool first_peel)
+{
+  GX_LoadTexObj(&s_as_tex_zhi, GX_TEXMAP4);
+  GX_LoadTexObj(&s_as_tex_zmid, GX_TEXMAP5);
+  GX_LoadTexObj(first_peel ? &s_as_tex_rge : &s_as_tex_rgt, GX_TEXMAP6);
+
+  GX_SetTevOrder(GX_TEVSTAGE1, GX_TEXCOORD1, GX_TEXMAP4, GX_COLORNULL);
+  GX_SetTevKColorSel(GX_TEVSTAGE1, GX_TEV_KCSEL_K0);
+  GX_SetTevColorIn(GX_TEVSTAGE1, GX_CC_ZERO, GX_CC_TEXC, GX_CC_KONST, GX_CC_ZERO);
+  GX_SetTevColorOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVREG0);
+  GX_SetTevAlphaIn(GX_TEVSTAGE1, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_APREV);
+  GX_SetTevAlphaOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+
+  GX_SetTevOrder(GX_TEVSTAGE2, GX_TEXCOORD1, GX_TEXMAP5, GX_COLORNULL);
+  GX_SetTevKColorSel(GX_TEVSTAGE2, GX_TEV_KCSEL_K1);
+  GX_SetTevColorIn(GX_TEVSTAGE2, GX_CC_ZERO, GX_CC_TEXC, GX_CC_KONST, GX_CC_C0);
+  GX_SetTevColorOp(GX_TEVSTAGE2, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVREG0);
+  GX_SetTevAlphaIn(GX_TEVSTAGE2, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_APREV);
+  GX_SetTevAlphaOp(GX_TEVSTAGE2, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+
+  GX_SetTevOrder(GX_TEVSTAGE3, GX_TEXCOORD2, GX_TEXMAP6, GX_COLORNULL);
+  GX_SetTevKAlphaSel(GX_TEVSTAGE3, GX_TEV_KASEL_1);
+  GX_SetTevColorIn(GX_TEVSTAGE3, GX_CC_TEXC, GX_CC_C0, GX_CC_ONE, GX_CC_ZERO);
+  GX_SetTevColorOp(GX_TEVSTAGE3, GX_TEV_COMP_GR16_GT, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+  GX_SetTevAlphaIn(GX_TEVSTAGE3, GX_CA_ZERO, GX_CA_ZERO, GX_CA_KONST, GX_CA_ZERO);
+  GX_SetTevAlphaOp(GX_TEVSTAGE3, GX_TEV_COMP_GR16_GT, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+}
+
+// Z-only full-canvas quad (color/alpha updates are expected OFF, Z func
+// ALWAYS): parks the whole Z buffer at depth W. Same position convention as
+// every other vertex this renderer submits (x = sx*W, z = -W), and the full
+// VCD is fed so the vertex stream never changes shape mid-frame.
+static void as_submit_zquad(float dcw, float dch, float W, bool offset_fix)
+{
+  const float xs[4] = {0.0f, dcw, 0.0f, dcw};
+  const float ys[4] = {0.0f, 0.0f, dch, dch};
+  GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, 4);
+  for (int i = 0; i < 4; i++)
+  {
+    GX_Position3f32(xs[i] * W, ys[i] * W, -W);
+    GX_Color1u32(0);
+    if (offset_fix)
+      GX_Color1u32(0);
+    GX_TexCoord2f32(0.0f, 0.0f);
+  }
+  GX_End();
+}
+
 // Copy the finished EFB scene back into emulated VRAM at FB_W_SOF1, the way
 // the real PVR writes an RTT frame, then leave the EFB cleared for the next
 // frame (the display path gets that clear from GX_CopyDisp's clear flag).
@@ -4290,6 +4537,7 @@ void DoRender()
   bool force_vtx_alpha_opaque = false; // true for 1555/4444: vertex alpha must not kill tex alpha
   bool last_z_write = true; // Per Polygon Z Write algorythm (Beta, untested)
   int  last_z_func  = GX_GEQUAL; // matches the GEQUAL established at frame start (GX_SetZMode above)
+  int  last_as_kill = 0; // AUTOSORT() select pass: stage-3 kill input currently set (0=konst, 1=texture alpha)
 
   // Per-polygon ISP state presets, read once per frame (macros at top of file).
   const bool ppz_write      = PER_POLYGON_Z_WRITE();
@@ -4338,7 +4586,23 @@ void DoRender()
   // lists/vertices/listModes walk; ts_end_* are the walk cursors at the end
   // of the TR range, restored when the sorted range is done so any strips
   // after it (legacy path: a PT list submitted after TR) still line up.
-  const bool trans_sort = TRANS_SORT() || HOKUTO_HACK(); // read once per frame (hokuto_hack implies the sort)
+  // AUTOSORT() frame gate: per-pixel depth peeling for the TR range (see the
+  // preset doc at the top). RTT passes keep the legacy path (the game reads
+  // the copy back immediately; peeling would multiply that cost), and
+  // hokuto_hack keeps its curated layer-tier sort (those scenes sit at ONE
+  // depth, peeling cannot separate them). Peeling replaces TRANS_SORT() when
+  // both are on -- it is the strictly stronger ordering.
+  int as_frame_peels = 0;
+  if (!s_rtt_pass && TransLST && s_as_ready && !HOKUTO_HACK())
+  {
+    as_frame_peels = AUTOSORT();
+    if (as_frame_peels < 0) as_frame_peels = 0;
+    if (as_frame_peels > AS_MAX_PEELS) as_frame_peels = AS_MAX_PEELS;
+  }
+  if (as_frame_peels)
+    as_setup_frame(p5, p6); // texgen matrices + GR16 mask konsts
+
+  const bool trans_sort = (TRANS_SORT() || HOKUTO_HACK()) && !as_frame_peels; // read once per frame (hokuto_hack implies the sort)
   bool ts_active = false;
   int ts_idx = 0;
   int ts_count = 0;
@@ -4421,9 +4685,20 @@ void DoRender()
     Vertex *vtx;
     PolyParam *mod;
     bool punch_through;
+    u8 as_pass; // AUTOSORT(): 0 = normal walk, 1 = select pass, 2 = draw pass
+    u8 as_peel; // peel index for as_pass != 0
+    u8 as_last; // set on the final draw pass: restore the painter baseline after it
+    u8 as_tail; // strips submitted after an autosorted TR range (legacy PT tail)
   };
-  DrawSeg segs[3];
+  DrawSeg segs[4 + 2 * AS_MAX_PEELS];
   int seg_count = 0;
+  memset(segs, 0, sizeof(segs));
+
+  // AUTOSORT(): the TR range is walked 2x per peel (select + draw), so it
+  // becomes 2N segments over the same cursors instead of one.
+  const VertexList *as_tr_end = 0;
+  if (as_frame_peels)
+    as_tr_end = (PTLST && PTLST > TransLST) ? PTLST : crLST;
 
   if (PUNCH_THROUGH_FIX() && PTLST)
   {
@@ -4440,12 +4715,58 @@ void DoRender()
     segs[seg_count].vtx = PT_VTX;     segs[seg_count].mod = PT_Mod;
     segs[seg_count].punch_through = true; seg_count++;
 
-    if (TransLST)
+    if (TransLST && as_frame_peels)
+    {
+      for (int k = 0; k < as_frame_peels; k++)
+      {
+        segs[seg_count].begin = TransLST; segs[seg_count].end = as_tr_end;
+        segs[seg_count].vtx = TransVTX;   segs[seg_count].mod = TransMod;
+        segs[seg_count].as_pass = 1; segs[seg_count].as_peel = (u8)k; seg_count++;
+        segs[seg_count].begin = TransLST; segs[seg_count].end = as_tr_end;
+        segs[seg_count].vtx = TransVTX;   segs[seg_count].mod = TransMod;
+        segs[seg_count].as_pass = 2; segs[seg_count].as_peel = (u8)k;
+        segs[seg_count].as_last = (k == as_frame_peels - 1); seg_count++;
+      }
+    }
+    else if (TransLST)
     {
       segs[seg_count].begin = TransLST;
       segs[seg_count].end = (PTLST > TransLST) ? PTLST : crLST;
       segs[seg_count].vtx = TransVTX; segs[seg_count].mod = TransMod;
       segs[seg_count].punch_through = false; seg_count++;
+    }
+  }
+  else if (as_frame_peels)
+  {
+    // Legacy list order with peeling: everything before TR, the 2N peel
+    // walks, then (rare: PT list submitted after TR without the PT fix)
+    // whatever follows the TR range, with cursors pre-walked past it.
+    segs[seg_count].begin = lists;  segs[seg_count].end = TransLST;
+    segs[seg_count].vtx = vertices; segs[seg_count].mod = listModes;
+    seg_count++;
+    for (int k = 0; k < as_frame_peels; k++)
+    {
+      segs[seg_count].begin = TransLST; segs[seg_count].end = as_tr_end;
+      segs[seg_count].vtx = TransVTX;   segs[seg_count].mod = TransMod;
+      segs[seg_count].as_pass = 1; segs[seg_count].as_peel = (u8)k; seg_count++;
+      segs[seg_count].begin = TransLST; segs[seg_count].end = as_tr_end;
+      segs[seg_count].vtx = TransVTX;   segs[seg_count].mod = TransMod;
+      segs[seg_count].as_pass = 2; segs[seg_count].as_peel = (u8)k;
+      segs[seg_count].as_last = (k == as_frame_peels - 1); seg_count++;
+    }
+    if (as_tr_end != crLST)
+    {
+      Vertex *tvtx = TransVTX;
+      PolyParam *tmod = TransMod;
+      for (const VertexList *l = TransLST; l != as_tr_end; l++)
+      {
+        s32 c = l->count;
+        if (c < 0) tmod++;
+        tvtx += (c & 0x7FFF);
+      }
+      segs[seg_count].begin = (VertexList *)as_tr_end; segs[seg_count].end = crLST;
+      segs[seg_count].vtx = tvtx; segs[seg_count].mod = tmod;
+      segs[seg_count].as_tail = 1; seg_count++;
     }
   }
   else
@@ -4475,6 +4796,129 @@ void DoRender()
       GX_SetZCompLoc(GX_FALSE);
     }
 
+    const int seg_as = segs[seg].as_pass;
+    if (seg_as == 1)
+    {
+      // ── AUTOSORT select pass k: leave the farthest not-yet-peeled TR
+      // fragment per pixel in the Z buffer. ──────────────────────────────
+      const bool first_peel = segs[seg].as_peel == 0;
+
+      // The snapshot copy and the Z-init quad below cover the full EFB;
+      // per-strip user tile clips re-apply inside the walk.
+      if (tileclip_on)
+      {
+        s_tileclip_applied = 0;
+        GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+      }
+
+      // 1. Snapshot the compare reference: opaque(+PT) depth before peel 0,
+      // the previous peel's selection before peels 1+ (the draw pass between
+      // them writes no Z, so the selection is still intact). The copy filter
+      // must not blend rows into a depth snapshot; restore it right after
+      // for the end-of-frame display copy.
+      GX_SetCopyFilter(GX_FALSE, NULL, GX_FALSE, NULL);
+      GX_SetTexCopySrc(0, 0, rmode->fbWidth, rmode->efbHeight);
+      GX_SetTexCopyDst(rmode->fbWidth, rmode->efbHeight, GX_TF_Z8, GX_FALSE);
+      GX_CopyTex(s_as_zref_hi, GX_FALSE);
+      GX_SetTexCopyDst(rmode->fbWidth, rmode->efbHeight, GX_CTF_Z8M, GX_FALSE);
+      GX_CopyTex(s_as_zref_mid, GX_FALSE);
+      GX_PixModeSync();
+      GX_SetCopyFilter(rmode->aa, rmode->sample_pattern, GX_TRUE, rmode->vfilter);
+      GX_InvalidateTexAll(); // fresh snapshot must not hit stale TMEM lines
+
+      // 2. Park the Z buffer just inside the near plane so the GX_LESS walk
+      // can hunt for the minimum (= farthest fragment). 1.0005 keeps the
+      // quad strictly off the near clip plane (same failure mode
+      // DEPTH_CLIP_MARGIN() exists for).
+      GX_SetColorUpdate(GX_FALSE);
+      GX_SetAlphaUpdate(GX_FALSE);
+      GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+      GX_SetZCompLoc(GX_TRUE);
+      GX_SetZMode(GX_TRUE, GX_ALWAYS, GX_TRUE);
+      GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+      GX_SetNumTevStages(1);
+      GX_SetNumTexGens(1);
+      GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+      GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+      as_submit_zquad(dc_width, dc_height, vtx_min_Z * 1.0005f, offset_fix);
+
+      // 3. Select pipeline: TEV depth-compare kill + minimum-Z walk.
+      as_setup_select_tev(first_peel);
+      GX_SetNumTexGens(3);
+      GX_SetNumTevStages(4);
+      GX_SetZMode(GX_TRUE, GX_LESS, GX_TRUE);
+      GX_SetZCompLoc(GX_FALSE); // killed fragments must not stamp Z
+      GX_SetAlphaCompare(GX_GREATER, 0, GX_AOP_AND, GX_ALWAYS, 0);
+
+      // Stage-0 order/op are select-managed per strip: force reissue.
+      last_textured = -1;
+      last_shad_instr = -1;
+      last_alpha_fmt = -1;
+      last_as_kill = 0; // as_setup_select_tev leaves the no-kill input
+      in_trans_list = false; // keeps the per-poly blend block quiet
+    }
+    else if (seg_as == 2)
+    {
+      // ── AUTOSORT draw pass k: blend exactly the selected layer. Z EQUAL
+      // re-rasterizes the identical geometry to identical depths, so only
+      // the fragments the select pass kept (plus true co-planar ties, which
+      // blend in submission order like the painter) touch the pixel. ─────
+      GX_SetColorUpdate(GX_TRUE);
+      GX_SetAlphaUpdate(GX_TRUE);
+      GX_SetZMode(GX_TRUE, GX_EQUAL, GX_FALSE);
+      GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+      GX_SetZCompLoc(GX_TRUE);
+      GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+      GX_SetNumTexGens(1);
+      GX_SetNumTevStages(1);
+      GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
+      GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
+      if (offset_fix)
+      {
+        // Reinstate TEV stage 1 (offset color add, see frame setup): the
+        // select pass reprograms stages 1-3 for its depth compare.
+        GX_SetTevOrder(GX_TEVSTAGE1, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR1A1);
+        GX_SetTevColorIn(GX_TEVSTAGE1, GX_CC_RASC, GX_CC_ZERO, GX_CC_ZERO, GX_CC_CPREV);
+        GX_SetTevColorOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+        GX_SetTevAlphaIn(GX_TEVSTAGE1, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_APREV);
+        GX_SetTevAlphaOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+      }
+      last_tev_stages = 1;
+      last_textured = -1;
+      last_shad_instr = -1;
+      last_alpha_fmt = 0; // matches the ALWAYS/ZCompLoc(TRUE) state above
+      last_src_blend = -1;
+      last_dst_blend = -1;
+      in_trans_list = true; // per-poly TSP blend factors apply here
+    }
+    else if (segs[seg].as_tail)
+    {
+      // Strips submitted after an autosorted TR range (legacy path: PT list
+      // after TR, no PT fix). The peel walk left the Z buffer parked near
+      // the near plane; reset it to the far plane so these strips' GEQUAL
+      // compare can pass (legacy drew them over TR-written depth).
+      GX_SetColorUpdate(GX_FALSE);
+      GX_SetAlphaUpdate(GX_FALSE);
+      GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+      GX_SetZCompLoc(GX_TRUE);
+      GX_SetZMode(GX_TRUE, GX_ALWAYS, GX_TRUE);
+      GX_SetNumTevStages(1);
+      GX_SetNumTexGens(1);
+      GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+      GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+      as_submit_zquad(dc_width, dc_height, vtx_max_Z * 0.9995f, offset_fix);
+      GX_SetColorUpdate(GX_TRUE);
+      GX_SetAlphaUpdate(GX_TRUE);
+      GX_SetZMode(GX_TRUE, GX_GEQUAL, GX_TRUE);
+      last_z_write = true;
+      last_z_func = GX_GEQUAL;
+      last_textured = -1;
+      last_shad_instr = -1;
+      last_alpha_fmt = -1;
+      // in_trans_list stays true (set by the draw passes): legacy drew
+      // these strips in the translucent blend state.
+    }
+
     for (; drawLST != seg_end; drawLST++)
     {
       if (ts_active && ts_idx == ts_count)
@@ -4487,10 +4931,12 @@ void DoRender()
         drawMod = ts_end_mod;
       }
 
-      if (drawLST == TransLST)
+      if (drawLST == TransLST && !seg_as)
       {
         // Enable blending for the translucent list. Blend factors are set
         // per-polygon below based on TSP.SrcInstr / DstInstr.
+        // (AUTOSORT() segments start at TransLST too, but manage their own
+        // blend/Z state at segment start — hence the !seg_as guard.)
         in_trans_list = true;
         last_src_blend = -1; // force first per-polygon update
         last_dst_blend = -1;
@@ -4704,6 +5150,68 @@ void DoRender()
         if (tileclip_on)
           apply_tile_clip(listTileClip[stripMod - listModes]);
 
+        if (seg_as == 1)
+        {
+        // ── AUTOSORT select pass per-strip state ───────────────────────────
+        // Only position/Z coverage matters here (colors are masked), plus the
+        // polygon's texture on stage 0 so fully transparent texels can be
+        // alpha-killed instead of eating a peel layer. Everything else
+        // (blend, advanced alpha, per-poly Z state) stays untouched: the
+        // compare chain on stages 1-3 owns the pipeline.
+        int is_textured = stripMod->pcw.Texture ? 1 : 0;
+        if (is_textured != last_textured)
+        {
+          if (is_textured)
+          {
+            GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
+            GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
+          }
+          else
+          {
+            GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+            GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+          }
+          last_shad_instr = -1;
+          last_textured = is_textured;
+        }
+        bool as_kill = false;
+        if (is_textured)
+        {
+          SetTextureParams(stripMod, decal_alpha_fix);
+          // Under decal_alpha_fix the caller owns stage 0's op — the select
+          // pass always modulates (texA*vtxA feeds the kill).
+          if (decal_alpha_fix && last_shad_instr != GX_MODULATE)
+          {
+            GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
+            last_shad_instr = GX_MODULATE;
+          }
+          // Same vertex-alpha forcing as the draw pass, so the kill sees the
+          // alpha the fragment will actually blend with.
+          u32 fmt = stripMod->tcw.NO_PAL.PixelFmt;
+          if (RGB565_OPAQUE_ALPHA())
+            force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !stripMod->tsp.UseAlpha;
+          else
+            force_vtx_alpha_opaque = (fmt == 0) || !stripMod->tsp.UseAlpha;
+          // Kill only where "alpha == 0 => invisible" provably holds: plain
+          // modulate shading with a straight src-alpha blend. Any other
+          // combination (decal alpha, dst-color factors, IgnoreTexA) can
+          // show alpha-0 fragments, which then must occupy their layer.
+          as_kill = stripMod->tsp.ShadInstr == 1 && !stripMod->tsp.IgnoreTexA
+                 && stripMod->tsp.SrcInstr == 4
+                 && (stripMod->tsp.DstInstr == 5 || stripMod->tsp.DstInstr == 1);
+        }
+        else
+          force_vtx_alpha_opaque = false;
+        if ((int)as_kill != last_as_kill)
+        {
+          GX_SetTevAlphaIn(GX_TEVSTAGE3, GX_CA_ZERO, GX_CA_ZERO,
+                           as_kill ? GX_CA_APREV : GX_CA_KONST, GX_CA_ZERO);
+          last_as_kill = (int)as_kill;
+        }
+        }
+        else
+        {
+        // ── Normal / AUTOSORT-draw per-strip state ─────────────────────────
         int is_textured = stripMod->pcw.Texture ? 1 : 0;
         if (is_textured != last_textured)
         {
@@ -4827,7 +5335,10 @@ void DoRender()
         //                  GEQUAL, real PVR autosorts there), 2=every list.
         // See the macro comments at the top of the file for the DepthMode->GX
         // func 1:1 mapping and why the compare direction is preserved.
-        if (ppz_write || isp_depth_func)
+        // AUTOSORT() draw passes pin Z to EQUAL/no-write — per-poly Z state
+        // must not disturb that (real PVR ignores DepthMode under autosort
+        // for the TR list anyway).
+        if ((ppz_write || isp_depth_func) && !seg_as)
         {
           bool z_write = ppz_write ? !stripMod->isp.ZWriteDis : true;
           int z_func = GX_GEQUAL;
@@ -4840,11 +5351,14 @@ void DoRender()
             last_z_func  = z_func;
           }
         }
+        }
 
         // ── Per-polygon backface culling (ISP.CullMode) ──────────────────────
         // Fix inside-out geometry in games that lean on hardware culling
         // instead of submitting both windings. Table + swap option built once
-        // per frame above (dc_cull_to_gx / isp_cull).
+        // per frame above (dc_cull_to_gx / isp_cull). Shared by the AUTOSORT()
+        // select AND draw passes: both must rasterize identical coverage or
+        // the EQUAL-depth draw pass loses its selected fragments.
         if (isp_cull)
         {
           int cull = dc_cull_to_gx[stripMod->isp.CullMode];
@@ -4915,6 +5429,18 @@ void DoRender()
       // next frame when there is no translucent list, since GX alpha-compare
       // state persists across frames. This matches the alpha_fmt==0 state of
       // the ADVANCED_ALPHA() block above, so tell its cache about it.
+      GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+      GX_SetZCompLoc(GX_TRUE);
+      last_alpha_fmt = 0;
+    }
+
+    if (seg_as == 2 && segs[seg].as_last)
+    {
+      // Last peel drawn: back to the frame's painter Z baseline for whatever
+      // follows (legacy tail segment / next frame's first states).
+      GX_SetZMode(GX_TRUE, GX_GEQUAL, GX_TRUE);
+      last_z_write = true;
+      last_z_func  = GX_GEQUAL;
       GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
       GX_SetZCompLoc(GX_TRUE);
       last_alpha_fmt = 0;
@@ -5928,6 +6454,10 @@ bool InitRenderer()
   GX_SetCullMode(GX_CULL_NONE);
   GX_CopyDisp(frameBuffer[fb], GX_TRUE);
   GX_SetDispCopyGamma(GX_GM_1_0);
+
+  // AUTOSORT() depth-peeling buffers (MEM2) — allocated unconditionally so
+  // the preset can be toggled from the menu at any time; ~700 KB.
+  as_init();
 
   // setup the vertex descriptor
   // tells the flipper to expect direct data

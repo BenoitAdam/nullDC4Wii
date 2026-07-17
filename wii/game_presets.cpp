@@ -65,6 +65,17 @@
                                 drawing, fixing wrong overlaps in alpha-heavy
                                 scenes, at some CPU cost per frame;
                                 off (default, legacy) draws in submission order.
+        autosort=2          <- 0..4, REAL per-pixel PVR autosort via GX depth
+                                peeling (see gxRend.cpp AUTOSORT()). The value
+                                is the max number of translucent depth LAYERS
+                                composited per pixel: each layer costs ~2 extra
+                                walks of the translucent geometry plus 2 EFB Z
+                                copies, so this is very GPU-heavy — use 2 or 3,
+                                per-game, only where trans_sort's per-strip
+                                painter sort is not enough (intersecting or
+                                interleaved translucent geometry). Overrides
+                                trans_sort; hokuto_hack overrides it. Best with
+                                punch_through=on. 0 (default): off.
         render_to_texture=on <- on/off, render-to-texture support (see gxRend.cpp
                                 RENDER_TO_TEXTURE()). Frames whose write address
                                 (FB_W_SOF1) has bit 24 set target the 64-bit
@@ -208,6 +219,7 @@ extern int g_blend_fps_boost_preset;
 extern int g_punch_through_preset;
 extern int g_offset_color_preset;
 extern int g_trans_sort_preset;
+extern int g_autosort_preset;
 extern int g_render_to_texture_preset;
 extern int g_split_screen_preset;
 extern int g_mipmap_preset;
@@ -258,6 +270,7 @@ struct GamePreset
     int punch_through;
     int offset_color;
     int trans_sort;
+    int autosort;
     int render_to_texture;
     int split_screen;
     int mipmap;
@@ -480,6 +493,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "punch_through"))  p->punch_through  = parse_bool(val);
     else if (key_eq(key, "offset_color"))   p->offset_color   = parse_bool(val);
     else if (key_eq(key, "trans_sort"))     p->trans_sort     = parse_bool(val);
+    else if (key_eq(key, "autosort"))       p->autosort       = atoi(val);
     else if (key_eq(key, "render_to_texture")) p->render_to_texture = parse_bool(val);
     else if (key_eq(key, "split_screen"))   p->split_screen   = parse_bool(val);
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
@@ -516,6 +530,7 @@ static void preset_clear(GamePreset* cur)
     cur->punch_through = -1;
     cur->offset_color = -1;
     cur->trans_sort = -1;
+    cur->autosort = -1;
     cur->render_to_texture = -1;
     cur->split_screen = -1;
     cur->mipmap = -1;
@@ -557,6 +572,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->punch_through  >= 0) { g_punch_through_preset = p->punch_through;   printf("  punch_through  -> %d\n", p->punch_through);  }
     if (p->offset_color   >= 0) { g_offset_color_preset  = p->offset_color;    printf("  offset_color   -> %d\n", p->offset_color);   }
     if (p->trans_sort     >= 0) { g_trans_sort_preset    = p->trans_sort;      printf("  trans_sort     -> %d\n", p->trans_sort);     }
+    if (p->autosort       >= 0) { g_autosort_preset      = p->autosort;        printf("  autosort       -> %d\n", p->autosort);       }
     if (p->render_to_texture >= 0) { g_render_to_texture_preset = p->render_to_texture; printf("  render_to_texture -> %d\n", p->render_to_texture); }
     if (p->split_screen   >= 0) { g_split_screen_preset  = p->split_screen;    printf("  split_screen   -> %d\n", p->split_screen);   }
     if (p->mipmap         >= 0) { g_mipmap_preset        = p->mipmap;          printf("  mipmap         -> %d\n", p->mipmap);         }
