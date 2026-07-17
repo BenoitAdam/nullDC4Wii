@@ -141,7 +141,16 @@ def emit_shift_labels(out):
                 out.append("  {")
                 out.append("    ARM7CACHEOP* op = pc_op;")
                 if pcr:
-                    out.append("    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */")
+                    # ARM7TDMI hardware quirk (verified against the
+                    # arm7di-tests-dreamcast MOV_1 conformance test): when
+                    # Rm==r15 is read as the shift operand, the PC value seen
+                    # is current-instruction+8 for an IMMEDIATE shift amount,
+                    # but current-instruction+12 for a REGISTER-specified
+                    # shift amount (form ends in 'r') — the extra pipeline
+                    # cycle needed to fetch the shift-amount register pushes
+                    # PC one instruction further ahead.
+                    pc_offset = 12 if form.endswith("r") else 8
+                    out.append(f"    reg[15].I = dispatch_pc + {pc_offset};   /* Rm == r15 */")
                 shift_body(out, form, "    ", carry)
                 out.append("  }")
                 # Fall through to the op uop (same instruction): no charge/advance.

@@ -224,7 +224,7 @@ lbl_sh_lslr:
 lbl_sh_lslr_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    reg[15].I = dispatch_pc + 12;   /* Rm == r15, register-specified shift amount */
     u32 v = reg[op->r2].I;
     u32 s = reg[op->imm].I & 0xFF;
     if (s) {
@@ -258,7 +258,7 @@ lbl_shc_lslr:
 lbl_shc_lslr_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    reg[15].I = dispatch_pc + 12;   /* Rm == r15, register-specified shift amount */
     u32 v = reg[op->r2].I;
     u32 s = reg[op->imm].I & 0xFF;
     if (s) {
@@ -292,7 +292,7 @@ lbl_sh_lsrr:
 lbl_sh_lsrr_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    reg[15].I = dispatch_pc + 12;   /* Rm == r15, register-specified shift amount */
     u32 v = reg[op->r2].I;
     u32 s = reg[op->imm].I & 0xFF;
     if (s) {
@@ -326,7 +326,7 @@ lbl_shc_lsrr:
 lbl_shc_lsrr_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    reg[15].I = dispatch_pc + 12;   /* Rm == r15, register-specified shift amount */
     u32 v = reg[op->r2].I;
     u32 s = reg[op->imm].I & 0xFF;
     if (s) {
@@ -360,7 +360,7 @@ lbl_sh_asrr:
 lbl_sh_asrr_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    reg[15].I = dispatch_pc + 12;   /* Rm == r15, register-specified shift amount */
     u32 v = reg[op->r2].I;
     u32 s = reg[op->imm].I & 0xFF;
     if (s < 32) {
@@ -394,7 +394,7 @@ lbl_shc_asrr:
 lbl_shc_asrr_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    reg[15].I = dispatch_pc + 12;   /* Rm == r15, register-specified shift amount */
     u32 v = reg[op->r2].I;
     u32 s = reg[op->imm].I & 0xFF;
     if (s < 32) {
@@ -428,7 +428,7 @@ lbl_sh_rorr:
 lbl_sh_rorr_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    reg[15].I = dispatch_pc + 12;   /* Rm == r15, register-specified shift amount */
     u32 v = reg[op->r2].I;
     u32 s = reg[op->imm].I & 0xFF;
     if (s) {
@@ -462,7 +462,7 @@ lbl_shc_rorr:
 lbl_shc_rorr_pcr:
   {
     ARM7CACHEOP* op = pc_op;
-    reg[15].I = dispatch_pc + 8;   /* Rm == r15 */
+    reg[15].I = dispatch_pc + 12;   /* Rm == r15, register-specified shift amount */
     u32 v = reg[op->r2].I;
     u32 s = reg[op->imm].I & 0xFF;
     if (s) {
