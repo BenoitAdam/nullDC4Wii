@@ -307,6 +307,13 @@ Try putting NO if you experience troubles, with HUD for example.
 | **NO** | Grey Scale | Grey scale (a tiny bit faster) |
 | **YES** | Intensity color | Accurate |
 
+
+### Game Specific Presets
+
+HOKUTO HACK (Hokuto No Ken) help determine which what should be front and back trough looking at texture format/properties. For some textures it even check RAM address.
+
+JOJO FIX (Jojo's Bizarre adventure) has to be used with CI4_FAST to reduce FPS drop in battle. May use the same technique in other games
+
 Vertex color is a special method on Dreamcast to color stuff. Notable example in Crazy Taxi : The arrow and dollar sign are Vertex Colored. You will notice the cars too : They will add to the current texture so the same car with the same texture will appear red, blue, green, etc...
 
 Same for Jet Set Radio, will add color to the logo.
