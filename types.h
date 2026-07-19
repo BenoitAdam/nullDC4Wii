@@ -233,6 +233,7 @@ struct __settings
 	{
 		bool AutoStart;
 		bool NoConsole;
+		u32 AudioBuffers;	//audio queue depth: 0=never block (drop on overrun), 1..3=block until below N queued buffers
 	} emulator;
 };
 extern __settings settings;

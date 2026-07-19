@@ -1,20 +1,14 @@
 // wii_audio.cpp
 // ASND-based audio output for nullAICA on Wii.
 //
-// Architecture:
-//   - Double-buffered: two s16 stereo buffers of SAMPLES_PER_FRAME samples each.
-//   - wii_audio_frame() steps AICA 735 times per call, writing one (L,R) s16
-//     pair per step into the "fill" buffer.
-//   - ASND calls our voice callback when it has consumed the previous buffer;
-//     we swap fill/play buffers there.
-//   - ASND voice is started once; it keeps looping via the callback.
+// Two fixed playback buffers are alternated by the voice callback; a staging
+// buffer is filled by wii_audio_push_sample(). settings.emulator.AudioBuffers
+// gates pacing: >=1 blocks the emu thread until the callback consumes a buffer
+// (paces emulation to audio); 0 never blocks (drops on overrun).
 
-// config.h (pulled in transitively via types.h → nullAICA headers) deliberately
-// poisons BIG_ENDIAN and LITTLE_ENDIAN to catch accidental use.  We must undef
-// those poison macros BEFORE any libogc/ASND header is included, because those
-// headers legitimately define the same names via machine/endian.h.  The undefs
-// must therefore precede every #include, including our own wii_audio.h which
-// transitively drags in ogc/lwp_watchdog.h → machine/endian.h.
+// config.h (pulled in transitively via types.h → nullAICA headers) poisons
+// BIG_ENDIAN / LITTLE_ENDIAN. Undef before any libogc/ASND header (which define
+// them via machine/endian.h), including wii_audio.h (drags in lwp_watchdog.h).
 #ifdef BIG_ENDIAN
 #  undef BIG_ENDIAN
 #endif
@@ -22,13 +16,9 @@
 #  undef LITTLE_ENDIAN
 #endif
 
-// AICA sample-generation side (pulls in config.h poison; must come after undefs
-// above so the poison definitions never collide with machine/endian.h)
 #include "../plugs/nullAICA/aica.h"
-#include "../plugs/nullAICA/sgc_if.h"  // for mixl / mixr
+#include "../plugs/nullAICA/sgc_if.h"
 
-// Undef again in case aica.h re-included config.h and re-poisoned them before
-// the ogc headers below get a chance to define the real values.
 #ifdef BIG_ENDIAN
 #  undef BIG_ENDIAN
 #endif
@@ -39,150 +29,123 @@
 #include "wii_audio.h"
 #include <asndlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <ogc/cache.h>        // DCFlushRange
-#include <ogc/lwp_watchdog.h>
-#include <ogc/mutex.h>
 
-// Set to 1 by wii_audio_aica_ready() once AICA_Init() has run.
-// wii_audio_frame() is a no-op until then to avoid stepping null pointers.
+// Set to 1 by wii_audio_aica_ready() once AICA_Init() has run. Until then
+// wii_audio_push_sample() is a no-op.
 static volatile int aica_ready = 0;
 
 void wii_audio_aica_ready()
 {
-    printf("[WiiAudio] wii_audio_aica_ready: AICA ready, frame stepping enabled\n");
+    printf("[WiiAudio] AICA ready, audio sink enabled\n");
     aica_ready = 1;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-// 44100 Hz / 60 fps = 735 samples per frame exactly.
-// NTSC = 60.002 fps; we use 735 and let ASND buffer absorb the ~1 sample/sec drift.
-#define SAMPLES_PER_FRAME   735
+// 1024 stereo s16 samples per buffer = 4 KiB; ~23.2 ms at 44100 Hz.
+#define SAMPLES_PER_BUF     1024
+#define NUM_CHANNELS        2
+#define BUF_BYTES           (SAMPLES_PER_BUF * NUM_CHANNELS * 2 /*s16*/)
 #define SAMPLE_RATE         44100
-#define NUM_CHANNELS        2       // stereo
-#define BYTES_PER_SAMPLE    2       // s16
-#define BUF_BYTES           (SAMPLES_PER_FRAME * NUM_CHANNELS * BYTES_PER_SAMPLE)
-
-// ASND voice slot (0–15; 0 is fine for a single mono/stereo stream)
 #define VOICE_SLOT          0
 
-// ---------------------------------------------------------------------------
-// Double buffers (must be 32-byte aligned for ASND DMA)
-// ---------------------------------------------------------------------------
-static s16 audio_buf[2][SAMPLES_PER_FRAME * NUM_CHANNELS] __attribute__((aligned(32)));
-static volatile int fill_buf  = 0;   // CPU writes here
-static volatile int play_buf  = 1;   // ASND plays this
-static volatile int buf_ready = 0;   // set by CPU, cleared by callback
+// Two fixed playback buffers (alternated by the callback) + one staging buffer
+// (filled by the producer). 32-byte aligned for ASND DMA.
+static s16 play_buf[2][SAMPLES_PER_BUF * NUM_CHANNELS] __attribute__((aligned(32)));
+static s16 stage_buf[SAMPLES_PER_BUF * NUM_CHANNELS]   __attribute__((aligned(32)));
 
-// ---------------------------------------------------------------------------
-// ASND voice callback — called from IRQ context when the voice needs more data
-// ---------------------------------------------------------------------------
+static volatile int play_idx    = 0;   // playback buffer ASND is using
+static volatile int stage_ready = 0;   // producer -> callback: staging buffer full
+static volatile u32 underrun_count = 0;
+
+// Voice callback (IRQ). Copies the staging buffer into the next playback buffer
+// and queues it, so ASND only ever sees the two fixed addresses, alternating.
 static void audio_callback(s32 voice)
 {
     (void)voice;
 
-    if (buf_ready)
-    {
-        // Swap buffers
-        int tmp  = play_buf;
-        play_buf = fill_buf;
-        fill_buf = tmp;
-        buf_ready = 0;
+    int next = play_idx ^ 1;
 
-        // Queue the freshly swapped play buffer
-        ASND_AddVoice(VOICE_SLOT,
-                      (void *)audio_buf[play_buf],
-                      BUF_BYTES);
+    if (stage_ready)
+    {
+        memcpy(play_buf[next], stage_buf, BUF_BYTES);
+        stage_ready = 0;
     }
     else
     {
-        // CPU didn't finish in time — replay the same buffer (glitch-free silence
-        // is better than a crash or underrun with garbage data)
-        ASND_AddVoice(VOICE_SLOT,
-                      (void *)audio_buf[play_buf],
-                      BUF_BYTES);
+        underrun_count++;   // no fresh data: replay the buffer's prior contents
     }
-}
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+    DCFlushRange(play_buf[next], BUF_BYTES);
+    ASND_AddVoice(VOICE_SLOT, (void *)play_buf[next], BUF_BYTES);
+    play_idx = next;
+}
 
 void wii_audio_init()
 {
-    printf("[WiiAudio] wii_audio_init: start\n");
-    // Clear both buffers to silence
-    memset(audio_buf[0], 0, BUF_BYTES);
-    memset(audio_buf[1], 0, BUF_BYTES);
+    printf("[WiiAudio] init: rate=%d bytes=%d AudioBuffers=%d\n",
+           SAMPLE_RATE, BUF_BYTES, (int)settings.emulator.AudioBuffers);
 
-    fill_buf  = 0;
-    play_buf  = 1;
-    buf_ready = 0;
+    memset(play_buf, 0, sizeof(play_buf));
+    memset(stage_buf, 0, sizeof(stage_buf));
+    DCFlushRange(play_buf, sizeof(play_buf));
 
-    printf("[WiiAudio] wii_audio_init: ASND_SetVoice slot=%d rate=%d bytes=%d\n",
-           VOICE_SLOT, SAMPLE_RATE, BUF_BYTES);
-    // Set up a stereo s16 voice with our callback
+    play_idx    = 0;
+    stage_ready = 0;
+
+    // Non-NULL callback is required: with a NULL callback the voice stops once
+    // its buffers drain.
     ASND_SetVoice(VOICE_SLOT,
-                  VOICE_STEREO_16BIT,   // format
-                  SAMPLE_RATE,          // frequency
-                  0,                    // delay (ms) before starting
-                  (void *)audio_buf[play_buf],
+                  VOICE_STEREO_16BIT,
+                  SAMPLE_RATE,
+                  0,                    // delay (ms)
+                  (void *)play_buf[0],
                   BUF_BYTES,
-                  255,                  // left  volume (0–255)
-                  255,                  // right volume (0–255)
+                  255, 255,             // L / R volume
                   audio_callback);
 
-    // ASND starts globally PAUSED after ASND_Init() (see asndlib.h). Without
-    // this unpause nothing is ever heard even though the voice is configured
-    // and the callback is registered.
-    ASND_Pause(0);
-    printf("[WiiAudio] wii_audio_init: done (unpaused)\n");
+    ASND_Pause(0);   // ASND starts paused after ASND_Init()
 }
 
 void wii_audio_term()
 {
-    printf("[WiiAudio] wii_audio_term\n");
     ASND_StopVoice(VOICE_SLOT);
 }
 
-// Index of the next sample slot to write in the current fill buffer.
 static volatile int fill_pos = 0;
 
-// Audio sink — called once per generated AICA sample (from wii_WriteSample(),
-// i.e. from AICA_Sample()). AICA is now stepped by the SH4 timeslice via
-// armUpdateARM, so this just collects the produced samples into the ASND ring
-// buffer and swaps fill/play buffers each time a frame's worth is gathered.
+// Audio sink — one 44.1 kHz stereo sample per call from AICA_Sample() (driven
+// by the SH4 timeslice via armUpdateARM). Fills the staging buffer; on
+// completion publishes it and, when AudioBuffers >= 1, blocks until the
+// callback consumes it (pacing emulation to audio). AudioBuffers == 0 never
+// blocks (overwrites / drops on overrun).
 void wii_audio_push_sample(s16 l, s16 r)
 {
     if (!aica_ready)
         return;
 
-    s16 *dst = audio_buf[fill_buf];
-    dst[fill_pos * 2 + 0] = l;
-    dst[fill_pos * 2 + 1] = r;
+    stage_buf[fill_pos * 2 + 0] = l;
+    stage_buf[fill_pos * 2 + 1] = r;
     fill_pos++;
 
-    if (fill_pos >= SAMPLES_PER_FRAME)
-    {
-        fill_pos = 0;
+    if (fill_pos < SAMPLES_PER_BUF)
+        return;
+    fill_pos = 0;
 
-        // Flush the fill buffer out of CPU cache so ASND's DMA sees it.
-        DCFlushRange(audio_buf[fill_buf], BUF_BYTES);
+    DCFlushRange(stage_buf, BUF_BYTES);
 
-        // Hand this buffer to the playback side. The ASND callback swaps
-        // fill_buf/play_buf when it consumes buf_ready; if it hasn't yet
-        // (CPU produced faster than playback), keep filling the same buffer
-        // rather than racing the swap.
-        if (!buf_ready)
-            buf_ready = 1;
-    }
+    // Ensure the staging writes are visible before the callback sees the flag.
+    __sync_synchronize();
+    stage_ready = 1;
+
+    if (settings.emulator.AudioBuffers == 0)
+        return;
+
+    while (stage_ready)
+        usleep(50);
 }
 
-// Legacy entry kept so existing call sites still link. AICA is no longer
-// stepped from the video frame — sample generation is driven by the SH4
-// timeslice (armUpdateARM). This is intentionally a no-op.
+// Legacy no-op kept so existing call sites (gxRend present path) still link.
 void wii_audio_frame()
 {
 }
