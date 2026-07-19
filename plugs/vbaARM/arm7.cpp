@@ -426,8 +426,8 @@ void CPUFiq()
 	u64 now_ms = ticks_to_millisecs(gettime());
 	if (now_ms - last_check_ms >= 1000)
 	{
-		printf("[ARM7] real-time FIQ service rate: %u/%llums\n",
-		       fiq_count, (unsigned long long)(now_ms - last_check_ms));
+		//printf("[ARM7] real-time FIQ service rate: %u/%llums\n",
+		//       fiq_count, (unsigned long long)(now_ms - last_check_ms));
 		fiq_count = 0;
 		last_check_ms = now_ms;
 	}
