@@ -244,15 +244,15 @@ template void WriteAicaReg<2>(u32 reg, u32 data);
 
 void AICA_Init()
 {
-    printf("[AICA] AICA_Init: start\n");
-    printf("[AICA] AICA_Init: sizeof(CommonData)=%d (need 0x508=%d)\n", (int)sizeof(*CommonData), 0x508);
-    printf("[AICA] AICA_Init: sizeof(DSPData)=%d (need 0x15C8=%d)\n",   (int)sizeof(*DSPData),    0x15C8);
+    //printf("[AICA] AICA_Init: start\n");
+    //printf("[AICA] AICA_Init: sizeof(CommonData)=%d (need 0x508=%d)\n", (int)sizeof(*CommonData), 0x508);
+    //printf("[AICA] AICA_Init: sizeof(DSPData)=%d (need 0x15C8=%d)\n",   (int)sizeof(*DSPData),    0x15C8);
 
     verify(sizeof(*CommonData) == 0x508);
     verify(sizeof(*DSPData)    == 0x15C8);
-    printf("[AICA] AICA_Init: struct sizes OK\n");
+    //printf("[AICA] AICA_Init: struct sizes OK\n");
 
-    printf("[AICA] AICA_Init: aica_reg ptr = %p\n", (void*)aica_reg);
+    //printf("[AICA] AICA_Init: aica_reg ptr = %p\n", (void*)aica_reg);
     CommonData = (CommonData_struct*)&aica_reg[0x2800];
     DSPData    = (DSPData_struct*)   &aica_reg[0x3000];
     SCIEB = (InterruptInfo*)&aica_reg[0x289C];
@@ -261,20 +261,20 @@ void AICA_Init()
     MCIEB = (InterruptInfo*)&aica_reg[0x28B4];
     MCIPD = (InterruptInfo*)&aica_reg[0x28B4 + 4];
     MCIRE = (InterruptInfo*)&aica_reg[0x28B4 + 8];
-    printf("[AICA] AICA_Init: pointers set\n");
+    //printf("[AICA] AICA_Init: pointers set\n");
 
-    printf("[AICA] AICA_Init: sgc_Init()...\n");
+    //printf("[AICA] AICA_Init: sgc_Init()...\n");
     sgc_Init();
-    printf("[AICA] AICA_Init: sgc_Init() done\n");
+    //printf("[AICA] AICA_Init: sgc_Init() done\n");
 
-    printf("[AICA] AICA_Init: timers init...\n");
+    //printf("[AICA] AICA_Init: timers init...\n");
     for (int i = 0; i < 3; i++)
         timers[i].Init(aica_reg, i);
-    printf("[AICA] AICA_Init: timers done\n");
+    //printf("[AICA] AICA_Init: timers done\n");
 
-    printf("[AICA] AICA_Init: wii_audio_aica_ready()...\n");
+    //printf("[AICA] AICA_Init: wii_audio_aica_ready()...\n");
     wii_audio_aica_ready();
-    printf("[AICA] AICA_Init: done\n");
+    //printf("[AICA] AICA_Init: done\n");
 }
 
 void AICA_Term()
@@ -310,8 +310,8 @@ void libAICA_TimeStep()
     u64 now_ms = ticks_to_millisecs(gettime());
     if (now_ms - last_check_ms >= 1000)
     {
-        printf("[AICA] real-time sample rate: %u samples/%llums (target 44100/1000ms)\n",
-               sample_count, (unsigned long long)(now_ms - last_check_ms));
+        //printf("[AICA] real-time sample rate: %u samples/%llums (target 44100/1000ms)\n",
+        //       sample_count, (unsigned long long)(now_ms - last_check_ms));
         sample_count = 0;
         last_check_ms = now_ms;
     }

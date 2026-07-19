@@ -5,7 +5,7 @@
 #undef FAR
 
 //#define CLIP_WARN
-#define key_printf(x...)  printf(x)
+#define key_printf(x...)  /*printf(x);*/
 #define aeg_printf(x...)  /*printf(x);*/
 #define step_printf(x...) /*printf(x);*/
 

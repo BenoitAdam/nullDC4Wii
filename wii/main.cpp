@@ -1828,6 +1828,10 @@ int main(int argc, wchar *argv[])
   // is a much more rigorous check than manual code audit. Re-comment once
   // done, or leave enabled if it proves useful as a standing boot check.
   // ---------------------------------------------------------------------------
+  // Re-disabled: ChuChu Rocket echo investigation concluded (root cause not
+  // found in ARM7 core correctness); see memory. Re-enable if a similar
+  // ARM7 correctness question comes up again.
+#if 0
   {
     int arm7_failures = arm_RunSelfTests();
     if (arm7_failures != 0)
@@ -1843,6 +1847,7 @@ int main(int argc, wchar *argv[])
       return 1;
     }
   }
+#endif
 
   // ---------------------------------------------------------------------------
   // Mount SD card
