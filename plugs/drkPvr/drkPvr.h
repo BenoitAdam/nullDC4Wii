@@ -31,6 +31,11 @@ int msgboxf(const char* text, unsigned int type, ...);
 
 // External declarations
 extern s32 render_end_pending_cycles;
+// render_delay preset: staggered render-done IRQ countdowns (see SPG.cpp);
+// armed by StartRender() instead of render_end_pending_cycles when preset on
+extern s32 render_isp_pending_cycles;
+extern s32 render_tsp_pending_cycles;
+extern s32 render_vd_pending_cycles;
 extern pvr_init_params PVRPARAMS;
 
 // Function declarations

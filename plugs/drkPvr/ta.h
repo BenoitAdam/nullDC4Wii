@@ -1,5 +1,6 @@
 #pragma once
 #include "drkPvr.h"
+#include "spg.h"	// spg_SchedListEndIrq (render_delay preset)
 #define params PVRPARAMS
 #define __forceinline 
 namespace TASplitter
@@ -321,7 +322,7 @@ public:
 						}
 
 						//printf("End list %X\n",CurrentList);
-						params.RaiseInterrupt(ListEndInterrupt[CurrentList]);
+						spg_SchedListEndIrq(CurrentList);
 						ListIsFinished[CurrentList]=true;
 						CurrentList=ListType_None;
 						VerxexDataFP=0;
@@ -1074,7 +1075,7 @@ public:
 						}
 
 						//printf("End list %X\n",CurrentList);
-						params.RaiseInterrupt(ListEndInterrupt[CurrentList]);
+						spg_SchedListEndIrq(CurrentList);
 						ListIsFinished[CurrentList]=true;
 						CurrentList=ListType_None;
 						data+=SZ32;

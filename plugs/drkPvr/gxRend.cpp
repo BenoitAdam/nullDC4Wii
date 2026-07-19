@@ -249,6 +249,10 @@ extern "C" int get_autosort_preset();
 extern "C" int get_render_to_texture_preset();
 #define RENDER_TO_TEXTURE() (get_render_to_texture_preset() == 1)
 
+// Hardware-like HOLLY IRQ delays (list-complete + staggered render-done, see SPG.cpp)
+extern "C" int get_render_delay_preset();
+#define RENDER_DELAY() (get_render_delay_preset() != 0)
+
 // Split-screen viewport support (Slower)
 extern "C" int get_split_screen_preset();
 #define SPLIT_SCREEN() (get_split_screen_preset() == 1)
@@ -5716,9 +5720,25 @@ void StartRender()
   u32 VtxCnt = curVTX - vertices;
   VertexCount += VtxCnt;
 
-  render_end_pending_cycles = VtxCnt * 15;
-  if (render_end_pending_cycles < 50000)
-    render_end_pending_cycles = 50000;
+  if (RENDER_DELAY())
+  {
+    // Hardware-like staggered render-done IRQs: ISP, TSP, then Video
+    // (originaldave_'s values — fixes games that pace off render-done,
+    // e.g. Marvel vs Capcom 2 reporting >100% speed but rendering ~7 FPS).
+    // SPG.cpp counts these down and raises each IRQ separately;
+    // render_end_pending_cycles must stay 0 so the legacy single-burst
+    // path there never double-fires.
+    render_isp_pending_cycles = 800000;
+    render_tsp_pending_cycles = 850000;
+    render_vd_pending_cycles  = 900000;
+    render_end_pending_cycles = 0;
+  }
+  else
+  {
+    render_end_pending_cycles = VtxCnt * 15;
+    if (render_end_pending_cycles < 50000)
+      render_end_pending_cycles = 50000;
+  }
 
   // NOTE on frame-skip: the ShouldSkipFrame() checks below must come AFTER
   // render_end_pending_cycles is set so the game's timing loop receives the

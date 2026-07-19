@@ -17,6 +17,10 @@ extern "C" int get_speed_limiter_preset();
 extern "C" int get_x_scaler_preset();
 #define X_SCALER() (get_x_scaler_preset() != 0)
 
+// Hardware-like HOLLY IRQ delays (see wii/game_presets.h, wii/main.cpp).
+extern "C" int get_render_delay_preset();
+#define RENDER_DELAY() (get_render_delay_preset() != 0)
+
 u32 spg_InVblank = 0;
 s32 spg_ScanlineSh4CycleCounter = 0;
 u32 spg_ScanlineCount = 512;
@@ -82,6 +86,55 @@ void CalculateSync()
 }
 
 s32 render_end_pending_cycles = 0;
+
+// ── RENDER_DELAY() preset: hardware-like HOLLY IRQ scheduling ────────────────
+// Some games (Marvel vs Capcom 2) pace their main loop off the TA list-complete
+// and render-done interrupts. Raising them (nearly) instantly makes the game's
+// frame scheduler collapse: emulation speed reads >100% while the game only
+// submits a handful of renders per second. Real hardware takes time for both
+// the TA list processing and the CORE render, so with the preset on we delay:
+//   * each list-complete IRQ by 200 SH4 cycles after its END-OF-LIST parameter
+//   * render-done ISP / TSP / Video at 800k / 850k / 900k SH4 cycles after
+//     STARTRENDER (staggered, like real HW raises them in that order)
+// Values come from originaldave_'s emulator (holly.cpp), where they fixed the
+// low-FPS games without hurting others. Preset off = legacy instant list IRQs
+// and the single VtxCnt*15 (min 50000) render-done burst below.
+
+static const HollyInterruptID s_ListEndIrqID[5] =
+{
+    holly_OPAQUE,
+    holly_OPAQUEMOD,
+    holly_TRANS,
+    holly_TRANSMOD,
+    holly_PUNCHTHRU
+};
+
+#define LIST_END_IRQ_DELAY 200
+
+static s32 s_list_irq_cycles[5] = { 0, 0, 0, 0, 0 };
+static u32 s_list_irq_active = 0;   // bitmask of lists with a pending IRQ
+
+// Staggered render-done counters, armed by StartRender() (gxRend.cpp) when the
+// preset is on; render_end_pending_cycles stays 0 in that mode.
+s32 render_isp_pending_cycles = 0;
+s32 render_tsp_pending_cycles = 0;
+s32 render_vd_pending_cycles  = 0;
+
+// Called from the TA (ta.h) instead of raising the list-complete IRQ directly.
+void spg_SchedListEndIrq(u32 list)
+{
+    if (list >= 5)
+        return;     // corrupt/unknown ListType in the EOL parameter: no IRQ
+
+    if (!RENDER_DELAY())
+    {
+        params.RaiseInterrupt(s_ListEndIrqID[list]);
+        return;
+    }
+
+    s_list_irq_cycles[list] = LIST_END_IRQ_DELAY;
+    s_list_irq_active |= 1u << list;
+}
 
 // Called from SH4 context each dispatch; updates PVR/TA state
 void FASTCALL libPvr_UpdatePvr(u32 cycles)
@@ -227,7 +280,7 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
         }
     }
 
-    // Deferred render completion interrupt
+    // Deferred render completion interrupt (legacy path, RENDER_DELAY() off)
     if (render_end_pending_cycles > 0)
     {
         render_end_pending_cycles -= (s32)cycles;
@@ -237,6 +290,49 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
             params.RaiseInterrupt(holly_RENDER_DONE_isp);
             params.RaiseInterrupt(holly_RENDER_DONE_vd);
             rend_end_render();
+        }
+    }
+
+    // RENDER_DELAY() staggered render-done: ISP, then TSP, then Video.
+    // rend_end_render() runs with the last (Video) IRQ = true end of render.
+    if (render_isp_pending_cycles > 0)
+    {
+        render_isp_pending_cycles -= (s32)cycles;
+        if (render_isp_pending_cycles <= 0)
+            params.RaiseInterrupt(holly_RENDER_DONE_isp);
+    }
+
+    if (render_tsp_pending_cycles > 0)
+    {
+        render_tsp_pending_cycles -= (s32)cycles;
+        if (render_tsp_pending_cycles <= 0)
+            params.RaiseInterrupt(holly_RENDER_DONE);
+    }
+
+    if (render_vd_pending_cycles > 0)
+    {
+        render_vd_pending_cycles -= (s32)cycles;
+        if (render_vd_pending_cycles <= 0)
+        {
+            params.RaiseInterrupt(holly_RENDER_DONE_vd);
+            rend_end_render();
+        }
+    }
+
+    // RENDER_DELAY() deferred list-complete IRQs
+    if (s_list_irq_active)
+    {
+        for (u32 i = 0; i < 5; i++)
+        {
+            if (!(s_list_irq_active & (1u << i)))
+                continue;
+
+            s_list_irq_cycles[i] -= (s32)cycles;
+            if (s_list_irq_cycles[i] <= 0)
+            {
+                s_list_irq_active &= ~(1u << i);
+                params.RaiseInterrupt(s_ListEndIrqID[i]);
+            }
         }
     }
 }
@@ -252,5 +348,13 @@ void spg_Term()
 
 void spg_Reset(bool Manual)
 {
+    // Drop any in-flight delayed IRQs — a reset mid-render must not fire
+    // stale render-done / list-complete interrupts into the fresh state.
+    render_end_pending_cycles = 0;
+    render_isp_pending_cycles = 0;
+    render_tsp_pending_cycles = 0;
+    render_vd_pending_cycles  = 0;
+    s_list_irq_active = 0;
+
     CalculateSync();
 }

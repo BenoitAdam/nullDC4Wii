@@ -252,6 +252,12 @@ extern "C" {
   int get_speed_limiter_preset() { return g_speed_limiter_preset; }
 }
 
+int g_render_delay_preset = 0; // 0=off (legacy: instant list-complete IRQs, render-done after VtxCnt*15 min 50k cycles, all 3 at once), 1=on (hardware-like: list-complete +200 cycles, render-done ISP/TSP/Video staggered at 800k/850k/900k cycles — MvC2 "130% speed but 7 FPS")
+
+extern "C" {
+  int get_render_delay_preset() { return g_render_delay_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -746,7 +752,8 @@ void displayAccuracyMenu()
 #define OPT_ISP_DEPTH_FUNC 36
 #define OPT_ISP_CULL    37
 #define OPT_AUTOSORT    38
-#define OPT_ROW_COUNT   39
+#define OPT_RENDER_DELAY 39
+#define OPT_ROW_COUNT   40
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -777,6 +784,7 @@ static int opt_row_page(int row)
     case OPT_ISP_DEPTH_FUNC:
     case OPT_ISP_CULL:
     case OPT_AUTOSORT:
+    case OPT_RENDER_DELAY:
       return 1;
     default:
       return 0;
@@ -1169,6 +1177,15 @@ bool displayOptionsMenu()
       printf("[< %d LAYERS (SLOW)   >]", g_autosort_preset);
     printf(" real per-pixel TR sort");
     printf("\n");
+
+    // --- Row: Hardware-like render/list IRQ delays ---
+    printf("%s RENDER DELAY   : ", (selectedRow == OPT_RENDER_DELAY) ? ">" : " ");
+    switch (g_render_delay_preset) {
+      case 0: printf("[< OFF (FASTER)      >]"); break;
+      case 1: printf("[< ON (HW-LIKE)      >]"); break;
+    }
+    printf(" ON for MVC2");
+    printf("\n");
     } // end page 1
 
 
@@ -1243,6 +1260,7 @@ bool displayOptionsMenu()
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 2) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 4) % 5; break;
+        case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         default: break;
       }
     }
@@ -1288,6 +1306,7 @@ bool displayOptionsMenu()
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 1) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 1) % 5; break;
+        case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         default: break;
       }
     }
@@ -1942,6 +1961,7 @@ int main(int argc, wchar *argv[])
     }
     printf("Jojo Fix       : %s\n", g_jojo_fix_preset ? "YES" : "NO");
     printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
+    printf("Render Delay   : %s\n", g_render_delay_preset ? "ON (HW-LIKE)" : "OFF (LEGACY)");
     printf("Vertex Color Fix: %s\n", g_vertex_color_fix_preset ? "ON" : "OFF");
     printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("RGB565 Opq Alpha: %s\n", g_rgb565_opaque_alpha_preset ? "ON (FMT0+FMT1)" : "OFF (FMT0 ONLY)");
