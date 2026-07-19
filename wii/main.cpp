@@ -723,43 +723,49 @@ void displayAccuracyMenu()
 // row 2 = preset banner (display only, not selectable)
 // row 3 = blank separator
 // Numbering below follows the order rows are actually printed on screen.
-#define OPT_GRAPHICS    4
-#define OPT_ACCURACY    5
-#define OPT_RATIO       6
-#define OPT_PPZ_WRITE   7
-#define OPT_DECAL_ALPHA 8
-#define OPT_FRAMEBUFFER_2D 9
-#define OPT_FMV_FORMAT  10
-#define OPT_FRAMESKIP   11
-#define OPT_TEX_CACHE   12
-#define OPT_4BPP        13
-#define OPT_8BPP        14
-#define OPT_JOJO_FIX    15
-#define OPT_SPEED_LIMIT 16
-#define OPT_VERTEX_COLOR_FIX 17
-#define OPT_ADV_ALPHA   18
-#define OPT_BLEND_MODE  19
-#define OPT_BLEND_FPS_BOOST 20
-#define OPT_RGB565_OPAQUE_ALPHA 21
-#define OPT_PUNCH_THROUGH 22
-#define OPT_OFFSET_COLOR 23
-#define OPT_TRANS_SORT  24
-#define OPT_RENDER_TO_TEXTURE 25
-#define OPT_SPLIT_SCREEN 26
-#define OPT_MIPMAP      27
-#define OPT_FIXED_DEPTH 28
-#define OPT_DEPTH_CLIP  29
-#define OPT_ASYNC_RENDER 30
-#define OPT_TMEM_CACHE  31
-#define OPT_BG_POLY     32
-#define OPT_X_SCALER    33
-#define OPT_CANVAS_WIDTH 34
-#define OPT_HOKUTO_HACK 35
-#define OPT_ISP_DEPTH_FUNC 36
-#define OPT_ISP_CULL    37
-#define OPT_AUTOSORT    38
-#define OPT_RENDER_DELAY 39
-#define OPT_AUDIO_BUFFERS 40
+
+// --- Page 1: everyday / performance presets ---
+#define OPT_RATIO       4
+#define OPT_AUDIO_BUFFERS 5
+#define OPT_SPEED_LIMIT 6
+#define OPT_GRAPHICS    7
+#define OPT_TEX_CACHE   8
+#define OPT_TMEM_CACHE  9
+#define OPT_4BPP        10
+#define OPT_8BPP        11
+#define OPT_ASYNC_RENDER 12
+#define OPT_FRAMESKIP   13
+#define OPT_FRAMEBUFFER_2D 14
+#define OPT_ADV_ALPHA   15
+#define OPT_BLEND_MODE  16
+#define OPT_BLEND_FPS_BOOST 17
+#define OPT_PUNCH_THROUGH 18
+#define OPT_OFFSET_COLOR 19
+#define OPT_TRANS_SORT  20
+#define OPT_RENDER_TO_TEXTURE 21
+#define OPT_SPLIT_SCREEN 22
+
+// --- Page 2: rendering / compatibility fixes ---
+#define OPT_FMV_FORMAT  23
+#define OPT_VERTEX_COLOR_FIX 24
+#define OPT_DECAL_ALPHA 25
+#define OPT_MIPMAP      26
+#define OPT_FIXED_DEPTH 27
+#define OPT_DEPTH_CLIP  28
+#define OPT_BG_POLY     29
+#define OPT_X_SCALER    30
+#define OPT_CANVAS_WIDTH 31
+
+// --- Page 3: accuracy / experimental presets ---
+#define OPT_ACCURACY    32
+#define OPT_HOKUTO_HACK 33
+#define OPT_JOJO_FIX    34
+#define OPT_RGB565_OPAQUE_ALPHA 35
+#define OPT_PPZ_WRITE   36
+#define OPT_ISP_DEPTH_FUNC 37
+#define OPT_ISP_CULL    38
+#define OPT_AUTOSORT    39
+#define OPT_RENDER_DELAY 40
 #define OPT_ROW_COUNT   41
 
 // Rows that are display-only (not selectable by cursor)
@@ -768,32 +774,32 @@ static bool opt_row_is_display(int row)
   return (row == 1 || row == 2 || row == 3);
 }
 
-// Second options page holds the less commonly tweaked presets, so the
-// main page doesn't scroll off screen.
-#define OPT_PAGE_COUNT 2
+// Options are split across three pages so no single page scrolls off screen.
+#define OPT_PAGE_COUNT 3
 
 static int opt_row_page(int row)
 {
   switch (row) {
-    case OPT_ACCURACY:
-    case OPT_PPZ_WRITE:
     case OPT_FMV_FORMAT:
     case OPT_VERTEX_COLOR_FIX:
+    case OPT_DECAL_ALPHA:
     case OPT_MIPMAP:
     case OPT_FIXED_DEPTH:
     case OPT_DEPTH_CLIP:
-    case OPT_ASYNC_RENDER:
-    case OPT_TMEM_CACHE:
     case OPT_BG_POLY:
     case OPT_X_SCALER:
     case OPT_CANVAS_WIDTH:
+      return 1;
+    case OPT_ACCURACY:
     case OPT_HOKUTO_HACK:
+    case OPT_JOJO_FIX:
+    case OPT_RGB565_OPAQUE_ALPHA:
+    case OPT_PPZ_WRITE:
     case OPT_ISP_DEPTH_FUNC:
     case OPT_ISP_CULL:
     case OPT_AUTOSORT:
     case OPT_RENDER_DELAY:
-    case OPT_AUDIO_BUFFERS:
-      return 1;
+      return 2;
     default:
       return 0;
   }
@@ -850,11 +856,40 @@ bool displayOptionsMenu()
 
     printf("\n");
 
-    if (optionsPage == 1)
-      printf("    -- PRESETS PAGE 2/2 (1: Back to Page 1) --\n\n");
+    if (optionsPage > 0)
+      printf("    -- PRESETS PAGE %d/%d (1: Previous Page) --\n\n", optionsPage + 1, OPT_PAGE_COUNT);
 
     if (optionsPage == 0) {
-    // --- Row 3: Graphics ---
+    // --- Row: Ratio ---
+    printf("%s RATIO          : ", (selectedRow == OPT_RATIO) ? ">" : " ");
+    switch (g_ratio_preset) {
+      case 0: printf("[< ORIGINAL          >]"); break;
+      case 1: printf("[< FULLSCREEN        >]"); break;
+    }
+    printf("\n");
+
+    // --- Row: Audio queue pacing (settings.emulator.AudioBuffers) ---
+    printf("%s AUDIO BUFFERS  : ", (selectedRow == OPT_AUDIO_BUFFERS) ? ">" : " ");
+    switch (g_audio_buffers_preset) {
+      case -1: printf("[< DEFAULT (SAVED)   >]"); break;
+      case  0: printf("[< 0 (NEVER BLOCK)   >]"); break;
+      case  1: printf("[< 1                 >]"); break;
+      case  2: printf("[< 2                 >]"); break;
+      case  3: printf("[< 3 (MOST PACED)    >]"); break;
+    }
+    printf(" audio pacing depth");
+    printf("\n");
+
+    // --- Row: Speed Limiter ---
+    printf("%s SPEED LIMITER  : ", (selectedRow == OPT_SPEED_LIMIT) ? ">" : " ");
+    switch (g_speed_limiter_preset) {
+      case 0: printf("[< OFF (UNCAPPED)    >]"); break;
+      case 1: printf("[< ON (CAP 100%%)     >]"); break;
+    }
+    printf(" Stops speed exceeding 100%%");
+    printf("\n");
+
+    // --- Row: Graphics ---
     printf("%s GRAPHICS       : ", (selectedRow == OPT_GRAPHICS) ? ">" : " ");
     switch (g_graphism_preset) {
       case 0: printf("[< LOW               >]"); break;
@@ -865,43 +900,7 @@ bool displayOptionsMenu()
     printf(" (2D Games should use LOW)");
     printf("\n");
 
-    // --- Row 5: Ratio ---
-    printf("%s RATIO          : ", (selectedRow == OPT_RATIO) ? ">" : " ");
-    switch (g_ratio_preset) {
-      case 0: printf("[< ORIGINAL          >]"); break;
-      case 1: printf("[< FULLSCREEN        >]"); break;
-    }
-    printf("\n");
-
-    // --- Row 8: Decal Alpha Fix ---
-    printf("%s DECAL ALPHA    : ", (selectedRow == OPT_DECAL_ALPHA) ? ">" : " ");
-    switch (g_decal_alpha_preset) {
-      case 0: printf("[< OFF (FASTER)      >]"); break;
-      case 1: printf("[< ON (CORRECT)      >]"); break;
-    }
-    printf(" Fix Crazy Taxi's cars");
-    printf("\n");
-
-    // --- Row 9: 2D Framebuffer ---
-    printf("%s 2D FRAMEBUFFER : ", (selectedRow == OPT_FRAMEBUFFER_2D) ? ">" : " ");
-    switch (g_framebuffer_2d) {
-      case 0: printf("[< NO                >]"); break;
-      case 1: printf("[< YES               >]"); break;
-    }
-    printf(" Try for 2D games");
-    printf("\n");
-
-    // --- Row 11: Frameskipping ---
-    printf("%s FRAMESKIPPING  : ", (selectedRow == OPT_FRAMESKIP) ? ">" : " ");
-    switch (g_frameskip_preset) {
-      case 0: printf("[< 0 (DEFAULT)       >]"); break;
-      case 1: printf("[< 1                 >]"); break;
-      case 2: printf("[< 2                 >]"); break;
-      case 3: printf("[< AUTO              >]"); break;
-    }
-    printf("\n");
-
-    // --- Row 12: Texture Cache ---
+    // --- Row: Texture Cache ---
     printf("%s TEXTURE CACHE  : ", (selectedRow == OPT_TEX_CACHE) ? ">" : " ");
     switch (g_texture_cache_preset) {
       case 0: printf("[< VERY FAST         >]"); break;
@@ -912,7 +911,16 @@ bool displayOptionsMenu()
     printf(" Can have huge FPS impact");
     printf("\n");
 
-    // --- Row 13: 4BPP ---
+    // --- Row: TMEM texture cache ---
+    printf("%s TMEM CACHE     : ", (selectedRow == OPT_TMEM_CACHE) ? ">" : " ");
+    switch (g_tmem_cache_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FASTER?)      >]"); break;
+    }
+    printf(" keep GPU texture cache warm");
+    printf("\n");
+
+    // --- Row: 4BPP ---
     printf("%s 4BPP MODE      : ", (selectedRow == OPT_4BPP) ? ">" : " ");
     switch (g_4bpp_preset) {
       case 0: printf("[< I4 STUB           >]"); break;
@@ -923,7 +931,7 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 14: 8BPP ---
+    // --- Row: 8BPP ---
     printf("%s 8BPP MODE      : ", (selectedRow == OPT_8BPP) ? ">" : " ");
     switch (g_8bpp_preset) {
       case 0: printf("[< I8 STUB           >]"); break;
@@ -934,25 +942,35 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 15: Jojo Fix ---
-    printf("%s JOJO FIX       : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
-    switch (g_jojo_fix_preset) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    // --- Row: Async render (CPU/GPU overlap) ---
+    printf("%s ASYNC RENDER   : ", (selectedRow == OPT_ASYNC_RENDER) ? ">" : " ");
+    switch (g_async_render_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FASTER?)      >]"); break;
     }
-    printf(" for JoJo's Bizarre Adventure");
+    printf(" uses GPU, cost 1 frame input-lag");
     printf("\n");
 
-    // --- Row 16: Speed Limiter ---
-    printf("%s SPEED LIMITER  : ", (selectedRow == OPT_SPEED_LIMIT) ? ">" : " ");
-    switch (g_speed_limiter_preset) {
-      case 0: printf("[< OFF (UNCAPPED)    >]"); break;
-      case 1: printf("[< ON (CAP 100%%)     >]"); break;
+    // --- Row: Frameskipping ---
+    printf("%s FRAMESKIPPING  : ", (selectedRow == OPT_FRAMESKIP) ? ">" : " ");
+    switch (g_frameskip_preset) {
+      case 0: printf("[< 0 (DEFAULT)       >]"); break;
+      case 1: printf("[< 1                 >]"); break;
+      case 2: printf("[< 2                 >]"); break;
+      case 3: printf("[< AUTO              >]"); break;
     }
-    printf(" Stops speed exceeding 100%%");
     printf("\n");
 
-    // --- Row 7: Advanced Alpha ---
+    // --- Row: 2D Framebuffer ---
+    printf("%s 2D FRAMEBUFFER : ", (selectedRow == OPT_FRAMEBUFFER_2D) ? ">" : " ");
+    switch (g_framebuffer_2d) {
+      case 0: printf("[< NO                >]"); break;
+      case 1: printf("[< YES               >]"); break;
+    }
+    printf(" Try for 2D games");
+    printf("\n");
+
+    // --- Row: Advanced Alpha ---
     printf("%s ADVANCED ALPHA : ", (selectedRow == OPT_ADV_ALPHA) ? ">" : " ");
     switch (g_advanced_alpha_preset) {
       case 0: printf("[< NO                >]"); break;
@@ -960,7 +978,7 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row 23: Blend Mode ---
+    // --- Row: Blend Mode ---
     printf("%s > BLEND MODE   : ", (selectedRow == OPT_BLEND_MODE) ? ">" : " ");
     switch (g_blend_mode_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
@@ -969,7 +987,7 @@ bool displayOptionsMenu()
     printf(" ON for Resident Evil 3");
     printf("\n");
 
-    // --- Row 25: Blend FPS Boost ---
+    // --- Row: Blend FPS Boost ---
     printf("%s >> FPS BOOST   : ", (selectedRow == OPT_BLEND_FPS_BOOST) ? ">" : " ");
     switch (g_blend_fps_boost_preset) {
       case 0: printf("[< OFF (CORRECT)     >]"); break;
@@ -978,16 +996,7 @@ bool displayOptionsMenu()
     printf(" +2 FPS in BLEND MODE but bad alpha");
     printf("\n");
 
-    // --- Row 24: RGB565 Opaque Alpha ---
-    printf("%s RGB565 ALPHA   : ", (selectedRow == OPT_RGB565_OPAQUE_ALPHA) ? ">" : " ");
-    switch (g_rgb565_opaque_alpha_preset) {
-      case 0: printf("[< OFF (FMT0 ONLY)   >]"); break;
-      case 1: printf("[< ON (FMT0+FMT1)    >]"); break;
-    }
-    printf(" OFF for POD2");
-    printf("\n");
-
-    // --- Row 26: Punch-Through ---
+    // --- Row: Punch-Through ---
     printf("%s PUNCH THROUGH  : ", (selectedRow == OPT_PUNCH_THROUGH) ? ">" : " ");
     switch (g_punch_through_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
@@ -996,7 +1005,7 @@ bool displayOptionsMenu()
     printf(" PT list alpha test");
     printf("\n");
 
-    // --- Row 27: Offset (specular) color ---
+    // --- Row: Offset (specular) color ---
     printf("%s OFFSET COLOR   : ", (selectedRow == OPT_OFFSET_COLOR) ? ">" : " ");
     switch (g_offset_color_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
@@ -1005,7 +1014,7 @@ bool displayOptionsMenu()
     printf(" specular highlights");
     printf("\n");
 
-    // --- Row 28: Translucent depth sort ---
+    // --- Row: Translucent depth sort ---
     printf("%s TRANS SORT     : ", (selectedRow == OPT_TRANS_SORT) ? ">" : " ");
     switch (g_trans_sort_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
@@ -1014,7 +1023,7 @@ bool displayOptionsMenu()
     printf(" translucent polys / No flickers");
     printf("\n");
 
-    // --- Row 29: Render to texture ---
+    // --- Row: Render to texture ---
     printf("%s RENDER TO TEX  : ", (selectedRow == OPT_RENDER_TO_TEXTURE) ? ">" : " ");
     switch (g_render_to_texture_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
@@ -1023,7 +1032,7 @@ bool displayOptionsMenu()
     printf(" mirrors/TV screens");
     printf("\n");
 
-    // --- Row 30: Split-screen multiplayer ---
+    // --- Row: Split-screen multiplayer ---
     printf("%s SPLIT SCREEN   : ", (selectedRow == OPT_SPLIT_SCREEN) ? ">" : " ");
     switch (g_split_screen_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
@@ -1032,29 +1041,11 @@ bool displayOptionsMenu()
     printf(" 2P viewports, Daytona USA");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: More Info | 2: Page 2 | alpha0.54\n");
+    printf("A: Launch | B: Back | 1: More Info | 2: Next Page | alpha0.54\n");
     } // end page 0
 
     if (optionsPage == 1) {
-    // --- Row 4: Accuracy ---
-    printf("%s ACCURACY       : ", (selectedRow == OPT_ACCURACY) ? ">" : " ");
-    switch (g_accuracy_preset) {
-      case 0: printf("[< FAST (DEFAULT)    >]"); break;
-      case 1: printf("[< BALANCED          >]"); break;
-      case 2: printf("[< ACCURATE          >]"); break;
-    }
-    printf(" ACCURATE if strange AI behavior");
-    printf("\n");
-
-    // --- Row 6: PPZ Write ---
-    printf("%s PPZ_WRITE      : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
-    switch (g_ppz_write_preset) {
-      case 0: printf("[< NO                >]"); break;
-      case 1: printf("[< YES               >]"); break;
-    }
-    printf("\n");
-
-    // --- Row 10: FMV Format ---
+    // --- Row: FMV Format ---
     printf("%s FMV FORMAT     : ", (selectedRow == OPT_FMV_FORMAT) ? ">" : " ");
     switch (g_fmv_format_preset) {
       case 0: printf("[< CMPR (DXT1)       >]"); break;
@@ -1064,13 +1055,22 @@ bool displayOptionsMenu()
     printf(" CMPR if some movie display white");
     printf("\n");
 
-    // --- Row 17b: Intensity Color Fix ---
+    // --- Row: Intensity Color Fix ---
     printf("%s VERTEX COLOR   : ", (selectedRow == OPT_VERTEX_COLOR_FIX) ? ">" : " ");
     switch (g_vertex_color_fix_preset) {
       case 0: printf("[< OFF (GRAY SCALE)  >]"); break;
       case 1: printf("[< ON                >]"); break;
     }
     printf(" Crazy Taxi's arrow or JSR logo");
+    printf("\n");
+
+    // --- Row: Decal Alpha Fix ---
+    printf("%s DECAL ALPHA    : ", (selectedRow == OPT_DECAL_ALPHA) ? ">" : " ");
+    switch (g_decal_alpha_preset) {
+      case 0: printf("[< OFF (FASTER)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" Fix Crazy Taxi's cars");
     printf("\n");
 
     // --- Row: Mipmap generation ---
@@ -1103,24 +1103,6 @@ bool displayOptionsMenu()
     printf(" 2D/menus invisible on real Wii");
     printf("\n");
 
-    // --- Row: Async render (CPU/GPU overlap) ---
-    printf("%s ASYNC RENDER   : ", (selectedRow == OPT_ASYNC_RENDER) ? ">" : " ");
-    switch (g_async_render_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FASTER?)      >]"); break;
-    }
-    printf(" uses GPU, cost 1 frame input-lag");
-    printf("\n");
-
-    // --- Row: TMEM texture cache ---
-    printf("%s TMEM CACHE     : ", (selectedRow == OPT_TMEM_CACHE) ? ">" : " ");
-    switch (g_tmem_cache_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FASTER?)      >]"); break;
-    }
-    printf(" keep GPU texture cache warm");
-    printf("\n");
-
     // --- Row: Background polygon rendering ---
     printf("%s BG POLYGON     : ", (selectedRow == OPT_BG_POLY) ? ">" : " ");
     switch (g_bg_poly_preset) {
@@ -1146,6 +1128,20 @@ bool displayOptionsMenu()
     else
       printf("[< %-4d              >]", g_canvas_width_preset);
     printf(" SF3 double impact=384");
+    printf("\n\n");
+
+    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha0.54\n");
+    } // end page 1
+
+    if (optionsPage == 2) {
+    // --- Row: Accuracy ---
+    printf("%s ACCURACY       : ", (selectedRow == OPT_ACCURACY) ? ">" : " ");
+    switch (g_accuracy_preset) {
+      case 0: printf("[< FAST (DEFAULT)    >]"); break;
+      case 1: printf("[< BALANCED          >]"); break;
+      case 2: printf("[< ACCURATE          >]"); break;
+    }
+    printf(" ACCURATE if strange AI behavior");
     printf("\n");
 
     // --- Row: Hokuto Hack (layer-tiered translucent sort) ---
@@ -1155,6 +1151,32 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (TR TIER SORT) >]"); break;
     }
     printf(" ON for Hokuto no Ken (Specific)");
+    printf("\n");
+
+    // --- Row: Jojo Fix ---
+    printf("%s JOJO FIX       : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
+    switch (g_jojo_fix_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" for JoJo's Bizarre Adventure");
+    printf("\n");
+
+    // --- Row: RGB565 Opaque Alpha ---
+    printf("%s RGB565 ALPHA   : ", (selectedRow == OPT_RGB565_OPAQUE_ALPHA) ? ">" : " ");
+    switch (g_rgb565_opaque_alpha_preset) {
+      case 0: printf("[< OFF (FMT0 ONLY)   >]"); break;
+      case 1: printf("[< ON (FMT0+FMT1)    >]"); break;
+    }
+    printf(" OFF for POD2");
+    printf("\n");
+
+    // --- Row: PPZ Write ---
+    printf("%s PPZ_WRITE      : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
+    switch (g_ppz_write_preset) {
+      case 0: printf("[< NO                >]"); break;
+      case 1: printf("[< YES               >]"); break;
+    }
     printf("\n");
 
     // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
@@ -1193,20 +1215,10 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (HW-LIKE)      >]"); break;
     }
     printf(" ON for MVC2");
-    printf("\n");
+    printf("\n\n");
 
-    // --- Row: Audio queue pacing (settings.emulator.AudioBuffers) ---
-    printf("%s AUDIO BUFFERS  : ", (selectedRow == OPT_AUDIO_BUFFERS) ? ">" : " ");
-    switch (g_audio_buffers_preset) {
-      case -1: printf("[< DEFAULT (SAVED)   >]"); break;
-      case  0: printf("[< 0 (NEVER BLOCK)   >]"); break;
-      case  1: printf("[< 1                 >]"); break;
-      case  2: printf("[< 2                 >]"); break;
-      case  3: printf("[< 3 (MOST PACED)    >]"); break;
-    }
-    printf(" audio pacing depth");
-    printf("\n");
-    } // end page 1
+    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha0.54\n");
+    } // end page 2
 
 
     WPAD_ScanPads();
@@ -1339,9 +1351,9 @@ bool displayOptionsMenu()
     }
     else if (pressed & WPAD_BUTTON_1)
     {
-      if (optionsPage == 1)
+      if (optionsPage > 0)
       {
-        optionsPage = 0;
+        optionsPage--;
         selectedRow = OPT_LAUNCH;
       }
       else
