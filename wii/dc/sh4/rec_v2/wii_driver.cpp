@@ -2085,7 +2085,39 @@ void ngen_mainloop()
 			// is emitted, and UpdateSystem_no_event() advances TMU/PVR by the
 			// same s_timeslice, so the two stay consistent. Baked in at emit
 			// time — the mainloop is generated once per session.
-			const s32 jit_timeslice = sh4_GetTimeslice();
+			//
+			// speed_hack (opt-in per-game preset, default legacy/0/off): the
+			// reference interpreter charges s_cpu_ratio (=8) host-cycles per
+			// opcode (Sh4_int_Run, sh4_interpreter.cpp), but this JIT charges
+			// a flat CPU_RATIO=1 per opcode (decoder.cpp) and never applied
+			// s_cpu_ratio anywhere — so by default the JIT lets SH4 code
+			// execute several times more instructions per s_timeslice
+			// quantum than the interpreter/original calibration. Games that
+			// pace their own logic by counting executed instructions run
+			// that pacing too fast relative to AICA/audio time as a result.
+			//
+			// CAUTION: dividing by the full s_cpu_ratio (8) caused a total
+			// boot failure (black screen) — confirmed by testing. The block
+			// decoder caps every compiled block at a FIXED, compile-time
+			// SH4_TIMESLICE/2 = 224 cycles (driver.cpp, portable/shared,
+			// independent of the runtime preset or this hack). At /8 on the
+			// FAST preset, jit_timeslice landed exactly on that 224 cap —
+			// a single max-sized block could consume the whole quantum (or
+			// exceed it on Balanced/Accurate's smaller timeslices), which
+			// likely broke boot-time timing assumptions elsewhere in the
+			// dispatch loop. Only /2 and /4 are exposed (see parse_speed_hack
+			// in game_presets.cpp) plus a floor well above 224, keeping a
+			// safe margin against that cap for ANY preset — /4 is a stronger
+			// but still partial correction toward the ~8x gap.
+			s32 jit_timeslice = sh4_GetTimeslice();
+			int speed_hack = get_speed_hack_preset();
+			if (speed_hack > 1)
+			{
+				jit_timeslice /= speed_hack;
+				const s32 SAFE_FLOOR = 448;   // 2x the fixed 224-cycle block cap
+				if (jit_timeslice < SAFE_FLOOR)
+					jit_timeslice = SAFE_FLOOR;
+			}
 
 			//cycles
 			ppc_li(ppc_cycles,jit_timeslice);

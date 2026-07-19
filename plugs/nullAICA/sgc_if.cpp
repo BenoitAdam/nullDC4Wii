@@ -5,7 +5,7 @@
 #undef FAR
 
 //#define CLIP_WARN
-#define key_printf(x...)  printf(x)
+#define key_printf(x...)  /*printf(x);*/
 #define aeg_printf(x...)  /*printf(x);*/
 #define step_printf(x...) /*printf(x);*/
 
@@ -439,6 +439,7 @@ struct ChannelEx
 
         SampleType sample = InterpolateSample();
 
+
         u32 ofsatt = lfo.alfo + (AEG.GetValue() >> 2);
         ofsatt = min(ofsatt, 255u);
 
@@ -504,11 +505,6 @@ struct ChannelEx
             adpcm.Reset(this);
             StepStreamInitial(this);
 
-            // Filter removed: the buggy SFX never showed up while SA=0x2A04E
-            // was excluded, meaning it likely reuses that same raw waveform
-            // (a single wavetable sample pitched/retriggered for both BGM
-            // notes and some SFX is common). Log everything again and
-            // correlate by timing/channel instead of by address.
             key_printf("[AICA] KEY_ON  ch=%2d fmt=%s %s SA=0x%05X LSA=%u LEA=%u loopLen=%d TL=%u OCT=%d FNS=%u "
                        "KRS=%u DL=%u D1R=%u D2R=%u RR=%u effRR=%u\n",
                        ChanelNumber,

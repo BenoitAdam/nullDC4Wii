@@ -107,6 +107,14 @@ s32 sh4_GetTimeslice()
 	return s_timeslice;
 }
 
+// Same "per-opcode cost" the reference interpreter charges (l -= s_cpu_ratio
+// per opcode, see Sh4_int_Run below) but never latched into the JIT's own
+// jit_timeslice budget in wii_driver.cpp -- see [[jit-cpu-ratio-fix]] preset.
+s32 sh4_GetCpuRatio()
+{
+	return s_cpu_ratio;
+}
+
 // -------------------------------------------------------------------------
 // Sh4_int_Run
 // -------------------------------------------------------------------------

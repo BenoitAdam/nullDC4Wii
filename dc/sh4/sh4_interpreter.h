@@ -15,6 +15,13 @@ typedef void (FASTCALL OpCallFP)(u32 op);
 // -------------------------------------------------------------------------
 extern "C" int get_accuracy_preset();
 
+// Per-game opt-in speed_hack preset (defined in main.cpp / wired via
+// wii/game_presets.cpp): 0 = legacy/off, 2 or 4 = divides the JIT's
+// per-quantum cycle budget by that much, moving it closer to the reference
+// interpreter's per-opcode cost calibration (sh4_GetCpuRatio()). See the
+// jit_timeslice comment in wii_driver.cpp for the full rationale.
+extern "C" int get_speed_hack_preset();
+
 #define FAST()     (get_accuracy_preset() == 0)
 #define BALANCED() (get_accuracy_preset() == 1)
 #define ACCURATE() (get_accuracy_preset() == 2)
@@ -119,6 +126,7 @@ int FASTCALL UpdateSystem_handle_event();
 // budget instead of a hardcoded SH4_TIMESLICE.
 void Sh4_ApplyAccuracyPreset();
 s32  sh4_GetTimeslice();
+s32  sh4_GetCpuRatio();
 
 // Coarse timer (~13,216 kHz) used for block lifecycle tracking
 extern u32 gcp_timer;

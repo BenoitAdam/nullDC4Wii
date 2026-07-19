@@ -156,6 +156,22 @@ extern "C" {
   int get_jojo_fix_preset() { return g_jojo_fix_preset; }
 }
 
+// The JIT's per-quantum cycle budget (jit_timeslice, wii_driver.cpp) never
+// applies s_cpu_ratio (=8 for every accuracy preset), so the JIT lets SH4
+// game code execute several times more instructions per AICA-sample-time
+// than the reference interpreter/original calibration intended. Games that
+// pace their own logic (note timing, animation, etc.) by counting executed
+// instructions rather than a hardware timer run that logic too fast
+// relative to AICA/audio time as a result. 0 = legacy/off (default,
+// preserves existing behavior/performance for every game); 2 or 4 = divide
+// jit_timeslice by that much. Opt in per-game via speed_hack=2 (or 4) in
+// game_presets.cfg.
+int g_speed_hack_preset = 0;
+
+extern "C" {
+  int get_speed_hack_preset() { return g_speed_hack_preset; }
+}
+
 int g_vertex_color_fix_preset = 1; // 0 = Greyscale , 1 = On
 
 extern "C" {
