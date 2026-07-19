@@ -234,7 +234,7 @@ extern "C" {
   int get_depth_clip_preset() { return g_depth_clip_preset; }
 }
 
-int g_async_render_preset = 0; // 0=off (CPU blocks in GX_DrawDone until the GPU finishes each frame, legacy), 1=on (frame queued, presented one vblank later; SH4 emulates while the GPU draws)
+int g_async_render_preset = 1; // 0=off (CPU blocks in GX_DrawDone until the GPU finishes each frame, legacy), 1=on (frame queued, presented one vblank later; SH4 emulates while the GPU draws)
 
 extern "C" {
   int get_async_render_preset() { return g_async_render_preset; }
