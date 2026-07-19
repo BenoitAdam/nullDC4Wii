@@ -19,6 +19,10 @@ int g_frame_counter = 0;
 
 __settings settings;
 
+// Defined in wii/main.cpp — per-game preset (wii/game_presets.cpp) and
+// options-menu override for settings.emulator.AudioBuffers.
+extern "C" int get_audio_buffers_preset();
+
 // ---------------------------------------------------------------------------
 // ELF boot state
 // Set by main___() if the selected file is a .elf.
@@ -260,9 +264,17 @@ void LoadSettings()
 
 	settings.emulator.AutoStart=cfgLoadInt("nullDC","Emulator.AutoStart",0)!=0;
 	settings.emulator.NoConsole=cfgLoadInt("nullDC","Emulator.NoConsole",0)!=0;
-	settings.emulator.AudioBuffers=cfgLoadInt("nullDC","Emulator.AudioBuffers",3);
+	settings.emulator.AudioBuffers=cfgLoadInt("nullDC","Emulator.AudioBuffers",0);
 	if (settings.emulator.AudioBuffers>3)
 		settings.emulator.AudioBuffers=3;
+
+	// Per-game preset override (see wii/game_presets.cpp "audio_buffers=N")
+	// and/or the options menu (wii/main.cpp), applied after the cfg value
+	// so a matched preset or manual menu choice always wins.
+	int audio_buffers_preset = get_audio_buffers_preset();
+	if (audio_buffers_preset >= 0 && audio_buffers_preset <= 3)
+		settings.emulator.AudioBuffers = audio_buffers_preset;
+
 	printf("[nullDC.cpp] Loaded settings\n");
 }
 void SaveSettings()

@@ -183,6 +183,21 @@
                                 frame once per vblank; off (default, legacy)
                                 presents every pass fullscreen, so only one
                                 player's view shows.
+        audio_buffers=1     <- 0..3 or default/auto/saved, forces
+                                settings.emulator.AudioBuffers (see
+                                nullDC.cpp LoadSettings() and
+                                wii/wii_audio.cpp). 0 never blocks the
+                                emulation thread — samples are dropped on
+                                overrun; 1..3 blocks the caller each push
+                                until fewer than N buffers are queued, trading
+                                emulation speed for smoother audio pacing on
+                                games that produce audio in bursts.
+                                default/auto/saved explicitly resets it to
+                                the saved/cfg value (undoing a [default]
+                                section override, or a previous game's
+                                setting carried over this boot) — leaving
+                                the key out entirely does the same thing
+                                UNLESS an earlier section already forced it.
 
     [default] is a special section, not matched against the filename: its
     fields are applied first, on every launch, before the per-game match
@@ -244,6 +259,7 @@ extern int g_bg_poly_preset;
 extern int g_hokuto_hack_preset;
 extern int g_isp_depth_func_preset;
 extern int g_isp_cull_preset;
+extern int g_audio_buffers_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -296,6 +312,7 @@ struct GamePreset
     int hokuto_hack;
     int isp_depth_func;
     int isp_cull;
+    int audio_buffers;
 };
 
 // Nothing from the .cfg stays in RAM: game_presets_apply() streams the file
@@ -457,6 +474,20 @@ static int parse_mipmap(const char* v)
     return -1;
 }
 
+// -1 is itself a valid, meaningful audio_buffers value (DEFAULT/SAVED — leave
+// settings.emulator.AudioBuffers alone), unlike every other field where -1 is
+// only ever the "key absent from this section" sentinel. So this field uses
+// -2 for absent (see preset_clear / preset_apply_fields) and this parser
+// returns -1 for the explicit "default"/"auto"/"saved" keyword.
+static int parse_audio_buffers(const char* v)
+{
+    if (key_eq(v, "default") || key_eq(v, "auto") || key_eq(v, "saved")) return -1;
+    int n = atoi(v);
+    if (n >= 0 && n <= 3) return n;
+    printf("[game_presets] Unknown audio_buffers value: '%s'\n", v);
+    return -2;
+}
+
 static int parse_players(const char* v)
 {
     int n = atoi(v);
@@ -520,6 +551,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "hokuto_hack"))    p->hokuto_hack    = parse_bool(val);
     else if (key_eq(key, "isp_depth_func")) p->isp_depth_func = atoi(val);
     else if (key_eq(key, "isp_cull"))       p->isp_cull       = atoi(val);
+    else if (key_eq(key, "audio_buffers"))  p->audio_buffers  = parse_audio_buffers(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -558,6 +590,7 @@ static void preset_clear(GamePreset* cur)
     cur->hokuto_hack = -1;
     cur->isp_depth_func = -1;
     cur->isp_cull = -1;
+    cur->audio_buffers = -2; // -2 = absent (leave live state alone); -1 is a real value here (see parse_audio_buffers)
 }
 
 // Apply every set field of a preset slot onto the live g_*_preset globals
@@ -601,6 +634,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->hokuto_hack    >= 0) { g_hokuto_hack_preset   = p->hokuto_hack;     printf("  hokuto_hack    -> %d\n", p->hokuto_hack);    }
     if (p->isp_depth_func >= 0) { g_isp_depth_func_preset = p->isp_depth_func; printf("  isp_depth_func -> %d\n", p->isp_depth_func); }
     if (p->isp_cull       >= 0) { g_isp_cull_preset      = p->isp_cull;        printf("  isp_cull       -> %d\n", p->isp_cull);       }
+    if (p->audio_buffers  != -2) { g_audio_buffers_preset = p->audio_buffers;  printf("  audio_buffers  -> %d\n", p->audio_buffers);  }
 }
 
 // ---------------------------------------------------------------------------

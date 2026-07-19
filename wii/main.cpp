@@ -264,6 +264,12 @@ extern "C" {
   int get_bg_poly_preset() { return g_bg_poly_preset; }
 }
 
+int g_audio_buffers_preset = -1; // -1=off (leave settings.emulator.AudioBuffers at its cfg/UI value), 0..3=force the audio queue depth (see nullDC.cpp LoadSettings(): 0=never block/drop on overrun, 1..3=block until below N queued buffers)
+
+extern "C" {
+  int get_audio_buffers_preset() { return g_audio_buffers_preset; }
+}
+
 int g_player_count = 4;
 
 extern "C" {
@@ -753,7 +759,8 @@ void displayAccuracyMenu()
 #define OPT_ISP_CULL    37
 #define OPT_AUTOSORT    38
 #define OPT_RENDER_DELAY 39
-#define OPT_ROW_COUNT   40
+#define OPT_AUDIO_BUFFERS 40
+#define OPT_ROW_COUNT   41
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -785,6 +792,7 @@ static int opt_row_page(int row)
     case OPT_ISP_CULL:
     case OPT_AUTOSORT:
     case OPT_RENDER_DELAY:
+    case OPT_AUDIO_BUFFERS:
       return 1;
     default:
       return 0;
@@ -1186,6 +1194,18 @@ bool displayOptionsMenu()
     }
     printf(" ON for MVC2");
     printf("\n");
+
+    // --- Row: Audio queue pacing (settings.emulator.AudioBuffers) ---
+    printf("%s AUDIO BUFFERS  : ", (selectedRow == OPT_AUDIO_BUFFERS) ? ">" : " ");
+    switch (g_audio_buffers_preset) {
+      case -1: printf("[< DEFAULT (SAVED)   >]"); break;
+      case  0: printf("[< 0 (NEVER BLOCK)   >]"); break;
+      case  1: printf("[< 1                 >]"); break;
+      case  2: printf("[< 2                 >]"); break;
+      case  3: printf("[< 3 (MOST PACED)    >]"); break;
+    }
+    printf(" audio pacing depth");
+    printf("\n");
     } // end page 1
 
 
@@ -1261,6 +1281,7 @@ bool displayOptionsMenu()
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 4) % 5; break;
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
+        case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
     }
@@ -1307,6 +1328,7 @@ bool displayOptionsMenu()
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 1) % 5; break;
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
+        case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
     }
@@ -1962,6 +1984,11 @@ int main(int argc, wchar *argv[])
     printf("Jojo Fix       : %s\n", g_jojo_fix_preset ? "YES" : "NO");
     printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
     printf("Render Delay   : %s\n", g_render_delay_preset ? "ON (HW-LIKE)" : "OFF (LEGACY)");
+    printf("Audio Buffers  : ");
+    switch (g_audio_buffers_preset) {
+      case -1: printf("DEFAULT (SAVED)\n"); break;
+      default: printf("%d\n", g_audio_buffers_preset); break;
+    }
     printf("Vertex Color Fix: %s\n", g_vertex_color_fix_preset ? "ON" : "OFF");
     printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("RGB565 Opq Alpha: %s\n", g_rgb565_opaque_alpha_preset ? "ON (FMT0+FMT1)" : "OFF (FMT0 ONLY)");
