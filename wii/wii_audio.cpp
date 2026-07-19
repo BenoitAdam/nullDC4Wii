@@ -31,6 +31,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <ogc/cache.h>        // DCFlushRange
+#include "wii_timeprof.h"     // TP_AUDIO bucket around the voice callback
 
 // Set to 1 by wii_audio_aica_ready() once AICA_Init() has run. Until then
 // wii_audio_push_sample() is a no-op.
@@ -62,6 +63,7 @@ static volatile u32 underrun_count = 0;
 // and queues it, so ASND only ever sees the two fixed addresses, alternating.
 static void audio_callback(s32 voice)
 {
+    unsigned int _t0 = tprof_now();   // TP_AUDIO (wii_timeprof.h)
     (void)voice;
 
     int next = play_idx ^ 1;
@@ -79,6 +81,7 @@ static void audio_callback(s32 voice)
     DCFlushRange(play_buf[next], BUF_BYTES);
     ASND_AddVoice(VOICE_SLOT, (void *)play_buf[next], BUF_BYTES);
     play_idx = next;
+    tprof_leave(TP_AUDIO, _t0);
 }
 
 void wii_audio_init()

@@ -8,6 +8,11 @@
 #include "regs.h"
 #include <ogc/system.h>
 #include <unistd.h>
+#include "wii/wii_mmu.h"   // WMMU_PrintStats (inline no-op when disabled)
+#include "wii/wii_timeprof.h" // tprof_print (CPU-time buckets)
+
+// SH4 JIT fallback/hot-spot counters (wii_driver.cpp, JIT_PROFILE).
+extern "C" void rec_PrintJitStats();
 
 // Game-preset controlled toggle (see wii/game_presets.h, wii/main.cpp).
 extern "C" int get_speed_limiter_preset();
@@ -228,6 +233,13 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
 
 #ifndef TARGET_PSP
                 printf("%s\n", fpsStr);
+                // MMU fastmem counters (prints only when they changed)
+                WMMU_PrintStats();
+                // SH4 JIT fallback/hot-spot counters (see wii_driver.cpp,
+                // JIT_PROFILE; prints only when the counters moved)
+                rec_PrintJitStats();
+                // CPU-time split across ta/render/sys/audio/compile buckets
+                tprof_print();
                 fflush(stdout); // once per 2s: keep the log tail intact if the Wii is powered off
 #endif
                 // PSP profiler logging removed for Wii build — not applicable

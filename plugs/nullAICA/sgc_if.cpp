@@ -991,7 +991,13 @@ void AICA_Sample()
 {
     mixl = 0;
     mixr = 0;
-    memset(dsp.MIXS, 0, sizeof(dsp.MIXS));
+    // dsp.MIXS is consumed only by dsp_step(); when the DSP is disabled the
+    // channels still accumulate into it (VolMix.DSPOut points there) but the
+    // values are never read, so zeroing 44100x/s is wasted work. If the DSP
+    // is toggled on mid-game the first sample sees stale accumulation — one
+    // sample of garbage into the effect chain, inaudible.
+    if (aica_settings.DSPEnabled)
+        memset(dsp.MIXS, 0, sizeof(dsp.MIXS));
 
     ChannelEx::GenerateAll();
 
@@ -1030,12 +1036,23 @@ void AICA_Sample()
         mixr = mixl;
     }
 
-    // Master volume
+    // Master volume. The float multiply/divide + float->int conversion here
+    // ran 44100x/s for inputs that change ~never — hoisted behind a change
+    // check (recomputed only when MVOL or the settings volume moves).
     u32 mvol = CommonData->MVOL;
-    s32 val  = (s32)(volume_lut[mvol] * aica_settings.Volume / 100.0f);
-
-    mixl = (s32)FPMul((s64)mixl, val, 15);
-    mixr = (s32)FPMul((s64)mixr, val, 15);
+    {
+        static u32 s_last_mvol   = 0xFFFFFFFF;
+        static u32 s_last_setvol = 0xFFFFFFFF;
+        static s32 s_vol_val     = 0;
+        if (mvol != s_last_mvol || (u32)aica_settings.Volume != s_last_setvol)
+        {
+            s_last_mvol   = mvol;
+            s_last_setvol = (u32)aica_settings.Volume;
+            s_vol_val     = (s32)(volume_lut[mvol] * aica_settings.Volume / 100.0f);
+        }
+        mixl = (s32)FPMul((s64)mixl, s_vol_val, 15);
+        mixr = (s32)FPMul((s64)mixr, s_vol_val, 15);
+    }
 
     if (CommonData->DAC18B)
     {

@@ -27,6 +27,10 @@
 #include "tmu.h"
 #include "dc/mem/sh4_mem.h"
 #include "ccn.h"
+
+#if HOST_OS == OS_WII
+#include "wii/wii_timeprof.h"   // TP_SYS bucket around the peripheral cascade
+#endif
 // #include <gccore.h>  // Uncomment for Wii VIDEO_WaitVSync() frame limiter
 #include <time.h>
 #include <float.h>
@@ -336,12 +340,31 @@ void FASTCALL SlowUpdate()
 
 void FASTCALL MediumUpdate()
 {
+	// Split-bucket timing (wii/wii_timeprof.h): aica / arm7 / rest of the
+	// cascade measured separately — the combined "sys" bucket measured 19%
+	// of the core (2026-07-19), and which tenant owns it decides the next
+	// optimization target.
+#if HOST_OS == OS_WII
+	unsigned int _t0 = tprof_now();
+#endif
 	UpdateAica(s_timeslice * s_medium_period);
+#if HOST_OS == OS_WII
+	tprof_acc[TP_AICA] += tprof_now() - _t0;
+#endif
+	// UpdateArm brackets itself (arm_aica.cpp): ARM7 interpreter → TP_ARM7,
+	// 44.1 kHz sample synthesis → TP_AICA. No outer bracket here or the
+	// cost would be double-counted.
 	UpdateArm(s_timeslice * s_medium_period);  // ARM7 tick — same cycle count, arm_aica.cpp divides by arm_sh4_bias (8)
+#if HOST_OS == OS_WII
+	unsigned int _t2 = tprof_now();
+#endif
 	UpdateDMA();
 
 	if (!(update_cnt & (s_slow_period - 1)))
 		SlowUpdate();
+#if HOST_OS == OS_WII
+	tprof_leave(TP_SYSMISC, _t2);
+#endif
 }
 
 int FASTCALL UpdateSystem()

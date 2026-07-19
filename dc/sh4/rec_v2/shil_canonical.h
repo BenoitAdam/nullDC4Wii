@@ -78,6 +78,16 @@
 #   define shil_canonical(rv,name,args,code)
 #   define shil_compile(code)
 
+#elif SHIL_MODE == 4
+// ---- Generate an opcode-name string table (JIT profiling diagnostics) ------
+// Order matches the SHIL_MODE 0 enum by construction (same X-macro source).
+#   define SHIL_START           const char* shil_op_names[] = {
+#   define SHIL_END             };
+#   define shil_opc(name)       #name,
+#   define shil_opc_end()
+#   define shil_canonical(rv,name,args,code)
+#   define shil_compile(code)
+
 #else
 #   error "Invalid SHIL_MODE"
 #endif

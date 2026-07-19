@@ -258,6 +258,31 @@ extern "C" {
   int get_render_delay_preset() { return g_render_delay_preset; }
 }
 
+// ARM7 sound-CPU speed divider stage: effective bias = arm_sh4_bias << N.
+// 0=off (bias 20, ~10 MHz — legacy), 1=half (bias 40), 2=quarter (bias 80).
+// Profiling (2026-07-20, Castlevania) showed the AICA driver free-runs a fat
+// poll/scan main loop ~21.6k laps/s — far more service than any driver needs —
+// so halving/quartering its clock reclaims host CPU with wide safety margin.
+// Per-game preset, default OFF: watch for audio latency/timing regressions
+// (cf. the ChuChu Rocket echo investigation) before trusting a value.
+int g_arm7_speed_preset = 0;
+
+extern "C" {
+  int get_arm7_speed_preset() { return g_arm7_speed_preset; }
+}
+
+// JIT guest-memory codegen mode (see wii/wii_mmu.h and wii_driver.cpp):
+// 0=off (legacy: 0x8C-only read fast path + table-walk writes — the measured
+//   optimum on Castlevania), 1=MMU window + DSI backpatch (research: ~10%
+//   slower due to Broadway's 128-entry DTLB), 2=BAT-masked all-mirror reads
+//   (writes stay legacy). Fixed at launch — the recompiler bakes the mode
+//   into every block, and the menu only runs before the dynarec starts.
+int g_jit_mmu_preset = 0;
+
+extern "C" {
+  int get_jit_mmu_preset() { return g_jit_mmu_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -766,7 +791,9 @@ void displayAccuracyMenu()
 #define OPT_ISP_CULL    38
 #define OPT_AUTOSORT    39
 #define OPT_RENDER_DELAY 40
-#define OPT_ROW_COUNT   41
+#define OPT_ARM7_SPEED  41
+#define OPT_JIT_MMU     42
+#define OPT_ROW_COUNT   43
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -799,6 +826,8 @@ static int opt_row_page(int row)
     case OPT_ISP_CULL:
     case OPT_AUTOSORT:
     case OPT_RENDER_DELAY:
+    case OPT_ARM7_SPEED:
+    case OPT_JIT_MMU:
       return 2;
     default:
       return 0;
@@ -1215,6 +1244,26 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (HW-LIKE)      >]"); break;
     }
     printf(" ON for MVC2");
+    printf("\n");
+
+    // --- Row: ARM7 sound-CPU speed divider (plugs/vbaARM/arm_aica.cpp) ---
+    printf("%s ARM7 SPEED     : ", (selectedRow == OPT_ARM7_SPEED) ? ">" : " ");
+    switch (g_arm7_speed_preset) {
+      case 0: printf("[< 10MHZ (DEFAULT)   >]"); break;
+      case 1: printf("[< 5MHZ (FASTER)     >]"); break;
+      case 2: printf("[< 2.5MHZ (RISKY)    >]"); break;
+    }
+    printf(" sound CPU clock - check audio!");
+    printf("\n");
+
+    // --- Row: JIT guest-memory codegen mode (wii_driver.cpp / wii_mmu.h) ---
+    printf("%s JIT MMU        : ", (selectedRow == OPT_JIT_MMU) ? ">" : " ");
+    switch (g_jit_mmu_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< MMU WINDOW (SLOW) >]"); break;
+      case 2: printf("[< BAT READS         >]"); break;
+    }
+    printf(" memory codegen (experimental)");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.55\n");
@@ -1293,6 +1342,8 @@ bool displayOptionsMenu()
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 4) % 5; break;
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
+        case OPT_ARM7_SPEED:     g_arm7_speed_preset     = (g_arm7_speed_preset     + 2) % 3; break;
+        case OPT_JIT_MMU:        g_jit_mmu_preset        = (g_jit_mmu_preset        + 2) % 3; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1340,6 +1391,8 @@ bool displayOptionsMenu()
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 1) % 5; break;
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
+        case OPT_ARM7_SPEED:     g_arm7_speed_preset     = (g_arm7_speed_preset     + 1) % 3; break;
+        case OPT_JIT_MMU:        g_jit_mmu_preset        = (g_jit_mmu_preset        + 1) % 3; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2001,6 +2054,18 @@ int main(int argc, wchar *argv[])
     printf("Jojo Fix       : %s\n", g_jojo_fix_preset ? "YES" : "NO");
     printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
     printf("Render Delay   : %s\n", g_render_delay_preset ? "ON (HW-LIKE)" : "OFF (LEGACY)");
+    printf("ARM7 Speed     : ");
+    switch (g_arm7_speed_preset) {
+      case 0: printf("10MHZ (DEFAULT)\n"); break;
+      case 1: printf("5MHZ (FASTER)\n");   break;
+      case 2: printf("2.5MHZ (RISKY)\n");  break;
+    }
+    printf("JIT MMU        : ");
+    switch (g_jit_mmu_preset) {
+      case 0: printf("OFF (LEGACY)\n");      break;
+      case 1: printf("MMU WINDOW (SLOW)\n"); break;
+      case 2: printf("BAT READS\n");         break;
+    }
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {
       case -1: printf("DEFAULT (SAVED)\n"); break;
