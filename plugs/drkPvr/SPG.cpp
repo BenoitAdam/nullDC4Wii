@@ -177,11 +177,11 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
 
             rend_vblank();
 
-            // Update FPS display every 2 seconds
+            // Update FPS display every 1 second
             double now = os_GetSeconds();
             double tdiff = now - spg_last_vps;
 
-            if (tdiff > 2.0)
+            if (tdiff > 1.0)
             {
                 spg_last_vps = now;
 
@@ -191,8 +191,8 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 double fullvbs = (spd_vbs / spd_cpu) * 200.0;
                 double mv      = VertexCount  / 1000.0;
 
-                VertexCount    = 0;
-                FrameCount     = 0;
+                VertexCount     = 0;
+                FrameCount      = 0;
                 spg_VblankCount = 0;
 
                 // Determine video mode strings
@@ -216,19 +216,24 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 }
 
                 char fpsStr[256];
-                sprintf(fpsStr,
-                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK",
+
+                sprintf(
+                    fpsStr,
+                    "FPS: %.2f\nSPEED: %.2f%%",
+                    spd_fps,
+                    spd_cpu * 100.0 / 200.0);
+
+                rend_set_fps_text(fpsStr);
+
+#ifndef TARGET_PSP
+                printf(
+                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK\n",
                     spd_cpu * 100.0 / 200.0, spd_vbs,
                     mode, res, fullvbs,
                     spd_fps,
                     (spd_fps > 0.0 ? mv / spd_fps / tdiff : 0.0),
                     mv / tdiff);
-
-                rend_set_fps_text(fpsStr);
-
-#ifndef TARGET_PSP
-                printf("%s\n", fpsStr);
-                fflush(stdout); // once per 2s: keep the log tail intact if the Wii is powered off
+                fflush(stdout); // once per 1s: keep the log tail intact if the Wii is powered off
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
             }

@@ -277,6 +277,13 @@ extern "C" {
   void set_player_count(int n) { g_player_count = (n >= 1 && n <= 4) ? n : 1; }
 }
 
+// Gameplay FPS display toggle.
+int g_show_fps_overlay = 0; // 0=off, 1=on
+
+extern "C" {
+  int get_show_fps_overlay() { return g_show_fps_overlay; }
+}
+
 // ============================================================================
 // CONTROLLER TYPE
 // ============================================================================
@@ -766,7 +773,8 @@ void displayAccuracyMenu()
 #define OPT_ISP_CULL    38
 #define OPT_AUTOSORT    39
 #define OPT_RENDER_DELAY 40
-#define OPT_ROW_COUNT   41
+#define OPT_SHOW_FPS    41
+#define OPT_ROW_COUNT   42
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -799,6 +807,7 @@ static int opt_row_page(int row)
     case OPT_ISP_CULL:
     case OPT_AUTOSORT:
     case OPT_RENDER_DELAY:
+    case OPT_SHOW_FPS:
       return 2;
     default:
       return 0;
@@ -1215,6 +1224,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (HW-LIKE)      >]"); break;
     }
     printf(" ON for MVC2");
+    printf("\n");
+
+    // --- Row: Gameplay FPS overlay ---
+    printf("%s SHOW FPS       : ", (selectedRow == OPT_SHOW_FPS) ? ">" : " ");
+    switch (g_show_fps_overlay) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON                >]"); break;
+    }
+    printf(" gameplay FPS and speed overlay");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.55\n");
@@ -1293,6 +1311,7 @@ bool displayOptionsMenu()
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 4) % 5; break;
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
+        case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1340,6 +1359,7 @@ bool displayOptionsMenu()
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 1) % 5; break;
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
+        case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2001,6 +2021,7 @@ int main(int argc, wchar *argv[])
     printf("Jojo Fix       : %s\n", g_jojo_fix_preset ? "YES" : "NO");
     printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
     printf("Render Delay   : %s\n", g_render_delay_preset ? "ON (HW-LIKE)" : "OFF (LEGACY)");
+    printf("Show FPS       : %s\n", g_show_fps_overlay ? "ON" : "OFF");
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {
       case -1: printf("DEFAULT (SAVED)\n"); break;

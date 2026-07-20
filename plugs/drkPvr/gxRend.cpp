@@ -345,6 +345,321 @@ static GXRModeObj *rmode;
 static u8 gp_fifo[DEFAULT_FIFO_SIZE] __attribute__((aligned(32)));
 static int fb = 0; // Current framebuffer index
 
+// ============================================================================
+// SOFTWARE XFB FPS TEXT RENDERER
+// ============================================================================
+
+extern char fps_text[512];
+extern "C" int get_show_fps_overlay();
+
+// 5x7 bitmap font used by the software FPS overlay.
+static u8 GetXfbFontRow(char character, int row)
+{
+  if (row < 0 || row >= 7)
+    return 0;
+
+  if (character >= 'a' && character <= 'z')
+    character = character - 'a' + 'A';
+
+  static const u8 letters[26][7] =
+  {
+    {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}, // A
+    {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E}, // B
+    {0x0F, 0x10, 0x10, 0x10, 0x10, 0x10, 0x0F}, // C
+    {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E}, // D
+    {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F}, // E
+    {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10}, // F
+    {0x0F, 0x10, 0x10, 0x17, 0x11, 0x11, 0x0F}, // G
+    {0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}, // H
+    {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x1F}, // I
+    {0x01, 0x01, 0x01, 0x01, 0x11, 0x11, 0x0E}, // J
+    {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11}, // K
+    {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F}, // L
+    {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11}, // M
+    {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11}, // N
+    {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}, // O
+    {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10}, // P
+    {0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D}, // Q
+    {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11}, // R
+    {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E}, // S
+    {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}, // T
+    {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}, // U
+    {0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04}, // V
+    {0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A}, // W
+    {0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11}, // X
+    {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04}, // Y
+    {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F}  // Z
+  };
+
+  static const u8 numbers[10][7] =
+  {
+    {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, // 0
+    {0x04, 0x0C, 0x14, 0x04, 0x04, 0x04, 0x1F}, // 1
+    {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, // 2
+    {0x1E, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1E}, // 3
+    {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, // 4
+    {0x1F, 0x10, 0x10, 0x1E, 0x01, 0x01, 0x1E}, // 5
+    {0x0E, 0x10, 0x10, 0x1E, 0x11, 0x11, 0x0E}, // 6
+    {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08}, // 7
+    {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, // 8
+    {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x01, 0x0E}  // 9
+  };
+
+  if (character >= 'A' && character <= 'Z')
+    return letters[character - 'A'][row];
+
+  if (character >= '0' && character <= '9')
+    return numbers[character - '0'][row];
+
+  switch (character)
+  {
+    case ' ':
+      return 0x00;
+
+    case ':':
+    {
+      static const u8 glyph[7] =
+      {
+        0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00
+      };
+      return glyph[row];
+    }
+
+    case '.':
+    {
+      static const u8 glyph[7] =
+      {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x0C, 0x0C
+      };
+      return glyph[row];
+    }
+
+    case '-':
+    {
+      static const u8 glyph[7] =
+      {
+        0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00
+      };
+      return glyph[row];
+    }
+
+    case '/':
+    {
+      static const u8 glyph[7] =
+      {
+        0x01, 0x02, 0x02, 0x04, 0x08, 0x08, 0x10
+      };
+      return glyph[row];
+    }
+
+    case '%':
+    {
+      static const u8 glyph[7] =
+      {
+        0x19, 0x19, 0x02, 0x04, 0x08, 0x13, 0x13
+      };
+      return glyph[row];
+    }
+
+    case '(':
+    {
+      static const u8 glyph[7] =
+      {
+        0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02
+      };
+      return glyph[row];
+    }
+
+    case ')':
+    {
+      static const u8 glyph[7] =
+      {
+        0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08
+      };
+      return glyph[row];
+    }
+
+    case '=':
+    {
+      static const u8 glyph[7] =
+      {
+        0x00, 0x1F, 0x00, 0x1F, 0x00, 0x00, 0x00
+      };
+      return glyph[row];
+    }
+
+    default:
+      return 0x00;
+  }
+}
+
+
+// Writes one pair of horizontal pixels into the Wii framebuffer.
+static void DrawXfbPixelPair(
+  u32 *pixels,
+  u32 framebuffer_width,
+  u32 framebuffer_height,
+  int x,
+  int y,
+  u32 color)
+{
+  if (pixels == NULL)
+    return;
+
+  if (x < 0 || y < 0)
+    return;
+
+  if ((u32)x >= framebuffer_width)
+    return;
+
+  if ((u32)y >= framebuffer_height)
+    return;
+
+  x &= ~1;
+
+  const u32 words_per_row = framebuffer_width / 2;
+  const u32 word_x = (u32)x / 2;
+
+  if (word_x >= words_per_row)
+    return;
+
+  pixels[((u32)y * words_per_row) + word_x] = color;
+}
+
+
+// Draws one 5x7 character into the framebuffer.
+static void DrawXfbCharacter(
+  u32 *pixels,
+  u32 framebuffer_width,
+  u32 framebuffer_height,
+  int start_x,
+  int start_y,
+  char character,
+  u32 color)
+{
+  for (int row = 0; row < 7; row++)
+  {
+    const u8 row_bits = GetXfbFontRow(character, row);
+
+    for (int column = 0; column < 5; column++)
+    {
+      const u8 bit_mask = (u8)(1 << (4 - column));
+
+      if ((row_bits & bit_mask) == 0)
+        continue;
+
+      const int pixel_x = start_x + (column * 2);
+      const int pixel_y = start_y + (row * 2);
+
+      DrawXfbPixelPair(
+        pixels,
+        framebuffer_width,
+        framebuffer_height,
+        pixel_x,
+        pixel_y,
+        color);
+
+      DrawXfbPixelPair(
+        pixels,
+        framebuffer_width,
+        framebuffer_height,
+        pixel_x,
+        pixel_y + 1,
+        color);
+    }
+  }
+}
+
+
+// Draws a complete text string into the framebuffer.
+static void DrawXfbString(
+  void *xfb,
+  int start_x,
+  int start_y,
+  const char *text)
+{
+  if (xfb == NULL || rmode == NULL || text == NULL)
+    return;
+
+  u32 *pixels = (u32 *)xfb;
+
+  const u32 framebuffer_width = rmode->fbWidth;
+  const u32 framebuffer_height = rmode->xfbHeight;
+
+  const u32 white_pair = 0xEB80EB80;
+  const u32 black_pair = 0x10801080;
+
+  const int character_advance = 12;
+  const int line_advance = 18;
+
+  int draw_x = start_x;
+  int draw_y = start_y;
+
+  for (int index = 0; index < 511; index++)
+  {
+    const char character = text[index];
+
+    if (character == '\0')
+      break;
+
+    if (character == '\n')
+    {
+      draw_x = start_x;
+      draw_y += line_advance;
+      continue;
+    }
+
+    if (draw_x + 10 >= (int)framebuffer_width)
+    {
+      draw_x = start_x;
+      draw_y += line_advance;
+    }
+
+    if (draw_y + 14 >= (int)framebuffer_height)
+      break;
+
+    DrawXfbCharacter(
+      pixels,
+      framebuffer_width,
+      framebuffer_height,
+      draw_x + 2,
+      draw_y + 2,
+      character,
+      black_pair);
+
+    DrawXfbCharacter(
+      pixels,
+      framebuffer_width,
+      framebuffer_height,
+      draw_x,
+      draw_y,
+      character,
+      white_pair);
+
+    draw_x += character_advance;
+  }
+}
+
+
+// Draws the current live FPS string.
+static void DrawXfbFpsText(void *xfb)
+{
+  if (xfb == NULL)
+    return;
+
+  if (!get_show_fps_overlay())
+    return;
+
+  if (fps_text[0] == '\0')
+    return;
+
+  DrawXfbString(
+    xfb,
+    20,
+    20,
+    fps_text);
+}
+
 // ── ASYNC_RENDER() state ─────────────────────────────────────────────────────
 // s_gx_pending is true while a queued 3D frame (GX_SetDrawDone after its
 // GX_CopyDisp) has not been waited on / presented yet. gx_sync_pending() must
@@ -371,6 +686,9 @@ static void gx_sync_pending()
   if (!s_gx_pending)
     return;
   GX_WaitDrawDone(); // GPU finished the queued frame's draws + display copy
+
+  DrawXfbFpsText(frameBuffer[s_gx_pending_fb]);
+
   VIDEO_SetNextFramebuffer(frameBuffer[s_gx_pending_fb]);
   VIDEO_Flush();
   s_gx_pending = false;
@@ -383,6 +701,8 @@ static void gx_present_if_done()
 {
   if (s_gx_pending && s_gx_done_irq)
   {
+    DrawXfbFpsText(frameBuffer[s_gx_pending_fb]);
+
     VIDEO_SetNextFramebuffer(frameBuffer[s_gx_pending_fb]);
     VIDEO_Flush();
     s_gx_pending = false;
@@ -5491,6 +5811,12 @@ void DoRender()
   }
   else
   {
+    // GX_CopyDisp was issued immediately before this block. Wait until GX has
+    // completely finished writing the XFB before the CPU draws the FPS text.
+    GX_DrawDone();
+
+    DrawXfbFpsText(frameBuffer[fb]);
+
     VIDEO_SetNextFramebuffer(frameBuffer[fb]);
     VIDEO_Flush();
   }
