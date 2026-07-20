@@ -428,6 +428,7 @@ void CPUFiq()
 	{
 		//printf("[ARM7] real-time FIQ service rate: %u/%llums\n",
 		//       fiq_count, (unsigned long long)(now_ms - last_check_ms));
+		(void)fiq_count;
 		fiq_count = 0;
 		last_check_ms = now_ms;
 	}

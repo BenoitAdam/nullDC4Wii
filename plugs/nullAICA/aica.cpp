@@ -312,6 +312,7 @@ void libAICA_TimeStep()
     {
         //printf("[AICA] real-time sample rate: %u samples/%llums (target 44100/1000ms)\n",
         //       sample_count, (unsigned long long)(now_ms - last_check_ms));
+        (void)sample_count;
         sample_count = 0;
         last_check_ms = now_ms;
     }

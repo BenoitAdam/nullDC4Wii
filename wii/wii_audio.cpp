@@ -73,7 +73,7 @@ static void audio_callback(s32 voice)
     }
     else
     {
-        underrun_count++;   // no fresh data: replay the buffer's prior contents
+        underrun_count = underrun_count + 1;   // no fresh data: replay the buffer's prior contents
     }
 
     DCFlushRange(play_buf[next], BUF_BYTES);
@@ -126,7 +126,7 @@ void wii_audio_push_sample(s16 l, s16 r)
 
     stage_buf[fill_pos * 2 + 0] = l;
     stage_buf[fill_pos * 2 + 1] = r;
-    fill_pos++;
+    fill_pos = fill_pos + 1;
 
     if (fill_pos < SAMPLES_PER_BUF)
         return;

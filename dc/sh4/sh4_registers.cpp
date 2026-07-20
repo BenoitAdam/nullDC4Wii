@@ -68,6 +68,9 @@ void SetFloatStatusReg()
 	{
 		old_rm=fpscr.RM ;
 		old_dn=fpscr.DN ;
+
+		//TODO: Implement this (needed for SOTB)
+#if HOST_ARCH==ARCH_X86
 		u32 temp=0x1f80;	//no flush to zero && round to nearest
 
 		if (fpscr.RM==1)	//if round to 0 , set the flag
@@ -76,8 +79,6 @@ void SetFloatStatusReg()
 		if (fpscr.DN)		//denormals are considered 0
 			temp|=(1<<15);
 
-		//TODO: Implement this (needed for SOTB)
-#if HOST_ARCH==ARCH_X86
 		#if HOST_OS==OS_WINDOWS
 		_asm { ldmxcsr temp; }
 		#elif defined(__GNUC__)

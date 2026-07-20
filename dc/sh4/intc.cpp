@@ -307,23 +307,23 @@ int UpdateINTC()
 
 void SetInterruptPend(InterruptID intr)
 {
-	u32 piid= intr & InterruptPIIDMask;
+	u32 piid= (u32)intr & (u32)InterruptPIIDMask;
 	interrupt_vpend|=InterruptBit[piid];
 }
 void ResetInterruptPend(InterruptID intr)
 {
-	u32 piid= intr & InterruptPIIDMask;
+	u32 piid= (u32)intr & (u32)InterruptPIIDMask;
 	interrupt_vpend&=~InterruptBit[piid];
 }
 
 void SetInterruptMask(InterruptID intr)
 {
-	u32 piid= intr & InterruptPIIDMask;
+	u32 piid= (u32)intr & (u32)InterruptPIIDMask;
 	interrupt_vmask|=InterruptBit[piid];
 }
 void ResetInterruptMask(InterruptID intr)
 {
-	u32 piid= intr & InterruptPIIDMask;
+	u32 piid= (u32)intr & (u32)InterruptPIIDMask;
 	interrupt_vmask&=~InterruptBit[piid];
 }
 
