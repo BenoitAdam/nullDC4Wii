@@ -12,6 +12,10 @@
 #include "_vmem.h"
 #include "mmu.h"
 
+#if HOST_OS == OS_WII
+#include "wii/wii_mmu.h"   // Broadway MMU guest window (no-op if disabled)
+#endif
+
 // ---------------------------------------------------------------------------
 // Main memory banks
 // ---------------------------------------------------------------------------
@@ -157,6 +161,12 @@ void mem_map_defualt()
 
 	// P4 – on-chip / internal registers
 	map_p4();
+
+#if HOST_OS == OS_WII
+	// With the software map built, mirror RAM/VRAM into the hardware MMU
+	// guest window at EA 0x00000000+ and run the self-test (one-shot).
+	WMMU_OnMemMapped();
+#endif
 }
 
 // ---------------------------------------------------------------------------

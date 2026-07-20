@@ -53,6 +53,117 @@
 #include "dc\sh4\rec_v2\ngen.h"
 #include "dc\mem\sh4_mem.h"
 #include "emitter\PPCEmit\ppc_emitter.h"
+#include "wii/wii_mmu.h"	// hardware-MMU guest window (fastmem, phase 2)
+#include "wii/wii_timeprof.h"	// TP_COMPILE bucket around ngen_Compile
+
+// Runtime guest-memory codegen mode (0=legacy, 1=MMU window, 2=BAT-masked
+// reads) — `jit_mmu` preset, fixed at launch. See wii/wii_mmu.h for the
+// full mode documentation and the Castlevania A/B verdict.
+extern "C" int get_jit_mmu_preset();
+
+// ============================================================================
+// JIT_PROFILE — cheap hot-spot visibility for the SH4 core (frameskip A/B on
+// Castlevania proved the emulator is SH4-core-bound; this answers WHERE).
+//
+// Counts, per 2-second stats tick (printed by rec_PrintJitStats from the SPG
+// stats line, only when the numbers move):
+//   ifb    — dynamic executions of shop_ifb (full interpreter fallback:
+//            16-GPR flush + C call + reload), with a per-SH4-opcode histogram
+//            (top offenders printed with their disassembly names).
+//   cc     — dynamic executions of canonical fallbacks (ngen_CC_Call), with
+//            a per-shil-opcode histogram.
+//   mslow  — dynamic executions of memory cold paths (non-RAM loads / MMIO
+//            C calls) — context for whether the slow memory path matters.
+//   blocks — blocks compiled (recompilation churn, e.g. after cache clears).
+//
+// The counters are bumped by 4 inline instructions emitted on paths that are
+// already hundreds of cycles, so measurement distortion is negligible.
+// ============================================================================
+#define JIT_PROFILE 1
+
+#if JIT_PROFILE
+#define SHIL_MODE 4
+#include "dc\sh4\rec_v2\shil_canonical.h"	// -> const char* shil_op_names[]
+#define JITPROF_NSHOPS (sizeof(shil_op_names)/sizeof(shil_op_names[0]))
+
+// ifb histogram: keyed by SH4 opcode descriptor (open-addressed, 128 slots;
+// on the unlikely full table, extras merge into the last probed slot).
+struct JitProfIfbSlot { sh4_opcodelistentry* desc; u32 count; };
+static JitProfIfbSlot jitprof_ifb[128];
+static u32 jitprof_cc[JITPROF_NSHOPS];
+static u32 jitprof_ifb_total, jitprof_cc_total, jitprof_mem_cold, jitprof_blocks;
+
+// Compile-time slot resolution (runs while emitting, plain C).
+static u32* jitprof_ifb_slot(u32 op16)
+{
+	sh4_opcodelistentry* d = OpDesc[op16];
+	u32 h = ((u32)(uintptr_t)d >> 4) & 127;
+	for (u32 i = 0; i < 128; i++)
+	{
+		u32 s = (h + i) & 127;
+		if (!jitprof_ifb[s].desc)
+			jitprof_ifb[s].desc = d;
+		if (jitprof_ifb[s].desc == d)
+			return &jitprof_ifb[s].count;
+	}
+	return &jitprof_ifb[(h + 127) & 127].count;
+}
+#endif // JIT_PROFILE
+
+// Called from the SPG 2-second stats tick (plugs/drkPvr/SPG.cpp). Always
+// defined so the plugin links regardless of JIT_PROFILE.
+extern "C" void rec_PrintJitStats()
+{
+#if JIT_PROFILE
+	static u32 last_ifb, last_cc, last_mslow, last_blk;
+	if (jitprof_ifb_total == last_ifb && jitprof_cc_total == last_cc &&
+	    jitprof_mem_cold == last_mslow && jitprof_blocks == last_blk)
+		return;
+
+	printf("[JIT] ifb+%u cc+%u mslow+%u blocks+%u (this tick)\n",
+	       jitprof_ifb_total - last_ifb, jitprof_cc_total - last_cc,
+	       jitprof_mem_cold - last_mslow, jitprof_blocks - last_blk);
+	last_ifb   = jitprof_ifb_total;
+	last_cc    = jitprof_cc_total;
+	last_mslow = jitprof_mem_cold;
+	last_blk   = jitprof_blocks;
+
+	// Top-4 lists (cumulative counts — dominant entries dominate either way)
+	if (jitprof_ifb_total)
+	{
+		u32 c[128];
+		for (u32 i = 0; i < 128; i++) c[i] = jitprof_ifb[i].count;
+		printf("[JIT]  ifb top:");
+		for (u32 k = 0; k < 4; k++)
+		{
+			u32 best = 0, bi = 128;
+			for (u32 i = 0; i < 128; i++)
+				if (c[i] > best) { best = c[i]; bi = i; }
+			if (bi == 128) break;
+			c[bi] = 0;
+			const char* n = jitprof_ifb[bi].desc ? jitprof_ifb[bi].desc->diss : "?";
+			printf(" %s=%u", n ? n : "?", best);
+		}
+		printf("\n");
+	}
+	if (jitprof_cc_total)
+	{
+		u32 c[JITPROF_NSHOPS];
+		for (u32 i = 0; i < JITPROF_NSHOPS; i++) c[i] = jitprof_cc[i];
+		printf("[JIT]  cc top:");
+		for (u32 k = 0; k < 4; k++)
+		{
+			u32 best = 0, bi = JITPROF_NSHOPS;
+			for (u32 i = 0; i < JITPROF_NSHOPS; i++)
+				if (c[i] > best) { best = c[i]; bi = i; }
+			if (bi == JITPROF_NSHOPS) break;
+			c[bi] = 0;
+			printf(" %s=%u", shil_op_names[bi], best);
+		}
+		printf("\n");
+	}
+#endif
+}
 
 // wii_driver.cpp defines its own higher-level wrappers for these names.
 // Undefine any macros from ppc_emitter.h that would clash with the
@@ -344,6 +455,20 @@ u32 ppc_addr_high(u32 rD,void* ptr)
 	return rv;
 }
 
+#if JIT_PROFILE
+// Emit a 4-instruction increment of *ctr into the code stream.
+// Clobbers r12 (base) and r0 (value) ONLY — r12 is volatile and never live
+// at the instrumented sites (slow paths, before their mr/call sequences),
+// which keeps areg/datareg/rarg* intact for the code that follows.
+static void emit_prof_count(u32* ctr)
+{
+	u32 lo=ppc_addr_high(ppc_r12,(void*)ctr);
+	ppc_lwz(ppc_r0,ppc_r12,lo);
+	ppc_addi(ppc_r0,ppc_r0,1);
+	ppc_stw(ppc_r0,ppc_r12,lo);
+}
+#endif
+
 void ppc_sh_store_f32(u32 D,shil_param prm)
 {
 	verify(prm.is_reg());
@@ -414,8 +539,13 @@ void ngen_CC_Param(shil_opcode* op,shil_param* par,CanonicalParamType tp)
 			die("invalid tp");
 	}
 }
-void ngen_CC_Call(shil_opcode*op,void* function) 
+void ngen_CC_Call(shil_opcode*op,void* function)
 {
+#if JIT_PROFILE
+	emit_prof_count(&jitprof_cc_total);
+	if ((u32)op->op < JITPROF_NSHOPS)
+		emit_prof_count(&jitprof_cc[op->op]);
+#endif
 	u32 rd_fp=ppc_farg0;
 	u32 rd_gpr=ppc_rarg0;
 	for (int i=CC_pars.size();i-->0;)
@@ -1012,6 +1142,12 @@ static void FlushCold()
 		verify(beq_disp >= 0 && beq_disp < 32768);
 		c.beq->MarkLabel();              // patch the forward beq -> here (cold entry)
 
+#if JIT_PROFILE
+		// Counts every slow memory access (MMIO / non-RAM); r12/r0 only,
+		// areg/datareg stay intact for the mr/call sequences below.
+		emit_prof_count(&jitprof_mem_cold);
+#endif
+
 		if (c.kind==0)                   // --- read scalar: ReadMem(addr)->rrv0 ---
 		{
 			if (c.areg!=ppc_rarg0) ppc_ori(ppc_rarg0,c.areg,0);   // mr rarg0,areg
@@ -1053,6 +1189,11 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		return 0;
 	
 	DynarecCodeEntry* rv=(DynarecCodeEntry*)emit_GetCCPtr();
+
+#if JIT_PROFILE
+	jitprof_blocks++;
+#endif
+	unsigned int _tprof_t0 = tprof_now();   // TP_COMPILE
 
 	ColdReset();          // mem-op cold (slow) fragments deferred to block end
 	ngen_Begin(block,force_checks);
@@ -1205,6 +1346,62 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						const u32 sz=op->flags;
 						verify(sz==1||sz==2||sz==4);
 
+						ppc_label* cold;
+						if (get_jit_mmu_preset()==2)
+						{
+							// BAT-masked RAM fast path (phase 2b, see wii_mmu.h):
+							// one guard catches EVERY RAM mirror (0x0C/0x2C/…/0xCC —
+							// they all have addr[28:26]==0b011, which auto-excludes
+							// OC-RAM 0x7C and area7 0x1F; reserved 0xEC-0xEF quirk
+							// accepted), then mask to the 16 MB offset and add the
+							// BAT-mapped mem_b pointer — no TLB, no DSI, no table.
+							//
+							//   if (((addr>>26)&7)!=3)  goto cold;
+							//   host = (addr & 0x00FFFFFF) + mem_b.data;  // low16==0
+							//   if (sz<4) host ^= 4-sz;                   // BE swizzle
+							//   rv = *(T*)host;
+							const u32 memb_hi=((u32)(uintptr_t)mem_b.data>>16)&0xFFFF;
+
+							ppc_rlwinmx(ppc_r0,areg,6,29,31,0);	// r0 = addr[28:26]
+							ppc_cmpi(ppc_cr0,ppc_r0,3,0);		// any RAM mirror ?
+							cold=ppc_CreateLabel();
+							ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);	// bne cold (not RAM)
+							ppc_rlwinmx(ppc_rarg0,areg,0,8,31,0);	// off = addr&0xFFFFFF
+							ppc_addis(ppc_rarg0,ppc_rarg0,memb_hi);	// + mem_b.data
+							if (sz<4)
+								ppc_xori(ppc_rarg0,ppc_rarg0,4-sz);
+						}
+						else if (WMMU_JitActive())	// armed only when jit_mmu==1 && self-test passed
+						{
+							// Hardware-MMU fastmem: EVERYTHING except P4 goes through
+							// the guest window at EA 0x00000000 (RAM + VRAM + all
+							// mirrors are real PTEs; handler-backed regions fault into
+							// the WMMU DSI dispatcher, which emulates the access and
+							// back-patches this site's beq into `b cold`).
+							//
+							//   if (((addr>>29)&3)==3)  goto cold;  // P4 (SQ, CCN…) AND
+							//                                       // 0x60-0x7F: the OC-RAM
+							//                                       // half — 0x7C-0x7F is
+							//                                       // NOT a 0x1C mirror
+							//                                       // (map_area7 base 0x60)
+							//   ea = addr & 0x1FFFFFFF;             // 1 rlwinm
+							//   if (sz<4) ea ^= 4-sz;               // BE swizzle
+							//   rv = *(T*)ea;                       // 1 load
+							//
+							// NOTE: the exact instruction shapes (beq cr0 / clrlwi to
+							// rarg0 / xori rarg0) are load-bearing — wmmu_backpatch()
+							// verifies them before flipping the beq. Change them and
+							// wii_mmu.cpp must follow.
+							ppc_rlwinmx(ppc_r0,areg,3,30,31,0);	// r0 = (addr>>29)&3
+							ppc_cmpi(ppc_cr0,ppc_r0,3,0);		// P4 or OC-RAM half ?
+							cold=ppc_CreateLabel();
+							ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);	// beq cold (P4/OCR/patched)
+							ppc_rlwinmx(ppc_rarg0,areg,0,3,31,0);	// ea = addr&0x1FFFFFFF
+							if (sz<4)
+								ppc_xori(ppc_rarg0,ppc_rarg0,4-sz);
+						}
+						else
+						{
 						// Fast path for the CACHED main-RAM window only (P1, top byte
 						// 0x8C -> 0x8C000000..0x8CFFFFFF = 16 MB of mem_b). This is the
 						// overwhelmingly common data region; MMIO, uncached mirrors and
@@ -1228,7 +1425,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_cmpi(ppc_cr0,ppc_r0,0x8C,0);		// == 0x8C ?
 
 						// bne -> cold (forward, not-taken: RAM path falls through).
-						ppc_label* cold=ppc_CreateLabel();
+						cold=ppc_CreateLabel();
 						ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);		// bne cold (not RAM)
 
 						// --- fast direct RAM path (fall-through) ---
@@ -1237,6 +1434,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						// big-endian sub-word swizzle folded into the address
 						if (sz<4)
 							ppc_xori(ppc_rarg0,ppc_rarg0,4-sz);
+						}
 						// rv = *(T*)native   (d-form, base=rarg0 != r0)
 						if (sz==1)
 						{
@@ -1386,6 +1584,42 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					const u32 sz=op->flags;
 					verify(sz==1||sz==2||sz==4);
 
+					ppc_label* cold;
+					// NOTE mode 2 deliberately does NOT touch the write path: the
+					// legacy inline table walk already covers EVERY direct-mapped
+					// region — RAM, VRAM *and the store queues 0xE0-0xE3* (hot: TA
+					// geometry submission!) — and stores are latency-insensitive,
+					// so the dependent table load is free in practice. The first
+					// mode-1/2 attempt narrowed the write fast path to RAM and sent
+					// SQ/VRAM stores to the cold C call: measured ~2 FPS loss.
+					if (WMMU_JitActive())	// armed only when jit_mmu==1 && self-test passed
+					{
+						// Hardware-MMU fastmem store: same shape as the read path
+						// (see shop_readm) — guard catches P4 (SQ writes!) AND the
+						// 0x60-0x7F OC-RAM half (0x7C-0x7F is not a 0x1C mirror),
+						// then mask to the guest window, swizzle, one d-form store.
+						// RAM/VRAM (all mirrors) hit real PTEs; handler-backed
+						// regions fault once into the WMMU DSI dispatcher which
+						// emulates the store and back-patches this beq to `b cold`.
+						// Instruction shapes are load-bearing for wmmu_backpatch()
+						// — keep in sync.
+						ppc_rlwinmx(ppc_r0,areg,3,30,31,0);	// r0 = (addr>>29)&3
+						ppc_cmpi(ppc_cr0,ppc_r0,3,0);		// P4 or OC-RAM half ?
+						cold=ppc_CreateLabel();
+						ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);	// beq cold (P4/OCR/patched)
+						ppc_rlwinmx(ppc_rarg0,areg,0,3,31,0);	// ea = addr&0x1FFFFFFF
+						if (sz<4)
+							ppc_xori(ppc_rarg0,ppc_rarg0,4-sz);	// BE swizzle
+						// *(T*)ea = data  (datareg is pinned rs2 or rarg1)
+						if (sz==1)
+							ppc_stb(datareg,ppc_rarg0,0);
+						else if (sz==2)
+							ppc_sth(datareg,ppc_rarg0,0);
+						else
+							ppc_stw(datareg,ppc_rarg0,0);
+					}
+					else
+					{
 					// r0 = (addr>>24)*4   (byte index into the void* table).
 					// areg is the address source (rarg0, or rs1's pinned reg for a
 					// plain @Rn); the index + mirror-mask READ it, writing scratch.
@@ -1402,7 +1636,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					ppc_cmpli(ppc_cr0,ppc_rarg2,0x20,0);		// iirf < 0x20 ?
 
 					// blt -> cold (forward, not-taken: fast path falls through).
-					ppc_label* cold=ppc_CreateLabel();
+					cold=ppc_CreateLabel();
 					ppc_bcx(BO_TRUE,BI_CR0_LT,0,0,0);		// blt cold (MMIO)
 
 					// --- fast direct path (fall-through) ---
@@ -1421,6 +1655,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_sthx(datareg,ppc_rarg3,ppc_r0);
 					else
 						ppc_stwx(datareg,ppc_rarg3,ppc_r0);
+					}
 
 					ColdFrag& c=s_cold[s_cold_n++];
 					c.beq=cold; c.done=emit_GetCCPtr();
@@ -1432,6 +1667,10 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		case shop_ifb:
 			{
 				reg_flush_all();
+#if JIT_PROFILE
+				emit_prof_count(&jitprof_ifb_total);
+				emit_prof_count(jitprof_ifb_slot(op->rs3._imm));
+#endif
 				if (op->rs1._imm)
 				{
 					ppc_li(ppc_rarg0,op->rs2._imm);
@@ -2012,6 +2251,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 	FlushCold();          // emit the out-of-line mem slow paths after the block tail
 	make_address_range_executable((u8*)rv, (u8*)emit_GetCCPtr()-(u8*)rv);
+	tprof_leave(TP_COMPILE, _tprof_t0);
 	return rv;
 }
 

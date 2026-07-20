@@ -2,6 +2,7 @@
 #include "Renderer_if.h"
 #include "ta.h"
 #include "spg.h"
+#include "wii/wii_timeprof.h"   // TP_RENDER bucket around StartRender
 
 /*
 	Basic PVR register emulation for the Dreamcast's PowerVR CLX2 ("Holly") GPU.
@@ -42,10 +43,15 @@ void FASTCALL libPvr_WriteReg(u32 paddr, u32 data, u32 size)
 		case REVISION_addr:
 			return;
 
+
 		// ---- Trigger: start the ISP/TSP rendering pipeline ----
 		case STARTRENDER_addr:
+		{
+			unsigned int _t0 = tprof_now();   // TP_RENDER (wii_timeprof.h)
 			rend_start_render();
+			tprof_leave(TP_RENDER, _t0);
 			return;
+		}
 
 		// ---- TA_LIST_INIT: bit 31 triggers TA initialisation ----
 		case TA_LIST_INIT_addr:

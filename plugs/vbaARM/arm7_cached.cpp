@@ -30,6 +30,12 @@
 // Define to profile block execution: counts each block entry (keyed by start
 // PC) and prints the top 10 hottest blocks roughly once per wall-clock second.
 // Off by default -- zero cost in the hot path when undefined.
+//
+// Capture done 2026-07-20 (Castlevania): NO idle spin loop — driver wakes
+// ~21.6k/s (mailbox poll at 00001588) + ~190 Hz scans over the 64 channel
+// slots (loops at 6BF8/41EC/6AA4), ~2-3M instr/s of real periodic work.
+// The 18-22% [TIME] cost of UpdateArm is therefore interpreter/synthesis
+// overhead, not guest spinning — see arm_aica.cpp TP_ARM7/TP_AICA split.
 //#define ARM7_PROFILE_BLOCKS
 
 #ifdef ARM7_PROFILE_BLOCKS
