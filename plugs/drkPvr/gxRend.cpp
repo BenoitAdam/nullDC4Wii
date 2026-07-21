@@ -26,6 +26,17 @@ extern "C" int get_ratio_preset();
 
 #define ORIGINAL() (get_ratio_preset() == 0)
 #define FULLSCREEN() (get_ratio_preset() == 1)
+#define RATIO_AUTO() (get_ratio_preset() == 2)
+
+// Effective "fill the full framebuffer width" decision, shared by the 3D
+// viewport framing and the 2D framebuffer blit. Legacy modes honor the manual
+// ORIGINAL/FULLSCREEN choice; RATIO_AUTO() reads the console's aspect setting
+// (SKILL.md §3: query CONF_GetAspectRatio instead of hardcoding a TV shape):
+//   * 4:3 console  -> the TV shows all 640 px as 4:3, so DC content fills width.
+//   * 16:9 console -> the TV stretches 640 to 16:9, so pillarbox to a 4:3
+//                     sub-rect to keep correct proportions.
+// A CONF error (<0) is treated as not-4:3 -> pillarbox, a safe fallback.
+#define RATIO_FULL_WIDTH() (RATIO_AUTO() ? (CONF_GetAspectRatio() == CONF_ASPECT_4_3) : FULLSCREEN())
 
 // ADVANCED ALPHA (may be slower but haven't really noticed any difference)
 extern "C" int get_advanced_alpha_preset();
@@ -325,6 +336,7 @@ int frame_counter;
 #include "config.h"
 #include "gxRend.h"
 #include <gccore.h>
+#include <ogc/conf.h> // CONF_GetAspectRatio() for RATIO_AUTO()
 #include <malloc.h>
 #include <stdlib.h> // qsort, for TRANS_SORT()
 #include "regs.h"
@@ -4430,7 +4442,7 @@ void DoRender()
     s_clip_sx = 1.f; s_clip_sy = 1.f;
     s_clip_ox = 0.f; s_clip_oy = 0.f;
   }
-  else if (FULLSCREEN())
+  else if (RATIO_FULL_WIDTH())
   {
     GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
     s_clip_sx = (float)rmode->fbWidth / dc_width;
@@ -5965,7 +5977,7 @@ void PresentFramebuffer()
   // In 4:3 mode, draw the 2D framebuffer into a centred 4:3 sub-rectangle
   // so logo screens and 2D content have the same correct framing as 3D.
   float x0_2d, x1_2d;
-  if (FULLSCREEN())
+  if (RATIO_FULL_WIDTH())
   {
     x0_2d = 0.f;
     x1_2d = 640.f;

@@ -417,6 +417,7 @@ static int parse_ratio(const char* v)
 {
     if (key_eq(v, "original"))   return 0;
     if (key_eq(v, "fullscreen")) return 1;
+    if (key_eq(v, "auto"))       return 2;
     printf("[game_presets] Unknown ratio value: '%s'\n", v);
     return -1;
 }

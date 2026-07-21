@@ -43,7 +43,7 @@ extern "C" {
   int get_graphism_preset() { return g_graphism_preset; }
 }
 
-int g_ratio_preset = 1;        // 0=Original (4/3), 1=Fullscreen (default)
+int g_ratio_preset = 2;        // 0=Original (4/3 pillarbox), 1=Fullscreen (default), 2=Auto (picks by CONF_GetAspectRatio: 4:3 console->full width, 16:9 console->pillarbox)
 
 extern "C" {
   int get_ratio_preset() { return g_ratio_preset; }
@@ -696,7 +696,8 @@ void displayAccuracyMenu()
 
     printf("Ratio:\n");
     printf("> ORIGINAL   - 4/3 ratio\n");
-    printf("> FULLSCREEN\n\n");
+    printf("> FULLSCREEN\n");
+    printf("> AUTO       - match Wii system aspect (4:3 or 16:9)\n\n");
 
     printf("\nB: Back\n");
     printf("Note: Change settings if you experience issues or need more speed.\n");
@@ -874,6 +875,7 @@ bool displayOptionsMenu()
     switch (g_ratio_preset) {
       case 0: printf("[< ORIGINAL          >]"); break;
       case 1: printf("[< FULLSCREEN        >]"); break;
+      case 2: printf("[< AUTO              >]"); break;
     }
     printf("\n");
 
@@ -1273,7 +1275,7 @@ bool displayOptionsMenu()
       switch (selectedRow) {
         case OPT_GRAPHICS:  g_graphism_preset      = (g_graphism_preset      + 3) % 4; break;
         case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 2) % 3; break;
-        case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 2; break;
+        case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 2) % 3; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
@@ -1321,7 +1323,7 @@ bool displayOptionsMenu()
       switch (selectedRow) {
         case OPT_GRAPHICS:  g_graphism_preset      = (g_graphism_preset      + 1) % 4; break;
         case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 1) % 3; break;
-        case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 2; break;
+        case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 3; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
@@ -1977,6 +1979,7 @@ int main(int argc, wchar *argv[])
     switch(g_ratio_preset) {
       case 0: printf("ORIGINAL\n");   break;
       case 1: printf("FULLSCREEN\n"); break;
+      case 2: printf("AUTO\n");       break;
     }
     printf("Advanced Alpha : %s\n", g_advanced_alpha_preset ? "YES (DEBUG)" : "NO");
     printf("Decal Alpha Fix: %s\n", g_decal_alpha_preset ? "YES (DEFAULT)" : "NO");
