@@ -2,17 +2,17 @@
 //
 // Thin glue between nullAICA and the Wii audio backend.
 //
-// wii_audio.h uses a frame-driven model:
-//   - wii_audio_frame() is called once per video frame (from DoRender).
-//   - It internally runs 735 AICA timesteps (44100/60) and pushes the
-//     resulting samples into an ASND voice.
-//   - wii_audio_aica_ready() gates sample generation until AICA_Init()
-//     has fully completed.
+// The backend is sample-driven, not frame-driven:
+//   - AICA is stepped from the SH4 timeslice (armUpdateARM), which calls
+//     libAICA_TimeStep() once per generated 44.1 kHz sample.
+//   - Each AICA_Sample() ends by calling wii_WriteSample(), which forwards
+//     the mixed stereo sample to wii_audio_push_sample(). That fills a staging
+//     buffer the ASND voice callback ping-pongs into two playback buffers.
+//   - wii_audio_aica_ready() (called at the end of AICA_Init()) gates the sink
+//     until AICA is fully up; wii_WriteSample() is a safe no-op before then.
 //
-// Therefore this file has almost nothing to do: Init/Term just forward
-// to wii_audio_init/term, and wii_WriteSample() is a no-op because
-// sample collection is handled inside wii_audio.cpp's timestep loop,
-// which reads mixl/mixr directly after each AICA_Sample() call.
+// Init/Term just forward to wii_audio_init/term. wii_WriteSample() is the live
+// audio path — NOT a no-op. (wii_audio_frame() is the vestigial no-op now.)
 
 #include "wii_audiostream.h"
 #include "wii/wii_audio.h"

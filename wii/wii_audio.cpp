@@ -132,9 +132,10 @@ void wii_audio_push_sample(s16 l, s16 r)
         return;
     fill_pos = 0;
 
-    DCFlushRange(stage_buf, BUF_BYTES);
-
-    // Ensure the staging writes are visible before the callback sees the flag.
+    // No DCFlushRange here: the callback consumes stage_buf via a CPU memcpy
+    // (same core, same D-cache), not DMA. Only play_buf is ever handed to ASND,
+    // and that is flushed in the callback. A memory barrier — not a cache flush —
+    // is what's needed, to order the staging writes before the ready flag.
     __sync_synchronize();
     stage_ready = 1;
 
