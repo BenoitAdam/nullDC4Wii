@@ -258,6 +258,14 @@ extern "C" {
   int get_render_delay_preset() { return g_render_delay_preset; }
 }
 
+// ARM7 sound-CPU speed divider stage
+// 0=off (bias 20, ~10 MHz — legacy), 1=half (bias 40), 2=quarter (bias 80).
+int g_arm7_speed_preset = 0;
+
+extern "C" {
+  int get_arm7_speed_preset() { return g_arm7_speed_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -775,7 +783,8 @@ void displayAccuracyMenu()
 #define OPT_AUTOSORT    39
 #define OPT_RENDER_DELAY 40
 #define OPT_SHOW_FPS    41
-#define OPT_ROW_COUNT   42
+#define OPT_ARM7_SPEED  42
+#define OPT_ROW_COUNT   43
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -809,6 +818,7 @@ static int opt_row_page(int row)
     case OPT_AUTOSORT:
     case OPT_RENDER_DELAY:
     case OPT_SHOW_FPS:
+    case OPT_ARM7_SPEED:
       return 2;
     default:
       return 0;
@@ -1235,6 +1245,16 @@ bool displayOptionsMenu()
       case 1: printf("[< ON                >]"); break;
     }
     printf(" gameplay FPS and speed overlay");
+    printf("\n");
+
+    // --- Row: ARM7 sound-CPU speed divider (plugs/vbaARM/arm_aica.cpp) ---
+    printf("%s ARM7 SPEED     : ", (selectedRow == OPT_ARM7_SPEED) ? ">" : " ");
+    switch (g_arm7_speed_preset) {
+      case 0: printf("[< 10MHZ (DEFAULT)   >]"); break;
+      case 1: printf("[< 5MHZ (FASTER)     >]"); break;
+      case 2: printf("[< 2.5MHZ (RISKY)    >]"); break;
+    }
+    printf(" sound CPU clock - check audio!");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.56\n");
@@ -1314,6 +1334,7 @@ bool displayOptionsMenu()
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 4) % 5; break;
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
+        case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1362,6 +1383,7 @@ bool displayOptionsMenu()
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 1) % 5; break;
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
+        case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2025,6 +2047,12 @@ int main(int argc, wchar *argv[])
     printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
     printf("Render Delay   : %s\n", g_render_delay_preset ? "ON (HW-LIKE)" : "OFF (LEGACY)");
     printf("Show FPS       : %s\n", g_show_fps_overlay ? "ON" : "OFF");
+    printf("ARM7 Speed     : ");
+    switch (g_arm7_speed_preset) {
+      case 0: printf("10MHZ (DEFAULT)\n"); break;
+      case 1: printf("5MHZ (FASTER)\n");   break;
+      case 2: printf("2.5MHZ (RISKY)\n");  break;
+    }
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {
       case -1: printf("DEFAULT (SAVED)\n"); break;

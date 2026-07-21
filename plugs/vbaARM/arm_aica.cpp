@@ -8,6 +8,14 @@
 // stereo sample and pushes it to the audio sink via wii_WriteSample().
 extern void libAICA_TimeStep();
 
+// Per-game ARM7 speed preset (wii/game_presets.cpp `arm7_speed`): effective
+// bias = arm_sh4_bias << stage. 0=off (legacy ~10 MHz), 1=half (~5 MHz),
+// 2=quarter (~2.5 MHz). Safe headroom: the AICA driver free-runs a poll/scan
+// main loop far more often than command latency or envelope pacing need, so
+// halving/quartering its clock reclaims host CPU. Default off; per-game,
+// stage 2 has been found to break audio timing on real hardware.
+extern "C" int get_arm7_speed_preset();
+
 // SH4 cycles per AICA sample: 200 MHz / 44100 Hz ~= 4535.
 // We keep a fractional accumulator so the long-run rate is exact.
 #define AICA_SAMPLE_CYCLES (SH4_CLOCK / 44100)
@@ -25,8 +33,14 @@ void FASTCALL armUpdateARM(u32 Cycles)
 {
 	static u32 aica_cycle_acc = 0;
 
-	// Run the ARM7 for this slice (cycle budget scaled by arm_sh4_bias).
-	arm_Run(Cycles / arm_sh4_bias);
+	// Run the ARM7 for this slice (cycle budget scaled by arm_sh4_bias,
+	// further divided by the per-game arm7_speed preset stage).
+	{
+		int stage = get_arm7_speed_preset();
+		if (stage < 0) stage = 0;
+		if (stage > 3) stage = 3;
+		arm_Run((Cycles / arm_sh4_bias) >> stage);
+	}
 
 	// Advance the AICA sample generator by however many whole samples elapsed
 	// during this slice, carrying the remainder for exact long-run timing.
