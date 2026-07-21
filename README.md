@@ -643,6 +643,8 @@ All together, let's Cast the Dream.
 - skmp because he's the god
 - Senryoku, develloper of Deecy emulator
 - OriginalDave developer of Jocasta
+- Dolphin Team, would have been a pain to test on real hardware everytime otherwise
+- devkitPPC/Libogc
 - Everyone helping on emuvdev/discord
 - Jilou04 for constantly testing on Wii U and reporting
 - All testers and all futur testers
