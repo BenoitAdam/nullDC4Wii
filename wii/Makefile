@@ -51,6 +51,7 @@ SOURCES     += ../plugs/ImgReader/
 SOURCES     += ../plugs/gui/
 SOURCES     += ../plugs/drkPvr/
 SOURCES     += ../plugs/libwiidrc/ # Wii U GamePad (DRC) support in vWii mode
+SOURCES     += ../plugs/libsicksaxis/libsicksaxis/ # Sixaxis/DualShock3 (USB) support
 
 #--- Wii Specific & GUI ---
 SOURCES     += ../wii/

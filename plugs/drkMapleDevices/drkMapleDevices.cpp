@@ -16,14 +16,18 @@
 // - Added Wii U GamePad (DRC) support via libwiidrc (vWii mode, Player 1)
 // - Classic Controller: face buttons remapped by physical position, PLUS = Start
 //   (HOME kept as Start too), left stick fixed (raw 6-bit range, was read as 0-255)
+// - Added Sixaxis/DualShock3 (USB) support via libsicksaxis, one pad per port
 
 #include "plugins/plugin_header.h"
 #include <string.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <gccore.h>
 #include <wiiuse/wpad.h>
 #include "plugs/libwiidrc/wiidrc.h" // Wii U GamePad (vWii mode)
+#include "plugs/libsicksaxis/libsicksaxis/sicksaxis.h" // Sixaxis/DualShock3 (USB)
 #include "dc/dc.h"
 
 // Dreamcast controller button definitions
@@ -259,6 +263,112 @@ static inline void CheckExitCombination(u32 wiiButtons, u32 gcButtons, u32 class
     }
 }
 
+// ============================================================================
+// SIXAXIS / DUALSHOCK3 (USB) SUPPORT
+// ============================================================================
+//
+// A PS3 Sixaxis/DualShock3 connected via a Wii USB port is read through
+// libsicksaxis (raw USB HID control transfers). This needs IOS58 (Nintendo's
+// own "USB2" IOS, present on every retail Wii) reloaded once at boot, before
+// WPAD_Init() — see SS_Init(), called from wii/main.cpp. Buttons/stick are
+// translated to the WPAD_CLASSIC_BUTTON_* convention (same trick used for
+// the Wii U GamePad above), so the existing mapping logic handles them for
+// free. Unlike the GamePad (Player 1 only), each connected pad drives its
+// own matching port, up to MAX_CONTROLLERS.
+// ============================================================================
+
+static struct ss_device s_ssDev[MAX_CONTROLLERS];
+static bool s_ssInited = false;
+
+/**
+ * One-time boot init: reloads IOS58, brings up the USB stack, and readies
+ * one ss_device slot per controller port. Called from wii/main.cpp before
+ * WPAD_Init(). Harmless if no Sixaxis/DS3 is ever plugged in.
+ */
+void SS_Init()
+{
+    IOS_ReloadIOS(58);
+    usleep(100 * 1000);
+    USB_Initialize();
+    ss_init();
+    for (int i = 0; i < MAX_CONTROLLERS; i++)
+        ss_initialize(&s_ssDev[i]);
+    s_ssInited = true;
+}
+
+/**
+ * Claims any newly-plugged Sixaxis/DS3 and starts its async report reading.
+ * Cheap and idempotent — safe to call every frame/menu tick.
+ */
+void SS_PollConnections(void)
+{
+    if (!s_ssInited)
+        return;
+
+    for (int i = 0; i < MAX_CONTROLLERS; i++)
+    {
+        if (!ss_is_connected(&s_ssDev[i]))
+        {
+            if (ss_open(&s_ssDev[i]) > 0)
+                ss_start_reading(&s_ssDev[i]);
+        }
+    }
+}
+
+/**
+ * Translates a connected pad's current report to WPAD_CLASSIC_BUTTON_* bits.
+ * @param port Controller port (0 to MAX_CONTROLLERS-1)
+ */
+static u32 SS_ToClassicButtons(int port)
+{
+    if (!s_ssInited || !ss_is_connected(&s_ssDev[port]))
+        return 0;
+
+    const struct SS_BUTTONS *b = &s_ssDev[port].pad.buttons;
+    u32 w = 0;
+
+    if (b->up)       w |= WPAD_CLASSIC_BUTTON_UP;
+    if (b->down)     w |= WPAD_CLASSIC_BUTTON_DOWN;
+    if (b->left)     w |= WPAD_CLASSIC_BUTTON_LEFT;
+    if (b->right)    w |= WPAD_CLASSIC_BUTTON_RIGHT;
+    if (b->cross)    w |= WPAD_CLASSIC_BUTTON_B;
+    if (b->circle)   w |= WPAD_CLASSIC_BUTTON_A;
+    if (b->square)   w |= WPAD_CLASSIC_BUTTON_Y;
+    if (b->triangle) w |= WPAD_CLASSIC_BUTTON_X;
+    if (b->start)    w |= WPAD_CLASSIC_BUTTON_PLUS;
+    if (b->select)   w |= WPAD_CLASSIC_BUTTON_MINUS;
+    if (b->PS)       w |= WPAD_CLASSIC_BUTTON_HOME;
+    if (b->L1 || b->L2) w |= WPAD_CLASSIC_BUTTON_FULL_L;
+    if (b->R1 || b->R2) w |= WPAD_CLASSIC_BUTTON_FULL_R;
+
+    return w;
+}
+
+/**
+ * Buttons held across every connected pad, OR'd together. Used by
+ * wii/main.cpp's menu-navigation helper (mirrors DRC_ButtonsHeldWPAD).
+ */
+u32 SS_GetClassicButtonsHeld(void)
+{
+    u32 held = 0;
+    for (int i = 0; i < MAX_CONTROLLERS; i++)
+        held |= SS_ToClassicButtons(i);
+    return held;
+}
+
+/**
+ * Number of currently-connected Sixaxis/DS3 pads (for the CONTROLS menu
+ * status line).
+ */
+int SS_ConnectedCount(void)
+{
+    int count = 0;
+    for (int i = 0; i < MAX_CONTROLLERS; i++)
+        if (ss_is_connected(&s_ssDev[i]))
+            count++;
+    return count;
+}
+
 /**
  * Updates the input state for a specific controller port
  * Reads from Wii Remote (+ Nunchuck/Classic Controller expansion) and GameCube
@@ -345,6 +455,26 @@ void UpdateInputState(u32 port)
             WiiDRC_ShutdownRequested())
         {
             exit(0);
+        }
+    }
+
+    // Sixaxis/DualShock3 (USB) — unlike the GamePad above, each connected
+    // pad drives its own matching port rather than only Player 1. The
+    // actual USB device-list scan (picking up newly-plugged pads) only
+    // needs to run once per frame, so it piggybacks on port 0's call.
+    if (s_ssInited)
+    {
+        if (port == 0)
+            SS_PollConnections();
+
+        classicButtons |= SS_ToClassicButtons(port);
+
+        // Left stick (0-255, center ~128, same convention as the Nunchuck).
+        // Only used when no Wiimote expansion stick is deflected.
+        if (ss_is_connected(&s_ssDev[port]) && expStickX == 0 && expStickY == 0)
+        {
+            expStickX = (s32)s_ssDev[port].pad.left_analog.x - 128;
+            expStickY = (s32)s_ssDev[port].pad.left_analog.y - 128;
         }
     }
 

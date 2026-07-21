@@ -3,6 +3,10 @@
 
 #include <gccore.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 #define SS_HEAP_SIZE    4096
 #define SS_MAX_DEV      8
@@ -139,5 +143,8 @@ int ss_get_bd_address(struct ss_device *dev, uint8_t *mac);
 int ss_get_paired_mac(struct ss_device *dev, uint8_t *mac);
 int ss_set_paired_mac(struct ss_device *dev, const uint8_t *mac);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif

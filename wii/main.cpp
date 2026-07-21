@@ -21,6 +21,16 @@
 // *** WII U GAMEPAD (DRC) SUPPORT (vWii mode) ***
 #include "plugs/libwiidrc/wiidrc.h"
 
+// *** SIXAXIS / DUALSHOCK3 (USB) SUPPORT ***
+// Implemented in plugs/drkMapleDevices/drkMapleDevices.cpp, next to the
+// in-game controller mapping it feeds. SS_Init() reloads IOS58 and must run
+// before WPAD_Init(); the rest are thin menu-navigation helpers, same role
+// as the WiiDRC_* calls above.
+void SS_Init(void);
+void SS_PollConnections(void);
+u32 SS_GetClassicButtonsHeld(void);
+int SS_ConnectedCount(void);
+
 // *** GAME PRESETS ***
 #include "wii/game_presets.h"
 
@@ -614,6 +624,34 @@ static u32 CLASSIC_ToWPAD(u32 wpad)
 }
 
 // ============================================================================
+// SIXAXIS / DUALSHOCK3 (USB) MENU INPUT
+// ============================================================================
+//
+// Every connected pad is OR'd together for menu navigation (menus are
+// single-player). CLASSIC_ToWPAD() above finishes the translation to the
+// WPAD_BUTTON_* convention, same as it does for a real Classic Controller.
+// ============================================================================
+
+static u32 s_ssMenuPrevClassic = 0;
+
+// Scans for newly-connected pads and returns freshly pressed buttons as
+// WPAD bits. Call exactly once per menu loop iteration.
+static u32 SS_ButtonsDownWPAD()
+{
+  SS_PollConnections();
+  u32 classicNow = SS_GetClassicButtonsHeld();
+  u32 classicDown = classicNow & ~s_ssMenuPrevClassic;
+  s_ssMenuPrevClassic = classicNow;
+  return CLASSIC_ToWPAD(classicDown);
+}
+
+// Held buttons from the most recent report (does not poll for connections).
+static u32 SS_ButtonsHeldWPAD()
+{
+  return CLASSIC_ToWPAD(SS_GetClassicButtonsHeld());
+}
+
+// ============================================================================
 // BIOS PRESENCE CHECK
 // ============================================================================
 //
@@ -670,7 +708,7 @@ void checkBiosFiles()
     while (true)
     {
       WPAD_ScanPads();
-      if (WPAD_ButtonsDown(0) != 0 || DRC_ButtonsDownWPAD() != 0)
+      if (WPAD_ButtonsDown(0) != 0 || DRC_ButtonsDownWPAD() != 0 || SS_ButtonsDownWPAD() != 0)
         break;
       VIDEO_WaitVSync();
     }
@@ -713,7 +751,7 @@ void displayAccuracyMenu()
     WPAD_ScanPads();
     PAD_ScanPads();
     u32 wmPressed = WPAD_ButtonsDown(0);
-    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD()
+    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD() | SS_ButtonsDownWPAD()
                 | ((PAD_ButtonsDown(0) & PAD_BUTTON_B) ? WPAD_BUTTON_B : 0);
 
     if (pressed & WPAD_BUTTON_B)
@@ -844,12 +882,14 @@ bool displayOptionsMenu()
   // before the menu is even shown. Wait for A to be released first.
   while ((WPAD_ButtonsHeld(0) & (WPAD_BUTTON_A | WPAD_CLASSIC_BUTTON_A))
          || (PAD_ButtonsHeld(0) & PAD_BUTTON_A)
-         || (DRC_ButtonsHeldWPAD() & WPAD_BUTTON_A))
+         || (DRC_ButtonsHeldWPAD() & WPAD_BUTTON_A)
+         || (SS_ButtonsHeldWPAD() & WPAD_BUTTON_A))
   {
     WPAD_ScanPads();
     PAD_ScanPads();
     if (WiiDRC_Inited())
       WiiDRC_ScanPads();
+    SS_PollConnections();
     VIDEO_WaitVSync();
   }
 
@@ -1264,7 +1304,7 @@ bool displayOptionsMenu()
     WPAD_ScanPads();
     PAD_ScanPads();
     u32 wmPressed = WPAD_ButtonsDown(0);
-    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD();
+    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD() | SS_ButtonsDownWPAD();
 
     // GameCube controller (Player 1) — same mapping convention as in-game
     // input (see drkMapleDevices.cpp): Y=button1, X=button2.
@@ -1527,12 +1567,14 @@ bool displayControlsMenu()
   // bleed through as an instant LAUNCH here.
   while ((WPAD_ButtonsHeld(0) & (WPAD_BUTTON_A | WPAD_CLASSIC_BUTTON_A))
          || (PAD_ButtonsHeld(0) & PAD_BUTTON_A)
-         || (DRC_ButtonsHeldWPAD() & WPAD_BUTTON_A))
+         || (DRC_ButtonsHeldWPAD() & WPAD_BUTTON_A)
+         || (SS_ButtonsHeldWPAD() & WPAD_BUTTON_A))
   {
     WPAD_ScanPads();
     PAD_ScanPads();
     if (WiiDRC_Inited())
       WiiDRC_ScanPads();
+    SS_PollConnections();
     VIDEO_WaitVSync();
   }
 
@@ -1584,10 +1626,19 @@ bool displayControlsMenu()
     printf("    WII U GAMEPAD    : %s\n",
            WiiDRC_Inited() ? "[DETECTED]     (drives Player 1)" : "[NOT DETECTED]");
 
+    // --- Row 8: Sixaxis/DualShock3 (USB) status (display only) ---
+    {
+      int ssCount = SS_ConnectedCount();
+      if (ssCount > 0)
+        printf("    SIXAXIS/DS3 (USB): [DETECTED x%d] (drives matching port)\n", ssCount);
+      else
+        printf("    SIXAXIS/DS3 (USB): [NOT DETECTED]\n");
+    }
+
     WPAD_ScanPads();
     PAD_ScanPads();
     u32 wmPressed = WPAD_ButtonsDown(0);
-    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD();
+    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD() | SS_ButtonsDownWPAD();
 
     // GameCube controller (Player 1) — same mapping convention as the
     // other menus (see displayOptionsMenu).
@@ -1695,7 +1746,7 @@ int displayMenuAndSelectFile()
     WPAD_ScanPads();
     PAD_ScanPads();
     u32 wmPressed = WPAD_ButtonsDown(0);
-    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD();
+    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD() | SS_ButtonsDownWPAD();
 
     // GameCube controller (Player 1) — same mapping convention as in-game
     // input (see drkMapleDevices.cpp): Y=button1, X=button2.
@@ -1811,9 +1862,9 @@ int displayMenuAndSelectFile()
       }
     }
     else if (((WPAD_ButtonsHeld(0) | CLASSIC_ToWPAD(WPAD_ButtonsHeld(0))
-               | DRC_ButtonsHeldWPAD()) & WPAD_BUTTON_PLUS) &&
+               | DRC_ButtonsHeldWPAD() | SS_ButtonsHeldWPAD()) & WPAD_BUTTON_PLUS) &&
              ((WPAD_ButtonsHeld(0) | CLASSIC_ToWPAD(WPAD_ButtonsHeld(0))
-               | DRC_ButtonsHeldWPAD()) & WPAD_BUTTON_MINUS))
+               | DRC_ButtonsHeldWPAD() | SS_ButtonsHeldWPAD()) & WPAD_BUTTON_MINUS))
     {
       return -1; // Exit
     }
@@ -1846,6 +1897,16 @@ void handleBIOSBoot()
 
 int main(int argc, wchar *argv[])
 {
+  // Sixaxis/DualShock3 (USB): reloads IOS58 for raw USB HID access. Done as
+  // the very first thing in main(), before any other subsystem claims IOS
+  // resources under whatever IOS the loader started us with — same order
+  // libsicksaxis's own sample uses. IOS58 is Nintendo's own "USB2" IOS and
+  // supports Bluetooth (Wiimote) fine, but this is the one part of this
+  // feature that genuinely changes system state at boot — confirm Wiimote
+  // pairing, audio, and USB/SD storage all still behave normally on
+  // real hardware after adding this.
+  SS_Init();
+
   VIDEO_Init();
 
   ASND_Init();
