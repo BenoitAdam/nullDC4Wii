@@ -724,7 +724,15 @@ void ngen_CC_Finish(shil_opcode* op)
 }
 void DoStatic(u32 pc)
 {
-	ppc_li(ppc_rarg0,pc);
+	// MUST be exactly 3 instructions (12 bytes): ngen_LinkBlock_Static_stub
+	// computes its patch site as LR-12, i.e. the START of this sequence, and
+	// overwrites it with a direct `b compiled_target`. ppc_li is variable
+	// length (1 insn when the value fits s16 OR its low half is 0 — e.g. a
+	// block at 0x8C010000), which would make the stub patch the instruction
+	// BEFORE the sequence — in a BET_Cond end, that is the other exit path's
+	// branch. So emit the fixed addis+ori pair unconditionally.
+	ppc_addis(ppc_rarg0,0,pc>>16);
+	ppc_ori(ppc_rarg0,ppc_rarg0,(u16)pc);
 	ppc_call(ngen_LinkBlock_Static_stub);
 }
 

@@ -122,6 +122,15 @@ Handles different block ending types:
 - Checks interrupt flag
 - Conditionally branches to interrupt handler
 
+#### Static Link Patch Sites (`DoStatic`)
+
+`DoStatic()` must emit a fixed 12-byte `addis+ori+bl` sequence.
+`ngen_LinkBlock_Static` computes its patch site as LR-12 and overwrites it
+with a direct `b compiled_target`, so a variable-length `ppc_li` (which
+collapses to one instruction when the target's low half is zero, e.g. a block
+at `0x8C010000`) would make the patcher clobber the instruction *before* the
+sequence — in a `BET_Cond` block end, that is the other exit path's branch.
+
 ### 5. Operation Handling
 
 #### Binary Operations (Integer)
