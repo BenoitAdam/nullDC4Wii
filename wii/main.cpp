@@ -53,7 +53,7 @@ extern "C" {
   int get_graphism_preset() { return g_graphism_preset; }
 }
 
-int g_ratio_preset = 2;        // 0=Original (4/3 pillarbox), 1=Fullscreen (default), 2=Auto (picks by CONF_GetAspectRatio: 4:3 console->full width, 16:9 console->pillarbox)
+int g_ratio_preset = 1;        // 0=Original (4/3 pillarbox), 1=Fullscreen (default), 2=Auto (picks by CONF_GetAspectRatio: 4:3 console->full width, 16:9 console->pillarbox)
 
 extern "C" {
   int get_ratio_preset() { return g_ratio_preset; }
@@ -250,7 +250,7 @@ extern "C" {
   int get_async_render_preset() { return g_async_render_preset; }
 }
 
-int g_tmem_cache_preset = 0; // 0=off (full GPU texture cache invalidate every frame, legacy), 1=on (invalidate only on texture re-decode; unchanged textures stay cached in TMEM across frames)
+int g_tmem_cache_preset = 1; // 0=off (full GPU texture cache invalidate every frame, legacy), 1=on (invalidate only on texture re-decode; unchanged textures stay cached in TMEM across frames)
 
 extern "C" {
   int get_tmem_cache_preset() { return g_tmem_cache_preset; }
@@ -1007,9 +1007,9 @@ bool displayOptionsMenu()
     printf("%s ASYNC RENDER   : ", (selectedRow == OPT_ASYNC_RENDER) ? ">" : " ");
     switch (g_async_render_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FASTER?)      >]"); break;
+      case 1: printf("[< ON (FASTER)       >]"); break;
     }
-    printf(" uses GPU, cost 1 frame input-lag");
+    printf(" use GPU, cost 1 frame input-lag");
     printf("\n");
 
     // --- Row: Frameskipping ---
@@ -1102,7 +1102,7 @@ bool displayOptionsMenu()
     printf(" 2P viewports, Daytona USA");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: More Info | 2: Next Page | alpha 0.57\n");
+    printf("A: Launch | B: Back | 1: More Info | 2: Next Page | alpha 0.58\n");
     } // end page 0
 
     if (optionsPage == 1) {
@@ -1191,7 +1191,7 @@ bool displayOptionsMenu()
     printf(" SF3 double impact=384");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.57\n");
+    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.58\n");
     } // end page 1
 
     if (optionsPage == 2) {
@@ -1297,7 +1297,7 @@ bool displayOptionsMenu()
     printf(" sound CPU clock - check audio!");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.57\n");
+    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.58\n");
     } // end page 2
 
 
@@ -1715,7 +1715,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - alpha 0.57   ");
+    printf("\nNullDC4Wii - alpha 0.58   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");
