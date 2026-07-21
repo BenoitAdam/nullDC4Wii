@@ -127,6 +127,15 @@ void cdi_DriveGetTocInfo(TocInfo* toc, DiskArea area)
         // No high-density area on a standard CD — return empty
         printf("[CDI] GetTocInfo(DoubleDensity) => empty\n");
         memset(toc, 0xFF, sizeof(TocInfo));
+        // ConvToc() indexes tracks[FistTrack-1]/[LastTrack-1] unconditionally.
+        // The memset above also stomps these to 0xFF (255), which would index
+        // tracks[254] -- ~2KB past the 99-entry array, off the end of the
+        // stack-allocated TocInfo in GetDriveToc(). Keep them in-bounds;
+        // tracks[0] is still the same 0xFF "empty" sentinel used elsewhere
+        // (e.g. iso9660.cpp's unused track slots), so the returned entry is
+        // still nonsense-but-safe, just no longer a wild stack read.
+        toc->FistTrack       = 1;
+        toc->LastTrack       = 1;
         toc->LeadOut.FAD     = cdi_leadout_fad;
         toc->LeadOut.Control = 0x04;
         toc->LeadOut.Addr    = 0;
