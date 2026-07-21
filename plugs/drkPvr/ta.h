@@ -413,7 +413,19 @@ public:
 					{
 						//printf("VTX:0x%08X\n",VerxexDataFP);
 						verify(VerxexDataFP!=0);
-						data=VerxexDataFP(data,data_end);
+						// VerxexDataFP is only set by a preceding Polygon/ModVol/Sprite
+						// header; it's null until the first real header of a list is
+						// seen. verify() no-ops when DO_VERIFY is off (this build), so
+						// without this guard, vertex-typed data arriving before any
+						// header -- e.g. stale/uninitialized RAM (0xFFFFFFFF decodes as
+						// ParaType 7) DMA'd in as the very first TA submission -- calls
+						// through a null function pointer and crashes (Rez CDI boot).
+						// Real hardware has no such data race to begin with; skip the
+						// record instead of dereferencing null.
+						if (VerxexDataFP)
+							data=VerxexDataFP(data,data_end);
+						else
+							data+=SZ32;
 					}
 					break;
 
