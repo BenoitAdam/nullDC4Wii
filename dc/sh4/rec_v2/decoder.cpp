@@ -1154,6 +1154,7 @@ DecodedBlock* dec_DecodeBlock(u32 startpc,fpscr_type fpu_cfg,u32 max_cycles)
 	}
 
 _end:
+	block.sh4_code_size=state.cpu.rpc-block.start;
 	block.NextBlock=state.NextAddr;
 	block.BranchBlock=state.JumpAddr;
 	block.BlockType=state.BlockType;

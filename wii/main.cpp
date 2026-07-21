@@ -276,6 +276,17 @@ extern "C" {
   int get_arm7_speed_preset() { return g_arm7_speed_preset; }
 }
 
+// JIT block-check guard (self-modifying code protection).
+// Emits a source-byte compare at each guarded block's entry; a mismatch drops
+// the stale translation and recompiles (rdv_BlockCheckFail).
+// 0=off (legacy, no guards), 1=known self-modifying addresses only,
+// 2=every RAM block (slow — diagnosis only).
+int g_block_check_preset = 0;
+
+extern "C" {
+  int get_block_check_preset() { return g_block_check_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -822,7 +833,8 @@ void displayAccuracyMenu()
 #define OPT_RENDER_DELAY 40
 #define OPT_SHOW_FPS    41
 #define OPT_ARM7_SPEED  42
-#define OPT_ROW_COUNT   43
+#define OPT_BLOCK_CHECK 43
+#define OPT_ROW_COUNT   44
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -857,6 +869,7 @@ static int opt_row_page(int row)
     case OPT_RENDER_DELAY:
     case OPT_SHOW_FPS:
     case OPT_ARM7_SPEED:
+    case OPT_BLOCK_CHECK:
       return 2;
     default:
       return 0;
@@ -1295,6 +1308,16 @@ bool displayOptionsMenu()
       case 2: printf("[< 2.5MHZ (RISKY)    >]"); break;
     }
     printf(" sound CPU clock - check audio!");
+    printf("\n");
+
+    // --- Row: JIT block-check guard (dc/sh4/rec_v2/driver.cpp DoCheck) ---
+    printf("%s BLOCK CHECK    : ", (selectedRow == OPT_BLOCK_CHECK) ? ">" : " ");
+    switch (g_block_check_preset) {
+      case 0: printf("[< OFF (DEFAULT)     >]"); break;
+      case 1: printf("[< KNOWN             >]"); break;
+      case 2: printf("[< ALL RAM (SLOW)    >]"); break;
+    }
+    printf(" self-modifying code guard");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.58\n");
@@ -1375,6 +1398,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
+        case OPT_BLOCK_CHECK:    g_block_check_preset     = (g_block_check_preset     + 2) % 3; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1424,6 +1448,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
+        case OPT_BLOCK_CHECK:    g_block_check_preset     = (g_block_check_preset     + 1) % 3; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2113,6 +2138,12 @@ int main(int argc, wchar *argv[])
       case 0: printf("10MHZ (DEFAULT)\n"); break;
       case 1: printf("5MHZ (FASTER)\n");   break;
       case 2: printf("2.5MHZ (RISKY)\n");  break;
+    }
+    printf("Block Check    : ");
+    switch (g_block_check_preset) {
+      case 0: printf("OFF (DEFAULT)\n");   break;
+      case 1: printf("KNOWN\n");           break;
+      case 2: printf("ALL RAM (SLOW)\n");  break;
     }
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {

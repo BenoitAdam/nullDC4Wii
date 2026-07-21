@@ -37,6 +37,7 @@ public:
 	u32 start;	//entry point, the block may be non-linear in memory
 	u32 cycles;
 	u32 opcodes;
+	u32 sh4_code_size;	//bytes of SH4 source consumed, for the block-check guard
 
 	u32 BranchBlock;	//STATIC_*,COND_*: jump target
 	u32 NextBlock;		//*_CALL,COND_*: next block (by position)

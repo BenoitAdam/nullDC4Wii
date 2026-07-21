@@ -193,6 +193,11 @@ void* loop_do_update_write;
 void (*loop_code)() ;
 void (*ngen_FailedToFindBlock)();
 
+// Defined below — emits the addis half of an absolute address into rD and
+// returns the low 16-bit displacement. Forward-declared so the block-check
+// guard in ngen_Begin() can use it.
+u32 ppc_addr_high(u32 rD,void* ptr);
+
 struct
 {
 	bool has_jcond;
@@ -216,6 +221,42 @@ void reg_reload_all();
 void ngen_Begin(DecodedBlock* block,bool force_checks)
 {
 	compile_state.Reset();
+
+	// ---------------------------------------------------------------------
+	// Block-check guard (self-modifying code protection)
+	//
+	// force_checks comes from DoCheck() in driver.cpp, which is gated on the
+	// block_check preset. When set, re-read the first byte of this block's SH4
+	// source at entry and compare it against the value present at compile time.
+	// A mismatch means the game overwrote its own code, so the translation is
+	// stale — bail to rdv_BlockCheckFail, which clears the cache (dropping the
+	// statically-patched links along with it) and recompiles from live memory.
+	//
+	// Emitted BEFORE the cycle decrement so a stale block never bills cycles.
+	// rarg0/rarg1 are scratch at block entry (rarg0 is next_pc, which the
+	// cycle-underflow path below overwrites anyway), so both are free here.
+	// ---------------------------------------------------------------------
+	if (force_checks && ngen_BlockCheckFail_stub)
+	{
+		u8* ptr = GetMemPtr(block->start, block->sh4_code_size ? block->sh4_code_size : 4);
+
+		// DoCheck already probed this, but the mapping is the thing that makes
+		// the compare safe — never emit a load we cannot justify.
+		if (ptr)
+		{
+			u32 lo = ppc_addr_high(ppc_rarg1,(void*)ptr);
+			ppc_lbz(ppc_rarg1,ppc_rarg1,lo);		// rarg1 = current source byte
+			ppc_cmpli(ppc_cr0,ppc_rarg1,*ptr,0);	// vs the byte we compiled from
+
+			ppc_label* check_ok=ppc_CreateLabel();
+			ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq -> check_ok
+
+			ppc_li(ppc_rarg0,block->start);			// rdv_BlockCheckFail(pc)
+			ppc_jump(ngen_BlockCheckFail_stub);
+
+			check_ok->MarkLabel();
+		}
+	}
 
 	ppc_addic(ppc_cycles,ppc_cycles,-block->cycles,1);
 	

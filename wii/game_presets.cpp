@@ -47,6 +47,17 @@
                                 (off/legacy); per-game, verify music/SFX
                                 timing by ear before keeping — stage 2 has
                                 been found to break audio timing.
+        block_check=1       <- 0/1/2, JIT self-modifying-code guard. The SH4
+                                recompiler caches translated blocks; if a game
+                                overwrites its own code the cached translation
+                                becomes stale and the CPU runs garbage. 1 emits
+                                a source-byte compare at block entry for the
+                                addresses known to self-modify (DOA2LE, Shenmue
+                                1/2); 2 guards every RAM block, which is slow
+                                but catches unknown cases. Default 0 (off,
+                                legacy). Note the boot-entry cache flush at
+                                0x..08300 / 0x..10000 is unconditional and is
+                                NOT controlled by this key.
         vertex_color_fix=on <- on/off, real PVR Intensity (Gouraud) shading: each
                                 vertex's scalar intensity is multiplied by the
                                 polygon's FaceColor (see gxRend.cpp
@@ -270,6 +281,7 @@ extern int g_isp_depth_func_preset;
 extern int g_isp_cull_preset;
 extern int g_audio_buffers_preset;
 extern int g_arm7_speed_preset;
+extern int g_block_check_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -324,6 +336,7 @@ struct GamePreset
     int isp_cull;
     int audio_buffers;
     int arm7_speed;
+    int block_check;
 };
 
 // Nothing from the .cfg stays in RAM: game_presets_apply() streams the file
@@ -565,6 +578,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "isp_cull"))       p->isp_cull       = atoi(val);
     else if (key_eq(key, "audio_buffers"))  p->audio_buffers  = parse_audio_buffers(val);
     else if (key_eq(key, "arm7_speed"))     p->arm7_speed     = atoi(val);
+    else if (key_eq(key, "block_check"))    p->block_check    = atoi(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -605,6 +619,7 @@ static void preset_clear(GamePreset* cur)
     cur->isp_cull = -1;
     cur->audio_buffers = -2; // -2 = absent (leave live state alone); -1 is a real value here (see parse_audio_buffers)
     cur->arm7_speed = -1;
+    cur->block_check = -1;
 }
 
 // Apply every set field of a preset slot onto the live g_*_preset globals
@@ -650,6 +665,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->isp_cull       >= 0) { g_isp_cull_preset      = p->isp_cull;        printf("  isp_cull       -> %d\n", p->isp_cull);       }
     if (p->audio_buffers  != -2) { g_audio_buffers_preset = p->audio_buffers;  printf("  audio_buffers  -> %d\n", p->audio_buffers);  }
     if (p->arm7_speed     >= 0) { g_arm7_speed_preset     = p->arm7_speed;     printf("  arm7_speed     -> %d\n", p->arm7_speed);     }
+    if (p->block_check    >= 0) { g_block_check_preset    = p->block_check;    printf("  block_check    -> %d\n", p->block_check);    }
 }
 
 // ---------------------------------------------------------------------------

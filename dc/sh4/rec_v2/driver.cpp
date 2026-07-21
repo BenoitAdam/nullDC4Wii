@@ -53,6 +53,8 @@
 
 // Defined in main.cpp — returns 1 when debug loop / boot-trace is active
 extern "C" int get_debug_loop();
+// Defined in main.cpp — 0=off, 1=known self-modifying addresses, 2=all RAM blocks
+extern "C" int get_block_check_preset();
 
 // ============================================================================
 // Optional performance counters
@@ -250,17 +252,45 @@ void recSh4_ClearCache()
 // ============================================================================
 void AnalyseBlock(DecodedBlock* blk);
 
-// DoCheck: enable extra verification for known-tricky addresses.
-// Only called in debug builds / when block-check is active.
-static bool DoCheck(u32 pc)
+// DoCheck: should this block get a runtime self-check guard emitted at its
+// entry (see ngen_Begin)? The guard re-reads the first byte of the block's SH4
+// source and bails to rdv_BlockCheckFail if it no longer matches what we
+// compiled — i.e. the game overwrote its own code.
+//
+// Controlled by the block_check preset:
+//   0 = off      — no guards at all (legacy behaviour)
+//   1 = known    — guard only the addresses known to self-modify (default when on)
+//   2 = all RAM  — guard every block that lives in RAM (slow, for diagnosis)
+//
+// Note the GetMemPtr(pc, len) probe: a block straddling the end of a mapped
+// region has no contiguous host pointer to compare against, so it must not be
+// guarded. This is why the decoder now records sh4_code_size.
+static bool DoCheck(u32 pc, u32 len)
 {
+	const int mode = get_block_check_preset();
+	if (mode == 0)
+		return false;
+
+	// No contiguous host mapping for this block (BIOS, MMIO, region edge) —
+	// nothing safe to compare against.
+	if (!GetMemPtr(pc, len))
+		return false;
+
 	if (!IsOnRam(pc))
 		return false;
 
+	if (mode >= 2)
+		return true;
+
 	switch (pc & 0xFFFFFF)
 	{
+		// DOA2LE
 		case 0x3DAFC6:
 		case 0x3C83F8:
+		// Shenmue 2
+		case 0x348000:
+		// Shenmue
+		case 0x41860E:
 			return true;
 		default:
 			return false;
@@ -334,7 +364,7 @@ DynarecCodeEntry* rdv_CompileBlock(u32 bpc)
 	void* code_start = emit_GetCCPtr();
 #endif
 
-	DynarecCodeEntry* rv = ngen_Compile(blk, DoCheck(blk->start));
+	DynarecCodeEntry* rv = ngen_Compile(blk, DoCheck(blk->start, blk->sh4_code_size));
 
 #if HOST_OS == OS_WII
 	if (rv)
@@ -359,21 +389,27 @@ DynarecCodeEntry* rdv_CompileBlock(u32 bpc)
 // Compiles the block at next_pc, registers it with the block manager, and
 // returns its entry point.
 //
-// Boot detection note (BUG FIX):
-//   The previous version called recSh4_ClearCache() AFTER bm_AddCode(),
-//   which immediately invalidated the block we just added — causing
-//   rdv_FailedToFindBlock to be called on the very next execution of that
-//   address, wasting a full compile cycle every boot iteration.
+// Boot detection (CORRECTNESS — do not gate behind a debug flag):
+//   0x..08300 is the IP.BIN bootstrap entry and 0x..10000 is the 1ST_READ.BIN
+//   entry. IP.BIN draws the SEGA licence screen, loads the game binary OVER
+//   that RAM, then jumps to 0x8C010000. Every block we compiled from the
+//   pre-load contents of that RAM is now stale, so the cache MUST be dropped
+//   on this transition or the JIT keeps executing translations of code that no
+//   longer exists (symptom: logo renders, then the game stalls while vblank —
+//   and therefore the FPS counter — keeps running).
 //
-//   Fix: boot-triggered cache clears are now DEFERRED — we set a flag and
-//   clear at the top of the NEXT compile cycle, after the current block has
-//   been safely executed at least once.
+//   History: this used to clear AFTER bm_AddCode(), which invalidated the block
+//   just added and forced an immediate recompile. That was then "fixed" by
+//   DEFERRING the clear to the next compile cycle — but that is unsound: if
+//   execution settles entirely into already-cached stale blocks, no further
+//   compile ever happens and the deferred clear never fires at all.
+//
+//   Correct order is to clear BEFORE compiling. The block we then compile is
+//   built from post-load memory and stays valid, so there is no wasted compile
+//   and no window where stale blocks remain reachable. Self-limiting: this path
+//   is only reached on a cache miss, so once the boot block is cached again we
+//   stop clearing.
 // ============================================================================
-
-// Set to true when a boot address is detected; acted on next compile cycle.
-static bool s_deferred_cache_clear = false;
-// PC that triggered the deferred clear (for logging)
-static u32  s_deferred_clear_pc    = 0;
 
 u32 rdv_FailedToFindBlock_pc;
 
@@ -381,16 +417,14 @@ DynarecCodeEntry* rdv_CompilePC()
 {
 	u32 pc = next_pc;
 
-	// Handle any deferred cache clear from a previous boot-detect event.
-	// This happens at the START of a new compile, not after adding a block,
-	// so we never immediately invalidate the block we are about to create.
-	if (s_deferred_cache_clear)
+	// Drop every stale translation before compiling the boot entry block.
 	{
-		printf("recSh4: deferred cache clear (triggered by boot at %08X)\n",
-		       s_deferred_clear_pc);
-		s_deferred_cache_clear = false;
-		s_deferred_clear_pc    = 0;
-		recSh4_ClearCache();
+		const u32 masked = pc & 0xFFFFFF;
+		if (masked == 0x08300 || masked == 0x10000)
+		{
+			printf("recSh4: boot address %08X reached, clearing block cache\n", pc);
+			recSh4_ClearCache();
+		}
 	}
 
 	DynarecCodeEntry* rv = rdv_CompileBlock(pc);
@@ -411,20 +445,6 @@ DynarecCodeEntry* rdv_CompilePC()
 
 	bm_AddCode(pc, rv);
 
-	// Boot detection — schedule a cache clear for NEXT compile, not now.
-	// This preserves the block we just registered so the current execution
-	// context can use it without hitting rdv_FailedToFindBlock immediately.
-	if (get_debug_loop() == 1)
-	{
-		u32 masked = pc & 0xFFFFFF;
-		if (masked == 0x08300 || masked == 0x10000)
-		{
-			printf("recSh4: boot address %08X detected, scheduling deferred cache clear\n", pc);
-			s_deferred_cache_clear = true;
-			s_deferred_clear_pc    = pc;
-		}
-	}
-
 	return rv;
 }
 
@@ -442,6 +462,19 @@ DynarecCodeEntry* rdv_FailedToFindBlock()
 	return rdv_CompilePC();
 }
 
+// Entered from a block's entry guard (see ngen_Begin) when the SH4 source no
+// longer matches what we compiled — the game rewrote its own code.
+//
+// This does a FULL cache clear rather than just bm_RemoveCode(pc). Reason:
+// ngen_LinkBlock_Static() permanently patches a caller's exit into a direct
+// `b <target code address>`. Dropping only the map entry would leave those
+// patched branches pointing at the stale code, whose guard would fail again on
+// every execution — recompiling the same block forever. A full clear discards
+// the patched links along with the code, so the next execution re-links to the
+// fresh translation.
+//
+// The block we compile below is built after the clear, so it stays valid for
+// the return into it.
 DynarecCodeEntry* FASTCALL rdv_BlockCheckFail(u32 pc)
 {
 	next_pc = pc;
@@ -450,9 +483,9 @@ DynarecCodeEntry* FASTCALL rdv_BlockCheckFail(u32 pc)
 	perf_block_check_fails++;
 #endif
 
-	printf("recSh4: block check fail at %08X, recompiling\n", pc);
+	printf("recSh4: block check fail at %08X, clearing cache and recompiling\n", pc);
 
-	bm_RemoveCode(pc);
+	recSh4_ClearCache();
 	return rdv_CompilePC();
 }
 
@@ -526,9 +559,6 @@ void recSh4_Init()
 
 	Sh4_int_Init();
 	bm_Init();
-
-	s_deferred_cache_clear = false;
-	s_deferred_clear_pc    = 0;
 
 #ifdef ENABLE_PERF_MONITORING
 	perf_blocks_compiled   = 0;
