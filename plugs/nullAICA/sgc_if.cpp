@@ -1019,7 +1019,17 @@ void AICA_Sample()
         dsp_step();
         for (int i = 0; i < 16; i++)
         {
+            // EFREG[i] is a u32 whose low 16 bits hold the effect return
+            // value (x86 nulldc read this via a naive s16* cast onto the
+            // u32's first 2 bytes, which is the low half only on a
+            // little-endian host). On big-endian Wii that same cast reads
+            // the HIGH half instead, so offset by 2 bytes to land on the
+            // low 16 bits. Currently dormant: DSPEnabled defaults to 0.
+#ifdef WII
+            VOLPAN((*(s16*)((u8*)&DSPData->EFREG[i] + 2)), dsp_out_vol[i].EFSDL, dsp_out_vol[i].EFPAN, mixl, mixr);
+#else
             VOLPAN((*(s16*)&DSPData->EFREG[i]), dsp_out_vol[i].EFSDL, dsp_out_vol[i].EFPAN, mixl, mixr);
+#endif
         }
     }
 
