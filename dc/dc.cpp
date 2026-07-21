@@ -249,6 +249,28 @@ bool SoftReset_DC()
 }
 
 /**
+ * Holly-level system reset (SB_SFRES = 0x7611)
+ *
+ * Real hardware: writing this resets the Holly-controlled peripherals
+ * (video, sound, etc.) but NOT the SH4 -- the CPU is the one issuing the
+ * write and keeps running right through it. Deliberately mirrors only the
+ * peripheral half of ResetDC(): no sh4_cpu.Reset() (would corrupt the live
+ * CPU/GPR state we're executing under right now) and no mem_Reset() (would
+ * wipe the RAM the current code is running from). aica_Reset(true) never
+ * zeroes RAM (only the non-manual path does), so unlike ResetDC() there is
+ * no AICA-RAM-before-ARM7-reset ordering constraint here.
+ */
+void HollySoftReset()
+{
+	printf("Performing Holly soft reset (peripherals only, CPU keeps running)...\n");
+
+	plugins_Reset(true);
+	pvr_Reset(true);
+	aica_Reset(true);
+	arm_Reset(true);
+}
+
+/**
  * Reset the Dreamcast emulator
  * @param manual true for manual reset, false for automatic
  * @return true on success, false on failure

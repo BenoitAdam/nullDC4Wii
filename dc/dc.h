@@ -23,10 +23,20 @@ bool Init_DC();
  * Perform a soft reset of the emulator
  * Can be called while the CPU is running. The CPU will be stopped,
  * reset, and restarted automatically.
- * 
+ *
  * @return true if reset was initiated, false if CPU wasn't running
  */
 bool SoftReset_DC();
+
+/**
+ * Perform a Holly-level system reset (SB_SFRES = 0x7611), as issued by the
+ * real BIOS/IP.BIN mid-boot to reconfigure video timing before jumping to
+ * the game. Unlike SoftReset_DC(), this must be safe to call synchronously
+ * from inside the SH4's own execution (the CPU is the one issuing the
+ * write) — it resets only the Holly-controlled peripherals (PVR/SPG,
+ * renderer, AICA, ARM7), never the SH4 itself or main RAM.
+ */
+void HollySoftReset();
 
 /**
  * Perform a hard reset of the emulator

@@ -483,14 +483,17 @@ u32 RegRead_SB_FFST()
 }
 void SB_SFRES_write32(u32 data)
 {
-	// Holly soft-reset: triggered by writing the magic value 0x7611
+	SB_SFRES = data;
+
+	// Holly soft-reset: triggered by writing the magic value 0x7611. This
+	// runs synchronously from inside the SH4's own execution (the CPU is
+	// the one issuing the write), so it must NOT stop/reset the SH4 or wipe
+	// RAM -- see HollySoftReset()'s comment in dc.cpp for why SoftReset_DC()
+	// (which does both) can't be reused here.
 	if ((u16)data == 0x7611)
 	{
 		printf("SB/HOLLY : System reset requested\n");
-		// TODO: implement SoftReset_DC() to properly reset all subsystems
-		// Currently unimplemented; uncomment and implement to enable soft reset:
-		// if (!SoftReset_DC())
-		printf("SOFT RESET REQUEST FAILED (not implemented)\n");
+		HollySoftReset();
 	}
 }
 void sb_Init()
