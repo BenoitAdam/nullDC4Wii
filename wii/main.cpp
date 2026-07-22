@@ -1133,7 +1133,7 @@ bool displayOptionsMenu()
     printf(" 2P viewports, Daytona USA");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: More Info | 2: Next Page | alpha 0.58\n");
+    printf("A: Launch | B: Back | 1: More Info | 2: Next Page | alpha 0.59\n");
     } // end page 0
 
     if (optionsPage == 1) {
@@ -1222,7 +1222,7 @@ bool displayOptionsMenu()
     printf(" SF3 double impact=384");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.58\n");
+    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.59\n");
     } // end page 1
 
     if (optionsPage == 2) {
@@ -1347,7 +1347,7 @@ bool displayOptionsMenu()
     printf(" ch2/PVR/Sort/AICA DMA fixes");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.58\n");
+    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.59\n");
     } // end page 2
 
 
@@ -1769,7 +1769,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - alpha 0.58   ");
+    printf("\nNullDC4Wii - alpha 0.59   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");
