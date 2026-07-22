@@ -73,6 +73,15 @@
                                 G2-DMA completion + SB_E2ST. Default on. off
                                 reproduces the legacy pre-fix behavior, for A/B
                                 comparison only.
+        fastmem=on          <- on/off, PPC-MMU fastmem for the SH4 dynarec
+                                (wii/wii_fastmem.cpp). Maps the DC address
+                                space at EA 0-0x1FFFFFFF via segment regs +
+                                a hashed page table so JIT loads/stores are
+                                branchless (rlwinm+load, no compares, no
+                                table lookup); MMIO/SQ/BIOS accesses DSI-
+                                fault once and get back-patched to slow-path
+                                trampolines. Default off (legacy inline
+                                table). Experimental — A/B per game.
         vertex_color_fix=on <- on/off, real PVR Intensity (Gouraud) shading: each
                                 vertex's scalar intensity is multiplied by the
                                 polygon's FaceColor (see gxRend.cpp
@@ -298,6 +307,7 @@ extern int g_audio_buffers_preset;
 extern int g_arm7_speed_preset;
 extern int g_jit_sbp_preset;
 extern int g_dma_fix_preset;
+extern int g_fastmem_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -354,6 +364,7 @@ struct GamePreset
     int arm7_speed;
     int jit_sbp;
     int dma_fix;
+    int fastmem;
 };
 
 // Nothing from the .cfg stays in RAM: game_presets_apply() streams the file
@@ -597,6 +608,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "arm7_speed"))     p->arm7_speed     = atoi(val);
     else if (key_eq(key, "jit_sbp"))        p->jit_sbp        = atoi(val);
     else if (key_eq(key, "dma_fix"))        p->dma_fix        = parse_bool(val);
+    else if (key_eq(key, "fastmem"))        p->fastmem        = parse_bool(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -639,6 +651,7 @@ static void preset_clear(GamePreset* cur)
     cur->arm7_speed = -1;
     cur->jit_sbp = -1;
     cur->dma_fix = -1;
+    cur->fastmem = -1;
 }
 
 // Apply every set field of a preset slot onto the live g_*_preset globals
@@ -686,6 +699,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->arm7_speed     >= 0) { g_arm7_speed_preset     = p->arm7_speed;     printf("  arm7_speed     -> %d\n", p->arm7_speed);     }
     if (p->jit_sbp        >= 0) { g_jit_sbp_preset        = p->jit_sbp;        printf("  jit_sbp        -> %d\n", p->jit_sbp);        }
     if (p->dma_fix        >= 0) { g_dma_fix_preset        = p->dma_fix;        printf("  dma_fix        -> %d\n", p->dma_fix);        }
+    if (p->fastmem        >= 0) { g_fastmem_preset        = p->fastmem;        printf("  fastmem        -> %d\n", p->fastmem);        }
 }
 
 // ---------------------------------------------------------------------------

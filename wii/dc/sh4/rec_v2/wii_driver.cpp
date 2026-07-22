@@ -52,6 +52,8 @@
 #include "dc\sh4\ccn.h"
 #include "dc\sh4\rec_v2\ngen.h"
 #include "dc\mem\sh4_mem.h"
+#include "dc\mem\sh4_internal_reg.h"	// sq_both — fastmem SQ trampoline fast path
+#include "wii\wii_fastmem.h"		// PPC-MMU fastmem (FASTMEM preset)
 #include "emitter\PPCEmit\ppc_emitter.h"
 
 // wii_driver.cpp defines its own higher-level wrappers for these names.
@@ -1094,6 +1096,320 @@ static void FlushCold()
 	s_cold_n = 0;
 }
 
+// ============================================================================
+// FASTMEM (PPC-MMU) — JIT side.  MMU/page-table/DSI-handler side is in
+// wii/wii_fastmem.cpp; the FASTMEM preset (default OFF) gates everything.
+//
+// When active, shop_readm/shop_writem emit BRANCHLESS direct accesses
+// through the low-EA window instead of the inline _vmem-table lookup:
+//
+//     rlwinm  rEA, rADDR, 0,3,31      ; EA = sh4_addr & 0x1FFFFFFF
+//     [xori   rEA, rEA, 4-sz]         ; BE sub-word swizzle (sz<4)
+//     l/st    ..., 0(rEA)             ; ONE access, no compare, no branch
+//
+// RAM (4 mirrors), VRAM (64-bit path) and AICA wave RAM are page-mapped, so
+// those never fault. Anything else (MMIO, SQ-after-masking, BIOS, VRAM
+// 32-bit path, TA FIFO, OC-RAM...) takes a DSI; rec_fastmem_patch() below
+// decodes the faulting site and overwrites the access instruction with a
+// `b trampoline` into s_fm_pool, then the DSI handler RETRIES the PC. The
+// slow path therefore always runs in normal context (interrupts enabled) —
+// MMIO with side effects such as GD-ROM DMA file I/O stays safe. After the
+// one-time patch a site costs the same as the legacy cold path, while
+// never-faulting sites stay at 2-4 instructions.
+//
+// The shapes are FIXED and the EA scratch register doubles as the shape
+// discriminator for the fault-time decoder — any change to the emission in
+// shop_readm/shop_writem MUST be mirrored here:
+//
+//   scalar read : rlwinm r4 / [xori r4] / lbz|lha|lwz rD,0(r4) [/ extsb rD]
+//   pair   read : rlwinm r5 / lwz r3,0(r5) / lwz r4,4(r5)
+//   scalar write: rlwinm r5 / [xori r5] / stb|sth|stw rS,0(r5)
+//   pair   write: rlwinm r4 / stw r5,0(r4) / stw r6,4(r4)
+//
+// The rlwinm never clobbers the address register, so the trampoline can
+// pass the ORIGINAL SH4 address (recovered from the decoded rlwinm source
+// field) to the generic ReadMem/WriteMem dispatchers — this is what keeps
+// P4/SQ correct even though masking folds 0xE0000000 onto 0x00000000.
+//
+// Store-queue writes are the geometry hot path and used to hit the inline
+// table lookup, so a write site whose first fault lands in the area-0
+// image (DAR < 0x04000000 — where masked SQ addresses land) gets an
+// inlined "SQ? -> direct sq_both store" fast path ahead of the generic
+// call. Every trampoline ends in a generic path, so polymorphic sites are
+// always correct, merely slower.
+//
+// LIMITATION (harmless): if only the SECOND word of a pair faults (a
+// non-8-aligned fmov.d straddling a region edge), the original address is
+// gone and the trampoline dispatches on the MASKED EA+4. That is identical
+// for every normal region and can only differ for P4/SQ — which cannot
+// straddle-fault, because SQ is fully unmapped and the FIRST word always
+// faults there.
+// ============================================================================
+
+extern u8 CodeCache[];
+extern "C" int get_fastmem_preset();	// main.cpp: 0=off (default), 1=on
+
+static inline bool fastmem_on()
+{
+	return g_wii_fastmem_active && get_fastmem_preset();
+}
+
+// Trampoline pool. MEM1 .bss like CodeCache, so `b` reach (±32 MB) always
+// holds (checked at emit time anyway). Reset together with the block cache:
+// patched sites die with their blocks, so their trampolines must too.
+#define FM_POOL_SIZE (128*1024)
+static u8  s_fm_pool[FM_POOL_SIZE] __attribute__((aligned(32)));
+static u32 s_fm_pool_used   = 0;
+static u32 s_fm_patch_count = 0;
+
+// Exception-context diagnostics. printf/stdio is FORBIDDEN anywhere in the
+// resumable DSI path (hardware lesson from the 2026-07-19 MMU experiment:
+// newlib's stdout lock can invoke the thread scheduler with EE=0 and
+// deadlock after the line is emitted). Failures leave a record here for
+// the panic screen / post-mortem instead, and the patch ring below can be
+// inspected from a RAM dump; the cumulative count is printed from NORMAL
+// context on each cache clear (rec_fastmem_reset_pool).
+static volatile u32 s_fm_fail_pc, s_fm_fail_insn, s_fm_fail_dar;
+static volatile u32 s_fm_fail_reason;	// 1=pc outside cache 2=pool full 3=undecodable 4=branch range
+#define FM_RING 32
+static u32 s_fm_ring[FM_RING];		// last FM_RING patched site PCs
+static u32 s_fm_ring_n;
+
+static void rec_fastmem_reset_pool()
+{
+	// Runs in normal context (bm_Reset / recSh4_ClearCache) — printf is OK.
+	if (s_fm_patch_count)
+		printf("[fastmem] cache clear: %u sites were patched (%u/%u B pool)\n",
+		       s_fm_patch_count, s_fm_pool_used, FM_POOL_SIZE);
+	s_fm_pool_used   = 0;
+	s_fm_patch_count = 0;
+	s_fm_ring_n      = 0;
+}
+
+// --- minimal raw-word emitter --------------------------------------------
+// Deliberately independent of the global emit_ptr/LastAddr state: this runs
+// INSIDE the DSI handler and must not disturb an in-progress compilation.
+// (Also: integer code only — MSR.FP is off in the exception context.)
+static u32* fm_p;
+static void fm_w(u32 i)                            { *fm_p++ = i; }
+static u32  fm_dform(u32 op6,u32 rt,u32 ra,u32 dd) { return (op6<<26)|(rt<<21)|(ra<<16)|(dd&0xFFFF); }
+static void fm_mr(u32 dst,u32 src)                 { if (dst!=src) fm_w(0x7C000378|(src<<21)|(dst<<16)|(src<<11)); }
+static bool fm_branch(void* target,u32 lk)
+{
+	snat disp=(u8*)target-(u8*)fm_p;
+	if (disp>=33554432 || disp<-33554432)
+		return false;
+	fm_w(0x48000000|((u32)disp&0x03FFFFFC)|lk);
+	return true;
+}
+
+// SQ fast-path address: reg = &sq_both[(areg & 0x3F) ^ swz]  (same layout as
+// the _vmem direct block: BE u32 words, sub-word swizzle folded into addr).
+// (NB: the scratch register parameter must not be called `r` —
+// sh4_registers.h #defines that to Sh4cntx.r.)
+static void fm_sq_addr(u32 reg,u32 areg,u32 swz)
+{
+	fm_w(0x54000000|(areg<<21)|(reg<<16)|(0<<11)|(26<<6)|(31<<1));	// rlwinm reg,areg,0,26,31
+	if (swz)
+		fm_w(0x68000000|(reg<<21)|(reg<<16)|swz);		// xori reg,reg,swz
+	u32 sq=(u32)(uintptr_t)sq_both;
+	s32 lo=(s32)(s16)sq;
+	u32 hi=((u32)(sq-(u32)lo))>>16;
+	fm_w(fm_dform(15,reg,reg,hi));					// addis reg,reg,hi
+	fm_w(fm_dform(14,reg,reg,(u32)lo));				// addi  reg,reg,lo
+}
+
+// Locate the governing `rlwinm rEA, rADDR, 0,3,31` within the 3 insns
+// before the fault site; returns rADDR (which still holds the ORIGINAL
+// SH4 address — the shapes never clobber it) or -1 if absent (not ours).
+static int fm_find_areg(u32* site,u32 ea_reg)
+{
+	for (int back=1;back<=3;back++)
+	{
+		u32 i=site[-back];
+		if ((i&0xFC1FFFFF)==(0x54000000|(ea_reg<<16)|0x00FE))
+			return (int)((i>>21)&31);
+	}
+	return -1;
+}
+
+// Decode the faulting fastmem site at pc, build its trampoline, patch the
+// site. Returns 0 on success; nonzero makes the DSI handler chain to the
+// libogc panic screen. Called from WiiFastmem_HandleDSI (exception context:
+// interrupts off, FPU off — keep this integer-only and printf-free except
+// on the failure/debug paths).
+int rec_fastmem_patch(unsigned int pc)
+{
+	u32 dar;
+	asm volatile("mfspr %0,19" : "=r"(dar));	// DAR = faulting (masked) EA
+
+	// Only faults inside the code cache can be fastmem sites.
+	if (pc < (u32)(uintptr_t)&CodeCache[0] || pc >= (u32)(uintptr_t)&CodeCache[0]+CODE_SIZE)
+	{
+		s_fm_fail_pc=pc; s_fm_fail_insn=0; s_fm_fail_dar=dar; s_fm_fail_reason=1;
+		return 1;
+	}
+
+	u32* site=(u32*)pc;
+	const u32 insn=*site;
+	const u32 op6=insn>>26;
+	const u32 rt =(insn>>21)&31;	// rD (loads) / rS (stores)
+	const u32 ra =(insn>>16)&31;	// base = EA scratch = shape discriminator
+	const u32 dd =insn&0xFFFF;
+
+	if (s_fm_pool_used + 32*sizeof(u32) > sizeof(s_fm_pool))
+	{
+		s_fm_fail_pc=pc; s_fm_fail_insn=insn; s_fm_fail_dar=dar; s_fm_fail_reason=2;
+		return 1;
+	}
+
+	fm_p=(u32*)&s_fm_pool[s_fm_pool_used];
+	u32* const tramp=fm_p;
+	bool ok=false;
+
+	if ((op6==32||op6==42||op6==34) && ra==ppc_rarg1 && dd==0)
+	{
+		// --- scalar read: lbz/lha/lwz rD,0(r4). Replicates ColdFrag kind 0.
+		int areg=fm_find_areg(site,ra);
+		if (areg>=0)
+		{
+			ok=true;
+			fm_mr(ppc_rarg0,(u32)areg);
+			if (op6==34)		// lbz — ReadMem8, then extsb rD,r3
+			{
+				ok&=fm_branch((void*)ReadMem8,1);
+				fm_w(0x7C000774|(ppc_rrv0<<21)|(rt<<16));
+			}
+			else if (op6==42)	// lha — ReadMem16, then extsh rD,r3
+			{
+				ok&=fm_branch((void*)ReadMem16,1);
+				fm_w(0x7C000734|(ppc_rrv0<<21)|(rt<<16));
+			}
+			else			// lwz — ReadMem32
+			{
+				ok&=fm_branch((void*)ReadMem32,1);
+				fm_mr(rt,ppc_rrv0);
+			}
+			// Resume after the load; a trailing in-line extsb (sz==1
+			// shape) re-runs on the already-extended value — idempotent.
+			ok&=fm_branch(site+1,0);
+		}
+	}
+	else if (op6==32 && ra==ppc_rarg2 && rt==ppc_rrv0 && dd==0)
+	{
+		// --- pair read, first word: lwz r3,0(r5). Address still in r3
+		// (the pair shape always sources rarg0), so ReadMem64 needs no
+		// setup and returns r3:r4 = high:low exactly as the shape does.
+		if (fm_find_areg(site,ra)==ppc_rarg0)
+		{
+			ok=fm_branch((void*)ReadMem64,1);
+			ok&=fm_branch(site+2,0);	// skip the second lwz too
+		}
+	}
+	else if (op6==32 && ra==ppc_rarg2 && rt==ppc_rrv1 && dd==4)
+	{
+		// --- pair read, second word alone (straddling pair; see LIMITATION).
+		if (fm_find_areg(site,ra)>=0)
+		{
+			ok=true;
+			fm_mr(ppc_rarg3,ppc_rrv0);			// save word[addr]
+			fm_w(fm_dform(14,ppc_rarg0,ppc_rarg2,4));	// addi r3,r5,4 (masked EA+4)
+			ok&=fm_branch((void*)ReadMem32,1);
+			fm_mr(ppc_rrv1,ppc_rrv0);
+			fm_mr(ppc_rrv0,ppc_rarg3);
+			ok&=fm_branch(site+1,0);
+		}
+	}
+	else if ((op6==36||op6==44||op6==38) && ra==ppc_rarg2 && dd==0)
+	{
+		// --- scalar write: stb/sth/stw rS,0(r5). Replicates ColdFrag kind 2,
+		// with an inlined SQ fast path for area-0-image faults.
+		int areg=fm_find_areg(site,ra);
+		if (areg>=0)
+		{
+			const u32 sz=(op6==38)?1:(op6==44)?2:4;
+			ok=true;
+			if (dar < 0x04000000)
+			{
+				fm_w(0x54000000|((u32)areg<<21)|(ppc_rarg2<<16)|(6<<11)|(26<<6)|(31<<1));	// rlwinm r5,areg,6,26,31 (addr>>26)
+				fm_w(0x2C000000|(ppc_rarg2<<16)|0x38);		// cmpwi r5,0x38 — SQ region?
+				u32* bne=fm_p;
+				fm_w(0x40820000);				// bne -> generic (patched below)
+				fm_sq_addr(ppc_rarg2,(u32)areg,(sz<4)?(4-sz):0);
+				fm_w(fm_dform(op6,rt,ppc_rarg2,0));		// st{b,h,w} rS,0(r5)
+				ok&=fm_branch(site+1,0);
+				*bne |= ((u32)((u8*)fm_p-(u8*)bne))&0xFFFC;	// resolve bne -> generic
+			}
+			fm_mr(ppc_rarg0,(u32)areg);
+			fm_mr(ppc_rarg1,rt);
+			if (sz==1)      fm_w(0x70000000|(ppc_rarg1<<21)|(ppc_rarg1<<16)|0xFF);	// andi. r4,r4,0xFF
+			else if (sz==2) fm_w(0x70000000|(ppc_rarg1<<21)|(ppc_rarg1<<16)|0xFFFF);
+			ok&=fm_branch((sz==1)?(void*)WriteMem8:(sz==2)?(void*)WriteMem16:(void*)WriteMem32,1);
+			ok&=fm_branch(site+1,0);
+		}
+	}
+	else if (op6==36 && ra==ppc_rarg1 && rt==ppc_rarg2 && dd==0)
+	{
+		// --- pair write, first word: stw r5,0(r4). Address still in r3,
+		// data in r5:r6 — the exact WriteMem64(u32,u64) EABI registers.
+		if (fm_find_areg(site,ra)==ppc_rarg0)
+		{
+			ok=true;
+			if (dar < 0x04000000)
+			{
+				// fmov.d bursts into the SQ are THE geometry path.
+				fm_w(0x54000000|(ppc_rarg0<<21)|(ppc_rarg1<<16)|(6<<11)|(26<<6)|(31<<1));	// rlwinm r4,r3,6,26,31
+				fm_w(0x2C000000|(ppc_rarg1<<16)|0x38);		// cmpwi r4,0x38
+				u32* bne=fm_p;
+				fm_w(0x40820000);				// bne -> generic
+				fm_sq_addr(ppc_rarg1,ppc_rarg0,0);		// 8-aligned: no swizzle
+				fm_w(fm_dform(36,ppc_rarg2,ppc_rarg1,0));	// stw r5,0(r4)
+				fm_w(fm_dform(36,ppc_rarg3,ppc_rarg1,4));	// stw r6,4(r4)
+				ok&=fm_branch(site+2,0);
+				*bne |= ((u32)((u8*)fm_p-(u8*)bne))&0xFFFC;
+			}
+			ok&=fm_branch((void*)WriteMem64,1);
+			ok&=fm_branch(site+2,0);
+		}
+	}
+	else if (op6==36 && ra==ppc_rarg1 && rt==ppc_rarg3 && dd==4)
+	{
+		// --- pair write, second word alone (straddling pair; see LIMITATION).
+		if (fm_find_areg(site,ra)>=0)
+		{
+			ok=true;
+			fm_w(fm_dform(14,ppc_rarg0,ppc_rarg1,4));	// addi r3,r4,4 (masked EA+4)
+			fm_mr(ppc_rarg1,ppc_rarg3);
+			ok&=fm_branch((void*)WriteMem32,1);
+			ok&=fm_branch(site+1,0);
+		}
+	}
+
+	if (!ok)
+	{
+		s_fm_fail_pc=pc; s_fm_fail_insn=insn; s_fm_fail_dar=dar; s_fm_fail_reason=3;
+		return 1;
+	}
+
+	const u32 bytes=(u32)((u8*)fm_p-(u8*)tramp);
+	s_fm_pool_used += (bytes+31)&~31u;
+	make_address_range_executable(tramp,bytes);
+
+	// Patch the faulting access with an unconditional branch to the trampoline.
+	snat disp=(u8*)tramp-(u8*)site;
+	if (disp>=33554432 || disp<-33554432)
+	{
+		s_fm_fail_pc=pc; s_fm_fail_insn=insn; s_fm_fail_dar=dar; s_fm_fail_reason=4;
+		return 1;
+	}
+	*site=0x48000000|((u32)disp&0x03FFFFFC);
+	make_address_range_executable(site,sizeof(u32));
+
+	s_fm_ring[s_fm_ring_n++ & (FM_RING-1)]=pc;
+	s_fm_patch_count++;
+	return 0;
+}
+
 // ngen_CompileBlock: Main Block Compilation Loop
 DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 {
@@ -1204,7 +1520,59 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					}
 				}
 
-				if (!isram)
+				if (!isram && fastmem_on())
+				{
+					// ---- FASTMEM: branchless access through the MMU window.
+					// Shapes are FIXED — rec_fastmem_patch() decodes them at
+					// DSI time (the EA scratch register is the shape
+					// discriminator), so keep emission and decoder in sync.
+					if (op->rs1.is_imm())
+					{
+						// Compile-time-known MMIO (fuct set above, address
+						// already materialized in rarg0): call the handler
+						// directly — never emit a faulting access for a
+						// constant MMIO address. This is strictly cheaper
+						// than the legacy always-miss 0x8C compare + cold
+						// branch pair (think SB_ISTNRM poll loops).
+						void* f=fuct;
+						if (!f) f=(op->flags==1)?(void*)ReadMem8:(op->flags==2)?(void*)ReadMem16:(void*)ReadMem32;
+						ppc_call(f);
+						if (op->flags==1)      ppc_extsbx(rdreg,ppc_rrv0,0);
+						else if (op->flags==2) ppc_extshx(rdreg,ppc_rrv0,0);
+						else if (rdreg!=ppc_rrv0) ppc_ori(rdreg,ppc_rrv0,0);
+					}
+					else if (op->flags==8)
+					{
+						// Pair (fmov.d): address is always pre-loaded in
+						// rarg0. EA scratch MUST be rarg2. word[addr]->rrv0
+						// (high), word[addr+4]->rrv1 (low), matching the
+						// ReadMem64 slow path register-for-register.
+						ppc_rlwinmx(ppc_rarg2,ppc_rarg0,0,3,31,0);	// EA = addr & 0x1FFFFFFF
+						ppc_lwz(ppc_rrv0,ppc_rarg2,0);			// fault site A
+						ppc_lwz(ppc_rrv1,ppc_rarg2,4);			// fault site B
+					}
+					else
+					{
+						const u32 sz=op->flags;
+						verify(sz==1||sz==2||sz==4);
+						// Scalar: EA scratch MUST be rarg1. areg (pinned or
+						// rarg0) still holds the original SH4 address at the
+						// load — the fault decoder relies on that.
+						ppc_rlwinmx(ppc_rarg1,areg,0,3,31,0);	// EA = addr & 0x1FFFFFFF
+						if (sz<4)
+							ppc_xori(ppc_rarg1,ppc_rarg1,4-sz);	// BE sub-word swizzle
+						if (sz==1)
+						{
+							ppc_lbz(rdreg,ppc_rarg1,0);		// fault site
+							ppc_extsbx(rdreg,rdreg,0);
+						}
+						else if (sz==2)
+							ppc_lha(rdreg,ppc_rarg1,0);		// fault site
+						else
+							ppc_lwz(rdreg,ppc_rarg1,0);		// fault site
+					}
+				}
+				else if (!isram)
 				{
 					// Inline the _vmem_readt fast path (direct RAM/VRAM) for
 					// runtime addresses. The MMIO path falls back to the C
@@ -1385,6 +1753,42 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_sh_load(ppc_rarg1,op->rs2);	// scratch: load now
 				}
 
+				if (fastmem_on())
+				{
+					// ---- FASTMEM: branchless store through the MMU window.
+					// Shapes are FIXED — rec_fastmem_patch() decodes them at
+					// DSI time (EA scratch register = shape discriminator).
+					// areg/datareg (or rarg0 + rarg2:rarg3 for pairs) still
+					// hold the original values at the store — the fault
+					// decoder and trampolines rely on that.
+					if (op->flags==8)
+					{
+						// Pair: address in rarg0, data in rarg2:rarg3 =
+						// high:low. EA scratch MUST be rarg1.
+						ppc_rlwinmx(ppc_rarg1,ppc_rarg0,0,3,31,0);	// EA = addr & 0x1FFFFFFF
+						ppc_stw(ppc_rarg2,ppc_rarg1,0);			// fault site A
+						ppc_stw(ppc_rarg3,ppc_rarg1,4);			// fault site B
+					}
+					else
+					{
+						const u32 sz=op->flags;
+						verify(sz==1||sz==2||sz==4);
+						// Scalar: EA scratch MUST be rarg2. No data masking
+						// needed on the direct path — stb/sth store the low
+						// byte/halfword by definition (the trampoline's C
+						// call path re-applies the andi like ColdFrag does).
+						ppc_rlwinmx(ppc_rarg2,areg,0,3,31,0);	// EA = addr & 0x1FFFFFFF
+						if (sz<4)
+							ppc_xori(ppc_rarg2,ppc_rarg2,4-sz);	// BE sub-word swizzle
+						if (sz==1)
+							ppc_stb(datareg,ppc_rarg2,0);		// fault site
+						else if (sz==2)
+							ppc_sth(datareg,ppc_rarg2,0);		// fault site
+						else
+							ppc_stw(datareg,ppc_rarg2,0);		// fault site
+					}
+				}
+				else
 				// Inline the _vmem_writet fast path (direct RAM/VRAM) for runtime
 				// addresses. MMIO falls back to the C call.
 				//
@@ -2068,6 +2472,10 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 void ngen_ResetBlocks()
 {
+	// Block-cache clear: every fastmem-patched site just died with its
+	// block, so drop their trampolines too (bm_Reset calls this from
+	// recSh4_ClearCache and bm_Init).
+	rec_fastmem_reset_pool();
 }
 
 void* FASTCALL ngen_LinkBlock_Static(u32 pc,u32* patch)
@@ -2093,6 +2501,13 @@ void* FASTCALL ngen_LinkBlock_Static(u32 pc,u32* patch)
 
 void ngen_mainloop()
 {
+	// FASTMEM preset: set up the MMU window + DSI handler before the first
+	// block compiles. Idempotent, checks the preset itself, and leaves
+	// g_wii_fastmem_active=0 on any failure (emission then stays legacy).
+	// Called here (not recSh4_Init) so the game preset file has been
+	// applied and _vmem_reserve() has placed the guest arrays.
+	WiiFastmem_Init();
+
 	if (loop_code==0)
 	{
 

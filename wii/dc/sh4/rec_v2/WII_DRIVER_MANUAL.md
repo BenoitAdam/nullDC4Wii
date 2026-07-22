@@ -270,3 +270,45 @@ Several typos exist in comments:
 - "ming" unclear, possibly "mingw"
 
 The comment asks "what gives?" regarding `make_address_range_executable`, suggesting some uncertainty about cache management requirements on PowerPC.
+
+## FASTMEM (PPC-MMU) — 2026-07 rewrite
+
+Gated by the `fastmem` preset (default OFF, options page 3, cfg key
+`fastmem=on/off`). Two halves:
+
+* **wii/wii_fastmem.cpp** — hardware side. Claims EA 0x00000000-0x1FFFFFFF
+  (SR0/SR1 + a 512 KB hashed page table in MEM2) as a direct image of the
+  DC's 29-bit space: RAM ×4 mirrors, VRAM (64-bit path, both pages), AICA
+  wave RAM. Installs a DSI handler using the tuxedo-libogc convention
+  (`PPCExcptSetHandler`, `__ppc_excpt_buf` protocol) and runs a
+  fault-tolerant boot self-test (a failed assumption leaves fastmem
+  inactive instead of panicking). Testing on Dolphin requires the
+  **Enable MMU** accuracy option.
+
+* **wii_driver.cpp `rec_fastmem_*`** — JIT side. When active,
+  `shop_readm`/`shop_writem` emit fixed branchless shapes
+  (`rlwinm rEA,rADDR,0,3,31` + `[xori swizzle]` + one load/store — no
+  compares, no `_vmem` table walk; this is the skmp "no conditionals"
+  design). Unmapped accesses (MMIO, masked SQ, BIOS, VRAM 32-bit path,
+  OC-RAM) DSI-fault ONCE: the handler decodes the site (the EA scratch
+  register — r4 vs r5 — is the shape discriminator, and the preceding
+  `rlwinm` gives the original-address register), builds a trampoline in a
+  128 KB pool and patches the site with `b trampoline`, then RETRIES the
+  PC. Slow paths therefore always run in normal context (interrupts on) —
+  never inside the exception. Write sites whose first fault lands in the
+  area-0 image get an inlined `SQ? → direct sq_both store` fast path,
+  keeping store-queue geometry bursts cheaper than the legacy table walk.
+  Trampolines dispatch on the ORIGINAL address register, which keeps
+  P4/SQ (0xE0 masks to 0x00) and OC-RAM (0x7C is NOT a 0x1C mirror)
+  correct by construction.
+
+  Iron rules learned on hardware: no printf/stdio and no FPU anywhere in
+  the DSI path; the emission shapes and the fault-time decoder MUST stay
+  in sync; the pool resets with the block cache (`ngen_ResetBlocks`).
+
+  Known perf risk (measured in the 2026-07-19 precursor experiment): the
+  Broadway DTLB is 128×4 KB and misses pay a hardware HTAB walk to MEM2,
+  while the legacy BAT paths pay zero translation cost. The rewrite
+  removes 3-8 instructions + a branch per access (the precursor removed
+  ~1), so whether that beats the TLB tax is exactly what the per-game A/B
+  measures. If it's close, moving the HTAB to MEM1 is the next lever.

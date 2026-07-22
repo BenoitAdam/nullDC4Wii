@@ -303,6 +303,18 @@ extern "C" {
   int get_dma_fix_preset() { return g_dma_fix_preset; }
 }
 
+// FASTMEM — PPC-MMU fastmem for the SH4 dynarec (wii/wii_fastmem.cpp +
+// rec_fastmem_* in wii_driver.cpp). Maps the DC 29-bit address space at
+// EA 0x00000000-0x1FFFFFFF through SR0/SR1 + a hand-built hashed page table
+// so JIT loads/stores become branchless (rlwinm + load/store, no compares);
+// MMIO/SQ/BIOS accesses fault once and are back-patched to slow-path
+// trampolines. 0=off (legacy inline-table paths, default), 1=on.
+int g_fastmem_preset = 0;
+
+extern "C" {
+  int get_fastmem_preset() { return g_fastmem_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -851,7 +863,8 @@ void displayAccuracyMenu()
 #define OPT_ARM7_SPEED  42
 #define OPT_JIT_SBP     43
 #define OPT_DMA_FIX     44
-#define OPT_ROW_COUNT   45
+#define OPT_FASTMEM     45
+#define OPT_ROW_COUNT   46
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -888,6 +901,7 @@ static int opt_row_page(int row)
     case OPT_ARM7_SPEED:
     case OPT_JIT_SBP:
     case OPT_DMA_FIX:
+    case OPT_FASTMEM:
       return 2;
     default:
       return 0;
@@ -1345,6 +1359,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (DEFAULT)      >]"); break;
     }
     printf(" ch2/PVR/Sort/AICA DMA fixes");
+    printf("\n");
+
+    // --- Row: FASTMEM - PPC-MMU branchless JIT memory access ---
+    printf("%s FASTMEM        : ", (selectedRow == OPT_FASTMEM) ? ">" : " ");
+    switch (g_fastmem_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (EXPERIMENTAL) >]"); break;
+    }
+    printf(" MMU-mapped JIT memory (no compares)");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.59\n");
@@ -1427,6 +1450,7 @@ bool displayOptionsMenu()
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
+        case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1478,6 +1502,7 @@ bool displayOptionsMenu()
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
+        case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2175,6 +2200,7 @@ int main(int argc, wchar *argv[])
       case 2: printf("ALL RAM (SLOW)\n");  break;
     }
     printf("DMA Fix        : %s\n", g_dma_fix_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
+    printf("Fastmem        : %s\n", g_fastmem_preset ? "ON (MMU)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {
       case -1: printf("DEFAULT (SAVED)\n"); break;
