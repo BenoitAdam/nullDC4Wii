@@ -1,3 +1,5 @@
+[![Discord](https://img.shields.io/discord/286429969104764928?label=Cemu&logo=discord&logoColor=FFFFFF)](https://discord.gg/fZzxdeXrZ)
+
 # NullDC4Wii - Dreamcast Emulator for Wii
 
 a fork from https://github.com/skmp/nullDCe
