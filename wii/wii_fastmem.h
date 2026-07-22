@@ -17,11 +17,20 @@
         EA 0x0C000000-0x0FFFFFFF -> mem_b     (16 MB main RAM, 4 mirrors)
         EA 0x04000000-0x04FFFFFF -> vram      (8 MB, 64-bit path, 2 mirrors)
         EA 0x06000000-0x06FFFFFF -> vram      (mirror)
-        EA 0x00800000-0x00FFFFFF -> aica_ram  (2 MB wave RAM, 4 mirrors)
-        EA 0x02800000-0x02FFFFFF -> aica_ram  (area-0 image mirror)
 
-    Everything else (MMIO, BIOS/flash, TA FIFO, VRAM 32-bit path, P4/SQ
-    after masking) is left unmapped: a JIT load/store there takes a DSI,
+    EA 0x00000000-0x03FFFFFF (the area-0 image) must NEVER be mapped, no
+    matter how tempting (AICA wave RAM lives there): store-queue accesses
+    0xE0000000-0xE3FFFFFF mask onto exactly this range, and only the
+    fault path can disambiguate them (it dispatches on the ORIGINAL
+    address register). Mapping any of it makes SQ stores with offset bits
+    >= the mapped base silently write host memory instead of the SQ
+    buffer - upper-half-RAM SQ memcpy, TA YUV FIFO and AICA SQ uploads
+    all corrupt. This shipped once (v1) and broke half the library:
+    TA "ParamType_Object_List_Set" fatals, artifact-then-freeze,
+    disappearing music. Wave RAM is served by the trampolines instead.
+
+    Everything else (MMIO, BIOS/flash, wave RAM, TA FIFO, VRAM 32-bit
+    path, P4/SQ after masking) is left unmapped: a JIT load/store there takes a DSI,
     and the handler BACK-PATCHES the faulting site with a branch to a
     generated slow-path trampoline (see rec_fastmem_* in wii_driver.cpp),
     then retries.  The exception handler itself never emulates the access,

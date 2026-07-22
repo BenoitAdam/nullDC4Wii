@@ -62,8 +62,8 @@ int g_wii_fastmem_active = 0;
 // ============================================================================
 // Page table
 //
-// 512 KB HTAB = 8192 PTEGs of 8 PTEs. We map ~28.7K pages (RAM 4 mirrors +
-// VRAM 2x2 mirrors + AICA 4+4 mirrors) into 65536 slots (~44% load), with
+// 512 KB HTAB = 8192 PTEGs of 8 PTEs. We map ~24.6K pages (RAM 4 mirrors +
+// VRAM 2x2 mirrors) into 65536 slots (~38% load), with
 // the secondary hash as backstop, so insertion can't realistically fail.
 // The hardware walks the table PHYSICALLY (uncached), hence the explicit
 // DCFlushRange after building it.
@@ -313,10 +313,6 @@ static bool fastmem_self_test(void)
     ok &= test_alias(0x04000020, vram.data + 0x20);
     ok &= test_alias(0x04800020, vram.data + 0x20);
     ok &= test_alias(0x06000020, vram.data + 0x20);
-    // AICA wave RAM: base + 2 MB mirror + area-0 image mirror.
-    ok &= test_alias(0x00800040, aica_ram.data + 0x40);
-    ok &= test_alias(0x00A00040, aica_ram.data + 0x40);
-    ok &= test_alias(0x02800040, aica_ram.data + 0x40);
     return ok;
 }
 
@@ -352,12 +348,18 @@ void WiiFastmem_Init(void)
     memset(s_htab, 0, FASTMEM_HTAB_SIZE);
 
     // Window layout (see header). Order does not matter.
+    //
+    // EA 0x00000000-0x03FFFFFF (area-0 image, incl. the AICA wave RAM
+    // images) must NEVER be mapped: P4 store-queue addresses
+    // 0xE0000000-0xE3FFFFFF mask onto exactly that range, and only the
+    // DSI trampolines can tell them apart (they dispatch on the ORIGINAL
+    // address). v1 mapped wave RAM here and every SQ store with offset
+    // bits >= 0x800000 (SQ memcpy to upper RAM, TA YUV FIFO, AICA SQ
+    // uploads) silently landed in host wave RAM instead of the SQ buffer.
     bool ok = true;
     ok &= map_region(0x0C000000, 0x04000000, mem_b.data,    RAM_SIZE  - 1); // RAM x4
     ok &= map_region(0x04000000, 0x01000000, vram.data,     VRAM_SIZE - 1); // VRAM 64-bit
     ok &= map_region(0x06000000, 0x01000000, vram.data,     VRAM_SIZE - 1); // VRAM mirror
-    ok &= map_region(0x00800000, 0x00800000, aica_ram.data, ARAM_SIZE - 1); // wave RAM
-    ok &= map_region(0x02800000, 0x00800000, aica_ram.data, ARAM_SIZE - 1); // area-0 mirror
     if (!ok)
     {
         printf("[fastmem] mapping failed - inactive\n");
