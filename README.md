@@ -1,3 +1,5 @@
+[![Discord](https://img.shields.io/discord/286429969104764928?label=Cemu&logo=discord&logoColor=FFFFFF)](https://discord.gg/fZzxdeXrZ)
+
 # NullDC4Wii - Dreamcast Emulator for Wii
 
 a fork from https://github.com/skmp/nullDCe
@@ -12,6 +14,7 @@ a fork from https://github.com/skmp/nullDCe
 - Help me finding regression (NOT bugs or glitch, only regression for now please)
 - Comment / Guides / Documentation (WiiBrew Wiki)
 - Test and report Fishing Rod/USB Keyboard/Lightgun/Maracas support
+- Add a winCE preset to prevent that game isn't supported
 
 
 ### Developer (Easy)
