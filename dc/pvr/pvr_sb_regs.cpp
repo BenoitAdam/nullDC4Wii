@@ -7,6 +7,8 @@
 #include "pvr_sb_regs.h"
 #include "plugins/plugin_manager.h"
 
+extern "C" int get_dma_fix_preset();
+
 //==============================================================================
 // Constants
 //==============================================================================
@@ -56,6 +58,15 @@ void RegWrite_SB_C2DST(u32 data)
 /**
  * @brief Validate DMA configuration before transfer
  * @return true if configuration is valid, false otherwise
+ *
+ * DMA_FIX: PSP's do_pvr_dma only checks DMAOR — no length-alignment
+ * requirement for PVR-DMA. The legacy extra 32-byte alignment check
+ * (copy-pasted from the ch2-DMA validator, complete with ch2's "SB_C2DLEN"
+ * wording in the error message — a tell that it was never written for this
+ * channel) would silently reject ANY PVR-DMA whose length isn't 32-byte
+ * aligned: a bare `return`, no error interrupt, no completion, nothing —
+ * SB_PDST would stay stuck at 1 forever with no visible symptom. Skipped
+ * when DMA_FIX is on, to match PSP exactly.
  */
 static inline bool validate_dma_config(u32 dmaor, u32 len)
 {
@@ -66,10 +77,10 @@ static inline bool validate_dma_config(u32 dmaor, u32 len)
 		return false;
 	}
 
-	// Check length alignment (must be 32-byte aligned)
-	if (len & DMA_ALIGNMENT_MASK)
+	// Legacy (pre-fix) bogus alignment check, kept for A/B comparison.
+	if (!get_dma_fix_preset() && (len & DMA_ALIGNMENT_MASK))
 	{
-		printf("\n!\tDMAC: SB_C2DLEN has invalid size (0x%X) - must be 32-byte aligned!\n", len);
+		printf("\n!\tDMAC: SB_C2DLEN not %u-byte aligned (0x%X) !\n", DMA_ALIGNMENT_SIZE, len);
 		return false;
 	}
 
@@ -81,18 +92,29 @@ static inline bool validate_dma_config(u32 dmaor, u32 len)
  */
 static inline void complete_dma_transfer(u32 src, u32 len)
 {
-	// Update source address register
-	DMAC_SAR[0] = src + len;
-	
-	// Clear DMA enable bit
-	DMAC_CHCR[0].full &= 0xFFFFFFFE;
-	
-	// Clear transfer count
-	DMAC_DMATCR[0] = 0;
-	
+	// DMA_FIX: same bug class already found and fixed in DMAC_Ch2St()
+	// (dc/sh4/dmac.cpp): TE (Transfer End) is how the guest learns the
+	// transfer finished — a driver checking "channel enabled AND done"
+	// before proceeding needs DE=1,TE=1 (real SH4 does not auto-clear DE).
+	// The legacy code cleared DE and never set TE, so PVR-DMA completions
+	// were invisible to any code that checked CHCR0 the same way. Matches
+	// PSP exactly: only TE is set.
+	if (get_dma_fix_preset())
+	{
+		DMAC_SAR[0]     = src + len;
+		DMAC_CHCR[0].TE = 1;
+		DMAC_DMATCR[0]  = 0;
+	}
+	else
+	{
+		DMAC_SAR[0]        = src + len;
+		DMAC_CHCR[0].full &= 0xFFFFFFFEu;   // legacy bug: clear DE, never set TE
+		DMAC_DMATCR[0]     = 0;
+	}
+
 	// Clear pending status
 	SB_PDST = 0;
-	
+
 	// Raise interrupt to notify completion
 	asic_RaiseInterrupt(holly_PVR_DMA);
 }
@@ -194,27 +216,45 @@ static u32 calculate_start_link_addr()
 
 /**
  * @brief Execute Sort DMA operation
- * 
+ *
  * Processes linked list of display lists and submits them
  * to the Tile Accelerator. Used primarily by Windows CE games.
+ *
+ * DMA_FIX: LINK_ADDR_END (1) and LINK_ADDR_RESTART (2) were used with their
+ * roles EXACTLY SWAPPED versus PSP in the legacy code. PSP terminates the
+ * whole chain on 2 and treats 1 as "fetch the next start link and continue";
+ * the legacy code terminated on 1 and treated 2 as "continue". So the real
+ * end-of-chain marker (2) made the loop restart instead of stopping, and the
+ * real continue-to-next-display-list marker (1) made it stop instead of
+ * continuing — a WinCE-built game's sort-DMA chain would drop or misorder
+ * every display list after the first. Rez is built on Sega's WinCE devkit.
+ * Also restores two PSP behaviors the legacy code lacked entirely: masking
+ * link_addr to 32-byte alignment when SB_SDLAS is not set, and advancing
+ * SB_SDSTAW by 32 bytes after the chain completes (needed for the next
+ * sort-DMA batch in a double-buffered submission scheme).
  */
 static void pvr_do_sort_dma()
 {
 	// Reset table index
 	SB_SDDIV = 0;
-	
+
 	// Get initial link address
 	u32 link_addr = calculate_start_link_addr();
 	const u32 link_base = SB_SDBAAW;
 
+	const bool dma_fix = get_dma_fix_preset() != 0;
+	// Fixed: terminate on LINK_ADDR_RESTART, continue-fetch on LINK_ADDR_END.
+	// Legacy (swapped): terminate on LINK_ADDR_END, continue-fetch on LINK_ADDR_RESTART.
+	const u32 loop_term = dma_fix ? LINK_ADDR_RESTART : LINK_ADDR_END;
+	const u32 loop_next = dma_fix ? LINK_ADDR_END : LINK_ADDR_RESTART;
+
 	// Process linked list
-	while (link_addr != LINK_ADDR_END)
+	while (link_addr != loop_term)
 	{
-		// Apply scaling if enabled (multiply by 32)
 		if (SB_SDLAS == 1)
-		{
-			link_addr <<= 5;  // Multiply by 32 (faster than * 32 on Wii)
-		}
+			link_addr <<= 5;      // Multiply by 32 (faster than * 32 on Wii)
+		else if (dma_fix)
+			link_addr &= ~31u;   // 32-byte align (PSP: link_addr &= ~31)
 
 		// Calculate effective address and get pointer
 		const u32 ea = (link_base + link_addr) & RAM_MASK;
@@ -227,8 +267,8 @@ static void pvr_do_sort_dma()
 		const u32 transfer_size = ea_ptr[LINK_SIZE_OFFSET >> 2];
 		libPvr_TaDMA(ea_ptr, transfer_size);
 
-		// Check for restart condition
-		if (link_addr == LINK_ADDR_RESTART)
+		// Fetch the next start link and continue
+		if (link_addr == loop_next)
 		{
 			link_addr = calculate_start_link_addr();
 		}
@@ -236,7 +276,9 @@ static void pvr_do_sort_dma()
 
 	// Mark DMA as complete
 	SB_SDST = 0;
-	
+	if (dma_fix)
+		SB_SDSTAW += 32;
+
 	// Raise interrupt
 	asic_RaiseInterrupt(holly_PVR_SortDMA);
 }

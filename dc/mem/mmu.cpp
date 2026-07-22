@@ -19,6 +19,21 @@ TLB_Entry UTLB[64];
 TLB_Entry ITLB[4];
 
 
+// Invalidate the whole TLB (MMUCR.TI). Clears the V bit on every ITLB/UTLB
+// entry AND drops the derived sq_remap fast-path table — the remap slots are a
+// cache of UTLB contents, so leaving them populated would keep translations
+// alive that the guest believes it just flushed.
+void mmu_InvalidateTLB()
+{
+	for (u32 i = 0; i < 4; i++)
+		ITLB[i].Data.V = 0;
+
+	for (u32 i = 0; i < 64; i++)
+		UTLB[i].Data.V = 0;
+
+	memset(sq_remap, 0, sizeof(sq_remap));
+}
+
 // Sync a UTLB entry into the emulator's fast lookup structures.
 // For SQ addresses (0xE0xx_xxxx), updates the sq_remap fast-path table.
 // For normal addresses, this is where you would invalidate JIT blocks or

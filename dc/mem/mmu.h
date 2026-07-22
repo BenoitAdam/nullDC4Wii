@@ -19,6 +19,9 @@ extern TLB_Entry ITLB[4];
 // Each entry covers a 1MB region (64 entries * 1MB = 64MB max SQ space)
 extern u32 sq_remap[64];
 
+// Invalidate all ITLB/UTLB entries and the derived sq_remap table (MMUCR.TI)
+void mmu_InvalidateTLB();
+
 // Sync a single UTLB entry into the fast remap tables
 // entry: index 0-63; call after writing a new UTLB entry
 void UTLB_Sync(u32 entry);

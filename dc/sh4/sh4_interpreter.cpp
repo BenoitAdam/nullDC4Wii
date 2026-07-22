@@ -21,6 +21,7 @@
 #include "dc/aica/aica_if.h"
 #include "plugs/vbaARM/arm_aica.h"  // ARM7 CPU tick (vbaARM)
 #include "dmac.h"
+#include "dc/mem/sb.h"   // SB_C2DSTAT/SB_C2DLEN/SB_C2DST for the [DMA] probe
 #include "dc/gdrom/gdrom_if.h"
 #include "dc/maple/maple_if.h"
 #include "intc.h"
@@ -353,6 +354,7 @@ int FASTCALL UpdateSystem()
 
 	UpdateTMU(s_timeslice);
 	UpdatePvr(s_timeslice);
+	UpdateAicaDma(s_timeslice);     // deferred AICA G2-DMA completion IRQ (DMA_FIX)
 	return UpdateINTC();
 }
 
@@ -383,6 +385,7 @@ int FASTCALL UpdateSystem_no_event()
 
 	UpdateTMU(s_timeslice);
 	UpdatePvr(s_timeslice);
+	UpdateAicaDma(s_timeslice);     // deferred AICA G2-DMA completion IRQ (DMA_FIX)
 	return UpdateINTC_pending();
 }
 

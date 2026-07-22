@@ -53,8 +53,9 @@
 
 // Defined in main.cpp — returns 1 when debug loop / boot-trace is active
 extern "C" int get_debug_loop();
-// Defined in main.cpp — 0=off, 1=known self-modifying addresses, 2=all RAM blocks
-extern "C" int get_block_check_preset();
+// Defined in main.cpp (JIT_SBP preset) — 0=off (zero protection, legacy),
+// 1=known self-modifying addresses (default), 2=all RAM blocks
+extern "C" int get_jit_sbp_preset();
 
 // ============================================================================
 // Optional performance counters
@@ -257,9 +258,9 @@ void AnalyseBlock(DecodedBlock* blk);
 // source and bails to rdv_BlockCheckFail if it no longer matches what we
 // compiled — i.e. the game overwrote its own code.
 //
-// Controlled by the block_check preset:
-//   0 = off      — no guards at all (legacy behaviour)
-//   1 = known    — guard only the addresses known to self-modify (default when on)
+// Controlled by the JIT_SBP preset:
+//   0 = off      — no guards at all (legacy behaviour, zero protection)
+//   1 = known    — guard only the addresses known to self-modify (default)
 //   2 = all RAM  — guard every block that lives in RAM (slow, for diagnosis)
 //
 // Note the GetMemPtr(pc, len) probe: a block straddling the end of a mapped
@@ -267,7 +268,7 @@ void AnalyseBlock(DecodedBlock* blk);
 // guarded. This is why the decoder now records sh4_code_size.
 static bool DoCheck(u32 pc, u32 len)
 {
-	const int mode = get_block_check_preset();
+	const int mode = get_jit_sbp_preset();
 	if (mode == 0)
 		return false;
 
@@ -389,14 +390,17 @@ DynarecCodeEntry* rdv_CompileBlock(u32 bpc)
 // Compiles the block at next_pc, registers it with the block manager, and
 // returns its entry point.
 //
-// Boot detection (CORRECTNESS — do not gate behind a debug flag):
+// Boot detection (part of JIT_SBP — JIT Stale Block Protection):
 //   0x..08300 is the IP.BIN bootstrap entry and 0x..10000 is the 1ST_READ.BIN
 //   entry. IP.BIN draws the SEGA licence screen, loads the game binary OVER
 //   that RAM, then jumps to 0x8C010000. Every block we compiled from the
 //   pre-load contents of that RAM is now stale, so the cache MUST be dropped
 //   on this transition or the JIT keeps executing translations of code that no
 //   longer exists (symptom: logo renders, then the game stalls while vblank —
-//   and therefore the FPS counter — keeps running).
+//   and therefore the FPS counter — keeps running). This is real-world
+//   correctness, not a diagnostic, so JIT_SBP defaults ON; the OFF position
+//   exists only to reproduce the legacy zero-protection behavior for A/B
+//   comparison.
 //
 //   History: this used to clear AFTER bm_AddCode(), which invalidated the block
 //   just added and forced an immediate recompile. That was then "fixed" by
@@ -418,6 +422,7 @@ DynarecCodeEntry* rdv_CompilePC()
 	u32 pc = next_pc;
 
 	// Drop every stale translation before compiling the boot entry block.
+	if (get_jit_sbp_preset() != 0)
 	{
 		const u32 masked = pc & 0xFFFFFF;
 		if (masked == 0x08300 || masked == 0x10000)

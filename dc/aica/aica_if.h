@@ -31,6 +31,10 @@ void aica_sb_Init ();
 void aica_sb_Reset(bool Manual);
 void aica_sb_Term ();
 
+// DMA_FIX: deferred AICA G2-DMA (SB_ADST) completion, counted down every
+// timeslice from UpdateSystem().
+void UpdateAicaDma(u32 cycles);
+
 // ---------------------------------------------------------------------------
 // Update macro — delegates to the plugin
 // ---------------------------------------------------------------------------

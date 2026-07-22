@@ -21,6 +21,12 @@
 // interpreter in arm7_cached.cpp. Leaving it undefined keeps the proven inline
 // interpreter below as the default. Both share the same register file / state.
 
+// Claude Test for Rez Fix - disproven: temporarily disabled 2026-07-21 to
+// bisect Rez's post-logo stall (both engines share the same symptom, so the
+// cached interpreter was briefly back under suspicion). Testing on real
+// hardware showed no difference between the two engines, so it was not the
+// cause. Re-enabled — this engine had already been cleared once before
+// (2026-07-14 retest).
 #define ARM7_USE_CACHED    // cached/threaded ARM7 interpreter active
 
 #ifdef ARM7_USE_CACHED

@@ -174,6 +174,7 @@ struct GD_SecNumbT
 #define GD_ERROR	0x09	// Reading of disc TOC failed (state does not allow access) 
 
 //Responce strings
+extern u8 reply_a1[];
 extern u8 gd_data_0x11[];
 extern u8 gd_data_0x71[];
 extern u32 gd_data_0x71_len;
@@ -215,6 +216,7 @@ extern char szExDT[8][32];
 #define ATA_EXEC_DIAG		0x90
 #define ATA_SPI_PACKET		0xA0
 #define ATA_IDENTIFY_DEV	0xA1
+#define ATA_IDENTIFY		0xEC
 #define ATA_SET_FEATURES	0xEF
 
 

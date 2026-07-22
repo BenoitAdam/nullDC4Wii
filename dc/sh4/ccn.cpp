@@ -20,6 +20,7 @@ COULD BE DONE :
 
 #include "types.h"
 #include "dc/mem/sh4_internal_reg.h"
+#include "dc/mem/mmu.h"
 #include "plugins/plugin_manager.h"
 #include "ccn.h"
 #include "sh4_registers.h"
@@ -58,10 +59,15 @@ static void CCN_MMUCR_write(u32 value)
                curr_pc);
     }
 
-    // TI is a self-clearing write-only bit (TLB invalidate)
+    // TI is a self-clearing write-only bit (TLB invalidate).
+    // This used to only LOG the request and clear the bit — the TLB itself was
+    // never invalidated, so stale entries (and the sq_remap table derived from
+    // them) survived a flush the guest believed had happened. Now actually
+    // invalidates, matching the PSP port.
     if (temp.TI)
     {
-        printf("CCN: TLB invalidate requested (pc=%08X)\n", curr_pc);
+        printf("CCN: TLB invalidate (pc=%08X)\n", curr_pc);
+        mmu_InvalidateTLB();
         temp.TI = 0;
     }
 

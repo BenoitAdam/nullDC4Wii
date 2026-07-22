@@ -468,9 +468,53 @@ void gd_process_ata_cmd()
 		gd_set_state(gds_waitpacket);
 		break;
 
+	// Claude Test for Rez Fix - confirmed unrelated to Rez (never issued: the
+	// game never sends 0xA1), but a genuine hardware-accuracy fix, kept.
+	//
+	// ATA IDENTIFY PACKET DEVICE (0xA1) — returns the drive identification
+	// block over PIO.
+	//
+	// This was a silent no-op: no data, no state change, and crucially no
+	// completion interrupt, so a host that issues 0xA1 and waits for the
+	// transfer to finish waits forever. Unlike die() it does not hang the
+	// emulator, so everything else keeps running while the guest spins —
+	// exactly the observed failure mode. Ported from the NullDC PSP port.
 	case ATA_IDENTIFY_DEV:
 		printf_ata("ATA_IDENTIFY_DEV\n");
-		if (get_debug_gdrom()) printf("ATA_IDENTIFY_DEV -- not implemented\n");
+		GDStatus.BSY = 0;
+		gd_spi_pio_end(&reply_a1[packet_cmd.data_8[2] & ~1], packet_cmd.data_8[4]);
+		break;
+
+	// Claude Test for Rez Fix - confirmed unrelated to Rez (never issued: the
+	// game never sends 0xEC), but a genuine hardware-accuracy fix, kept.
+	//
+	// ATA IDENTIFY DEVICE (0xEC) on an ATAPI device must NOT return an ATA
+	// identify block: it aborts and leaves the ATAPI signature in the task-file
+	// registers (SecCount=1, SecNumber=1, ByteCount=0xEB14) with ABRT+CHECK set.
+	// That signature is exactly how a driver tells "packet device" from "plain
+	// ATA disk", and the completion interrupt is what releases the caller.
+	//
+	// This case did not exist at all — 0xEC fell through to the `default:`
+	// branch, which is die(). Ported from the NullDC PSP port, which boots Rez.
+	case ATA_IDENTIFY:
+		printf_ata("ATA_IDENTIFY\n");
+		// Set the ATAPI signature
+		DriveSel &= 0xf0;
+
+		SecCount.full  = 1;
+		SecNumber.full = 1;
+		ByteCount.low  = 0x14;
+		ByteCount.hi   = 0xeb;
+
+		// Command aborted — this is the correct ATAPI response to 0xEC
+		Error.full = 0x4;
+
+		GDStatus.full  = 0;
+		GDStatus.DRDY  = 1;
+		GDStatus.CHECK = 1;
+
+		asic_RaiseInterrupt(holly_GDROM_CMD);
+		gd_set_state(gds_waitcmd);
 		break;
 
 	case ATA_SET_FEATURES:
@@ -523,13 +567,34 @@ void gd_process_spi_cmd()
 
 		/////////////////////////////////////////////////
 		// *FIXME* CHECK FOR DMA, Diff Settings !?!@$#!@%
+	// Claude Test for Rez Fix - confirmed unrelated to Rez (this game's reads
+	// never hit the sector_type=2340 branch), but a genuine hardware-accuracy
+	// fix (real per-flag sector sizing instead of a hardcoded 2048), kept.
 	case SPI_CD_READ:
+	case SPI_CD_READ2:
 		{
 #define readcmd packet_cmd.GDReadBlock
 
-			if( readcmd.head ||readcmd.subh || readcmd.other || (!readcmd.data) )	// assert
-				if (get_debug_gdrom()) printf("GDROM: *FIXME* ADD MORE CD READ SETTINGS\n");
+			// Sector size is selected by the data-select flags, NOT fixed at
+			// 2048. head+subh+data with expdtype==3 is the raw-ish read (header
+			// + subheader + user data = 2340 bytes) that Mode2/CDI content uses.
+			// Hardcoding 2048 here hands the game correctly-sized-looking but
+			// wrongly-framed data: the read "succeeds", the game gets garbage
+			// and quietly stops submitting geometry. (Ported from the NullDC PSP
+			// port, which boots Rez.)
 			u32 sector_type=2048;
+			if (readcmd.head==1 && readcmd.subh==1 && readcmd.data==1 &&
+			    readcmd.expdtype==3 && readcmd.other==0)
+			{
+				sector_type=2340;
+			}
+			else if (get_debug_gdrom() && (readcmd.head || readcmd.subh || readcmd.other || (!readcmd.data)))
+			{
+				printf("GDROM: unsupported CD_READ flags head=%u subh=%u data=%u "
+				       "other=%u expdtype=%u - falling back to 2048-byte sectors\n",
+				       (u32)readcmd.head, (u32)readcmd.subh, (u32)readcmd.data,
+				       (u32)readcmd.other, (u32)readcmd.expdtype);
+			}
 
 			u32 start_sector = GetFAD(&readcmd.b[2],readcmd.prmtype);
 
@@ -595,13 +660,9 @@ void gd_process_spi_cmd()
 
 		break;
 
-	case SPI_CD_READ2:
-		printf_spicmd("SPI_CD_READ2\n");
-		if (get_debug_gdrom()) printf("GDROM: Unhandled Sega SPI frame: SPI_CD_READ2\n");
-
-		gd_set_state(gds_procpacketdone);
-		break;
-
+	// SPI_CD_READ2 is now handled together with SPI_CD_READ above (as in the
+	// PSP port). It used to land here and complete as a no-op, which returns
+	// no data at all for what is a real read request.
 
 	case SPI_REQ_STAT:
 		{

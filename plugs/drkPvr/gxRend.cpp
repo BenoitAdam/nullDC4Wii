@@ -6150,6 +6150,10 @@ void StartRender()
       FrameCount++;
       return;
     } else {
+      // SILENT DROP: FB_W_SOF1 bit 24 (RTT) is set, but render_to_texture is
+      // off and framebuffer_2d is off — the frame is discarded entirely. This
+      // is the only StartRender exit with no [PATH] trace, so a game whose
+      // frames land here shows RPS=0 while still looping happily.
       reset_vtx_state(); // drop the untaken render's geometry (see above)
       return; // just return
     }

@@ -151,3 +151,10 @@ void dmac_Term();               // teardown (currently a no-op)
 
 // Cycle-accurate DMA tick (called from the main emulation loop, not yet implemented)
 void UpdateDMA();
+
+// Claude Test for Rez Fix - disproven: deferred Ch2-DMA completion IRQ was
+// tested (even at a 65536-cycle delay) to see whether IRQ timing was why a
+// guest driver never observed a transfer as complete. It made no observable
+// difference, so DMAC_Ch2St() raises the completion IRQ synchronously again
+// (matching the verified-working PSP port) and this hook is unused.
+// void UpdateCh2DmaIrq(u32 cycles);

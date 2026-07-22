@@ -6,10 +6,13 @@
 #include "dc/mem/sb.h"
 #include "dc/mem/sh4_mem.h"
 #include "dc/pvr/pvr_if.h"
+#include "sh4_registers.h"   // sr.IMASK/BL for the CH2-IRQ timing probe
 #include "dmac.h"
 #include "intc.h"
 #include "dc/asic/asic.h"
 #include "plugins/plugin_manager.h"
+
+extern "C" int get_dma_fix_preset();
 
 // ---------------------------------------------------------------------------
 // DMAC register state for all 4 channels
@@ -26,6 +29,19 @@ DMAC_DMAOR_type  DMAC_DMAOR;
 static inline bool isDstTA(u32 dst)         { return dst >= 0x10000000u && dst <= 0x10FFFFFFu; }
 static inline bool isDstVRAM_LM0(u32 dst)  { return dst >= 0x11000000u && dst <= 0x11FFFFE0u; }
 static inline bool isDstVRAM_LM1(u32 dst)  { return dst >= 0x13000000u && dst <= 0x13FFFFE0u; }
+
+// Claude Test for Rez Fix - disproven: a deferred Ch2-DMA completion IRQ
+// (armed here, fired from UpdateCh2DmaIrq() in the main update loop) was
+// tried to test whether IRQ timing was why a guest driver never observed a
+// transfer as complete. Even a 65536-cycle delay (~2% of a frame) made no
+// difference to the game's descriptor/handle bookkeeping, so timing was not
+// the cause. DMAC_Ch2St() below raises the completion IRQ synchronously
+// again, matching the verified-working PSP port. Left commented out rather
+// than deleted in case a future, different hang turns out to be timing-related.
+// #define CH2_IRQ_DELAY_CYCLES 65536
+// s32 ch2_irq_delay_cycles = 0;
+// u32 dbg_ch2_desc_at_fire   = 0;
+// u32 dbg_ch2_handle_at_fire = 0;
 
 // ---------------------------------------------------------------------------
 // DMAC_Ch2St - Channel 2 DMA: feeds the PowerVR TA / VRAM
@@ -131,16 +147,44 @@ void DMAC_Ch2St()
 	}
 
 	// --- Update registers to reflect completed transfer ---
-	DMAC_SAR[2]       = src;
-	DMAC_CHCR[2].full &= ~0x1u;   // clear DE (channel enable)
-	DMAC_DMATCR[2]    = 0x00000000u;
+	//
+	// DMA_FIX: match the PSP port's writeback EXACTLY — it boots Rez and this
+	// is the one place our post-DMA register state diverged from it:
+	//   * Set TE (transfer end) so a driver polling completion sees it.
+	//   * Do NOT clear DE. On real SH4 a finished channel is DE=1,TE=1 — DE is
+	//     not auto-cleared. The legacy `DE=0` made a handler that checks
+	//     "channel enabled AND done" see "not enabled" and refuse to chain the
+	//     next transfer, so the batch stalled after entry0 (Rez: ta frozen at
+	//     1825).
+	//   * Do NOT write DMAC_SAR[2]. PSP leaves it at the guest-programmed
+	//     value; the game does not rely on it advancing.
+	//   * SB_C2DSTAT is the *destination* (TA FIFO); leave it untouched on the
+	//     TA path (only the 32-bit texture path advances it, above) instead
+	//     of clobbering it with src.
+	if (get_dma_fix_preset())
+	{
+		DMAC_CHCR[2].TE = 1;
+		DMAC_DMATCR[2]  = 0x00000000u;
+		SB_C2DST        = 0x00000000u;
+		SB_C2DLEN       = 0x00000000u;
+	}
+	else
+	{
+		// Legacy (pre-fix) writeback, kept for A/B comparison.
+		DMAC_CHCR[2].full &= 0xFFFFFFFEu;   // clear DE, never set TE
+		DMAC_DMATCR[2]     = 0x00000000u;
+		SB_C2DST           = 0x00000000u;
+		SB_C2DLEN          = 0x00000000u;
+		SB_C2DSTAT         = src;           // bug: clobbers destination reg
+		DMAC_SAR[2]        = src;
+	}
 
-	SB_C2DST          = 0x00000000u;
-	SB_C2DLEN         = 0x00000000u;
-	SB_C2DSTAT        = src;
-
-	// Raise Ch2-DMA end interrupt (ISTNRM bit 19: DTDE2INT)
+	// Raise the Ch2-DMA end interrupt synchronously, as PSP does. (Deferring
+	// it was tested and made no difference — see the disproven experiment
+	// commented out above — so the bug was never the IRQ timing; it was the
+	// DE=0 writeback above.)
 	asic_RaiseInterrupt(holly_CH2_DMA);
+	(void)src;
 }
 
 // ---------------------------------------------------------------------------

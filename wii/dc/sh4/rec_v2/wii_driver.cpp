@@ -226,7 +226,7 @@ void ngen_Begin(DecodedBlock* block,bool force_checks)
 	// Block-check guard (self-modifying code protection)
 	//
 	// force_checks comes from DoCheck() in driver.cpp, which is gated on the
-	// block_check preset. When set, re-read the first byte of this block's SH4
+	// JIT_SBP preset. When set, re-read the first byte of this block's SH4
 	// source at entry and compare it against the value present at compile time.
 	// A mismatch means the game overwrote its own code, so the translation is
 	// stale — bail to rdv_BlockCheckFail, which clears the cache (dropping the

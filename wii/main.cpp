@@ -276,15 +276,31 @@ extern "C" {
   int get_arm7_speed_preset() { return g_arm7_speed_preset; }
 }
 
-// JIT block-check guard (self-modifying code protection).
-// Emits a source-byte compare at each guarded block's entry; a mismatch drops
-// the stale translation and recompiles (rdv_BlockCheckFail).
-// 0=off (legacy, no guards), 1=known self-modifying addresses only,
-// 2=every RAM block (slow — diagnosis only).
-int g_block_check_preset = 0;
+// JIT_SBP — JIT Stale Block Protection. One preset gates all three defenses
+// against executing stale/self-modified translations (see
+// dc/sh4/rec_v2/driver.cpp): the boot-entry cache flush at 0x..08300 /
+// 0x..10000, the runtime block-check guard emitted at each guarded block's
+// entry (a source-byte compare; a mismatch drops the stale translation and
+// recompiles via rdv_BlockCheckFail), and the full cache clear on a guard
+// failure. 0=off (legacy, zero protection), 1=known self-modifying addresses
+// (default), 2=every RAM block (slow — diagnosis only).
+int g_jit_sbp_preset = 1;
 
 extern "C" {
-  int get_block_check_preset() { return g_block_check_preset; }
+  int get_jit_sbp_preset() { return g_jit_sbp_preset; }
+}
+
+// DMA_FIX — bundles the ch2/PVR/Sort/AICA-G2 DMA correctness fixes found by
+// diffing against the verified-working NullDC PSP port (see dc/sh4/dmac.cpp,
+// dc/pvr/pvr_sb_regs.cpp, dc/aica/aica_if.cpp): correct CHCR TE/DE writeback
+// (real SH4 sets TE and leaves DE alone; never clears DE), no SB_C2DSTAT
+// clobber, no bogus PVR-DMA alignment check, the Sort-DMA link sentinel fix
+// (WinCE games), and deferred (non-instant) AICA G2-DMA completion + SB_E2ST.
+// 0=off (legacy, pre-fix behavior for A/B comparison), 1=on (default).
+int g_dma_fix_preset = 1;
+
+extern "C" {
+  int get_dma_fix_preset() { return g_dma_fix_preset; }
 }
 
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
@@ -833,8 +849,9 @@ void displayAccuracyMenu()
 #define OPT_RENDER_DELAY 40
 #define OPT_SHOW_FPS    41
 #define OPT_ARM7_SPEED  42
-#define OPT_BLOCK_CHECK 43
-#define OPT_ROW_COUNT   44
+#define OPT_JIT_SBP     43
+#define OPT_DMA_FIX     44
+#define OPT_ROW_COUNT   45
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -869,7 +886,8 @@ static int opt_row_page(int row)
     case OPT_RENDER_DELAY:
     case OPT_SHOW_FPS:
     case OPT_ARM7_SPEED:
-    case OPT_BLOCK_CHECK:
+    case OPT_JIT_SBP:
+    case OPT_DMA_FIX:
       return 2;
     default:
       return 0;
@@ -1310,14 +1328,23 @@ bool displayOptionsMenu()
     printf(" sound CPU clock - check audio!");
     printf("\n");
 
-    // --- Row: JIT block-check guard (dc/sh4/rec_v2/driver.cpp DoCheck) ---
-    printf("%s BLOCK CHECK    : ", (selectedRow == OPT_BLOCK_CHECK) ? ">" : " ");
-    switch (g_block_check_preset) {
-      case 0: printf("[< OFF (DEFAULT)     >]"); break;
-      case 1: printf("[< KNOWN             >]"); break;
+    // --- Row: JIT_SBP - Stale Block Protection (dc/sh4/rec_v2/driver.cpp) ---
+    printf("%s JIT SBP        : ", (selectedRow == OPT_JIT_SBP) ? ">" : " ");
+    switch (g_jit_sbp_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< KNOWN (DEFAULT)   >]"); break;
       case 2: printf("[< ALL RAM (SLOW)    >]"); break;
     }
-    printf(" self-modifying code guard");
+    printf(" stale/self-modified block guard");
+    printf("\n");
+
+    // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
+    printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? ">" : " ");
+    switch (g_dma_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" ch2/PVR/Sort/AICA DMA fixes");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.58\n");
@@ -1398,7 +1425,8 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
-        case OPT_BLOCK_CHECK:    g_block_check_preset     = (g_block_check_preset     + 2) % 3; break;
+        case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
+        case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1448,7 +1476,8 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
-        case OPT_BLOCK_CHECK:    g_block_check_preset     = (g_block_check_preset     + 1) % 3; break;
+        case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
+        case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2139,12 +2168,13 @@ int main(int argc, wchar *argv[])
       case 1: printf("5MHZ (FASTER)\n");   break;
       case 2: printf("2.5MHZ (RISKY)\n");  break;
     }
-    printf("Block Check    : ");
-    switch (g_block_check_preset) {
-      case 0: printf("OFF (DEFAULT)\n");   break;
-      case 1: printf("KNOWN\n");           break;
+    printf("JIT SBP        : ");
+    switch (g_jit_sbp_preset) {
+      case 0: printf("OFF\n");             break;
+      case 1: printf("KNOWN (DEFAULT)\n"); break;
       case 2: printf("ALL RAM (SLOW)\n");  break;
     }
+    printf("DMA Fix        : %s\n", g_dma_fix_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {
       case -1: printf("DEFAULT (SAVED)\n"); break;
