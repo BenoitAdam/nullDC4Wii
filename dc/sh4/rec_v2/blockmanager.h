@@ -47,6 +47,23 @@ struct DynarecBlock
 // Cache array exposed for potential assembly access (like original)
 extern DynarecBlock* cache[BM_BLOCKLIST_COUNT];
 
+// Flat inline cache for the JIT dynamic-branch fast path (BCACHE preset).
+// One {addr, code} pair per bucket, value-mirrored from cache[] at every
+// cache[] mutation site in blockmanager.cpp, so the emitted dispatch for a
+// dynamic jump touches ONE data cache line (the 8-byte entry) instead of two
+// (the cache[] pointer + the DynarecBlock it points at, which lives in an
+// unrelated heap vector).
+// Invariants the emitted code relies on (wii_driver.cpp BET_Dynamic*):
+//   * addr == 0xFFFFFFFF <=> empty (odd, so it can never match an SH4 PC)
+//   * addr != 0xFFFFFFFF  => code is a valid block entry point (never 0)
+//   * sizeof(entry) == 8 on the Wii (the emitted index math hardcodes idx*8)
+struct BlockCacheFlatEntry
+{
+	u32 addr;
+	DynarecCodeEntry* code;
+};
+extern BlockCacheFlatEntry bm_bcache[BM_BLOCKLIST_COUNT];
+
 // New functions (not in original, but useful for Wii port)
 void bm_Init();
 bool bm_RemoveCode(u32 addr);

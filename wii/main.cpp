@@ -315,6 +315,20 @@ extern "C" {
   int get_fastmem_preset() { return g_fastmem_preset; }
 }
 
+// BCACHE — flat dynamic-branch dispatch cache for the SH4 dynarec
+// (dc/sh4/rec_v2/blockmanager.cpp bm_bcache[] + the BET_Dynamic* emission in
+// wii/dc/sh4/rec_v2/wii_driver.cpp). Every dynamic SH4 branch (jmp/rts/bsrf)
+// dispatches through an inline cache; the legacy path chases
+// cache[] -> DynarecBlock across two data cache lines and read-modify-writes
+// a lookups counter. The preset reads a flat value-mirrored {addr, code}
+// table instead: one cache line touched, no store, 10 instructions vs 16.
+// 0=off (legacy two-line path, default), 1=on.
+int g_bcache_preset = 0;
+
+extern "C" {
+  int get_bcache_preset() { return g_bcache_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -864,7 +878,8 @@ void displayAccuracyMenu()
 #define OPT_JIT_SBP     43
 #define OPT_DMA_FIX     44
 #define OPT_FASTMEM     45
-#define OPT_ROW_COUNT   46
+#define OPT_BCACHE      46
+#define OPT_ROW_COUNT   47
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -902,6 +917,7 @@ static int opt_row_page(int row)
     case OPT_JIT_SBP:
     case OPT_DMA_FIX:
     case OPT_FASTMEM:
+    case OPT_BCACHE:
       return 2;
     default:
       return 0;
@@ -1368,6 +1384,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (EXPERIMENTAL) >]"); break;
     }
     printf(" MMU-mapped JIT memory (no compares)");
+    printf("\n");
+
+    // --- Row: BCACHE - flat dynamic-branch dispatch cache ---
+    printf("%s JIT BCACHE     : ", (selectedRow == OPT_BCACHE) ? ">" : " ");
+    switch (g_bcache_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FLAT)         >]"); break;
+    }
+    printf(" 1-cacheline dynamic jump dispatch");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.60\n");
@@ -1451,6 +1476,7 @@ bool displayOptionsMenu()
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
+        case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1503,6 +1529,7 @@ bool displayOptionsMenu()
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
+        case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2201,6 +2228,7 @@ int main(int argc, wchar *argv[])
     }
     printf("DMA Fix        : %s\n", g_dma_fix_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
     printf("Fastmem        : %s\n", g_fastmem_preset ? "ON (MMU)" : "OFF (LEGACY)");
+    printf("JIT BCache     : %s\n", g_bcache_preset ? "ON (FLAT)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {
       case -1: printf("DEFAULT (SAVED)\n"); break;

@@ -104,6 +104,7 @@ const ppc_ireg ppc_rinvalid = static_cast<ppc_ireg>(-1);  // sentinel: out-of-ra
 
 // This is defined in main.cpp
 extern "C" int get_debug_loop();
+extern "C" int get_bcache_preset();	// main.cpp: 0=off (default), 1=flat dispatch cache
 
 // ppc_li: Loads a 32-bit immediate value into a PowerPC register.
 void ppc_li(u32 D,u32 imm)
@@ -827,6 +828,40 @@ void ngen_End(DecodedBlock* block)
 		//printf("Dynamic !\n");
 		//mov reg,djump
 		ppc_ori(ppc_rarg0,ppc_djump,0);  // mr rarg0, djump
+		if (get_bcache_preset())
+		{
+			// ---- BCACHE preset: flat single-cache-line dispatch ----
+			// bm_bcache[] holds {addr, code} pairs value-mirrored from cache[]
+			// (blockmanager.cpp), so the hit path touches ONE data cache line
+			// (the 8-byte entry) instead of two (cache[] pointer + the heap
+			// DynarecBlock it points at) and drops the lookups++ read-modify-
+			// write. Policy note: the flat path does not feed the replacement
+			// counters, so a bucket-colliding block steals the slot after +3
+			// slow-path hits — the two then alternate, each getting the fast
+			// path most of the time, instead of one paying bm_GetCode forever.
+			//
+			//   off   = ((addr>>2)&16383)*8 = (addr<<1) & 0x1FFF8  (one rlwinm)
+			//   entry = &bm_bcache[off/8];
+			//   if (entry->addr == addr) goto entry->code;
+			//   else goto loop_no_update;             // full bm_GetCode
+			//
+			// Invariant (blockmanager.h): addr != 0xFFFFFFFF => code valid, so
+			// no separate code==0 test. addr stays in rarg0 for the miss path.
+			verify(sizeof(BlockCacheFlatEntry)==8 && BM_BLOCKLIST_COUNT==16384);
+
+			ppc_rlwinmx(ppc_rarg1,ppc_rarg0,1,15,28,0);	// rarg1 = (addr<<1) & 0x1FFF8
+			u32 lo=ppc_addr_high(ppc_rarg2,(void*)&bm_bcache[0]);
+			ppc_addx(ppc_rarg2,ppc_rarg2,ppc_rarg1,0,0);	// rarg2 = &bm_bcache[idx] - lo
+			ppc_lwz(ppc_rarg3,ppc_rarg2,lo);		// entry.addr
+			ppc_cmp(ppc_cr0,ppc_rarg3,ppc_rarg0,0);		// == addr ?
+			ppc_label* miss=ppc_CreateLabel();
+			ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);		// bne miss
+			ppc_lwz(ppc_rarg3,ppc_rarg2,lo+4);		// entry.code
+			ppc_mtctr(ppc_rarg3);
+			ppc_bcctrx(BO_ALWAYS,BI_CR0_EQ,0);		// bctr -> cached code
+			miss->MarkLabel();
+		}
+		else
 		{
 			// Inline bm_GetCode's fast path (bm_CheckCache) before falling back
 			// to the loop_no_update machinery:

@@ -38,6 +38,19 @@ static bm_List blocks[BM_BLOCKLIST_COUNT];
 DynarecBlock* cache[BM_BLOCKLIST_COUNT];
 static DynarecBlock empty_block = {0, 0xFFFFFFFF, 0};
 
+// Flat {addr, code} mirror of cache[] for the JIT dynamic-branch fast path
+// (see blockmanager.h). The Wii recompiler reads it from emitted code when
+// the BCACHE preset is on. 32-byte aligned so the 8-byte entries never
+// straddle an L1 cache line. Mirroring empty_block writes the sentinel
+// {0xFFFFFFFF, 0}, so one helper covers set and clear alike.
+ALIGN(32) BlockCacheFlatEntry bm_bcache[BM_BLOCKLIST_COUNT];
+
+static inline void bcache_mirror(u32 idx, DynarecBlock* b)
+{
+	bm_bcache[idx].addr = b->addr;
+	bm_bcache[idx].code = b->code;
+}
+
 extern u32 rdv_FailedToFindBlock_pc;
 
 // Statistics for debugging/profiling (can be disabled in release builds)
@@ -57,6 +70,7 @@ void bm_Init()
 	for (u32 i = 0; i < BM_BLOCKLIST_COUNT; i++)
 	{
 		cache[i] = &empty_block;
+		bcache_mirror(i, &empty_block);
 		blocks[i].reserve(BM_INITIAL_CAPACITY); // Pre-allocate to reduce reallocations
 	}
 	
@@ -108,6 +122,7 @@ DynarecCodeEntry* FASTCALL bm_GetCode(u32 addr)
 			if (block.lookups > cache[idx]->lookups + 2)
 			{
 				cache[idx] = &block;
+				bcache_mirror(idx, &block);
 			}
 			
 #ifdef BM_ENABLE_STATS
@@ -140,6 +155,11 @@ void bm_AddCode(u32 addr, DynarecCodeEntry* code)
 			// Update existing block
 			block_list[i].code = code;
 			block_list[i].lookups = 0;
+			// The flat mirror stores code BY VALUE (the legacy cache[] sees
+			// the new pointer through indirection automatically) — refresh it
+			// if this block is the cached one for the bucket.
+			if (cache[idx] == &block_list[i])
+				bcache_mirror(idx, &block_list[i]);
 			return;
 		}
 	}
@@ -167,7 +187,10 @@ void bm_AddCode(u32 addr, DynarecCodeEntry* code)
 		
 		// Invalidate cache if we replaced the cached block
 		if (cache[idx] == &block_list[min_lookups_idx])
+		{
 			cache[idx] = &empty_block;
+			bcache_mirror(idx, &empty_block);
+		}
 	}
 	else
 	{
@@ -180,6 +203,7 @@ void bm_AddCode(u32 addr, DynarecCodeEntry* code)
 		// Point cache at the new block immediately - it was just compiled
 		// so it will almost certainly be needed right away.
 		cache[idx] = &block_list.back();
+		bcache_mirror(idx, &block_list.back());
 	}
 	// NOTE: do NOT reset cache to empty_block here when evicting.
 	// The eviction path already handles cache invalidation above.
@@ -197,7 +221,10 @@ bool bm_RemoveCode(u32 addr)
 		{
 			// Invalidate cache if we're removing the cached block
 			if (cache[idx] == &block_list[i])
+			{
 				cache[idx] = &empty_block;
+				bcache_mirror(idx, &empty_block);
+			}
 			
 			// Swap with last element and pop (faster than erase)
 			if (i < block_list.size() - 1)
@@ -219,6 +246,7 @@ void bm_Reset()
 	for (u32 i = 0; i < BM_BLOCKLIST_COUNT; i++)
 	{
 		cache[i] = &empty_block;
+		bcache_mirror(i, &empty_block);
 		blocks[i].clear();
 		// Optionally shrink memory if we're low on RAM
 		// blocks[i].shrink_to_fit();
@@ -248,7 +276,10 @@ void bm_InvalidateRange(u32 start_addr, u32 end_addr)
 			if (block_list[i].addr >= start_addr && block_list[i].addr <= end_addr)
 			{
 				if (cache[start_idx] == &block_list[i])
+				{
 					cache[start_idx] = &empty_block;
+					bcache_mirror(start_idx, &empty_block);
+				}
 				
 				// Swap and pop
 				if (i < block_list.size() - 1)
@@ -269,6 +300,7 @@ void bm_InvalidateRange(u32 start_addr, u32 end_addr)
 		while (true)
 		{
 			cache[idx] = &empty_block;
+			bcache_mirror(idx, &empty_block);
 			blocks[idx].clear();
 			
 			if (idx == end_idx)
