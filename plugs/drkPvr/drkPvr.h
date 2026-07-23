@@ -36,6 +36,10 @@ extern s32 render_end_pending_cycles;
 extern s32 render_isp_pending_cycles;
 extern s32 render_tsp_pending_cycles;
 extern s32 render_vd_pending_cycles;
+// SPG state shared with the renderer (SPG.cpp): emulated-vblank pace reference
+// for the frameskip AUTO mode (gxRend.cpp ShouldSkipFrame)
+extern u32 spg_FrameSh4Cycles;   // SH4 cycles per emulated video frame (video-mode derived)
+extern u32 spg_VblankCountTotal; // vblanks since boot; monotonic, never reset
 extern pvr_init_params PVRPARAMS;
 
 // Function declarations

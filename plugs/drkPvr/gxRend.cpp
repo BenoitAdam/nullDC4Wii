@@ -3896,14 +3896,33 @@ void PresentFramebuffer();
 // Frame-skip state
 // ============================
 
-// Wall-clock time (seconds) when the last DoRender() call started.
-// os_GetSeconds() is the platform timer already used by SPG.cpp — no extra
-// headers or libogc-specific constants required.
-static double s_render_start_time = 0.0;
-static double s_last_render_time  = 0.0;   // seconds taken by the previous rendered frame
+// FRAMESKIP_AUTO(): skip when the emulator is running slower than real time.
+//
+// The previous implementation timed DoRender() alone against a fixed 1/60 s
+// budget. That never fired in practice:
+//   * With ASYNC_RENDER() (default ON) DoRender() returns right after queuing
+//     the display copy — both blocking GX_DrawDone() calls are skipped, and
+//     the gx_sync_pending() wait at its top is a no-op because the previous
+//     frame's GPU work drained while the SH4 was emulating — so the measured
+//     span was CPU submit time only, a few ms even on GPU-heavy frames.
+//   * Games slowed down by SH4/AICA emulation rather than by rendering never
+//     exceed a render-only budget at all.
+//
+// Measure instead the wall-clock time between consecutive skip decisions vs
+// the EMULATED time between them: vblanks elapsed x the frame period SPG
+// derives from the game's own video registers (spg_FrameSh4Cycles/SH4_CLOCK —
+// 1/60 NTSC, 1/50 PAL, interlace handled; same formula the speed limiter
+// uses). Ratio > 1 means the emulator is behind real time, whatever the
+// bottleneck. Behind at all -> skip like FRAMESKIP_1; behind more than 2x ->
+// like FRAMESKIP_2; always render after the allowed skips so the screen can
+// never freeze. The duty cycle self-regulates: a skipped frame's interval is
+// cheap, its ratio lands under the margin, and the next frame renders.
 
-#define VBLANK_BUDGET_SEC  (1.0 / 60.0) // AUTO Mode (NTSC)
+static double s_auto_last_time    = 0.0; // os_GetSeconds() at the previous decision
+static u32    s_auto_last_vblank  = 0;   // spg_VblankCountTotal at the previous decision
+static int    s_auto_consec_skips = 0;   // frames skipped since the last rendered one
 
+#define AUTO_SKIP_MARGIN 1.10 // skip only when >10% behind real time (timer jitter guard)
 
 static bool ShouldSkipFrame() // Returns true when the current frame should be dropped
 {
@@ -3922,15 +3941,52 @@ static bool ShouldSkipFrame() // Returns true when the current frame should be d
     }
     if (FRAMESKIP_AUTO())
     {
-        // Skip at most ONE frame per over-budget render.  A skipped frame
-        // never reaches DoRender(), so s_last_render_time would keep its
-        // over-budget value forever — clear the debt here, otherwise a single
-        // slow frame would skip every frame after it (frozen screen).
-        if (s_last_render_time > VBLANK_BUDGET_SEC)
+        double now = os_GetSeconds();
+        u32 vbl    = spg_VblankCountTotal;
+
+        // First call, or SPG not programmed yet: anchor the baseline only.
+        if (s_auto_last_time == 0.0 || spg_FrameSh4Cycles == 0)
         {
-            s_last_render_time = 0.0;
+            s_auto_last_time   = now;
+            s_auto_last_vblank = vbl;
+            return false;
+        }
+
+        double elapsed = now - s_auto_last_time;
+        u32 dv         = vbl - s_auto_last_vblank;
+        s_auto_last_time   = now;
+        s_auto_last_vblank = vbl;
+
+        // No vblank since the previous frame: either the game presents faster
+        // than the display (definitely not behind), or this game programs
+        // vbstart outside the scanline range so the SPG vblank event never
+        // fires (see CalculateSync's [SPG] note) — no usable pace signal.
+        if (dv == 0)
+        {
+            s_auto_consec_skips = 0;
+            return false;
+        }
+
+        // A huge gap (loading screen with no presents, disc swap, debugger
+        // stall) says nothing about steady-state speed — resync, don't skip.
+        if (elapsed > 0.5)
+        {
+            s_auto_consec_skips = 0;
+            return false;
+        }
+
+        // Real-time budget for the emulated interval that just elapsed.
+        double budget = (double)dv * ((double)spg_FrameSh4Cycles / (double)SH4_CLOCK);
+        double ratio  = elapsed / budget;
+
+        int max_skips = (ratio > 2.0 * AUTO_SKIP_MARGIN) ? 2 : 1;
+        if (ratio > AUTO_SKIP_MARGIN && s_auto_consec_skips < max_skips)
+        {
+            s_auto_consec_skips++;
             return true;
         }
+
+        s_auto_consec_skips = 0;
         return false;
     }
 
@@ -6169,9 +6225,7 @@ void StartRender()
   if(DEBUG_MESSAGE()) printf("[PATH] 3D: FB_W_SOF1=%08X FB_R_SOF1=%08X VtxCnt=%d lists=%d\n",
     FB_W_SOF1, FB_R_SOF1, VtxCnt, (int)(curLST - lists));
 
-  s_render_start_time = os_GetSeconds();
   DoRender();
-  s_last_render_time  = os_GetSeconds() - s_render_start_time;
 
   FrameCount++;
 }

@@ -26,6 +26,7 @@ s32 spg_ScanlineSh4CycleCounter = 0;
 u32 spg_ScanlineCount = 512;
 u32 spg_CurrentScanline = (u32)-1;  // Explicit -1 cast, avoids signed/unsigned warning
 u32 spg_VblankCount = 0;
+u32 spg_VblankCountTotal = 0; // monotonic, never reset — frameskip AUTO pace reference (gxRend.cpp)
 s32 spg_LineSh4Cycles = 0;
 u32 spg_FrameSh4Cycles = 0;
 
@@ -171,6 +172,7 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
         if (SPG_VBLANK.vbstart == spg_CurrentScanline)
         {
             spg_VblankCount++;
+            spg_VblankCountTotal++;
 
             // Note: holly_HBLank is actually VBlank on real HW — HBlank not yet emulated
             params.RaiseInterrupt(holly_HBLank);
