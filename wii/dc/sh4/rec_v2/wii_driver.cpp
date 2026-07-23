@@ -770,6 +770,107 @@ void unop_end_fpu(shil_opcode* op)
 	ppc_sh_store_f32(ppc_farg0,op->rd);
 }
 
+// ---------------------------------------------------------------------------
+// FPU_PIN: shadow-register-aware FLOAT operand resolution, mirroring the
+// integer binop3_*/unop3_* scheme. Only for ops emitted as a SINGLE PPC FP
+// instruction (fadds/fsubs/fmuls/fdivs/fabs/fneg/fmadds): such an instruction
+// reads all sources then writes the dest atomically, so fop_d may safely
+// alias a source. All of fr[0..15] is pinned when the preset is on, so the
+// scalar arithmetic ops (operands always fr) collapse to ONE instruction;
+// fpul/xf operands resolve to a scratch load exactly as before. With the
+// preset off this degenerates to the legacy lfs/lfs/op/stfs sequence.
+// ---------------------------------------------------------------------------
+u32 fop_d, fop_a, fop_b;
+
+// Resolve a float source: its pinned FPR (read in place, no copy), or load
+// into scratch D. Never emits the fmr that ppc_sh_load_f32 would.
+static u32 fsrc_or_load_i(u32 sh4_reg,u32 D)
+{
+	if (get_fpu_pin_preset())
+	{
+		ppc_freg rf=GetFloatReg(sh4_reg);
+		if (rf!=ppc_finvalid)
+			return (u32)rf;
+	}
+	ppc_lfs(D,ppc_contex,Sh4cntx.offset(sh4_reg));
+	return D;
+}
+static u32 fsrc_or_load(shil_param prm,u32 D)
+{
+	verify(prm.is_reg());
+	return fsrc_or_load_i(prm._reg,D);
+}
+
+static void fbop_resolve(shil_opcode* op)
+{
+	verify(!op->rs1.is_null() && !op->rs2.is_null() && !op->rd.is_null());
+	fop_a=fsrc_or_load(op->rs1,ppc_farg0);
+	fop_b=fsrc_or_load(op->rs2,ppc_farg1);
+	ppc_freg d=get_fpu_pin_preset()?GetFloatReg(op->rd._reg):ppc_finvalid;
+	fop_d=(d!=ppc_finvalid)?(u32)d:ppc_farg0;
+}
+static void fuop_resolve(shil_opcode* op)
+{
+	verify(!op->rs1.is_null() && !op->rd.is_null());
+	fop_a=fsrc_or_load(op->rs1,ppc_farg0);
+	ppc_freg d=get_fpu_pin_preset()?GetFloatReg(op->rd._reg):ppc_finvalid;
+	fop_d=(d!=ppc_finvalid)?(u32)d:ppc_farg0;
+}
+static void fbop_end(shil_opcode* op)
+{
+	// A pinned rd was written in place; only the scratch dest needs a store.
+	// (Pinned regs are f14+, so fop_d==farg0 <=> rd is not pinned.)
+	if (fop_d==ppc_farg0)
+		ppc_sh_store_f32(ppc_farg0,op->rd);
+}
+
+// Resolve a float DEST to the FPR an op should write: the pinned FPR if rd is
+// pinned (write in place, no trailing store), else `scratch`. Pair with
+// fdst_store() which stores only when scratch was used.
+static u32 fdst_reg(shil_param rd,u32 scratch)
+{
+	if (get_fpu_pin_preset())
+	{
+		ppc_freg rf=GetFloatReg(rd._reg);
+		if (rf!=ppc_finvalid)
+			return (u32)rf;
+	}
+	return scratch;
+}
+static void fdst_store(shil_param rd,u32 reg,u32 scratch)
+{
+	if (reg==scratch)
+		ppc_sh_store_f32(scratch,rd);
+}
+
+// Minimal float register->register move between two SH4 float regs (fmov
+// FRm,FRn and each word of fmov.d / DR<->XD). Emits the fewest instructions
+// for however the two ends are allocated:
+//   both pinned  -> fmr        (or nothing when identical)
+//   src pinned   -> stfs       (dst is xf/memory)
+//   dst pinned   -> lfs        (src is xf/memory)
+//   both memory  -> lfs f0 + stfs f0   (== legacy path; also the preset-off case)
+static void fmove_reg(u32 dst_reg,u32 src_reg)
+{
+	ppc_freg sd=get_fpu_pin_preset()?GetFloatReg(src_reg):ppc_finvalid;
+	ppc_freg dd=get_fpu_pin_preset()?GetFloatReg(dst_reg):ppc_finvalid;
+
+	if (sd!=ppc_finvalid && dd!=ppc_finvalid)
+	{
+		if (sd!=dd)
+			ppc_fmrx(dd,sd,0);
+	}
+	else if (sd!=ppc_finvalid)
+		ppc_stfs(sd,ppc_contex,Sh4cntx.offset(dst_reg));
+	else if (dd!=ppc_finvalid)
+		ppc_lfs(dd,ppc_contex,Sh4cntx.offset(src_reg));
+	else
+	{
+		ppc_lfs(ppc_f0,ppc_contex,Sh4cntx.offset(src_reg));
+		ppc_stfs(ppc_f0,ppc_contex,Sh4cntx.offset(dst_reg));
+	}
+}
+
 // ===================================================
 // COMPARE -> BOOLEAN (branchless CR0 bit extraction)
 // ===================================================
@@ -2111,17 +2212,32 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				verify(op->rd.is_r64());
 				verify(op->rs1.is_r64());
 
-				ppc_sh_load(ppc_rarg0,op->rs1);
-				ppc_sh_load(ppc_rarg1,op->rs1._reg+1);
-
-				ppc_sh_store(ppc_rarg0,op->rd);
-				ppc_sh_store(ppc_rarg1,op->rd._reg+1);
+				// mov64 is always a float pair (FMT_F64: fmov.d / DR<->XD moves).
+				// Under FPU_PIN move each word register-to-register (fmr) instead
+				// of bouncing both words through GPRs + memory. fmove_reg emits
+				// the minimal form per word and, with the preset off, degenerates
+				// to the legacy lfs f0/stfs f0 scratch bounce (no GPR round-trip,
+				// which is also strictly fewer insns than the old code).
+				fmove_reg(op->rd._reg,   op->rs1._reg);
+				fmove_reg(op->rd._reg+1, op->rs1._reg+1);
 			}
 			break;
 
 		case shop_mov32:
 			{
 				verify(op->rd.is_r32());
+
+				// fmov FRm,FRn (both float): move register-to-register. fmove_reg
+				// picks fmr / stfs / lfs / scratch-bounce by how each end is
+				// allocated. The MIXED cases (flds FRm,FPUL = float->int, fsts
+				// FPUL,FRn = int->float, or imm->float) fall through to the GPR
+				// path below, where the pinning-aware ppc_sh_load/ppc_sh_store
+				// already bounce a pinned FR through its memory slot correctly.
+				if (op->rd.is_r32f() && op->rs1.is_r32f())
+				{
+					fmove_reg(op->rd._reg,op->rs1._reg);
+					break;
+				}
 
 				// Resolve dest: a pinned (integer) rd is written in place; a
 				// non-pinned or float-typed rd uses rarg0 + a context store.
@@ -2246,10 +2362,15 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			break;
 
 
-		case shop_fadd: binop_start_fpu(op); ppc_faddsx(ppc_farg0,ppc_farg0,ppc_farg1,0); binop_end_fpu(op); break;
-		case shop_fsub: binop_start_fpu(op); ppc_fsubsx(ppc_farg0,ppc_farg0,ppc_farg1,0); binop_end_fpu(op); break;
-		case shop_fmul: binop_start_fpu(op); ppc_fmulsx(ppc_farg0,ppc_farg0,ppc_farg1,0); binop_end_fpu(op); break;
-		case shop_fdiv: binop_start_fpu(op); ppc_fdivsx(ppc_farg0,ppc_farg0,ppc_farg1,0); binop_end_fpu(op); break;
+		// Single-instruction FP binops: with FPU_PIN, fbop_resolve reads pinned
+		// fr operands in place and writes a pinned fr dest in place, collapsing
+		// the whole op to ONE instruction (was lfs/lfs/op/stfs). Preset off ->
+		// fop_a/fop_b are farg0/farg1 scratch loads and fbop_end stores back,
+		// exactly the legacy binop_start_fpu/binop_end_fpu sequence.
+		case shop_fadd: fbop_resolve(op); ppc_faddsx(fop_d,fop_a,fop_b,0); fbop_end(op); break;
+		case shop_fsub: fbop_resolve(op); ppc_fsubsx(fop_d,fop_a,fop_b,0); fbop_end(op); break;
+		case shop_fmul: fbop_resolve(op); ppc_fmulsx(fop_d,fop_a,fop_b,0); fbop_end(op); break;
+		case shop_fdiv: fbop_resolve(op); ppc_fdivsx(fop_d,fop_a,fop_b,0); fbop_end(op); break;
 
 		// --- Additional native integer binops ---------------------------------
 		case shop_mul_u16:
@@ -2429,22 +2550,30 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		case shop_ext_s8: unop3_start(op); ppc_extsbx(bop_d,bop_a,0);    unop3_end(op); break;
 		case shop_ext_s16:unop3_start(op); ppc_extshx(bop_d,bop_a,0);    unop3_end(op); break;
 
-		// --- Unary float ------------------------------------------------------
-		case shop_fabs: unop_start_fpu(op); ppc_fabsx(ppc_farg0,ppc_farg0,0); unop_end_fpu(op); break;
-		case shop_fneg: unop_start_fpu(op); ppc_fnegx(ppc_farg0,ppc_farg0,0); unop_end_fpu(op); break;
+		// --- Unary float (single instruction -> in-place under FPU_PIN) -------
+		case shop_fabs: fuop_resolve(op); ppc_fabsx(fop_d,fop_a,0); fbop_end(op); break;
+		case shop_fneg: fuop_resolve(op); ppc_fnegx(fop_d,fop_a,0); fbop_end(op); break;
 
 		// --- Float comparisons (rd is an integer 0/1) -------------------------
+		// fcmpu reads any FPR, so pinned operands compare in place; only rd
+		// (an int reg) goes through rarg0 as before.
 		case shop_fseteq:
-			binop_start_fpu(op);
-			ppc_fcmpu(ppc_cr0,ppc_farg0,ppc_farg1);
-			emit_cr0_bit_to_rarg0(BI_CR0_EQ);
-			ppc_sh_store(ppc_rarg0,op->rd);
+			{
+				u32 a=fsrc_or_load(op->rs1,ppc_farg0);
+				u32 b=fsrc_or_load(op->rs2,ppc_farg1);
+				ppc_fcmpu(ppc_cr0,a,b);
+				emit_cr0_bit_to_rarg0(BI_CR0_EQ);
+				ppc_sh_store(ppc_rarg0,op->rd);
+			}
 			break;
 		case shop_fsetgt:
-			binop_start_fpu(op);
-			ppc_fcmpu(ppc_cr0,ppc_farg0,ppc_farg1);
-			emit_cr0_bit_to_rarg0(BI_CR0_GT);
-			ppc_sh_store(ppc_rarg0,op->rd);
+			{
+				u32 a=fsrc_or_load(op->rs1,ppc_farg0);
+				u32 b=fsrc_or_load(op->rs2,ppc_farg1);
+				ppc_fcmpu(ppc_cr0,a,b);
+				emit_cr0_bit_to_rarg0(BI_CR0_GT);
+				ppc_sh_store(ppc_rarg0,op->rd);
+			}
 			break;
 
 		// --- Float<->int conversion -------------------------------------------
@@ -2454,9 +2583,10 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		// EABI does not guarantee one below sp).
 		case shop_cvt_f2i_t:	// (s32)truncate(f)
 			{
-				unop_start_fpu(op);
+				// rs1 float read in place (pinned) or into farg0; rd is int.
+				u32 a=fsrc_or_load(op->rs1,ppc_farg0);
 				u32 so = (u32)offsetof(Sh4Context, jit_scratch);
-				ppc_fctiwzx(ppc_f0,ppc_farg0,0);		// f0[low32] = (s32)trunc(farg0)
+				ppc_fctiwzx(ppc_f0,a,0);			// f0[low32] = (s32)trunc(a)
 				ppc_stfd(ppc_f0,ppc_contex,so);			// spill the double
 				ppc_lwz(ppc_rarg0,ppc_contex,so+4);		// low word (BE) = integer result
 				ppc_sh_store(ppc_rarg0,op->rd);
@@ -2483,19 +2613,31 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				ppc_stw(ppc_rarg1,ppc_contex,so+4);
 				ppc_lfd(ppc_farg1,ppc_contex,so);		// farg1 = 0x4330000080000000
 				ppc_fsubx(ppc_f0,ppc_f0,ppc_farg1,0);		// f0 = (double)(s32)r1
-				ppc_frspx(ppc_farg0,ppc_f0,0);			// narrow to single
-				ppc_sh_store_f32(ppc_farg0,op->rd);
+				// Narrow straight into the pinned rd (no trailing fmr/stfs).
+				u32 d=fdst_reg(op->rd,ppc_farg0);
+				ppc_frspx(d,ppc_f0,0);				// narrow to single
+				fdst_store(op->rd,d,ppc_farg0);
 			}
 			break;
 
 		// --- FMAC: rd = rs1 + rs2 * rs3  (scalar) -----------------------------
-		// fmadds(D,A,B,C) = A*C + B  ->  rs2*rs3 + rs1
+		// fmadds(D,A,B,C) = A*C + B  ->  rs2*rs3 + rs1.  Single instruction, so
+		// under FPU_PIN read all three pinned sources in place and write the
+		// pinned dest in place (was 3 lfs + op + stfs). NOTE for SH4 fmac, rd
+		// aliases rs3 (== FR0-accumulate form is different; here rd is a real
+		// fr), and fmadds reads A,B,C before writing D, so aliasing is safe.
 		case shop_fmac:
-			ppc_sh_load_f32(ppc_f0,op->rs1);		// f0 = rs1 (addend)
-			ppc_sh_load_f32(ppc_f1,op->rs2);		// f1 = rs2
-			ppc_sh_load_f32(ppc_f2,op->rs3);		// f2 = rs3
-			ppc_fmaddsx(ppc_f0,ppc_f1,ppc_f0,ppc_f2,0);	// f0 = f1*f2 + f0
-			ppc_sh_store_f32(ppc_f0,op->rd);
+			{
+				u32 a=fsrc_or_load(op->rs1,ppc_f0);	// addend (rs1)
+				u32 b=fsrc_or_load(op->rs2,ppc_f1);
+				u32 c=fsrc_or_load(op->rs3,ppc_f2);
+				u32 d=fdst_reg(op->rd,ppc_f0);
+				// fmaddsx(D,A,B,C) = A*C + B. Want d = rs2*rs3 + rs1 = b*c + a,
+				// so A=b, C=c, B=a -> fmaddsx(d, b, a, c). (Matches the legacy
+				// fmaddsx(f0,f1,f0,f2) = f1*f2 + f0 arg pattern D,rs2,rs1,rs3.)
+				ppc_fmaddsx(d,b,a,c,0);			// d = b*c + a
+				fdst_store(op->rd,d,ppc_f0);
+			}
 			break;
 
 		// --- FIPR: rd = dot(v1, v2) over 4 elements ---------------------------
