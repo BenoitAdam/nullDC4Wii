@@ -6,6 +6,22 @@ struct Sh4Context
 {
 	f32 xf[16];
 	f32 fr[16];
+
+	// Scratch bounce buffer used by the native recompiler for int<->float
+	// conversions (fctiwz / integer-to-double magic-constant trick). Not an
+	// SH4 architectural register.
+	//
+	// Placed HERE (right after the FP register files, offset 128 — 8-byte
+	// aligned so lfd/stfd are well-formed) rather than at the tail of the
+	// struct on purpose: the cvt_f2i_t / cvt_i2f_* JIT sequences bounce a
+	// value between an FP register (xf/fr, offsets 0..127) and this slot on
+	// every conversion. Keeping it inside the hot, perpetually-resident
+	// register-file region means the bounce hits an already-cached L1 line
+	// instead of faulting in an otherwise-cold line ~160 bytes away. All
+	// accesses are via offsetof()/offset(), so the field may live anywhere;
+	// only the 8-byte alignment matters. Move it back below old_fpscr to A/B.
+	u64 jit_scratch;
+
 	u32 r[16];
 
 	u32 r_bank[8];
@@ -19,11 +35,6 @@ struct Sh4Context
 	fpscr_type fpscr;
 	sr_type old_sr;
 	fpscr_type old_fpscr;
-
-	// Scratch bounce buffer used by the native recompiler for int<->float
-	// conversions (fctiwz / integer-to-double magic-constant trick). 8-byte
-	// aligned so lfd/stfd are well-formed. Not an SH4 architectural register.
-	u64 jit_scratch;
 
 	u32 offset(u32 sh4_reg);
 	u32 offset(Sh4RegType sh4_reg) { return offset((u32)sh4_reg); }

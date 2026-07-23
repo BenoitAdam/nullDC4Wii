@@ -106,6 +106,7 @@ const ppc_ireg ppc_rinvalid = static_cast<ppc_ireg>(-1);  // sentinel: out-of-ra
 extern "C" int get_debug_loop();
 extern "C" int get_bcache_preset();	// main.cpp: 0=off (default), 1=flat dispatch cache
 extern "C" int get_fpu_pin_preset();	// main.cpp: 0=off (default), 1=pin fr[0..15] to f14..f29
+extern "C" int get_jit_align_preset();	// main.cpp: 0=off (default), 1=32-byte-align block entries
 
 // ppc_li: Loads a 32-bit immediate value into a PowerPC register.
 void ppc_li(u32 D,u32 imm)
@@ -1693,7 +1694,22 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 	// Bail out early if there isn't enough space for a worst-case block
 	if (emit_FreeSpace() < 16384) // 16*1024
 		return 0;
-	
+
+	// JIT_ALIGN preset: pad the entry to the next 32-byte L1 line so every
+	// block start (hence every branch/link target landing on one) begins on a
+	// clean cache-line boundary. CodeCache itself is 32-byte aligned, so the
+	// low 5 bits of emit_GetCCPtr() equal the intra-line offset. The padding
+	// sits between the previous block's tail — which ALWAYS ends in an
+	// unconditional branch (ngen_End) or a cold fragment's `b done`, never a
+	// fall-through — and this entry, so the nops are never executed; they also
+	// fall within the line the previous block's flush already rounds up to, so
+	// no extra I-cache handling is needed. <=7 nops/block against a 6 MB cache.
+	if (get_jit_align_preset())
+	{
+		while (((u32)(uintptr_t)emit_GetCCPtr() & 31) != 0)
+			ppc_emit(0x60000000);	// ppc nop (ori r0,r0,0)
+	}
+
 	DynarecCodeEntry* rv=(DynarecCodeEntry*)emit_GetCCPtr();
 
 	ColdReset();          // mem-op cold (slow) fragments deferred to block end

@@ -99,6 +99,13 @@
                                 unproven — default off. Perf preset — A/B
                                 per game, especially anything 3D-transform
                                 heavy.
+        jit_align=on        <- on/off, pads each SH4-dynarec block entry to a
+                                32-byte Broadway L1 cache line (see
+                                wii_driver.cpp ngen_Compile). Every branch/link
+                                target then begins on a clean line boundary
+                                instead of possibly splitting its first fetch.
+                                Cache-hygiene only, no logic change; marginal.
+                                Default off. Perf preset — A/B per game.
         vertex_color_fix=on <- on/off, real PVR Intensity (Gouraud) shading: each
                                 vertex's scalar intensity is multiplied by the
                                 polygon's FaceColor (see gxRend.cpp
@@ -327,6 +334,7 @@ extern int g_dma_fix_preset;
 extern int g_fastmem_preset;
 extern int g_bcache_preset;
 extern int g_fpu_pin_preset;
+extern int g_jit_align_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -386,6 +394,7 @@ struct GamePreset
     int fastmem;
     int bcache;
     int fpu_pin;
+    int jit_align;
 };
 
 // Nothing from the .cfg stays in RAM: game_presets_apply() streams the file
@@ -632,6 +641,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "fastmem"))        p->fastmem        = parse_bool(val);
     else if (key_eq(key, "bcache"))         p->bcache         = parse_bool(val);
     else if (key_eq(key, "fpu_pin"))        p->fpu_pin        = parse_bool(val);
+    else if (key_eq(key, "jit_align"))      p->jit_align      = parse_bool(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -677,6 +687,7 @@ static void preset_clear(GamePreset* cur)
     cur->fastmem = -1;
     cur->bcache = -1;
     cur->fpu_pin = -1;
+    cur->jit_align = -1;
 }
 
 // Apply every set field of a preset slot onto the live g_*_preset globals
@@ -727,6 +738,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->fastmem        >= 0) { g_fastmem_preset        = p->fastmem;        printf("  fastmem        -> %d\n", p->fastmem);        }
     if (p->bcache         >= 0) { g_bcache_preset         = p->bcache;         printf("  bcache         -> %d\n", p->bcache);         }
     if (p->fpu_pin        >= 0) { g_fpu_pin_preset        = p->fpu_pin;        printf("  fpu_pin        -> %d\n", p->fpu_pin);        }
+    if (p->jit_align      >= 0) { g_jit_align_preset      = p->jit_align;      printf("  jit_align      -> %d\n", p->jit_align);      }
 }
 
 // ---------------------------------------------------------------------------

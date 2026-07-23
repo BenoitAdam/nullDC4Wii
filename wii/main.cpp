@@ -344,6 +344,18 @@ extern "C" {
   int get_fpu_pin_preset() { return g_fpu_pin_preset; }
 }
 
+// JIT_ALIGN — pad every SH4-dynarec block entry to a 32-byte L1 cache line
+// (dc/sh4/rec_v2/wii_driver.cpp ngen_Compile). Broadway's L1 line is 32 B, so
+// a block that starts mid-line can split its first fetch across two lines;
+// aligning entries makes every branch/link target begin on a clean boundary.
+// Cheap (<=7 nops/block against a 6 MB cache) and cache-hygiene only — no
+// logic change. Marginal by nature; A/B per game. 0=off (default), 1=on.
+int g_jit_align_preset = 0;
+
+extern "C" {
+  int get_jit_align_preset() { return g_jit_align_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -895,7 +907,8 @@ void displayAccuracyMenu()
 #define OPT_FASTMEM     45
 #define OPT_BCACHE      46
 #define OPT_FPU_PIN     47
-#define OPT_ROW_COUNT   48
+#define OPT_JIT_ALIGN   48
+#define OPT_ROW_COUNT   49
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -935,6 +948,7 @@ static int opt_row_page(int row)
     case OPT_FASTMEM:
     case OPT_BCACHE:
     case OPT_FPU_PIN:
+    case OPT_JIT_ALIGN:
       return 2;
     default:
       return 0;
@@ -1419,6 +1433,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (EXPERIMENTAL) >]"); break;
     }
     printf(" pin fr0-15 to real FPU regs");
+    printf("\n");
+
+    // --- Row: JIT_ALIGN - 32-byte-align block entries ---
+    printf("%s JIT ALIGN      : ", (selectedRow == OPT_JIT_ALIGN) ? ">" : " ");
+    switch (g_jit_align_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (32B LINES)    >]"); break;
+    }
+    printf(" align JIT blocks to cache lines");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.60\n");
@@ -1504,6 +1527,7 @@ bool displayOptionsMenu()
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
         case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
         case OPT_FPU_PIN:        g_fpu_pin_preset         = (g_fpu_pin_preset         + 1) % 2; break;
+        case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1558,6 +1582,7 @@ bool displayOptionsMenu()
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
         case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
         case OPT_FPU_PIN:        g_fpu_pin_preset         = (g_fpu_pin_preset         + 1) % 2; break;
+        case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2258,6 +2283,7 @@ int main(int argc, wchar *argv[])
     printf("Fastmem        : %s\n", g_fastmem_preset ? "ON (MMU)" : "OFF (LEGACY)");
     printf("JIT BCache     : %s\n", g_bcache_preset ? "ON (FLAT)" : "OFF (LEGACY)");
     printf("FPU Pin        : %s\n", g_fpu_pin_preset ? "ON (EXPERIMENTAL)" : "OFF (LEGACY)");
+    printf("JIT Align      : %s\n", g_jit_align_preset ? "ON (32B LINES)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {
       case -1: printf("DEFAULT (SAVED)\n"); break;
