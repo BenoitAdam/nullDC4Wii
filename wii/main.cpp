@@ -329,6 +329,21 @@ extern "C" {
   int get_bcache_preset() { return g_bcache_preset; }
 }
 
+// FPU_PIN — pins the SH4 fr[0..15] register file to PPC f14..f29 for the
+// whole session (dc/sh4/rec_v2/wii_driver.cpp ppc_sh_load_f32/store_f32/
+// fvec_load/fvec_store + the memory-bounce fix in ppc_sh_load/ppc_sh_store),
+// the same scheme int GPRs already use permanently. Every fadd/fsub/fmul/
+// fdiv/fmac/fipr/ftrv/fsca/cvt_* op stops round-tripping through Sh4Context
+// memory. xf[] (the FTRV matrix bank) stays memory-resident — there aren't
+// enough spare non-volatile PPC FPRs to pin both banks. New/unproven, so
+// runtime-gated like fastmem/bcache rather than a compile-time switch.
+// 0=off (legacy, default), 1=on.
+int g_fpu_pin_preset = 0;
+
+extern "C" {
+  int get_fpu_pin_preset() { return g_fpu_pin_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -879,7 +894,8 @@ void displayAccuracyMenu()
 #define OPT_DMA_FIX     44
 #define OPT_FASTMEM     45
 #define OPT_BCACHE      46
-#define OPT_ROW_COUNT   47
+#define OPT_FPU_PIN     47
+#define OPT_ROW_COUNT   48
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -918,6 +934,7 @@ static int opt_row_page(int row)
     case OPT_DMA_FIX:
     case OPT_FASTMEM:
     case OPT_BCACHE:
+    case OPT_FPU_PIN:
       return 2;
     default:
       return 0;
@@ -1393,6 +1410,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (FLAT)         >]"); break;
     }
     printf(" 1-cacheline dynamic jump dispatch");
+    printf("\n");
+
+    // --- Row: FPU_PIN - pin fr[0..15] to PPC f14..f29 ---
+    printf("%s FPU PIN        : ", (selectedRow == OPT_FPU_PIN) ? ">" : " ");
+    switch (g_fpu_pin_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (EXPERIMENTAL) >]"); break;
+    }
+    printf(" pin fr0-15 to real FPU regs");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.60\n");
@@ -1477,6 +1503,7 @@ bool displayOptionsMenu()
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
         case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
+        case OPT_FPU_PIN:        g_fpu_pin_preset         = (g_fpu_pin_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1530,6 +1557,7 @@ bool displayOptionsMenu()
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
         case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
+        case OPT_FPU_PIN:        g_fpu_pin_preset         = (g_fpu_pin_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2229,6 +2257,7 @@ int main(int argc, wchar *argv[])
     printf("DMA Fix        : %s\n", g_dma_fix_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
     printf("Fastmem        : %s\n", g_fastmem_preset ? "ON (MMU)" : "OFF (LEGACY)");
     printf("JIT BCache     : %s\n", g_bcache_preset ? "ON (FLAT)" : "OFF (LEGACY)");
+    printf("FPU Pin        : %s\n", g_fpu_pin_preset ? "ON (EXPERIMENTAL)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {
       case -1: printf("DEFAULT (SAVED)\n"); break;

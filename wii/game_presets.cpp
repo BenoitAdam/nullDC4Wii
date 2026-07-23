@@ -89,6 +89,16 @@
                                 instead of chasing cache[] -> DynarecBlock
                                 across two lines + a counter write. Default
                                 off (legacy). Perf preset — A/B per game.
+        fpu_pin=on          <- on/off, pins SH4 fr0-15 to real PPC FPU
+                                registers f14-f29 for the whole session (see
+                                wii_driver.cpp FPU_PIN), the same scheme int
+                                GPRs already use. Speeds up geometry-heavy
+                                games (fadd/fmul/fmac/fipr/ftrv/cvt_* stop
+                                round-tripping through memory). xf[] (the
+                                FTRV matrix bank) is never pinned. New and
+                                unproven — default off. Perf preset — A/B
+                                per game, especially anything 3D-transform
+                                heavy.
         vertex_color_fix=on <- on/off, real PVR Intensity (Gouraud) shading: each
                                 vertex's scalar intensity is multiplied by the
                                 polygon's FaceColor (see gxRend.cpp
@@ -316,6 +326,7 @@ extern int g_jit_sbp_preset;
 extern int g_dma_fix_preset;
 extern int g_fastmem_preset;
 extern int g_bcache_preset;
+extern int g_fpu_pin_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -374,6 +385,7 @@ struct GamePreset
     int dma_fix;
     int fastmem;
     int bcache;
+    int fpu_pin;
 };
 
 // Nothing from the .cfg stays in RAM: game_presets_apply() streams the file
@@ -619,6 +631,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "dma_fix"))        p->dma_fix        = parse_bool(val);
     else if (key_eq(key, "fastmem"))        p->fastmem        = parse_bool(val);
     else if (key_eq(key, "bcache"))         p->bcache         = parse_bool(val);
+    else if (key_eq(key, "fpu_pin"))        p->fpu_pin        = parse_bool(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -663,6 +676,7 @@ static void preset_clear(GamePreset* cur)
     cur->dma_fix = -1;
     cur->fastmem = -1;
     cur->bcache = -1;
+    cur->fpu_pin = -1;
 }
 
 // Apply every set field of a preset slot onto the live g_*_preset globals
@@ -712,6 +726,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->dma_fix        >= 0) { g_dma_fix_preset        = p->dma_fix;        printf("  dma_fix        -> %d\n", p->dma_fix);        }
     if (p->fastmem        >= 0) { g_fastmem_preset        = p->fastmem;        printf("  fastmem        -> %d\n", p->fastmem);        }
     if (p->bcache         >= 0) { g_bcache_preset         = p->bcache;         printf("  bcache         -> %d\n", p->bcache);         }
+    if (p->fpu_pin        >= 0) { g_fpu_pin_preset        = p->fpu_pin;        printf("  fpu_pin        -> %d\n", p->fpu_pin);        }
 }
 
 // ---------------------------------------------------------------------------

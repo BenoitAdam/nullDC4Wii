@@ -105,6 +105,7 @@ const ppc_ireg ppc_rinvalid = static_cast<ppc_ireg>(-1);  // sentinel: out-of-ra
 // This is defined in main.cpp
 extern "C" int get_debug_loop();
 extern "C" int get_bcache_preset();	// main.cpp: 0=off (default), 1=flat dispatch cache
+extern "C" int get_fpu_pin_preset();	// main.cpp: 0=off (default), 1=pin fr[0..15] to f14..f29
 
 // ppc_li: Loads a 32-bit immediate value into a PowerPC register.
 void ppc_li(u32 D,u32 imm)
@@ -212,10 +213,13 @@ struct
 } compile_state;
 u32 last_block;
 
-// Forward decls: GPR allocation map + flush/reload (defined later in this file).
+// Forward decls: GPR/FPR allocation maps + flush/reload (defined later in this file).
 ppc_ireg GetIntReg(u32 reg);
+ppc_freg GetFloatReg(u32 reg);
 void reg_flush_all();
 void reg_reload_all();
+void reg_flush_all_fpu();
+void reg_reload_all_fpu();
 
 // =======================
 // BLOCK BEGIN/END
@@ -285,7 +289,7 @@ void ngen_Begin(DecodedBlock* block,bool force_checks)
 // Must be defined before the first use below; set to 0 for all-memory mode.
 #define STATIC_GPR_ALLOC 1
 
-//1 opcode
+//1 opcode (2 if bouncing a pinned FR through memory — see FPU_PIN below)
 void ppc_sh_load(u32 D,u32 sh4_reg)
 {
 #if STATIC_GPR_ALLOC
@@ -298,6 +302,26 @@ void ppc_sh_load(u32 D,u32 sh4_reg)
 		return;
 	}
 #endif
+	// FPU_PIN landmine: shop_readm/writem/mov64 read/write ANY sh4_reg's raw
+	// bit pattern through this generic helper, including FR-typed ones (e.g.
+	// the fmov.s/fmov.d memory paths, which bounce the value through a GPR
+	// since PPC750 has no direct GPR<->FPR move). If fr[] is pinned, the
+	// authoritative bits live in a PPC FPR, not Sh4cntx.fr[] memory — so a
+	// bare lwz here would read stale data. Fix: flush the pinned FPR to its
+	// memory slot first, THEN read it back as an integer. One extra insn,
+	// only on this int<->pinned-float crossing (the pure-float fast path
+	// via ppc_sh_load_f32 never pays it).
+	if (get_fpu_pin_preset())
+	{
+		ppc_freg rf=GetFloatReg(sh4_reg);
+		if (rf!=ppc_finvalid)
+		{
+			u32 ofs=Sh4cntx.offset(sh4_reg);
+			ppc_stfs(rf,ppc_contex,ofs);
+			ppc_lwz(D,ppc_contex,ofs);
+			return;
+		}
+	}
 	ppc_lwz(D,ppc_contex,Sh4cntx.offset(sh4_reg));
 }
 void ppc_sh_load(u32 D,shil_param prm)
@@ -328,6 +352,17 @@ static u32 src_or_load(shil_param prm,u32 D)
 }
 void ppc_sh_load_f32(u32 D,u32 sh4_reg)
 {
+	if (get_fpu_pin_preset())
+	{
+		ppc_freg rf=GetFloatReg(sh4_reg);
+		if (rf!=ppc_finvalid)
+		{
+			// Value already lives in a pinned PPC FPR; just move it.
+			if ((u32)rf!=D)
+				ppc_fmrx(D,rf,0);
+			return;
+		}
+	}
 	ppc_lfs(D,ppc_contex,Sh4cntx.offset(sh4_reg));
 }
 void ppc_sh_load_f32(u32 D,shil_param prm)
@@ -354,7 +389,7 @@ void ppc_sh_addr(u32 D,shil_param prm)
 	verify(prm.is_reg());
 	ppc_sh_addr(D,prm._reg);
 }
-//1 opcode
+//1 opcode (2 if bouncing a pinned FR through memory — see FPU_PIN, ppc_sh_load)
 void ppc_sh_store(u32 D,u32 sh4_reg)
 {
 #if STATIC_GPR_ALLOC
@@ -367,6 +402,20 @@ void ppc_sh_store(u32 D,u32 sh4_reg)
 		return;
 	}
 #endif
+	// FPU_PIN: symmetric fix to ppc_sh_load above. Write the raw bits to
+	// memory as before, then reload the pinned FPR from that same slot so
+	// it picks up the new value instead of going stale.
+	if (get_fpu_pin_preset())
+	{
+		ppc_freg rf=GetFloatReg(sh4_reg);
+		if (rf!=ppc_finvalid)
+		{
+			u32 ofs=Sh4cntx.offset(sh4_reg);
+			ppc_stw(D,ppc_contex,ofs);
+			ppc_lfs(rf,ppc_contex,ofs);
+			return;
+		}
+	}
 	ppc_stw(D,ppc_contex,Sh4cntx.offset(sh4_reg));
 }
 void ppc_sh_store(u32 D,shil_param prm)
@@ -376,6 +425,17 @@ void ppc_sh_store(u32 D,shil_param prm)
 }
 void ppc_sh_store_f32(u32 D,u32 sh4_reg)
 {
+	if (get_fpu_pin_preset())
+	{
+		ppc_freg rf=GetFloatReg(sh4_reg);
+		if (rf!=ppc_finvalid)
+		{
+			// Destination is a pinned PPC FPR; update it in place.
+			if ((u32)rf!=D)
+				ppc_fmrx(rf,D,0);
+			return;
+		}
+	}
 	ppc_stfs(D,ppc_contex,Sh4cntx.offset(sh4_reg));
 }
 u32 ppc_addr_high(u32 rD,void* ptr)
@@ -397,20 +457,44 @@ void ppc_sh_store_f32(u32 D,shil_param prm)
 // --- Vector float element access -------------------------------------------
 // For a float param (scalar FMT_F32, or vector FMT_V4/FMT_V16), prm._reg/_imm
 // holds the BASE fr/xf register index. Element i lives at offset(base)+i*4 in
-// the context. These load/store the i-th single-precision element.
+// the context, and reg_fr_0..reg_fr_15 / reg_xf_0..reg_xf_15 are contiguous
+// (sh4_if.h), so prm._reg+i is always the correct absolute register index.
+// These load/store the i-th single-precision element.
 //
-// Float registers are NOT pinned (GetFloatReg is unused), so these always hit
-// memory — exactly what the vector ops need.
+// FPU_PIN preset: only fr[] is pinned (GetFloatReg returns invalid for the
+// xf[] range — there aren't enough non-volatile PPC FPRs left to pin both
+// banks), so an FV4/FV16 base in xf (e.g. ftrv's XMTRX operand) naturally
+// falls through to memory here, unaffected.
 u32 ppc_fvec_ofs(shil_param prm,u32 i)
 {
 	return Sh4cntx.offset(prm._reg) + i*4;
 }
 void ppc_fvec_load(u32 fd,shil_param prm,u32 i)
 {
+	if (get_fpu_pin_preset())
+	{
+		ppc_freg rf=GetFloatReg(prm._reg+i);
+		if (rf!=ppc_finvalid)
+		{
+			if ((u32)rf!=fd)
+				ppc_fmrx(fd,rf,0);
+			return;
+		}
+	}
 	ppc_lfs(fd,ppc_contex,ppc_fvec_ofs(prm,i));
 }
 void ppc_fvec_store(u32 fs,shil_param prm,u32 i)
 {
+	if (get_fpu_pin_preset())
+	{
+		ppc_freg rf=GetFloatReg(prm._reg+i);
+		if (rf!=ppc_finvalid)
+		{
+			if ((u32)rf!=fs)
+				ppc_fmrx(rf,fs,0);
+			return;
+		}
+	}
 	ppc_stfs(fs,ppc_contex,ppc_fvec_ofs(prm,i));
 }
 
@@ -951,7 +1035,11 @@ void ngen_End(DecodedBlock* block)
 	}
 }
 
-//f14:f29
+// f14:f29 — fr[0..15] only. xf[] is NOT pinned: fr[16] already claims all 16
+// of the PPC EABI's callee-saved FPRs available after reserving f0 (scratch)
+// and f1-f13 (call-arg/return volatiles used throughout this file); only
+// f30/f31 are left, nowhere near enough for another 16-wide bank. See the
+// FPU_PIN comment block above reg_flush_all_fpu() for the full rationale.
 ppc_freg GetFloatReg(u32 reg)
 {
 	if (reg>=reg_fr_0 && reg<=reg_fr_15)
@@ -1033,6 +1121,59 @@ void reg_reload_all()
 	}
 #endif
 }
+
+// ============================================================================
+// FPU_PIN preset (default OFF) — pins fr[0..15] to PPC f14..f29 for the whole
+// session, the same scheme as STATIC_GPR_ALLOC but for the FPU file. xf[]
+// stays memory-resident (see GetFloatReg's comment).
+//
+// Unlike GPR pinning, this is a RUNTIME preset (get_fpu_pin_preset()), not a
+// compile-time #define: it's new and unproven, so it needs to be A/B-able on
+// a shipped binary the way fastmem/bcache are, not just via recompile.
+//
+// Bracket points (mirrors reg_flush_all/reg_reload_all's list above, plus one
+// FPU-specific case):
+//   * shop_ifb              — interpreter handler reads/writes arbitrary FRs
+//   * canonical fallback    — any un-natived shil op may touch fr[]/xf[]
+//     directly (memory), including through ppc_sh_addr's &Sh4cntx.fr[n]
+//     pointers handed to CPT_ptr canonical params — flushing here keeps
+//     those pointers valid
+//   * shop_sync_fpscr       — UpdateFPSCR() -> ChangeFP() swaps
+//     fr_hex[i]<->xf_hex[i] IN MEMORY on an FPSCR.FR toggle (sh4_registers.cpp);
+//     pinned fr must be flushed before the call (so the swap sees current
+//     values) and reloaded after (fr[] now holds the new front bank)
+//
+// NOT bracketed: BET_*Intr (UpdateINTC -> Do_Exception). Real SH4 interrupts
+// bank-swap GPRs (SR.RB) but never fr[]/xf[] — only an explicit FPSCR.FR
+// write does that, which is shop_sync_fpscr's job above.
+//
+// The memory-bounce fix for shop_readm/writem/mov64 (which touch fr[] bit
+// patterns through the generic int ppc_sh_load/ppc_sh_store, not these FPU
+// helpers) lives centrally in those two functions — see their FPU_PIN
+// comments earlier in this file.
+// ============================================================================
+
+void reg_flush_all_fpu()
+{
+	if (!get_fpu_pin_preset())
+		return;
+	for (u32 i=reg_fr_0;i<=reg_fr_15;i++)
+	{
+		ppc_freg rf=GetFloatReg(i);
+		ppc_stfs(rf,ppc_contex,Sh4cntx.offset(i));
+	}
+}
+void reg_reload_all_fpu()
+{
+	if (!get_fpu_pin_preset())
+		return;
+	for (u32 i=reg_fr_0;i<=reg_fr_15;i++)
+	{
+		ppc_freg rf=GetFloatReg(i);
+		ppc_lfs(rf,ppc_contex,Sh4cntx.offset(i));
+	}
+}
+
 void FASTCALL do_sqw_mmu(u32 dst);
 void FASTCALL do_sqw_nommu(u32 dst);
 
@@ -1920,6 +2061,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		case shop_ifb:
 			{
 				reg_flush_all();
+				reg_flush_all_fpu();
 				if (op->rs1._imm)
 				{
 					ppc_li(ppc_rarg0,op->rs2._imm);
@@ -1928,6 +2070,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				ppc_li(ppc_rarg0,op->rs3._imm);
 				ppc_call(OpDesc[op->rs3._imm]->oph);
 				reg_reload_all();
+				reg_reload_all_fpu();
 			}
 			break;
 			
@@ -2437,11 +2580,16 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			break;
 
 		// sync_fpscr: UpdateFPSCR() (rounding mode + possible FR bank swap).
-		// Plain call — no GPR flush needed. NOTE: if STATIC_FPU_ALLOC is ever
-		// enabled, UpdateFPSCR()->ChangeFP() swaps fr[]<->xf[] in memory and this
-		// must be bracketed with reg_flush_all()/reg_reload_all() like sync_sr.
+		// No GPR flush needed (this never touches r[]). FPU_PIN: UpdateFPSCR()
+		// -> ChangeFP() swaps fr_hex[i]<->xf_hex[i] IN MEMORY on an FPSCR.FR
+		// toggle (sh4_registers.cpp), so pinned fr must be flushed before the
+		// call (so the swap sees current values, not stale ones) and reloaded
+		// after (fr[] now holds the new front bank). reg_flush/reload_all_fpu
+		// are no-ops when the preset is off.
 		case shop_sync_fpscr:
+			reg_flush_all_fpu();
 			ppc_call(&UpdateFPSCR);
+			reg_reload_all_fpu();
 			break;
 
 		// pref: store-queue prefetch. Only addresses in the SQ region trigger a
@@ -2487,10 +2635,15 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			// handlers (notably sync_sr -> UpdateSR) mutate context GPRs directly
 			// (e.g. SR.RB bank switch), so pinned regs must be coherent in memory
 			// across the call and re-read afterwards. The CC param marshalling
-			// itself is register-aware and unaffected.
+			// itself is register-aware and unaffected. FPU_PIN: any un-natived
+			// float op reads/writes fr[]/xf[] directly too (including via
+			// ppc_sh_addr's &Sh4cntx.fr[n] pointers for CPT_ptr canonical
+			// params), so pinned fr needs the same bracket.
 			reg_flush_all();
+			reg_flush_all_fpu();
 			shil_chf[op->op](op);
 			reg_reload_all();
+			reg_reload_all_fpu();
 			break;
       
 		}
@@ -2577,6 +2730,8 @@ void ngen_mainloop()
 			// in r14..r28 for the entire JIT run (no per-block reload/flush); the
 			// only resync points are shop_ifb and the canonical fallback.
 			reg_reload_all();
+			// Same, for the FPU_PIN preset's fr[0..15] -> f14..f29 (no-op if off).
+			reg_reload_all_fpu();
 
 			// Cycle budget per timeslice. Latched from the accuracy preset
 			// (FAST=1792 / BALANCED=896 / ACCURATE=448) rather than the fixed
