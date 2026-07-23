@@ -62,15 +62,18 @@ int g_wii_fastmem_active = 0;
 // ============================================================================
 // Page table
 //
-// 512 KB HTAB = 8192 PTEGs of 8 PTEs. We map ~24.6K pages (RAM 4 mirrors +
-// VRAM 2x2 mirrors) into 65536 slots (~38% load), with
-// the secondary hash as backstop, so insertion can't realistically fail.
+// 256 KB HTAB = 4096 PTEGs of 8 PTEs. The ~24.6K mapped pages (RAM 4
+// mirrors + VRAM 2x2 mirrors) distribute DETERMINISTICALLY: PTEG index =
+// (VSID ^ pi) & 0xFFF, and over our regions the low 12 bits of pi cycle
+// uniformly, so every PTEG gets exactly 4 RAM + 2 VRAM PTEs (6 of 8
+// slots) - no overflow is possible. The secondary hash stays as backstop
+// for future mappings.
 // The hardware walks the table PHYSICALLY (uncached), hence the explicit
 // DCFlushRange after building it.
 // ============================================================================
 
-#define FASTMEM_HTAB_SIZE  (512 * 1024)
-#define FASTMEM_HTAB_MASK  0x07                      // HTABMASK for 512 KB
+#define FASTMEM_HTAB_SIZE  (256 * 1024)
+#define FASTMEM_HTAB_MASK  0x03                      // HTABMASK for 256 KB
 #define FASTMEM_HASH_MASK  ((FASTMEM_HTAB_MASK << 10) | 0x3FF)
 
 // Arbitrary VSID base; SR0/SR1 carry the two live segments, SR2-SR7 get
@@ -78,8 +81,9 @@ int g_wii_fastmem_active = 0;
 // the window still takes a clean DSI instead of falsely hash-matching.
 #define FASTMEM_VSID_BASE  0x00DC0
 
-static u8* s_htab      = 0;   // virtual (cached MEM2) address of the HTAB
+static u8* s_htab      = 0;   // virtual (cached) address of the HTAB
 static u32 s_htab_phys = 0;
+static int s_htab_mem1 = 0;   // 1 if the HTAB was placed in MEM1
 
 // Insert one 4 KB translation. ea is the window EA, pa the physical target.
 // PTE word0 = V | VSID | H | API ; word1 = RPN | R | C | WIMG=0 | PP=10.
@@ -335,12 +339,31 @@ void WiiFastmem_Init(void)
         return;
     }
 
-    // Carve the (size-aligned) HTAB from the MEM2 arena, like _vmem_reserve.
+    // Carve the (size-aligned - SDR1 requires HTABORG aligned to the table
+    // size) HTAB from an arena. MEM1 strongly preferred: the hardware
+    // walker does 1-2 RANDOM 64-byte PTEG reads per DTLB miss, a purely
+    // latency-bound pattern where 1T-SRAM MEM1 beats GDDR3 MEM2 - and the
+    // 2026-07-19 precursor A/B measured the MEM2 walk as the dominant
+    // fastmem tax. libogc's sbrk grows the heap by moving Arena1Lo the
+    // same way, so this carve just consumes heap headroom; fall back to
+    // MEM2 if MEM1 can't spare it (2 MB of heap must remain).
     {
         const u32 level = IRQ_Disable();
-        u8* lo = (u8*)SYS_GetArena2Lo();
+        u8* lo   = (u8*)SYS_GetArena1Lo();
+        u8* hi   = (u8*)SYS_GetArena1Hi();
         u8* htab = (u8*)(((u32)lo + FASTMEM_HTAB_SIZE - 1) & ~(u32)(FASTMEM_HTAB_SIZE - 1));
-        SYS_SetArena2Lo(htab + FASTMEM_HTAB_SIZE);
+        if (htab + FASTMEM_HTAB_SIZE + (2*1024*1024) <= hi)
+        {
+            SYS_SetArena1Lo(htab + FASTMEM_HTAB_SIZE);
+            s_htab_mem1 = 1;
+        }
+        else
+        {
+            lo   = (u8*)SYS_GetArena2Lo();
+            htab = (u8*)(((u32)lo + FASTMEM_HTAB_SIZE - 1) & ~(u32)(FASTMEM_HTAB_SIZE - 1));
+            SYS_SetArena2Lo(htab + FASTMEM_HTAB_SIZE);
+            s_htab_mem1 = 0;
+        }
         IRQ_Restore(level);
         s_htab      = htab;
         s_htab_phys = MEM_VIRTUAL_TO_PHYSICAL(htab);
@@ -387,8 +410,9 @@ void WiiFastmem_Init(void)
     }
 
     g_wii_fastmem_active = 1;
-    printf("[fastmem] active: HTAB %p (phys %08X, %u KB), window 0x00000000-0x1FFFFFFF\n",
-           s_htab, s_htab_phys, FASTMEM_HTAB_SIZE / 1024);
+    printf("[fastmem] active: HTAB %p (phys %08X, %u KB, %s), window 0x00000000-0x1FFFFFFF\n",
+           s_htab, s_htab_phys, FASTMEM_HTAB_SIZE / 1024,
+           s_htab_mem1 ? "MEM1" : "MEM2 fallback");
 }
 
 #else // !OS_WII

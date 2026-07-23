@@ -277,9 +277,18 @@ Gated by the `fastmem` preset (default OFF, options page 3, cfg key
 `fastmem=on/off`). Two halves:
 
 * **wii/wii_fastmem.cpp** — hardware side. Claims EA 0x00000000-0x1FFFFFFF
-  (SR0/SR1 + a 512 KB hashed page table in MEM2) as a direct image of the
-  DC's 29-bit space: RAM ×4 mirrors, VRAM (64-bit path, both pages), AICA
-  wave RAM. Installs a DSI handler using the tuxedo-libogc convention
+  (SR0/SR1 + a 256 KB hashed page table, placed in MEM1 when the heap can
+  spare it — the hardware walker's random PTEG reads are latency-bound,
+  1T-SRAM territory; MEM2 fallback otherwise) as a direct image of the
+  DC's 29-bit space: RAM ×4 mirrors, VRAM (64-bit path, both pages). The
+  mappings fill each PTEG with exactly 6 of 8 slots (deterministic, no
+  overflow). EA
+  0x00000000-0x03FFFFFF (area-0 image, incl. AICA wave RAM) must stay
+  UNMAPPED forever: SQ addresses 0xE0-0xE3 mask onto it, and mapping any
+  of it (v1 mapped wave RAM) makes SQ stores with matching offsets silently
+  write host memory instead of the SQ buffer — that broke SQ memcpy to
+  upper RAM, the TA YUV FIFO and AICA SQ uploads across half the library.
+  Installs a DSI handler using the tuxedo-libogc convention
   (`PPCExcptSetHandler`, `__ppc_excpt_buf` protocol) and runs a
   fault-tolerant boot self-test (a failed assumption leaves fastmem
   inactive instead of panicking). Testing on Dolphin requires the
@@ -307,8 +316,11 @@ Gated by the `fastmem` preset (default OFF, options page 3, cfg key
   in sync; the pool resets with the block cache (`ngen_ResetBlocks`).
 
   Known perf risk (measured in the 2026-07-19 precursor experiment): the
-  Broadway DTLB is 128×4 KB and misses pay a hardware HTAB walk to MEM2,
+  Broadway DTLB is 128×4 KB and misses pay a hardware HTAB walk,
   while the legacy BAT paths pay zero translation cost. The rewrite
   removes 3-8 instructions + a branch per access (the precursor removed
-  ~1), so whether that beats the TLB tax is exactly what the per-game A/B
-  measures. If it's close, moving the HTAB to MEM1 is the next lever.
+  ~1), and the HTAB now sits in MEM1 to cut the walk latency itself. If
+  the A/B still shows a tax, the next lever is Broadway's spare DBAT4-7
+  (HID4.SBE): map the primary RAM window with one BAT (zero-cost
+  translation) — needs mem_b at a 16 MB-aligned physical address, with
+  mirrors/VRAM staying on the page table.
