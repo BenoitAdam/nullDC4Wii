@@ -28,6 +28,11 @@
 #include "tmu.h"
 #include "dc/mem/sh4_mem.h"
 #include "ccn.h"
+#include "sh4_sched.h"   // SCHED preset: unified cycle-deadline event scheduler
+
+// SCHED preset accessor (wii/main.cpp). When on, migrated completion/IRQ events
+// fire through sh4_sched (deadline-ordered) instead of at their own cascade tier.
+extern "C" int get_sched_preset();
 // #include <gccore.h>  // Uncomment for Wii VIDEO_WaitVSync() frame limiter
 #include <time.h>
 #include <float.h>
@@ -225,6 +230,12 @@ void Sh4_int_Reset(bool /*Manual*/)
 	old_fpscr  = fpscr;
 	UpdateFPSCR();
 
+	// SCHED preset: drop any in-flight deadline requests and zero the scheduler
+	// clock so a reset never fires a stale completion into fresh state. Harmless
+	// (and cheap) when the preset is off — the list is empty until events
+	// register, and nothing ticks it.
+	sh4_sched_reset();
+
 	printf("Sh4 Reset\n");
 }
 
@@ -355,6 +366,14 @@ int FASTCALL UpdateSystem()
 	UpdateTMU(s_timeslice);
 	UpdatePvr(s_timeslice);
 	UpdateAicaDma(s_timeslice);     // deferred AICA G2-DMA completion IRQ (DMA_FIX)
+
+	// SCHED preset: advance the deadline scheduler and fire due completion/IRQ
+	// events (Stage 2 migrations) in true hardware order. Before UpdateINTC so a
+	// fired completion's IRQ is picked up in this same timeslice. No-op when off
+	// or when nothing is scheduled.
+	if (get_sched_preset())
+		sh4_sched_tick(s_timeslice);
+
 	return UpdateINTC();
 }
 
@@ -386,6 +405,13 @@ int FASTCALL UpdateSystem_no_event()
 	UpdateTMU(s_timeslice);
 	UpdatePvr(s_timeslice);
 	UpdateAicaDma(s_timeslice);     // deferred AICA G2-DMA completion IRQ (DMA_FIX)
+
+	// SCHED preset: advance the deadline scheduler and fire due completion/IRQ
+	// events (Stage 2 migrations) in true hardware order. Before the pending
+	// check so a fired completion's IRQ is seen this timeslice. No-op when off.
+	if (get_sched_preset())
+		sh4_sched_tick(s_timeslice);
+
 	return UpdateINTC_pending();
 }
 

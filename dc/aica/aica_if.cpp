@@ -4,11 +4,19 @@
 #include "dc/mem/sb.h"
 #include "plugins/plugin_manager.h"
 #include "dc/asic/asic.h"
+#include "dc/sh4/sh4_sched.h"   // SCHED preset: deadline-ordered AICA G2-DMA end
 
 #include <time.h>
 #include <stdio.h>
 
 extern "C" int get_dma_fix_preset();
+
+// SCHED preset (wii/main.cpp): route the AICA G2-DMA end IRQ through the unified
+// deadline scheduler (in true order relative to the ch2/PVR/GD-ROM completions)
+// instead of the standalone aica_dma_delay_cycles countdown in UpdateAicaDma().
+extern "C" int get_sched_preset();
+
+static int aica_dma_schid = -1;
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -225,6 +233,13 @@ void UpdateAicaDma(u32 cycles)
     }
 }
 
+// SCHED preset: deadline-scheduler callback for the deferred G2-DMA completion.
+static int aica_dma_end_cb(int tag, int sch_cycl, int jitter)
+{
+    aica_dma_complete();
+    return 0;   // single-shot
+}
+
 // PSP's Read_SB_ADST, ported verbatim (comment is PSP's own):
 //
 //   Le Mans and Looney Tunes sometimes send the same dma transfer twice after
@@ -296,7 +311,15 @@ void Write_SB_ADST(u32 data)
         // completion is the exact bug class this whole investigation has
         // been chasing.
         int cycles = (int)(len * (SH4_CLOCK_EFF / 2 / 25000000));
-        aica_dma_delay_cycles = (cycles < 64) ? 64 : cycles;
+        if (cycles < 64) cycles = 64;
+
+        // SCHED preset: run the completion through the deadline queue (ordered
+        // vs the other DMA/disc completions) instead of the standalone
+        // aica_dma_delay_cycles countdown. Same latency, unified ordering.
+        if (get_sched_preset() && aica_dma_schid != -1)
+            sh4_sched_request(aica_dma_schid, cycles);
+        else
+            aica_dma_delay_cycles = cycles;
     }
     else
     {
@@ -420,6 +443,10 @@ void aica_sb_Init()
     // G2-EXT2, previously unimplemented
     sb_regs[((SB_E2ST_addr - SB_BASE) >> 2)].flags         = REG_32BIT_READWRITE | REG_READ_DATA;
     sb_regs[((SB_E2ST_addr - SB_BASE) >> 2)].writeFunction = Write_SB_E2ST;
+
+    // SCHED preset: register the deferred AICA G2-DMA end IRQ callback once.
+    if (aica_dma_schid == -1)
+        aica_dma_schid = sh4_sched_register(0, aica_dma_end_cb);
 }
 
 void aica_sb_Reset(bool Manual) {}

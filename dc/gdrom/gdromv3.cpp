@@ -8,6 +8,27 @@
 #include "dc/sh4/intc.h"
 #include "dc/sh4/sh4_registers.h"
 #include "dc/asic/asic.h"
+#include "dc/sh4/sh4_sched.h"   // SCHED preset: deadline-ordered GD-DMA completion
+
+// SCHED preset (wii/main.cpp): route the GD-ROM DMA end IRQ through the unified
+// deadline scheduler so it fires in true order relative to the other DMA/render
+// completions, instead of synchronously from the coarse Slow-update tier.
+extern "C" int get_sched_preset();
+
+// Scheduler id + callback for the deferred GD-ROM DMA end interrupt. Registered
+// in gdrom_reg_Init(); armed at transfer completion when the preset is on.
+static int gdrom_dma_schid = -1;
+
+// Small DMA-finish latency (SH4 cycles). Only needs to be >0 so the completion
+// passes through the ordered queue rather than firing inline; the exact value
+// isn't load-bearing for ordering.
+#define GDROM_DMA_IRQ_DELAY 200
+
+static int gdrom_dma_end_cb(int tag, int sch_cycl, int jitter)
+{
+	asic_RaiseInterrupt(holly_GDROM_DMA);
+	return 0;   // single-shot
+}
 
 extern "C" int get_debug_loop();
 extern "C" int get_debug_gdrom();
@@ -644,7 +665,7 @@ void gd_process_spi_cmd()
 		{
 			printf_spicmd("SPI : unkown ? [0x71]\n");
 			if (get_debug_gdrom()) printf("SPI : unkown ? [0x71]\n");
-	
+
 			gd_spi_pio_end((u8*)&gd_data_0x71[0],gd_data_0x71_len);//uCount
 		}
 		break;
@@ -1188,9 +1209,16 @@ void UpdateGDRom()
 	if (SB_GDLEND==SB_GDLEN)
 	{
 		//printf("Streamed GDMA end - %d bytes trasnfered\n",SB_GDLEND);
-		SB_GDST=0;//done
-		// The DMA end interrupt flag
-		asic_RaiseInterrupt(holly_GDROM_DMA);
+		SB_GDST=0;//done (kept immediate: a game polling SB_GDST is unaffected,
+		          // and clearing it now prevents UpdateGDRom re-entry firing the
+		          // end IRQ twice)
+		// The DMA end interrupt flag. SCHED preset: schedule it through the
+		// deadline queue (ordered relative to the other completions) instead of
+		// raising it inline. OFF path is byte-for-byte the legacy behavior.
+		if (get_sched_preset() && gdrom_dma_schid != -1)
+			sh4_sched_request(gdrom_dma_schid, GDROM_DMA_IRQ_DELAY);
+		else
+			asic_RaiseInterrupt(holly_GDROM_DMA);
 	}
 	//Readed ALL sectors
 	if (read_params.remaining_sectors==0)
@@ -1241,6 +1269,11 @@ void gdrom_reg_Init()
 
 	sb_regs[(SB_GDEN_addr-SB_BASE)>>2].flags=REG_32BIT_READWRITE | REG_READ_DATA;
 	sb_regs[(SB_GDEN_addr-SB_BASE)>>2].writeFunction=GDROM_DmaEnable;
+
+	// SCHED preset: register the deferred GD-DMA end IRQ callback once. Safe to
+	// register even when the preset is off — it is only ever armed under it.
+	if (gdrom_dma_schid == -1)
+		gdrom_dma_schid = sh4_sched_register(0, gdrom_dma_end_cb);
 }
 void gdrom_reg_Term()
 {

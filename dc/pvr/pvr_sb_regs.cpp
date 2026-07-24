@@ -6,8 +6,27 @@
 #include "dc/mem/sh4_mem.h"
 #include "pvr_sb_regs.h"
 #include "plugins/plugin_manager.h"
+#include "dc/sh4/sh4_sched.h"   // SCHED preset: deadline-ordered PVR-DMA completion
 
 extern "C" int get_dma_fix_preset();
+
+// SCHED preset (wii/main.cpp): route the PVR-DMA end IRQ through the unified
+// deadline scheduler so it fires in true order relative to the ch2/GD-ROM/AICA
+// completions, instead of synchronously inside the register write. This is the
+// exact channel Rez's 89KB texture upload (dst=0x11401800) uses.
+extern "C" int get_sched_preset();
+
+static int pvr_dma_schid = -1;
+
+// Small transfer-finish latency (SH4 cycles); only needs to be >0 so the
+// completion passes through the ordered queue instead of firing inline.
+#define PVR_DMA_IRQ_DELAY 200
+
+static int pvr_dma_end_cb(int tag, int sch_cycl, int jitter)
+{
+	asic_RaiseInterrupt(holly_PVR_DMA);
+	return 0;   // single-shot
+}
 
 //==============================================================================
 // Constants
@@ -112,11 +131,17 @@ static inline void complete_dma_transfer(u32 src, u32 len)
 		DMAC_DMATCR[0]     = 0;
 	}
 
-	// Clear pending status
+	// Clear pending status. Kept immediate (like SB_GDST / SB_C2DST): a guest
+	// polling SB_PDST for completion is unaffected; only the IRQ is reordered.
 	SB_PDST = 0;
 
-	// Raise interrupt to notify completion
-	asic_RaiseInterrupt(holly_PVR_DMA);
+	// Raise the completion IRQ. SCHED preset: schedule it through the deadline
+	// queue (ordered relative to the other completions) instead of raising it
+	// inline. OFF path is byte-for-byte the legacy synchronous raise.
+	if (get_sched_preset() && pvr_dma_schid != -1)
+		sh4_sched_request(pvr_dma_schid, PVR_DMA_IRQ_DELAY);
+	else
+		asic_RaiseInterrupt(holly_PVR_DMA);
 }
 
 /**
@@ -323,6 +348,10 @@ void pvr_sb_Init()
 
 	// Register Sort DMA start control (0x005F6820)
 	register_dma_control(SB_SDST_addr, RegWrite_SB_SDST, &SB_SDST);
+
+	// SCHED preset: register the deferred PVR-DMA end IRQ callback once.
+	if (pvr_dma_schid == -1)
+		pvr_dma_schid = sh4_sched_register(0, pvr_dma_end_cb);
 }
 
 void pvr_sb_Term()

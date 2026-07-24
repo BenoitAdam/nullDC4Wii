@@ -339,6 +339,20 @@ extern "C" {
   int get_dma_fix_preset() { return g_dma_fix_preset; }
 }
 
+// SCHED — unified cycle-deadline scheduler (dc/sh4/sh4_sched.cpp). When on,
+// the completion/IRQ events whose RELATIVE ordering matters (GD-ROM read-done,
+// ch2/PVR/AICA-DMA completion, render-done, TA list-end) fire through a single
+// deadline queue instead of at their own tier of the Medium/Slow/VerySlow
+// timeslice cascade — so they arrive in true hardware order. Driven by
+// sh4_sched_tick(s_timeslice) from UpdateSystem; no JIT/context changes.
+// Leading suspect for the cross-game post-logo stall (Rez). 0=off (legacy
+// cascade ordering, default), 1=on. EXPERIMENTAL — A/B against off.
+int g_sched_preset = 0;
+
+extern "C" {
+  int get_sched_preset() { return g_sched_preset; }
+}
+
 // FASTMEM — PPC-MMU fastmem for the SH4 dynarec (wii/wii_fastmem.cpp +
 // rec_fastmem_* in wii_driver.cpp). Maps the DC 29-bit address space at
 // EA 0x00000000-0x1FFFFFFF through SR0/SR1 + a hand-built hashed page table
@@ -955,7 +969,8 @@ void displayAccuracyMenu()
 #define OPT_CDDA        51
 #define OPT_MUTE_PCM16  52
 #define OPT_HUD_PASS    53
-#define OPT_ROW_COUNT   54
+#define OPT_SCHED       54
+#define OPT_ROW_COUNT   55
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -1001,6 +1016,7 @@ static int opt_row_page(int row)
     case OPT_BCACHE:
     case OPT_FPU_PIN:
     case OPT_JIT_ALIGN:
+    case OPT_SCHED:
       return 2;
     default:
       return 0;
@@ -1540,6 +1556,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (32B LINES)    >]"); break;
     }
     printf(" align JIT blocks to cache lines");
+    printf("\n");
+
+    // --- Row: SCHED - unified cycle-deadline event scheduler ---
+    printf("%s SCHED (ORDER)  : ", (selectedRow == OPT_SCHED) ? ">" : " ");
+    switch (g_sched_preset) {
+      case 0: printf("[< OFF (CASCADE)     >]"); break;
+      case 1: printf("[< ON (DEADLINE)     >]"); break;
+    }
+    printf(" hw-order DMA/IRQ completions (exp)");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.61\n");
@@ -1631,6 +1656,7 @@ bool displayOptionsMenu()
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
+        case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1691,6 +1717,7 @@ bool displayOptionsMenu()
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
+        case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2395,6 +2422,7 @@ int main(int argc, wchar *argv[])
     printf("JIT BCache     : %s\n", g_bcache_preset ? "ON (FLAT)" : "OFF (LEGACY)");
     printf("FPU Pin        : %s\n", g_fpu_pin_preset ? "ON (EXPERIMENTAL)" : "OFF (LEGACY)");
     printf("JIT Align      : %s\n", g_jit_align_preset ? "ON (32B LINES)" : "OFF (LEGACY)");
+    printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {
       case -1: printf("DEFAULT (SAVED)\n"); break;

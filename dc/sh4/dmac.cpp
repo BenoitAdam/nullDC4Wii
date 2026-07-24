@@ -11,8 +11,27 @@
 #include "intc.h"
 #include "dc/asic/asic.h"
 #include "plugins/plugin_manager.h"
+#include "sh4_sched.h"   // SCHED preset: deadline-ordered ch2-DMA completion
 
 extern "C" int get_dma_fix_preset();
+
+// SCHED preset (wii/main.cpp): route the ch2-DMA end IRQ through the unified
+// deadline scheduler so it lands in true order relative to the GD-ROM/PVR/AICA
+// completions and one tick AFTER the kick (past the guest's post-kick
+// bookkeeping), instead of firing synchronously inside the register write.
+extern "C" int get_sched_preset();
+
+static int ch2_dma_schid = -1;
+
+// Small transfer-finish latency (SH4 cycles); only needs to be >0 so the
+// completion goes through the ordered queue rather than firing inline.
+#define CH2_DMA_IRQ_DELAY 200
+
+static int ch2_dma_end_cb(int tag, int sch_cycl, int jitter)
+{
+	asic_RaiseInterrupt(holly_CH2_DMA);
+	return 0;   // single-shot
+}
 
 // ---------------------------------------------------------------------------
 // DMAC register state for all 4 channels
@@ -179,11 +198,16 @@ void DMAC_Ch2St()
 		DMAC_SAR[2]        = src;
 	}
 
-	// Raise the Ch2-DMA end interrupt synchronously, as PSP does. (Deferring
-	// it was tested and made no difference — see the disproven experiment
-	// commented out above — so the bug was never the IRQ timing; it was the
-	// DE=0 writeback above.)
-	asic_RaiseInterrupt(holly_CH2_DMA);
+	// Raise the Ch2-DMA end interrupt. Default (SCHED off): synchronously, as
+	// PSP does. Note the earlier fixed-delay experiment (see the commented block
+	// above) deferred the IRQ but kept it OFF the ordered queue; SCHED differs by
+	// routing it through the deadline scheduler so it fires in true order
+	// relative to the other completions — the ordering, not the delay, is the
+	// point. OFF path is byte-for-byte the legacy synchronous raise.
+	if (get_sched_preset() && ch2_dma_schid != -1)
+		sh4_sched_request(ch2_dma_schid, CH2_DMA_IRQ_DELAY);
+	else
+		asic_RaiseInterrupt(holly_CH2_DMA);
 	(void)src;
 }
 
@@ -285,6 +309,10 @@ void dmac_Init()
 	DMAC[((DMAC_DMAOR_addr) & 0xFF) >> 2].readFunction  = 0;
 	DMAC[((DMAC_DMAOR_addr) & 0xFF) >> 2].writeFunction = WriteDMAOR;
 	DMAC[((DMAC_DMAOR_addr) & 0xFF) >> 2].data32        = &DMAC_DMAOR.full;
+
+	// SCHED preset: register the deferred ch2-DMA end IRQ callback once.
+	if (ch2_dma_schid == -1)
+		ch2_dma_schid = sh4_sched_register(0, ch2_dma_end_cb);
 }
 
 #undef DMAC_REG_RW
