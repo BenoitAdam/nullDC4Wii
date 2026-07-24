@@ -140,7 +140,7 @@
                                 off (legacy) skips the per-polygon override and uses
                                 the GX default, which is faster but renders
                                 Resident Evil 3's translucent polygons incorrectly.
-        blend_fps_boost=on  <- on/off, only used when blend_mode=on (see gxRend.cpp
+        fps_boost=on        <- on/off, only used when blend_mode=on (see gxRend.cpp
                                 BLEND_FPS_BOOST()). on forces alpha_fmt=0 (skips the
                                 alpha-test/ZCompLoc pass) for every polygon outside
                                 the translucent list, saving a couple of FPS (e.g.
@@ -650,7 +650,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "fmv_format"))     p->fmv_format     = parse_fmv_format(val);
     else if (key_eq(key, "blend_mode"))     p->blend_mode     = parse_bool(val);
     else if (key_eq(key, "rgb565_opaque_alpha")) p->rgb565_opaque_alpha = parse_bool(val);
-    else if (key_eq(key, "blend_fps_boost")) p->blend_fps_boost = parse_bool(val);
+    else if (key_eq(key, "fps_boost"))      p->blend_fps_boost = parse_bool(val);
     else if (key_eq(key, "punch_through"))  p->punch_through  = parse_bool(val);
     else if (key_eq(key, "offset_color"))   p->offset_color   = parse_bool(val);
     else if (key_eq(key, "trans_sort"))     p->trans_sort     = parse_bool(val);
