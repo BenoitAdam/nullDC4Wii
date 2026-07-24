@@ -18,6 +18,14 @@
 SampleType mixl;
 SampleType mixr;
 
+// MUTE_PCM16_FIX(): preset-gated (default OFF) workaround for ChuChu Rocket's
+// echoey/slow-motion 16-bit SFX. When ON, any AICA channel whose sample format
+// is 16-bit PCM (PCMS==0, non-noise) is silenced at KEY_ON instead of playing.
+// Also mutes 16-bit music/voices, so it is a per-game hack. See main.cpp
+// g_mute_pcm16_preset and [[chuchu-rocket-echo-investigation]].
+extern "C" int get_mute_pcm16_preset();
+#define MUTE_PCM16_FIX() (get_mute_pcm16_preset() != 0)
+
 // x.15
 s32  volume_lut[16];
 u32  SendLevel[16] = {0xF000<<3,14<<3,13<<3,12<<3,11<<3,10<<3,9<<3,8<<3,
@@ -491,6 +499,12 @@ struct ChannelEx
 
     void KEY_ON()
     {
+        // Workaround: silence 16-bit PCM channels when the mute_pcm16 preset is
+        // on. Leaving the channel in EG_Release (not enabling it) produces no
+        // output — a per-game hack for ChuChu Rocket's echoey 16-bit SFX.
+        if (MUTE_PCM16_FIX() && !ccd->SSCTL && ccd->PCMS == 0)
+            return;
+
         if (AEG.state == EG_Release)
         {
             enable();

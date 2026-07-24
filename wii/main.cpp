@@ -268,6 +268,12 @@ extern "C" {
   int get_cdda_preset() { return g_cdda_preset; }
 }
 
+int g_mute_pcm16_preset = 0; // 0=off (all AICA sample formats audible, legacy), 1=on (16-bit PCM channels (PCMS==0) are silenced at KEY_ON — workaround for ChuChu Rocket's echoey 16-bit SFX; also mutes any 16-bit music/voices, so game-specific)
+
+extern "C" {
+  int get_mute_pcm16_preset() { return g_mute_pcm16_preset; }
+}
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -928,7 +934,8 @@ void displayAccuracyMenu()
 #define OPT_FPU_PIN     48
 #define OPT_JIT_ALIGN   49
 #define OPT_CDDA        50
-#define OPT_ROW_COUNT   51
+#define OPT_MUTE_PCM16  51
+#define OPT_ROW_COUNT   52
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -953,6 +960,7 @@ static int opt_row_page(int row)
     case OPT_X_SCALER:
     case OPT_CANVAS_WIDTH:
     case OPT_CDDA:
+    case OPT_MUTE_PCM16:
       return 1;
     case OPT_ACCURACY:
     case OPT_HOKUTO_HACK:
@@ -1321,6 +1329,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CD MUSIC)     >]"); break;
     }
     printf(" (mix CD audio tracks into sound)");
+    printf("\n");
+
+    // --- Row: Mute 16-bit PCM channels (ChuChu Rocket SFX workaround) ---
+    printf("%s MUTE 16BIT PCM  : ", (selectedRow == OPT_MUTE_PCM16) ? ">" : " ");
+    switch (g_mute_pcm16_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (SILENCE 16B)  >]"); break;
+    }
+    printf(" ChuChu Rocket echoey SFX fix");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.61\n");
@@ -1570,6 +1587,7 @@ bool displayOptionsMenu()
         case OPT_FPU_PIN:        g_fpu_pin_preset         = (g_fpu_pin_preset         + 1) % 2; break;
         case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
+        case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1627,6 +1645,7 @@ bool displayOptionsMenu()
         case OPT_FPU_PIN:        g_fpu_pin_preset         = (g_fpu_pin_preset         + 1) % 2; break;
         case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
+        case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2368,6 +2387,7 @@ int main(int argc, wchar *argv[])
     printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("CDDA Music     : %s\n", g_cdda_preset ? "ON (CD MUSIC)" : "OFF (LEGACY)");
+    printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("BG Polygon     : %s\n", g_bg_poly_preset ? "ON (CORRECT)" : "OFF (FASTER)");
     printf("X Scaler       : %s\n", g_x_scaler_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
     if (g_canvas_width_preset <= 0)

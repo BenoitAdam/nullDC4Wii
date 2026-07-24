@@ -243,6 +243,13 @@
                                 music as CD audio tracks have no music; on pulls
                                 the playing track's sectors from the disc image
                                 (~75 reads/s) and mixes them into the output.
+        mute_pcm16=on       <- on/off, silence 16-bit PCM channels (see sgc_if.cpp
+                                MUTE_PCM16_FIX()). off (default, legacy) plays all
+                                sample formats. on drops any AICA channel whose
+                                PCMS==0 (16-bit PCM) at KEY_ON — a workaround for
+                                ChuChu Rocket's echoey/slow-motion 16-bit SFX. Note
+                                this also mutes 16-bit music/voices, so it is a
+                                per-game hack, not a general fix.
         bg_poly=on          <- on/off, background polygon rendering (see gxRend.cpp
                                 BG_POLY_FIX()). ISP_BACKGND_T's 3 vertices are
                                 normally only used for the EFB clear color;
@@ -357,6 +364,7 @@ extern int g_depth_clip_preset;
 extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
 extern int g_cdda_preset;
+extern int g_mute_pcm16_preset;
 extern int g_bg_poly_preset;
 extern int g_hokuto_hack_preset;
 extern int g_isp_depth_func_preset;
@@ -423,6 +431,7 @@ struct GamePreset
     int async_render;
     int tmem_cache;
     int cdda;
+    int mute_pcm16;
     int bg_poly;
     int hokuto_hack;
     int isp_depth_func;
@@ -672,6 +681,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "async_render"))   p->async_render   = parse_bool(val);
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = parse_bool(val);
     else if (key_eq(key, "cdda"))           p->cdda           = parse_bool(val);
+    else if (key_eq(key, "mute_pcm16"))     p->mute_pcm16     = parse_bool(val);
     else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
     else if (key_eq(key, "hokuto_hack"))    p->hokuto_hack    = parse_bool(val);
     else if (key_eq(key, "isp_depth_func")) p->isp_depth_func = atoi(val);
@@ -720,6 +730,7 @@ static void preset_clear(GamePreset* cur)
     cur->async_render = -1;
     cur->tmem_cache = -1;
     cur->cdda = -1;
+    cur->mute_pcm16 = -1;
     cur->bg_poly = -1;
     cur->hokuto_hack = -1;
     cur->isp_depth_func = -1;
@@ -773,6 +784,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
     if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
     if (p->cdda           >= 0) { g_cdda_preset          = p->cdda;            printf("  cdda           -> %d\n", p->cdda);           }
+    if (p->mute_pcm16     >= 0) { g_mute_pcm16_preset    = p->mute_pcm16;      printf("  mute_pcm16     -> %d\n", p->mute_pcm16);     }
     if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
     if (p->hokuto_hack    >= 0) { g_hokuto_hack_preset   = p->hokuto_hack;     printf("  hokuto_hack    -> %d\n", p->hokuto_hack);    }
     if (p->isp_depth_func >= 0) { g_isp_depth_func_preset = p->isp_depth_func; printf("  isp_depth_func -> %d\n", p->isp_depth_func); }
