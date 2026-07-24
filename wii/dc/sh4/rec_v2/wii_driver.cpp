@@ -1318,6 +1318,16 @@ struct ColdFrag
 	u8         rdreg;   // read: destination reg (rrv0 or pinned)
 	u8         datareg; // write: data reg (rarg1 or pinned)
 	u8         areg;    // address source reg (rarg0 or pinned)
+	// FPU_PIN Phase B: when the read dest / write source is a pinned FR the
+	// fast path uses lfs/stfs straight to/from the FPR (no GPR bounce). The
+	// slow C path still deals in ints, so it bounces through the FR's own
+	// context slot: read = ReadMem->rrvN->stw fofs->lfs fdreg; write =
+	// stfs fdreg->fofs->lwz->WriteMem. fdreg==0xFF marks the plain int path
+	// (must be set on EVERY registration — s_cold is reused, stale otherwise).
+	// For pairs, the second FR is fdreg+1 and its slot is fofs+4 (fr[] is
+	// contiguous and GetFloatReg maps fr[n]->f14+n).
+	u8         fdreg;   // pinned FPR for the float bounce, or 0xFF = int path
+	u16        fofs;    // context byte offset of the FR's memory slot
 	void*      fuct;    // slow C function (ReadMem*/WriteMem*); 0 -> default by sz
 };
 // Sized so it cannot overflow within one block: ngen_Compile bails when
@@ -1347,7 +1357,14 @@ static void FlushCold()
 			void* f=c.fuct;
 			if (!f) f=(c.sz==1)?(void*)ReadMem8:(c.sz==2)?(void*)ReadMem16:(void*)ReadMem32;
 			ppc_call(f);
-			if (c.sz==1)      ppc_extsbx(c.rdreg,ppc_rrv0,0);
+			if (c.fdreg!=0xFF)
+			{
+				// FPU_PIN: float dest (sz==4). Bounce rrv0 -> pinned FPR via its
+				// context slot (no direct GPR->FPR move on PPC750).
+				ppc_stw(ppc_rrv0,ppc_contex,c.fofs);
+				ppc_lfs(c.fdreg,ppc_contex,c.fofs);
+			}
+			else if (c.sz==1)      ppc_extsbx(c.rdreg,ppc_rrv0,0);
 			else if (c.sz==2) ppc_extshx(c.rdreg,ppc_rrv0,0);
 			else if (c.rdreg!=ppc_rrv0) ppc_ori(c.rdreg,ppc_rrv0,0);
 		}
@@ -1355,17 +1372,46 @@ static void FlushCold()
 		{
 			void* f=c.fuct? c.fuct : (void*)ReadMem64;
 			ppc_call(f);
+			if (c.fdreg!=0xFF)
+			{
+				// FPU_PIN: float pair. rrv0=word[addr]->fdreg, rrv1=word[addr+4]
+				// ->fdreg+1, each bounced through its own context slot.
+				ppc_stw(ppc_rrv0,ppc_contex,c.fofs);
+				ppc_lfs(c.fdreg,ppc_contex,c.fofs);
+				ppc_stw(ppc_rrv1,ppc_contex,c.fofs+4);
+				ppc_lfs(c.fdreg+1,ppc_contex,c.fofs+4);
+			}
 		}
 		else if (c.kind==2)              // --- write scalar: WriteMem(addr,data) ---
 		{
 			if (c.areg!=ppc_rarg0)    ppc_ori(ppc_rarg0,c.areg,0);
-			if (c.datareg!=ppc_rarg1) ppc_ori(ppc_rarg1,c.datareg,0);
-			if (c.sz==1)      { ppc_andi(ppc_rarg1,ppc_rarg1,0xFF);   ppc_call(&WriteMem8); }
-			else if (c.sz==2) { ppc_andi(ppc_rarg1,ppc_rarg1,0xFFFF); ppc_call(&WriteMem16); }
-			else                ppc_call(&WriteMem32);
+			if (c.fdreg!=0xFF)
+			{
+				// FPU_PIN: float source (sz==4). Bounce pinned FPR -> rarg1 via
+				// its context slot, then the normal WriteMem32.
+				ppc_stfs(c.fdreg,ppc_contex,c.fofs);
+				ppc_lwz(ppc_rarg1,ppc_contex,c.fofs);
+				ppc_call(&WriteMem32);
+			}
+			else
+			{
+				if (c.datareg!=ppc_rarg1) ppc_ori(ppc_rarg1,c.datareg,0);
+				if (c.sz==1)      { ppc_andi(ppc_rarg1,ppc_rarg1,0xFF);   ppc_call(&WriteMem8); }
+				else if (c.sz==2) { ppc_andi(ppc_rarg1,ppc_rarg1,0xFFFF); ppc_call(&WriteMem16); }
+				else                ppc_call(&WriteMem32);
+			}
 		}
 		else                             // --- write pair (64): WriteMem64 ---
 		{
+			if (c.fdreg!=0xFF)
+			{
+				// FPU_PIN: float pair. fdreg=high->rarg2, fdreg+1=low->rarg3
+				// (the WriteMem64(u32,u64) EABI regs), each via its context slot.
+				ppc_stfs(c.fdreg,ppc_contex,c.fofs);
+				ppc_lwz(ppc_rarg2,ppc_contex,c.fofs);
+				ppc_stfs(c.fdreg+1,ppc_contex,c.fofs+4);
+				ppc_lwz(ppc_rarg3,ppc_contex,c.fofs+4);
+			}
 			ppc_call(&WriteMem64);
 		}
 
@@ -1745,6 +1791,32 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				// branch below). Defaults to rarg0 (the const/imm + pair paths).
 				u32 areg = ppc_rarg0;
 
+				// FPU_PIN Phase B: when the destination is a pinned FR, load the
+				// value STRAIGHT into the FPR (lfs/lfsx) instead of into a GPR and
+				// then bouncing it through memory. Only for RUNTIME addresses
+				// (rs1 reg) on the LEGACY path — the fastmem shapes are fixed and
+				// decoded at DSI time, so that combo keeps the v1 GPR bounce.
+				// fmov.s = flags 4 scalar (rd float); fmov.d = flags 8 pair
+				// (rd, rd+1 both pinned fr). xf-based pairs (unpinned) fall back.
+				bool fdirect=false;
+				u32  fd0=0, fd1=0, fofs=0;
+				if (get_fpu_pin_preset() && !fastmem_on() && op->rs1.is_reg())
+				{
+					if (op->flags==8)
+					{
+						ppc_freg a=GetFloatReg(op->rd._reg);
+						ppc_freg b=GetFloatReg(op->rd._reg+1);
+						if (a!=ppc_finvalid && b!=ppc_finvalid)
+						{ fdirect=true; fd0=(u32)a; fd1=(u32)b; fofs=Sh4cntx.offset(op->rd._reg); }
+					}
+					else if (op->flags==4 && op->rd.is_r32f())
+					{
+						ppc_freg a=GetFloatReg(op->rd._reg);
+						if (a!=ppc_finvalid)
+						{ fdirect=true; fd0=(u32)a; fofs=Sh4cntx.offset(op->rd._reg); }
+					}
+				}
+
 				if (op->rs1.is_imm())
 				{
 					void* ptr=_vmem_read_const(op->rs1._imm,isram,op->flags);
@@ -1901,14 +1973,26 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						// low 6 bits, which slw/srw use, equal the 5-bit shift field).
 						ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0);
 						ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_rarg1,0);	// mirror mask
-						ppc_lwzx(ppc_rarg3,ppc_rarg2,ppc_rarg0);	// word[addr]
-						ppc_addi(ppc_rarg0,ppc_rarg0,4);
-						ppc_lwzx(ppc_rrv1,ppc_rarg2,ppc_rarg0);	// word[addr+4] -> r4
-						ppc_ori(ppc_rrv0,ppc_rarg3,0);			// r3 = word[addr]
+						if (fdirect)
+						{
+							// FPU_PIN: load both words STRAIGHT into the pinned FPRs
+							// (word[addr]->fd0, word[addr+4]->fd1); no GPR/rrv bounce.
+							ppc_lfsx(fd0,ppc_rarg2,ppc_rarg0);	// word[addr]   -> fd0
+							ppc_addi(ppc_rarg0,ppc_rarg0,4);
+							ppc_lfsx(fd1,ppc_rarg2,ppc_rarg0);	// word[addr+4] -> fd1
+						}
+						else
+						{
+							ppc_lwzx(ppc_rarg3,ppc_rarg2,ppc_rarg0);	// word[addr]
+							ppc_addi(ppc_rarg0,ppc_rarg0,4);
+							ppc_lwzx(ppc_rrv1,ppc_rarg2,ppc_rarg0);	// word[addr+4] -> r4
+							ppc_ori(ppc_rrv0,ppc_rarg3,0);			// r3 = word[addr]
+						}
 
 						ColdFrag& c=s_cold[s_cold_n++];
 						c.beq=cold; c.done=emit_GetCCPtr();
 						c.kind=1; c.fuct=fuct;
+						c.fdreg=fdirect?(u8)fd0:0xFF; c.fofs=(u16)fofs;
 					}
 					else
 					{
@@ -1945,10 +2029,13 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						// native = addr + delta  (single addis). rarg0 = native addr.
 						ppc_addis(ppc_rarg0,areg,delta_hi);
 						// big-endian sub-word swizzle folded into the address
+						// (fdirect is float sz==4 only, so it never swizzles)
 						if (sz<4)
 							ppc_xori(ppc_rarg0,ppc_rarg0,4-sz);
 						// rv = *(T*)native   (d-form, base=rarg0 != r0)
-						if (sz==1)
+						if (fdirect)
+							ppc_lfs(fd0,ppc_rarg0,0);	// FPU_PIN: straight into the FPR
+						else if (sz==1)
 						{
 							ppc_lbz(rdreg,ppc_rarg0,0);
 							ppc_extsbx(rdreg,rdreg,0);
@@ -1967,14 +2054,22 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						c.beq=cold; c.done=emit_GetCCPtr();
 						c.kind=0; c.sz=(u8)sz; c.rdreg=(u8)rdreg;
 						c.areg=(u8)areg; c.fuct=fuct;
+						c.fdreg=fdirect?(u8)fd0:0xFF; c.fofs=(u16)fofs;
 					}
 				}
 
-				ppc_sh_store(rdreg,op->rd);
-
-				if (op->flags==8)
+				// FPU_PIN direct path already landed the value in the pinned
+				// FPR(s) via lfs/lfsx, so skip the GPR->context stores entirely.
+				// (fdirect is only ever set on the legacy runtime path above; the
+				// fastmem / const-imm / int paths keep rdreg and store normally.)
+				if (!fdirect)
 				{
-					ppc_sh_store(ppc_rrv1,op->rd._reg+1);
+					ppc_sh_store(rdreg,op->rd);
+
+					if (op->flags==8)
+					{
+						ppc_sh_store(ppc_rrv1,op->rd._reg+1);
+					}
 				}
 			}
 			break;
@@ -2023,6 +2118,29 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					die("invalid rs3");
 				}
 
+				// FPU_PIN Phase B (symmetric to shop_readm): when the data source
+				// is a pinned FR, store STRAIGHT from the FPR (stfs/stfsx) instead
+				// of bouncing it into a GPR first. Legacy path only (fastmem shapes
+				// are fixed); fmov.s = flags 4 scalar, fmov.d = flags 8 pair.
+				bool fdirect=false;
+				u32  fs0=0, fs1=0, fofs=0;
+				if (get_fpu_pin_preset() && !fastmem_on())
+				{
+					if (op->flags==8)
+					{
+						ppc_freg a=GetFloatReg(op->rs2._reg);
+						ppc_freg b=GetFloatReg(op->rs2._reg+1);
+						if (a!=ppc_finvalid && b!=ppc_finvalid)
+						{ fdirect=true; fs0=(u32)a; fs1=(u32)b; fofs=Sh4cntx.offset(op->rs2._reg); }
+					}
+					else if (op->flags==4 && op->rs2.is_r32f())
+					{
+						ppc_freg a=GetFloatReg(op->rs2._reg);
+						if (a!=ppc_finvalid)
+						{ fdirect=true; fs0=(u32)a; fofs=Sh4cntx.offset(op->rs2._reg); }
+					}
+				}
+
 				// Scalar data operand: if rs2 is pinned, the fast path can store
 				// DIRECTLY from its pinned PPC reg (the fast path only reads the
 				// data reg, never clobbers it), so we skip the pre-split
@@ -2030,7 +2148,11 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				// path (where the WriteMem ABI requires data in rarg1). The 64-bit
 				// pair keeps the rarg2:rarg3 ABI as before.
 				u32 datareg = ppc_rarg1;
-				if (op->flags==8)
+				if (fdirect)
+				{
+					// data stays in the pinned FPR(s) fs0[/fs1]; no GPR preload.
+				}
+				else if (op->flags==8)
 				{
 					ppc_sh_load(ppc_rarg2,op->rs2);
 					ppc_sh_load(ppc_rarg3,op->rs2._reg+1);
@@ -2119,13 +2241,25 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					// --- fast direct path (fall-through; addr masked here only) ---
 					ppc_slwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);
 					ppc_srwx(ppc_rarg0,ppc_rarg0,ppc_r0,0);	// mirror mask
-					ppc_stwx(ppc_rarg2,ppc_rarg1,ppc_rarg0);	// word[addr]   = high
-					ppc_addi(ppc_rarg0,ppc_rarg0,4);
-					ppc_stwx(ppc_rarg3,ppc_rarg1,ppc_rarg0);	// word[addr+4] = low
+					if (fdirect)
+					{
+						// FPU_PIN: store both words STRAIGHT from the pinned FPRs
+						// (fs0=high->word[addr], fs1=low->word[addr+4]).
+						ppc_stfsx(fs0,ppc_rarg1,ppc_rarg0);	// word[addr]   = fs0
+						ppc_addi(ppc_rarg0,ppc_rarg0,4);
+						ppc_stfsx(fs1,ppc_rarg1,ppc_rarg0);	// word[addr+4] = fs1
+					}
+					else
+					{
+						ppc_stwx(ppc_rarg2,ppc_rarg1,ppc_rarg0);	// word[addr]   = high
+						ppc_addi(ppc_rarg0,ppc_rarg0,4);
+						ppc_stwx(ppc_rarg3,ppc_rarg1,ppc_rarg0);	// word[addr+4] = low
+					}
 
 					ColdFrag& c=s_cold[s_cold_n++];
 					c.beq=cold; c.done=emit_GetCCPtr();
 					c.kind=3;
+					c.fdreg=fdirect?(u8)fs0:0xFF; c.fofs=(u16)fofs;
 				}
 				else
 				{
@@ -2161,7 +2295,10 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_xori(ppc_r0,ppc_r0,4-sz);		// big-endian sub-word swizzle
 					// *(T*)(ptr+eff) = data  (ptr=rarg3, eff=r0, data=datareg).
 					// datareg is rs2's pinned reg (read-only here) or rarg1.
-					if (sz==1)
+					// (fdirect is float sz==4 only, so it never swizzles.)
+					if (fdirect)
+						ppc_stfsx(fs0,ppc_rarg3,ppc_r0);	// FPU_PIN: straight from the FPR
+					else if (sz==1)
 						ppc_stbx(datareg,ppc_rarg3,ppc_r0);
 					else if (sz==2)
 						ppc_sthx(datareg,ppc_rarg3,ppc_r0);
@@ -2171,6 +2308,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					ColdFrag& c=s_cold[s_cold_n++];
 					c.beq=cold; c.done=emit_GetCCPtr();
 					c.kind=2; c.sz=(u8)sz; c.datareg=(u8)datareg; c.areg=(u8)areg;
+					c.fdreg=fdirect?(u8)fs0:0xFF; c.fofs=(u16)fofs;
 				}
 			}
 			break;
