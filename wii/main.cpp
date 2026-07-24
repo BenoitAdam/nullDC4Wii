@@ -309,7 +309,7 @@ extern "C" {
 // so JIT loads/stores become branchless (rlwinm + load/store, no compares);
 // MMIO/SQ/BIOS accesses fault once and are back-patched to slow-path
 // trampolines. 0=off (legacy inline-table paths, default), 1=on.
-int g_fastmem_preset = 0;
+int g_fastmem_preset = 1;
 
 extern "C" {
   int get_fastmem_preset() { return g_fastmem_preset; }
@@ -1194,7 +1194,7 @@ bool displayOptionsMenu()
     printf(" 2P viewports, Daytona USA");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: More Info | 2: Next Page | alpha 0.60\n");
+    printf("A: Launch | B: Back | 1: More Info | 2: Next Page | alpha 0.61\n");
     } // end page 0
 
     if (optionsPage == 1) {
@@ -1283,7 +1283,7 @@ bool displayOptionsMenu()
     printf(" SF3 double impact=384");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.60\n");
+    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.61\n");
     } // end page 1
 
     if (optionsPage == 2) {
@@ -1412,9 +1412,9 @@ bool displayOptionsMenu()
     printf("%s FASTMEM        : ", (selectedRow == OPT_FASTMEM) ? ">" : " ");
     switch (g_fastmem_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (EXPERIMENTAL) >]"); break;
+      case 1: printf("[< ON (FASTER)       >]"); break;
     }
-    printf(" MMU-mapped JIT memory (no compares)");
+    printf(" MMU-mapped JIT memory");
     printf("\n");
 
     // --- Row: BCACHE - flat dynamic-branch dispatch cache ---
@@ -1444,7 +1444,7 @@ bool displayOptionsMenu()
     printf(" align JIT blocks to cache lines");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.60\n");
+    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.61\n");
     } // end page 2
 
 
@@ -1874,7 +1874,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - alpha 0.60   ");
+    printf("\nNullDC4Wii - alpha 0.61   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");
