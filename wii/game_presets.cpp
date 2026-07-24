@@ -233,6 +233,19 @@
                                 2 disables XF clipping entirely (Dolphin
                                 behaviour: out-of-range Z clamps instead of
                                 the poly vanishing).
+        hud_pass=2          <- 0/1/2 (default 0=off), rescue the 2D HUD that
+                                fixed_depth=tight clips (see gxRend.cpp HUD_PASS()).
+                                Tight's near plane (W=0.1) fixes 3D Z-fighting but
+                                clips the HUD, which parks nearer than that; this
+                                re-parks the HUD onto the near plane (screen
+                                position preserved) and draws it GX_ALWAYS.
+                                1 = overlay (no Z-write) — HUD may be overdrawn by
+                                geometry drawn after it. 2 = protect (Z-write at
+                                the near plane) — later scene polys fail GEQUAL so
+                                the HUD stays on top; avoid on games with a large
+                                near-clipped quad drawn early (it would stamp the
+                                whole scene's depth). Companion to fixed_depth=2 —
+                                a no-op without it.
         async_render=on     <- on/off, async GPU present (see gxRend.cpp
                                 ASYNC_RENDER()). off (default, legacy) blocks the
                                 CPU in GX_DrawDone() until the GPU finishes the
@@ -373,6 +386,7 @@ extern int g_mipmap_preset;
 extern int g_seam_fix_preset;
 extern int g_fixed_depth_preset;
 extern int g_depth_clip_preset;
+extern int g_hud_pass_preset;
 extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
 extern int g_cdda_preset;
@@ -441,6 +455,7 @@ struct GamePreset
     int seam_fix;
     int fixed_depth;
     int depth_clip;
+    int hud_pass;
     int async_render;
     int tmem_cache;
     int cdda;
@@ -708,6 +723,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "seam_fix"))       p->seam_fix       = parse_bool(val);
     else if (key_eq(key, "fixed_depth"))    p->fixed_depth    = atoi(val);
     else if (key_eq(key, "depth_clip"))     p->depth_clip     = atoi(val);
+    else if (key_eq(key, "hud_pass"))       p->hud_pass       = atoi(val);
     else if (key_eq(key, "async_render"))   p->async_render   = parse_bool(val);
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = parse_bool(val);
     else if (key_eq(key, "cdda"))           p->cdda           = parse_bool(val);
@@ -758,6 +774,7 @@ static void preset_clear(GamePreset* cur)
     cur->seam_fix = -1;
     cur->fixed_depth = -1;
     cur->depth_clip = -1;
+    cur->hud_pass = -1;
     cur->async_render = -1;
     cur->tmem_cache = -1;
     cur->cdda = -1;
@@ -813,6 +830,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->seam_fix       >= 0) { g_seam_fix_preset      = p->seam_fix;        printf("  seam_fix       -> %d\n", p->seam_fix);       }
     if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }
     if (p->depth_clip     >= 0) { g_depth_clip_preset    = p->depth_clip;      printf("  depth_clip     -> %d\n", p->depth_clip);     }
+    if (p->hud_pass       >= 0) { g_hud_pass_preset      = p->hud_pass;        printf("  hud_pass       -> %d\n", p->hud_pass);       }
     if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
     if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
     if (p->cdda           >= 0) { g_cdda_preset          = p->cdda;            printf("  cdda           -> %d\n", p->cdda);           }

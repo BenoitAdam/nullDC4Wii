@@ -250,6 +250,12 @@ extern "C" {
   int get_depth_clip_preset() { return g_depth_clip_preset; }
 }
 
+int g_hud_pass_preset = 0; // 0=off (legacy), 1=overlay (re-park HUD strips nearer than the projection near plane onto the plane, draw GX_ALWAYS + no Z-write — may be overdrawn by later geometry), 2=protect (same, Z-write ON at the near plane so later scene polys fail GEQUAL and the HUD stays on top; avoid on games with a large near-clipped quad drawn early). Companion to fixed_depth=tight, whose near plane clips the 2D HUD; no-op under dynamic/wide depth
+
+extern "C" {
+  int get_hud_pass_preset() { return g_hud_pass_preset; }
+}
+
 int g_async_render_preset = 1; // 0=off (CPU blocks in GX_DrawDone until the GPU finishes each frame, legacy), 1=on (frame queued, presented one vblank later; SH4 emulates while the GPU draws)
 
 extern "C" {
@@ -948,7 +954,8 @@ void displayAccuracyMenu()
 #define OPT_JIT_ALIGN   50
 #define OPT_CDDA        51
 #define OPT_MUTE_PCM16  52
-#define OPT_ROW_COUNT   53
+#define OPT_HUD_PASS    53
+#define OPT_ROW_COUNT   54
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -974,6 +981,7 @@ static int opt_row_page(int row)
     case OPT_CANVAS_WIDTH:
     case OPT_CDDA:
     case OPT_MUTE_PCM16:
+    case OPT_HUD_PASS:
       return 1;
     case OPT_ACCURACY:
     case OPT_HOKUTO_HACK:
@@ -1352,6 +1360,16 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (SILENCE 16B)  >]"); break;
     }
     printf(" ChuChu Rocket echoey SFX fix");
+    printf("\n");
+
+    // --- Row: HUD pass (rescue HUD clipped by fixed_depth=tight) ---
+    printf("%s HUD PASS       : ", (selectedRow == OPT_HUD_PASS) ? ">" : " ");
+    switch (g_hud_pass_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< OVERLAY (NO ZW)   >]"); break;
+      case 2: printf("[< PROTECT (Z-WRITE) >]"); break;
+    }
+    printf(" HUD back w/ FIXED DEPTH=TIGHT");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.61\n");
@@ -1612,6 +1630,7 @@ bool displayOptionsMenu()
         case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
+        case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1671,6 +1690,7 @@ bool displayOptionsMenu()
         case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
+        case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2410,6 +2430,12 @@ int main(int argc, wchar *argv[])
       case 0: printf("OFF (LEGACY)\n");      break;
       case 1: printf("NEAR MARGIN\n");       break;
       case 2: printf("NO CLIP (DOLPHIN)\n"); break;
+    }
+    printf("HUD Pass       : ");
+    switch (g_hud_pass_preset) {
+      case 0: printf("OFF (LEGACY)\n");      break;
+      case 1: printf("OVERLAY (NO ZW)\n");   break;
+      case 2: printf("PROTECT (Z-WRITE)\n"); break;
     }
     printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");

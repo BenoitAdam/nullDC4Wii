@@ -303,6 +303,33 @@ extern "C" int get_depth_clip_preset();
 #define DEPTH_CLIP_MARGIN() (get_depth_clip_preset() == 1) // pad vtx_min_Z by 0.1% so the nearest layer can't sit exactly on the near plane
 #define DEPTH_CLIP_NOCLIP() (get_depth_clip_preset() == 2) // GX_SetClipMode(GX_CLIP_DISABLE): behave like Dolphin, out-of-range Z clamps instead of clipping
 
+// hud_pass preset: rescue the 2D HUD/overlay that FIXED_DEPTH_TIGHT() clips.
+// A tight near plane (W=0.1) buys the 3D scene real Z-buffer precision, but the
+// HUD parks NEARER than that (tiny W) so the XF unit clips it away — the exact
+// "Z-fighting fixed but the HUD vanished" case (Rayman 2, Cannon Spike). This
+// preset finds any strip sitting nearer than the near plane and re-parks those
+// vertices onto the plane itself: each vertex's x,y are W-prescaled in vert_base
+// (screen x = x/W), so scaling x,y AND z by the same factor moves the vertex to
+// the near plane with its screen position bit-identical. The strip then draws
+// with GX_ALWAYS so it clears the tight range and composites on top. Companion
+// to fixed_depth=tight — a pure no-op under dynamic/wide ranges (nothing ever
+// sits past their near plane), costing one min-Z compare per strip. Not applied
+// inside AUTOSORT segments (they own the Z pipeline); a TR HUD under autosort
+// keeps the legacy path.
+//   1 = OVERLAY : GX_ALWAYS, Z-write OFF. The HUD paints on top but claims no
+//                 depth, so geometry drawn AFTER it in the frame (translucent
+//                 effects, a later list) can still paint over it. Safe where a
+//                 large near-clipped quad is drawn EARLY (it won't stamp the
+//                 whole scene's depth), but the HUD may be partly overdrawn.
+//   2 = PROTECT : GX_ALWAYS, Z-write ON at the near plane. Later scene geometry
+//                 (farther) now fails GEQUAL over HUD pixels, so the HUD stays
+//                 on top. Use this when mode 1 leaves polys poking in front of
+//                 the HUD. Trade-off: a FULLSCREEN near-clipped quad drawn early
+//                 would stamp nearest-Z across the screen and hide the scene —
+//                 for such games use mode 1 instead.
+extern "C" int get_hud_pass_preset();
+#define HUD_PASS() (get_hud_pass_preset())
+
 // Async render: don't block the CPU in GX_DrawDone() at the end of a 3D display
 // frame. The frame is queued with GX_SetDrawDone() and the wait + VIDEO flip
 // are deferred to the next render/present entry (gx_sync_pending), so the SH4
@@ -4962,6 +4989,15 @@ void DoRender()
   int  last_z_func  = GX_GEQUAL; // matches the GEQUAL established at frame start (GX_SetZMode above)
   int  last_as_kill = 0; // AUTOSORT() select pass: stage-3 kill input currently set (0=konst, 1=texture alpha)
 
+  // hud_pass: rescue near-clipped 2D HUD strips (see HUD_PASS() note above).
+  // Read the toggle and the projection's near plane (final vtx_min_Z, built by
+  // the GX_LoadProjectionMtx block above) once per frame — both loop-invariant.
+  // scene_near_W is the smallest W the projection includes, so any strip with a
+  // vertex nearer than it is exactly what the near plane would clip. hud_pass:
+  // 0=off, 1=overlay (no Z-write), 2=protect (Z-write at the near plane).
+  const int   hud_pass     = HUD_PASS();
+  const float scene_near_W = vtx_min_Z;
+
   // Per-polygon ISP state presets, read once per frame (macros at top of file).
   const bool ppz_write      = PER_POLYGON_Z_WRITE();
   const int  isp_depth_func = ISP_DEPTH_FUNC(); // 0=off 1=OP/PT lists 2=all lists
@@ -5807,6 +5843,37 @@ void DoRender()
         }
       }
 
+      // ── hud_pass: rescue a near-clipped 2D HUD strip ─────────────────────
+      // Re-park every vertex sitting nearer than the projection's near plane
+      // exactly onto the plane. x,y are W-prescaled (screen x = x/W), so scaling
+      // x,y,z by the same ratio keeps the screen position bit-identical while
+      // moving the vertex just inside the near plane, where the XF unit no longer
+      // clips it. The strip is then drawn GX_ALWAYS + Z-write off so it clears
+      // the tight range and composites on top. Gated to non-AUTOSORT segments
+      // (those own the Z pipeline) and to strips that actually cross the plane,
+      // so it is one min-Z compare per strip when on and untouched when off.
+      bool hud_strip = false;
+      if (hud_pass && !seg_as && count)
+      {
+        const float clamp_W = scene_near_W * 1.002f; // land just inside the near plane
+        for (int i = 0; i < count; i++)
+        {
+          if (drawVTX[i].z < scene_near_W)
+          {
+            const float r = clamp_W / drawVTX[i].z;
+            drawVTX[i].x *= r;
+            drawVTX[i].y *= r;
+            drawVTX[i].z  = clamp_W;
+            hud_strip = true;
+          }
+        }
+        // mode 2 writes the near-plane Z it just clamped to, so later scene
+        // geometry (farther) fails GEQUAL over these pixels and the HUD stays
+        // on top; mode 1 leaves Z untouched (pure overlay).
+        if (hud_strip)
+          GX_SetZMode(GX_TRUE, GX_ALWAYS, hud_pass == 2 ? GX_TRUE : GX_FALSE);
+      }
+
       if (count)
       {
         // For ARGB1555/4444 textures the DC game may leave vertex alpha = 0,
@@ -5865,6 +5932,17 @@ void DoRender()
           drawVTX++;
         }
         GX_End();
+      }
+
+      // hud_pass: undo the per-strip ALWAYS / no-write override so the next
+      // strip resumes the painter baseline. last_z_* is updated too, so if the
+      // per-poly Z presets (ppz_write / isp_depth_func) are active the next
+      // strip re-applies its own mode from here, exactly like the AUTOSORT tail.
+      if (hud_strip)
+      {
+        GX_SetZMode(GX_TRUE, GX_GEQUAL, GX_TRUE);
+        last_z_write = true;
+        last_z_func  = GX_GEQUAL;
       }
 
       // sceGuDrawArray(GU_TRIANGLE_STRIP,GU_TEXTURE_32BITF|GU_COLOR_8888|GU_VERTEX_32BITF|GU_TRANSFORM_3D,count,0,drawVTX);
