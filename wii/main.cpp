@@ -232,6 +232,12 @@ extern "C" {
   int get_mipmap_preset() { return g_mipmap_preset; }
 }
 
+int g_seam_fix_preset = 1; // 0=off (legacy); 1=on. Half-texel UV inset via a per-texture GX matrix so GX_LINEAR filtering stops sampling past a sprite's own texels — kills the thin black "seam" line between 2D tiles/sprites without dropping to GX_NEAR. Keeps wrap/tiling intact (sub-texel shift only).
+
+extern "C" {
+  int get_seam_fix_preset() { return g_seam_fix_preset; }
+}
+
 int g_fixed_depth_preset = 0; // 0=off (per-vertex min/max W tracking, legacy), 1=wide fixed planes [0.0001..100000] (safe, coarse Z), 2=tight fixed planes [0.1..25000] (finer Z, extreme near/far geometry clips)
 
 extern "C" {
@@ -884,31 +890,32 @@ void displayAccuracyMenu()
 #define OPT_VERTEX_COLOR_FIX 24
 #define OPT_DECAL_ALPHA 25
 #define OPT_MIPMAP      26
-#define OPT_FIXED_DEPTH 27
-#define OPT_DEPTH_CLIP  28
-#define OPT_BG_POLY     29
-#define OPT_X_SCALER    30
-#define OPT_CANVAS_WIDTH 31
+#define OPT_SEAM_FIX    27
+#define OPT_FIXED_DEPTH 28
+#define OPT_DEPTH_CLIP  29
+#define OPT_BG_POLY     30
+#define OPT_X_SCALER    31
+#define OPT_CANVAS_WIDTH 32
 
 // --- Page 3: accuracy / experimental presets ---
-#define OPT_ACCURACY    32
-#define OPT_HOKUTO_HACK 33
-#define OPT_JOJO_FIX    34
-#define OPT_RGB565_OPAQUE_ALPHA 35
-#define OPT_PPZ_WRITE   36
-#define OPT_ISP_DEPTH_FUNC 37
-#define OPT_ISP_CULL    38
-#define OPT_AUTOSORT    39
-#define OPT_RENDER_DELAY 40
-#define OPT_SHOW_FPS    41
-#define OPT_ARM7_SPEED  42
-#define OPT_JIT_SBP     43
-#define OPT_DMA_FIX     44
-#define OPT_FASTMEM     45
-#define OPT_BCACHE      46
-#define OPT_FPU_PIN     47
-#define OPT_JIT_ALIGN   48
-#define OPT_ROW_COUNT   49
+#define OPT_ACCURACY    33
+#define OPT_HOKUTO_HACK 34
+#define OPT_JOJO_FIX    35
+#define OPT_RGB565_OPAQUE_ALPHA 36
+#define OPT_PPZ_WRITE   37
+#define OPT_ISP_DEPTH_FUNC 38
+#define OPT_ISP_CULL    39
+#define OPT_AUTOSORT    40
+#define OPT_RENDER_DELAY 41
+#define OPT_SHOW_FPS    42
+#define OPT_ARM7_SPEED  43
+#define OPT_JIT_SBP     44
+#define OPT_DMA_FIX     45
+#define OPT_FASTMEM     46
+#define OPT_BCACHE      47
+#define OPT_FPU_PIN     48
+#define OPT_JIT_ALIGN   49
+#define OPT_ROW_COUNT   50
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -926,6 +933,7 @@ static int opt_row_page(int row)
     case OPT_VERTEX_COLOR_FIX:
     case OPT_DECAL_ALPHA:
     case OPT_MIPMAP:
+    case OPT_SEAM_FIX:
     case OPT_FIXED_DEPTH:
     case OPT_DEPTH_CLIP:
     case OPT_BG_POLY:
@@ -1236,6 +1244,15 @@ bool displayOptionsMenu()
     printf(" less shimmer far away");
     printf("\n");
 
+    // --- Row: 2D sprite seam fix (half-texel inset) ---
+    printf("%s SEAM FIX       : ", (selectedRow == OPT_SEAM_FIX) ? ">" : " ");
+    switch (g_seam_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON                >]"); break;
+    }
+    printf(" black lines btwn 2D tiles (linear)");
+    printf("\n");
+
     // --- Row: Fixed depth projection ---
     printf("%s FIXED DEPTH    : ", (selectedRow == OPT_FIXED_DEPTH) ? ">" : " ");
     switch (g_fixed_depth_preset) {
@@ -1504,6 +1521,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 2; break;
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
+        case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 2) % 3; break;
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 2) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
@@ -1559,6 +1577,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 2; break;
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
+        case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 1) % 3; break;
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 1) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;

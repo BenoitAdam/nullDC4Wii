@@ -206,6 +206,15 @@ extern "C" int get_isp_cull_preset();
 extern "C" int get_offset_color_preset();
 #define OFFSET_COLOR_FIX() (get_offset_color_preset() == 1)
 
+// 2D sprite seam fix — half-texel UV inset so GX_LINEAR filtering never samples
+// past a sprite's own edge texels (the wrap/neighbour bleed that shows up as thin
+// black "seam" lines between 2D tiles). GX_NEAR hides it for free by not
+// interpolating; this keeps LINEAR. Applied per strip on the CPU by shrinking the
+// strip's actual UV rectangle inward half a texel on every side — so it works for
+// full-texture sprites (UV 0..1) AND atlas sub-rects, unlike a global tex matrix.
+extern "C" int get_seam_fix_preset();
+#define SEAM_FIX() (get_seam_fix_preset() == 1)
+
 // Translucent depth sort
 extern "C" int get_trans_sort_preset();
 #define TRANS_SORT() (get_trans_sort_preset() == 1)
@@ -2545,6 +2554,19 @@ static u32 GenerateMipChain16(u16 *base, u32 w, bool is565)
 // Processes the Dreamcast's TCW (Texture Control Word) to initialize Wii TexObjects.
 // 4 steps
 
+// SEAM_FIX(): half a texel of the texture currently bound to TEXMAP0, in UV units
+// (0.5/w, 0.5/h). Stashed on every texture bind so the draw loop can inset each
+// strip's UV rectangle by this much. Zero when the texture size is unknown.
+static f32 g_seam_half_u = 0.0f;
+static f32 g_seam_half_v = 0.0f;
+static inline void SeamFixStashTexSize(const GXTexObj *tex)
+{
+  const u16 w = GX_GetTexObjWidth(tex);
+  const u16 h = GX_GetTexObjHeight(tex);
+  g_seam_half_u = w ? 0.5f / (f32)w : 0.0f;
+  g_seam_half_v = h ? 0.5f / (f32)h : 0.0f;
+}
+
 static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 {
   // decal_alpha_fix off: keep the original unconditional GX_MODULATE here so this
@@ -2803,6 +2825,8 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   if (already_decoded_this_frame)
   {
     GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
+    if (SEAM_FIX())
+      SeamFixStashTexSize(&pbuff->tex);
     return;
   }
 
@@ -3806,6 +3830,8 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   }
 
   GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
+  if (SEAM_FIX())
+    SeamFixStashTexSize(&pbuff->tex);
 }
 
 static bool s_did_3d_render = false;
@@ -4553,6 +4579,8 @@ void DoRender()
   // presets; the setting cannot change while a game is running, so the VCD
   // stays identical from frame to frame (see the FIFO warnings above).
   const bool offset_fix = OFFSET_COLOR_FIX();
+  // 2D sprite seam fix — read once per frame, same rationale as offset_fix.
+  const bool seam_fix = SEAM_FIX();
 
   GX_SetNumChans(offset_fix ? 2 : 1);
   GX_SetNumTexGens(1);
@@ -5785,6 +5813,32 @@ void DoRender()
         // it into an unconditional OR mask and keep the per-vertex loops
         // branch-free.
         const u32 alpha_or = force_vtx_alpha_opaque ? 0xFF000000u : 0u;
+
+        // SEAM_FIX(): inset this strip's UV rectangle by half a texel on every
+        // side, so GX_LINEAR taps stay inside the sprite's own texels (no wrap /
+        // atlas-neighbour bleed → no black seam), matching what GX_NEAR does for
+        // free. Affine per axis: u' = u*su + ou, mapping [umin,umax] onto
+        // [umin+½texel, umax-½texel]. su=1/ou=0 (identity) when the preset is off,
+        // when the texture size is unknown, or when the strip is flat in that
+        // axis, so the else-path below stays bit-for-bit the legacy output.
+        f32 su = 1.0f, ou = 0.0f, sv = 1.0f, ov = 0.0f;
+        if (seam_fix)
+        {
+          f32 umin = drawVTX->u, umax = drawVTX->u;
+          f32 vmin = drawVTX->v, vmax = drawVTX->v;
+          for (int i = 1; i < count; i++)
+          {
+            const f32 u = drawVTX[i].u, v = drawVTX[i].v;
+            if (u < umin) umin = u; else if (u > umax) umax = u;
+            if (v < vmin) vmin = v; else if (v > vmax) vmax = v;
+          }
+          const f32 uspan = umax - umin, vspan = vmax - vmin;
+          if (uspan > 1e-5f && uspan > 2.0f * g_seam_half_u)
+          { su = (uspan - 2.0f * g_seam_half_u) / uspan; ou = umin + g_seam_half_u - su * umin; }
+          if (vspan > 1e-5f && vspan > 2.0f * g_seam_half_v)
+          { sv = (vspan - 2.0f * g_seam_half_v) / vspan; ov = vmin + g_seam_half_v - sv * vmin; }
+        }
+
         GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, count);
         if (offset_fix)
         {
@@ -5795,7 +5849,7 @@ void DoRender()
             GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
             GX_Color1u32(HOST_TO_LE32(drawVTX->col | alpha_or));
             GX_Color1u32(HOST_TO_LE32(drawVTX->spc));
-            GX_TexCoord2f32(drawVTX->u, drawVTX->v);
+            GX_TexCoord2f32(drawVTX->u * su + ou, drawVTX->v * sv + ov);
             drawVTX++;
           }
         }
@@ -5804,7 +5858,7 @@ void DoRender()
         {
           GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
           GX_Color1u32(HOST_TO_LE32(drawVTX->col | alpha_or));
-          GX_TexCoord2f32(drawVTX->u, drawVTX->v);
+          GX_TexCoord2f32(drawVTX->u * su + ou, drawVTX->v * sv + ov);
           drawVTX++;
         }
         GX_End();
