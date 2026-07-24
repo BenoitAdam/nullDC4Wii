@@ -166,7 +166,7 @@ void maple_DoDma()
 	}
 
 	//printf("Maple XFER size %d bytes - %.2f ms\n",xfer_count,xfer_count*100.0f/(2*1024*1024/8));
-	maple_dma_pending=xfer_count*(SH4_CLOCK/(2*1024*1024/8));
+	maple_dma_pending=xfer_count*(SH4_CLOCK_EFF/(2*1024*1024/8));
 }
 
 void maple_Update(u32 cycles)

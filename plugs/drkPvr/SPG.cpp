@@ -46,7 +46,7 @@ void CalculateSync()
     spg_ScanlineCount = SPG_LOAD.vcount + 1;
 
     spg_LineSh4Cycles = (u32)(
-        (u64)SH4_CLOCK * (u64)(SPG_LOAD.hcount + 1) / (u64)pixel_clock
+        (u64)SH4_CLOCK_EFF * (u64)(SPG_LOAD.hcount + 1) / (u64)pixel_clock
     );
 
     // SCALER_CTL.hscale: the TA renders the scene at DOUBLE width (1280) and
@@ -258,7 +258,11 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
             // on the true target instead of drifting.
             if (SPEED_LIMITER())
             {
-                double target_sec = (double)spg_FrameSh4Cycles / (double)SH4_CLOCK;
+                // Divide by the SAME (effective) clock spg_FrameSh4Cycles was
+                // built from, so the target stays the real video period (1/60
+                // NTSC etc.) regardless of the sh4_clock underclock preset —
+                // underclocking must not change the refresh rate we cap to.
+                double target_sec = (double)spg_FrameSh4Cycles / (double)SH4_CLOCK_EFF;
                 double cur        = os_GetSeconds();
 
                 if (s_limiter_next_deadline == 0.0)

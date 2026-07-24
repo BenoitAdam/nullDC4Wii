@@ -294,6 +294,18 @@ extern "C" {
   int get_arm7_speed_preset() { return g_arm7_speed_preset; }
 }
 
+// SH4 underclock — effective SH4 core clock in MHz (150..200, step 5 in the
+// menu). 200 = full speed (nominal Dreamcast). Lower values feed fewer emulated
+// SH4 cycles into the audio/video/RTC/DMA pacing anchors per frame (see
+// plugins/plugin_types.h SH4_CLOCK_EFF), giving the Wii host more headroom, at
+// the cost of the emulated machine behaving like a slower Dreamcast (CPU-heavy
+// games drop internal frames). Read by the timing code via get_sh4_clock_preset.
+int g_sh4_clock_preset = 200; // MHz
+
+extern "C" {
+  int get_sh4_clock_preset() { return g_sh4_clock_preset; }
+}
+
 // JIT_SBP — JIT Stale Block Protection. One preset gates all three defenses
 // against executing stale/self-modified translations (see
 // dc/sh4/rec_v2/driver.cpp): the boot-entry cache flush at 0x..08300 /
@@ -927,15 +939,16 @@ void displayAccuracyMenu()
 #define OPT_RENDER_DELAY 41
 #define OPT_SHOW_FPS    42
 #define OPT_ARM7_SPEED  43
-#define OPT_JIT_SBP     44
-#define OPT_DMA_FIX     45
-#define OPT_FASTMEM     46
-#define OPT_BCACHE      47
-#define OPT_FPU_PIN     48
-#define OPT_JIT_ALIGN   49
-#define OPT_CDDA        50
-#define OPT_MUTE_PCM16  51
-#define OPT_ROW_COUNT   52
+#define OPT_SH4_CLOCK   44
+#define OPT_JIT_SBP     45
+#define OPT_DMA_FIX     46
+#define OPT_FASTMEM     47
+#define OPT_BCACHE      48
+#define OPT_FPU_PIN     49
+#define OPT_JIT_ALIGN   50
+#define OPT_CDDA        51
+#define OPT_MUTE_PCM16  52
+#define OPT_ROW_COUNT   53
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -973,6 +986,7 @@ static int opt_row_page(int row)
     case OPT_RENDER_DELAY:
     case OPT_SHOW_FPS:
     case OPT_ARM7_SPEED:
+    case OPT_SH4_CLOCK:
     case OPT_JIT_SBP:
     case OPT_DMA_FIX:
     case OPT_FASTMEM:
@@ -1446,6 +1460,15 @@ bool displayOptionsMenu()
     printf(" sound CPU clock - check audio!");
     printf("\n");
 
+    // --- Row: SH4 underclock (effective CPU clock; see plugin_types.h) ---
+    printf("%s SH4 CLOCK      : ", (selectedRow == OPT_SH4_CLOCK) ? ">" : " ");
+    if (g_sh4_clock_preset >= 200)
+      printf("[< 200MHZ (FULL)     >]");
+    else
+      printf("[< %3dMHZ (UNDERCLK) >]", g_sh4_clock_preset);
+    printf(" lower=faster host,slower game");
+    printf("\n");
+
     // --- Row: JIT_SBP - Stale Block Protection (dc/sh4/rec_v2/driver.cpp) ---
     printf("%s JIT SBP        : ", (selectedRow == OPT_JIT_SBP) ? ">" : " ");
     switch (g_jit_sbp_preset) {
@@ -1580,6 +1603,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
+        case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
@@ -1638,6 +1662,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
+        case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
@@ -2337,6 +2362,8 @@ int main(int argc, wchar *argv[])
       case 1: printf("5MHZ (FASTER)\n");   break;
       case 2: printf("2.5MHZ (RISKY)\n");  break;
     }
+    printf("SH4 Clock      : %dMHz%s\n", g_sh4_clock_preset,
+           g_sh4_clock_preset >= 200 ? " (FULL)" : " (UNDERCLOCK)");
     printf("JIT SBP        : ");
     switch (g_jit_sbp_preset) {
       case 0: printf("OFF\n");             break;

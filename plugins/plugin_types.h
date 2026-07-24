@@ -95,7 +95,25 @@ struct plugin_interface
 #define BIOS_MASK	(BIOS_SIZE-1)
 #define FLASH_MASK	(FLASH_SIZE-1)
 
-#define SH4_CLOCK (200*1000*1000) // 200 Mhz
+#define SH4_CLOCK (200*1000*1000) // 200 Mhz (nominal Dreamcast SH4 clock)
+
+// SH4 underclock preset (wii/main.cpp get_sh4_clock_preset / game_presets
+// `sh4_clock`): effective SH4 clock in MHz, 150..200. Emulation timing/pacing
+// (SPG video, arm_aica sample step, RTC, DMA) divides by SH4_CLOCK_EFF instead
+// of the nominal SH4_CLOCK so that underclocking scales the audio/video/RTC
+// anchors together — fewer emulated SH4 cycles are budgeted per frame, giving
+// the Wii host more headroom, at the cost of the emulated machine behaving like
+// a slower Dreamcast (CPU-heavy games drop internal frames). Defaults to 200,
+// so with the preset off SH4_CLOCK_EFF == SH4_CLOCK exactly. Kept as a call
+// (not a stored constant) so a live menu change takes effect immediately.
+#ifdef __cplusplus
+extern "C" {
+#endif
+int get_sh4_clock_preset(void); // effective SH4 clock in MHz (150..200)
+#ifdef __cplusplus
+}
+#endif
+#define SH4_CLOCK_EFF ((u32)(get_sh4_clock_preset() * 1000000))
 
 enum ndc_error_codes
 {

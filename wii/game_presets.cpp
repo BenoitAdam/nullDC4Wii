@@ -67,6 +67,18 @@
                                 (off/legacy); per-game, verify music/SFX
                                 timing by ear before keeping — stage 2 has
                                 been found to break audio timing.
+        sh4_clock=175       <- 150..200, SH4 underclock: effective SH4 core
+                                clock in MHz (clamped to [150,200]; see
+                                plugins/plugin_types.h SH4_CLOCK_EFF). 200
+                                (default) is real-Dreamcast full speed. Lower
+                                budgets fewer emulated SH4 cycles per audio/
+                                video/RTC frame, so the Wii host renders more
+                                output frames per second (smoother), at the
+                                cost of the emulated machine acting like a
+                                slower Dreamcast — CPU-heavy games drop
+                                internal frames. Audio stays in sync (the AICA
+                                anchor scales with the same clock). A pure
+                                performance knob — A/B per game.
         jit_sbp=1           <- 0/1/2, JIT_SBP (Stale Block Protection). Gates
                                 all three defenses against executing stale or
                                 self-modified translations (see
@@ -371,6 +383,7 @@ extern int g_isp_depth_func_preset;
 extern int g_isp_cull_preset;
 extern int g_audio_buffers_preset;
 extern int g_arm7_speed_preset;
+extern int g_sh4_clock_preset;
 extern int g_jit_sbp_preset;
 extern int g_dma_fix_preset;
 extern int g_fastmem_preset;
@@ -438,6 +451,7 @@ struct GamePreset
     int isp_cull;
     int audio_buffers;
     int arm7_speed;
+    int sh4_clock;
     int jit_sbp;
     int dma_fix;
     int fastmem;
@@ -639,6 +653,22 @@ static int parse_controller(const char* v)
     return -1;
 }
 
+// SH4 underclock: effective SH4 clock in MHz. The menu steps 150..200 by 5, but
+// the .cfg accepts any integer in [150,200] (clamped). Returns -1 on garbage so
+// the field is left at the user/UI value.
+static int parse_sh4_clock(const char* v)
+{
+    int n = atoi(v);
+    if (n <= 0)
+    {
+        printf("[game_presets] Unknown sh4_clock value: '%s'\n", v);
+        return -1;
+    }
+    if (n < 150) n = 150;
+    if (n > 200) n = 200;
+    return n;
+}
+
 // ---------------------------------------------------------------------------
 // Apply one key=value pair to a preset slot
 // ---------------------------------------------------------------------------
@@ -688,6 +718,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "isp_cull"))       p->isp_cull       = atoi(val);
     else if (key_eq(key, "audio_buffers"))  p->audio_buffers  = parse_audio_buffers(val);
     else if (key_eq(key, "arm7_speed"))     p->arm7_speed     = atoi(val);
+    else if (key_eq(key, "sh4_clock"))      p->sh4_clock      = parse_sh4_clock(val);
     else if (key_eq(key, "jit_sbp"))        p->jit_sbp        = atoi(val);
     else if (key_eq(key, "dma_fix"))        p->dma_fix        = parse_bool(val);
     else if (key_eq(key, "fastmem"))        p->fastmem        = parse_bool(val);
@@ -737,6 +768,7 @@ static void preset_clear(GamePreset* cur)
     cur->isp_cull = -1;
     cur->audio_buffers = -2; // -2 = absent (leave live state alone); -1 is a real value here (see parse_audio_buffers)
     cur->arm7_speed = -1;
+    cur->sh4_clock = -1;
     cur->jit_sbp = -1;
     cur->dma_fix = -1;
     cur->fastmem = -1;
@@ -791,6 +823,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->isp_cull       >= 0) { g_isp_cull_preset      = p->isp_cull;        printf("  isp_cull       -> %d\n", p->isp_cull);       }
     if (p->audio_buffers  != -2) { g_audio_buffers_preset = p->audio_buffers;  printf("  audio_buffers  -> %d\n", p->audio_buffers);  }
     if (p->arm7_speed     >= 0) { g_arm7_speed_preset     = p->arm7_speed;     printf("  arm7_speed     -> %d\n", p->arm7_speed);     }
+    if (p->sh4_clock      >= 0) { g_sh4_clock_preset      = p->sh4_clock;      printf("  sh4_clock      -> %d\n", p->sh4_clock);      }
     if (p->jit_sbp        >= 0) { g_jit_sbp_preset        = p->jit_sbp;        printf("  jit_sbp        -> %d\n", p->jit_sbp);        }
     if (p->dma_fix        >= 0) { g_dma_fix_preset        = p->dma_fix;        printf("  dma_fix        -> %d\n", p->dma_fix);        }
     if (p->fastmem        >= 0) { g_fastmem_preset        = p->fastmem;        printf("  fastmem        -> %d\n", p->fastmem);        }

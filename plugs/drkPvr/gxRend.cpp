@@ -4002,7 +4002,10 @@ static bool ShouldSkipFrame() // Returns true when the current frame should be d
         }
 
         // Real-time budget for the emulated interval that just elapsed.
-        double budget = (double)dv * ((double)spg_FrameSh4Cycles / (double)SH4_CLOCK);
+        // SH4_CLOCK_EFF (not nominal SH4_CLOCK) matches the clock
+        // spg_FrameSh4Cycles was derived from, so the per-vblank period stays
+        // 1/60 (NTSC) etc. under the sh4_clock underclock preset.
+        double budget = (double)dv * ((double)spg_FrameSh4Cycles / (double)SH4_CLOCK_EFF);
         double ratio  = elapsed / budget;
 
         int max_skips = (ratio > 2.0 * AUTO_SKIP_MARGIN) ? 2 : 1;

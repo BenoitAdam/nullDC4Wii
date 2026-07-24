@@ -97,7 +97,7 @@ void WriteMem_aica_rtc(u32 addr, u32 data, u32 sz)
         {
             settings.dreamcast.RTC = (settings.dreamcast.RTC & 0xFFFF0000)
                                    | (data & 0xFFFF);
-            rtc_cycles = SH4_CLOCK;
+            rtc_cycles = SH4_CLOCK_EFF; // effective clock (matches sh4_interpreter RTC tick)
         }
         return;
 
@@ -295,7 +295,7 @@ void Write_SB_ADST(u32 data)
         // defer by at least a handful of cycles instead, since instant
         // completion is the exact bug class this whole investigation has
         // been chasing.
-        int cycles = (int)(len * (SH4_CLOCK / 2 / 25000000));
+        int cycles = (int)(len * (SH4_CLOCK_EFF / 2 / 25000000));
         aica_dma_delay_cycles = (cycles < 64) ? 64 : cycles;
     }
     else

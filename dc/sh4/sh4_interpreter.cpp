@@ -321,7 +321,7 @@ void FASTCALL VerySlowUpdate()
 	rtc_cycles -= (s_timeslice * (s32)s_vslow_period);
 	if (rtc_cycles <= 0)
 	{
-		rtc_cycles += SH4_CLOCK;
+		rtc_cycles += SH4_CLOCK_EFF; // effective clock: 1 RTC second per emulated second, stays synced to video under underclock
 		settings.dreamcast.RTC++;
 	}
 	maple_Update(s_timeslice * s_vslow_period);
