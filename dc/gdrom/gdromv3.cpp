@@ -667,6 +667,15 @@ void gd_process_spi_cmd()
 			if (get_debug_gdrom()) printf("SPI : unkown ? [0x71]\n");
 
 			gd_spi_pio_end((u8*)&gd_data_0x71[0],gd_data_0x71_len);//uCount
+
+			// BUG FIX (Rez): PSP sets the drive status after the 0x71 reply; we
+			// didn't. 0x71 is a Sega vendor command Rez issues during its disc-
+			// streaming setup, then reads SecNumber.Status back to gate its
+			// loader state machine. Leaving the status stale stalls the streamer
+			// that feeds the async texture-request worker (request 5 never gets
+			// processed). Matches PSP: GdRom/CdRom_XA -> PAUSE, else STANDBY.
+			SecNumber.Status = ((gd_disk_type == GdRom) || (gd_disk_type == CdRom_XA))
+			                 ? GD_PAUSE : GD_STANDBY;
 		}
 		break;
 	case SPI_SET_MODE:

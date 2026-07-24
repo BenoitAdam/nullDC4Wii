@@ -326,9 +326,15 @@ void FASTCALL TAWrite(u32 address, u32* data, u32 count)
         // YUV converter (8-16MB range)
         YUV_data(data, count);
     } else {
-        // Direct VRAM write (16MB+ range)
-        // Note: This works on real hardware, respects lock modes
-        memcpy(&vram.data[address & VRAM_MASK], data, count * 32);
+        // Direct VRAM write (16MB+ range). Same interleave bug/fix as
+        // TAWriteSQ below: the 64-bit VRAM area is bank-interleaved, so write
+        // through pvr_write_area1_32 (vramlock_ConvOffset32toOffset64) to match
+        // the renderer's read layout, not a linear memcpy.
+        //   OLD (linear, wrong): memcpy(&vram.data[address & VRAM_MASK], data, count*32);
+        u32 off    = address & VRAM_MASK;
+        u32 words  = count * 8;                   // 8 u32 per 32-byte block
+        for (u32 i = 0; i < words; i++, off += 4)
+            pvr_write_area1_32(off, data[i]);
     }
 }
 
@@ -339,7 +345,7 @@ void FASTCALL TAWrite(u32 address, u32* data, u32 count)
 void FASTCALL TAWriteSQ(u32 address, u32* data)
 {
     u32 address_masked = address & 0x1FFFFFF;
-    
+
     if (address_masked < 0x800000) {
         // TA polygon data
         libPvr_TaSQ(data);
@@ -347,8 +353,22 @@ void FASTCALL TAWriteSQ(u32 address, u32* data)
         // YUV converter
         YUV_data(data, 1);
     } else {
-        // Direct VRAM write
-        memcpy(&vram.data[address & VRAM_MASK], data, 32);
+        // Direct VRAM write (0x11xxxxxx texture region, via store queue).
+        //
+        // BUG FIX (Rez / WinCE texture-upload-via-SQ): the old code wrote the
+        // 32 bytes LINEARLY into vram.data. But the PVR VRAM 64-bit area is
+        // bank-interleaved: the renderer reads textures through
+        // fast_ConvOffset32toOffset64 (gxRend.cpp) and every other VRAM write
+        // path (pvr_write_area1_32, the ch2-DMA texture path) applies
+        // vramlock_ConvOffset32toOffset64. Writing linearly here put SQ-
+        // uploaded textures in a layout the renderer never reads back the same
+        // way — scrambled. PSP's TAWriteSQ writes via pvr_write_area1_32 (its
+        // pvr_map32), i.e. interleaved; match that. Shared by interpreter AND
+        // recompiler, so it explains a failure that reproduces on both cores.
+        //   OLD (linear, wrong): memcpy(&vram.data[address & VRAM_MASK], data, 32);
+        u32 off = address & VRAM_MASK;          // 32-bit VRAM offset
+        for (int i = 0; i < 8; i++, off += 4)   // 8 * 4 = 32 bytes
+            pvr_write_area1_32(off, data[i]);   // applies the 32->64 interleave
     }
 }
 
