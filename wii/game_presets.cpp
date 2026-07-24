@@ -10,6 +10,26 @@
                                 (e.g. [streetfighter32][doubleimpact][double impact]).
                                 The FIRST alias is the canonical name shown in
                                 the options menu. Any number of aliases per section.
+        <wii u>[kw1][kw2]   <- a section may also carry <condition> groups,
+                                mixed with [alias] groups in any order. ALL
+                                <condition> groups must hold, on top of the
+                                usual filename match, for the section to
+                                apply. Currently the only condition is
+                                <wii u> (or <wiiu>), true only on real Wii U
+                                hardware running vWii (see main.cpp g_is_wiiu,
+                                set from WiiDRC_Inited() — independent of
+                                whether a GamePad is actually paired).
+                                Put the <wii u> section BEFORE the plain
+                                section for the same game (first match wins,
+                                more specific first — same rule as aliases):
+                                    <wii u>[segatetris][sega tetris] ; Wii U
+                                    accuracy=accurate
+                                    [segatetris][sega tetris]        ; Wii (fallback)
+                                    accuracy=fast
+                                A real Wii simply fails the <wii u> gate and
+                                falls through to the plain section below it.
+                                <condition>-only sections with no [alias] at
+                                all never match (nothing to apply them to).
         accuracy=fast       <- only fields listed are overridden
         graphics=low
         8bpp=i8_stub
@@ -346,6 +366,10 @@ extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
 extern int g_fmv_format_preset;
+
+// Set once at boot (main.cpp) from WiiDRC_Inited() — true only on real Wii U
+// hardware in vWii mode. Consumed below by <wii u> section conditions.
+extern bool g_is_wiiu;
 
 // ---------------------------------------------------------------------------
 // Internal structures
@@ -756,46 +780,75 @@ static void preset_apply_fields(const GamePreset* p)
 // Section header matching
 // ---------------------------------------------------------------------------
 
-// Parse a section header line (s points at the first '[') and decide whether
-// the section applies. want_default selects the special [default] section;
-// otherwise the section matches when ANY of its aliases is a substring of
-// lower_name (the already-lowercased filename). On a match, canonical and
-// hit (both MAX_KEYWORD_LEN) receive the first alias — the name shown in
-// the options menu — and the alias that actually matched.
+// Evaluate one <condition> token against current hardware. Unknown tokens
+// fail closed (section never matches) rather than being silently ignored,
+// so a typo'd condition can't accidentally make a section apply everywhere.
+static bool condition_holds(const char* cond)
+{
+    if (key_eq(cond, "wii u") || key_eq(cond, "wiiu")) return g_is_wiiu;
+    printf("[game_presets] Unknown condition: '<%s>'\n", cond);
+    return false;
+}
+
+// Parse a section header line (s points at the first '[' or '<') and decide
+// whether the section applies. Two kinds of bracket group can appear, in any
+// order, any number of times:
+//   [alias]       filename OR-match, same as before. The FIRST [alias] on
+//                 the line is the canonical name shown in the options menu.
+//   <condition>   hardware/platform AND-gate (currently only "wii u"). ALL
+//                 <condition> groups on the line must hold, on top of the
+//                 usual filename match, for the section to apply.
+// want_default selects the special [default] section, which conditions can
+// still gate (e.g. <wii u>[default] for Wii-U-wide overrides) but which is
+// never matched against a filename. On a filename match, canonical and hit
+// (both MAX_KEYWORD_LEN) receive the first alias and the alias that matched.
 static bool section_matches(char* s, const char* lower_name, bool want_default,
                             char* canonical, char* hit)
 {
-    bool matched = false;
-    bool first   = true;
+    bool matched       = false;
+    bool have_alias    = false;
+    bool conditions_ok = true;
+    bool is_default    = false;
+    bool first         = true;
     canonical[0] = hit[0] = '\0';
 
-    // Walk every [alias] group on the line; stop at the first thing that
-    // isn't another '[' (e.g. a trailing ; comment).
+    // Walk every [alias]/<condition> group on the line; stop at the first
+    // thing that isn't another group (e.g. a trailing ; comment).
     char* pos = s;
-    while (*pos == '[')
+    while (*pos == '[' || *pos == '<')
     {
-        char* end_bracket = strchr(pos, ']');
+        char close = (*pos == '[') ? ']' : '>';
+        char* end_bracket = strchr(pos, close);
         if (!end_bracket) break;
+        bool is_condition = (*pos == '<');
         *end_bracket = '\0';             // terminate this group
-        char* kw = str_trim(pos + 1);    // content between [ and ]
-        if (*kw)
+        char* kw = str_trim(pos + 1);    // content between the brackets
+
+        if (is_condition)
+        {
+            if (*kw)
+            {
+                char cond[MAX_KEYWORD_LEN];
+                strncpy(cond, kw, MAX_KEYWORD_LEN - 1);
+                cond[MAX_KEYWORD_LEN - 1] = '\0';
+                str_tolower_inplace(cond);
+                if (!condition_holds(cond))
+                    conditions_ok = false;
+            }
+        }
+        else if (*kw)
         {
             char alias[MAX_KEYWORD_LEN];
             strncpy(alias, kw, MAX_KEYWORD_LEN - 1);
             alias[MAX_KEYWORD_LEN - 1] = '\0';
             str_tolower_inplace(alias);
 
+            have_alias = true;
             if (first)
             {
                 strcpy(canonical, alias);
                 first = false;
-
-                // [default] is special: only ever picked by the want_default
-                // pass, never matched against a filename.
-                if (key_eq(canonical, "default"))
-                    return want_default;
-                if (want_default)
-                    return false;
+                is_default = key_eq(canonical, "default");
             }
 
             if (!matched && str_contains(lower_name, alias))
@@ -807,7 +860,15 @@ static bool section_matches(char* s, const char* lower_name, bool want_default,
         pos = end_bracket + 1;
         while (*pos && isspace((unsigned char)*pos)) pos++;
     }
-    return matched;
+
+    if (!have_alias) return false;   // a bare <condition>-only line matches nothing
+
+    // [default] is special: only ever picked by the want_default pass,
+    // never matched against a filename — but conditions still gate it.
+    if (is_default) return want_default && conditions_ok;
+    if (want_default) return false;
+
+    return conditions_ok && matched;
 }
 
 // ---------------------------------------------------------------------------

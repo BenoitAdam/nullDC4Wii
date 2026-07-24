@@ -444,6 +444,12 @@ typedef enum {
 StorageSource g_storage_source = STORAGE_SD;
 bool g_usb_mounted = false;
 
+// Set once at boot from WiiDRC_Inited() (see below): true only when the
+// vWii-only DRC memory signatures were found, which real Wii hardware never
+// has — independent of whether a physical GamePad is actually paired.
+// Consumed by game_presets.cpp for <wii u> section conditions.
+bool g_is_wiiu = false;
+
 // Carved from the MEM2 arena on first listFilesInDirectory() call instead of
 // sitting in MEM1 BSS (~197 KB) — MEM1 is nearly exhausted, MEM2 has headroom.
 #define MAX_FILE_LIST 256
@@ -2095,6 +2101,7 @@ int main(int argc, wchar *argv[])
 
   // Wii U GamePad (only succeeds on Wii U in vWii mode; harmless on real Wii)
   WiiDRC_Init();
+  g_is_wiiu = WiiDRC_Inited();
 
   rmode = VIDEO_GetPreferredMode(NULL);
 
