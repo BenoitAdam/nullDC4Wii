@@ -262,6 +262,12 @@ extern "C" {
   int get_tmem_cache_preset() { return g_tmem_cache_preset; }
 }
 
+int g_cdda_preset = 0; // 0=off (CD audio tracks silent, legacy), 1=on (GD-ROM Red Book audio fed to the AICA EXTS0 mixer input — CDDA music in games; costs ~75 disc-image sector reads/s while a track plays)
+
+extern "C" {
+  int get_cdda_preset() { return g_cdda_preset; }
+}
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -921,7 +927,8 @@ void displayAccuracyMenu()
 #define OPT_BCACHE      47
 #define OPT_FPU_PIN     48
 #define OPT_JIT_ALIGN   49
-#define OPT_ROW_COUNT   50
+#define OPT_CDDA        50
+#define OPT_ROW_COUNT   51
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -963,6 +970,7 @@ static int opt_row_page(int row)
     case OPT_BCACHE:
     case OPT_FPU_PIN:
     case OPT_JIT_ALIGN:
+    case OPT_CDDA:
       return 2;
     default:
       return 0;
@@ -1465,6 +1473,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (32B LINES)    >]"); break;
     }
     printf(" align JIT blocks to cache lines");
+    printf("\n");
+
+    // --- Row: CDDA music (GD-ROM CD audio tracks) ---
+    printf("%s CDDA MUSIC      : ", (selectedRow == OPT_CDDA) ? ">" : " ");
+    switch (g_cdda_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CD MUSIC)     >]"); break;
+    }
+    printf(" (mix CD audio tracks into sound)");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.61\n");
@@ -1552,6 +1569,7 @@ bool displayOptionsMenu()
         case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
         case OPT_FPU_PIN:        g_fpu_pin_preset         = (g_fpu_pin_preset         + 1) % 2; break;
         case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
+        case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1608,6 +1626,7 @@ bool displayOptionsMenu()
         case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
         case OPT_FPU_PIN:        g_fpu_pin_preset         = (g_fpu_pin_preset         + 1) % 2; break;
         case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
+        case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -2348,6 +2367,7 @@ int main(int argc, wchar *argv[])
     }
     printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
+    printf("CDDA Music     : %s\n", g_cdda_preset ? "ON (CD MUSIC)" : "OFF (LEGACY)");
     printf("BG Polygon     : %s\n", g_bg_poly_preset ? "ON (CORRECT)" : "OFF (FASTER)");
     printf("X Scaler       : %s\n", g_x_scaler_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
     if (g_canvas_width_preset <= 0)

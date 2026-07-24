@@ -237,6 +237,12 @@
                                 only when a texture is actually re-decoded, so
                                 unchanged textures stay cached across frames —
                                 more texture fill rate.
+        cdda=on             <- on/off, CD audio (Red Book) music (see sgc_if.cpp
+                                CDDA_FIX()). off (default, legacy) leaves the
+                                AICA EXTS0 input silent, so games that play
+                                music as CD audio tracks have no music; on pulls
+                                the playing track's sectors from the disc image
+                                (~75 reads/s) and mixes them into the output.
         bg_poly=on          <- on/off, background polygon rendering (see gxRend.cpp
                                 BG_POLY_FIX()). ISP_BACKGND_T's 3 vertices are
                                 normally only used for the EFB clear color;
@@ -350,6 +356,7 @@ extern int g_fixed_depth_preset;
 extern int g_depth_clip_preset;
 extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
+extern int g_cdda_preset;
 extern int g_bg_poly_preset;
 extern int g_hokuto_hack_preset;
 extern int g_isp_depth_func_preset;
@@ -415,6 +422,7 @@ struct GamePreset
     int depth_clip;
     int async_render;
     int tmem_cache;
+    int cdda;
     int bg_poly;
     int hokuto_hack;
     int isp_depth_func;
@@ -663,6 +671,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "depth_clip"))     p->depth_clip     = atoi(val);
     else if (key_eq(key, "async_render"))   p->async_render   = parse_bool(val);
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = parse_bool(val);
+    else if (key_eq(key, "cdda"))           p->cdda           = parse_bool(val);
     else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
     else if (key_eq(key, "hokuto_hack"))    p->hokuto_hack    = parse_bool(val);
     else if (key_eq(key, "isp_depth_func")) p->isp_depth_func = atoi(val);
@@ -710,6 +719,7 @@ static void preset_clear(GamePreset* cur)
     cur->depth_clip = -1;
     cur->async_render = -1;
     cur->tmem_cache = -1;
+    cur->cdda = -1;
     cur->bg_poly = -1;
     cur->hokuto_hack = -1;
     cur->isp_depth_func = -1;
@@ -762,6 +772,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->depth_clip     >= 0) { g_depth_clip_preset    = p->depth_clip;      printf("  depth_clip     -> %d\n", p->depth_clip);     }
     if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
     if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
+    if (p->cdda           >= 0) { g_cdda_preset          = p->cdda;            printf("  cdda           -> %d\n", p->cdda);           }
     if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
     if (p->hokuto_hack    >= 0) { g_hokuto_hack_preset   = p->hokuto_hack;     printf("  hokuto_hack    -> %d\n", p->hokuto_hack);    }
     if (p->isp_depth_func >= 0) { g_isp_depth_func_preset = p->isp_depth_func; printf("  isp_depth_func -> %d\n", p->isp_depth_func); }
