@@ -952,6 +952,7 @@ static int opt_row_page(int row)
     case OPT_BG_POLY:
     case OPT_X_SCALER:
     case OPT_CANVAS_WIDTH:
+    case OPT_CDDA:
       return 1;
     case OPT_ACCURACY:
     case OPT_HOKUTO_HACK:
@@ -970,7 +971,6 @@ static int opt_row_page(int row)
     case OPT_BCACHE:
     case OPT_FPU_PIN:
     case OPT_JIT_ALIGN:
-    case OPT_CDDA:
       return 2;
     default:
       return 0;
@@ -1312,6 +1312,15 @@ bool displayOptionsMenu()
     else
       printf("[< %-4d              >]", g_canvas_width_preset);
     printf(" SF3 double impact=384");
+    printf("\n");
+
+    // --- Row: CDDA music (GD-ROM CD audio tracks) ---
+    printf("%s CDDA MUSIC      : ", (selectedRow == OPT_CDDA) ? ">" : " ");
+    switch (g_cdda_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CD MUSIC)     >]"); break;
+    }
+    printf(" (mix CD audio tracks into sound)");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.61\n");
@@ -1473,15 +1482,6 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (32B LINES)    >]"); break;
     }
     printf(" align JIT blocks to cache lines");
-    printf("\n");
-
-    // --- Row: CDDA music (GD-ROM CD audio tracks) ---
-    printf("%s CDDA MUSIC      : ", (selectedRow == OPT_CDDA) ? ">" : " ");
-    switch (g_cdda_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (CD MUSIC)     >]"); break;
-    }
-    printf(" (mix CD audio tracks into sound)");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.61\n");
