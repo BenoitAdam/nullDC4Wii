@@ -545,11 +545,14 @@ Try different games, parameters and report in the compatibility wiki : https://w
 
 ### Is 100% speed of the emulator achievable on Wii ?
 
-Yes and no.
+Yes...in dolphin !
 
-Currently we are on 60/70% emulator speed in average. We reached liogc dev, they say we could use very low level RAM usage (MMU), but this is complicated and risky. But this could add +20 to +50% more performance to actual state.
+Some games are running 100/120% in dolphin, but on real hardware, there is around around 20% of drop on heavy scenes.
 
-The port of KallistiOS for Gamecube/Wii could open new possibility and MMU control, but that would also means reprogramming a lot of stuff.
+We are still trying to improve performance, altough we already done a lot of amazing stuff :  
+- Improved Dynarec
+- Fastmem
+- ARM7 CACHE
 
 Another good strategy would be to really have a per-game specific emulator. That would take a long time, so for now we have presets & auto-presets implementation trough game_presets.cfg
 
