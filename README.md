@@ -23,25 +23,27 @@ a fork from https://github.com/skmp/nullDCe
 - User custom Preset
 - Fishing Rod/USB Keyboard/Lightgun/Maracas support (probably unsupported now)
 - Put external config file for controllers (controls.cfg)
+- fix Volgarr regresion
+- DualShock 3 issue: left stick has the Y axis inverted, up is down, and down is up.
+- Custom layout : Chuchu rocket/Quake3 (bith Gamecube & wii)
+- Custom layout : a toggle to make the right analog stick with supported controllers act as buttons X (Left) - Y (Up) - A (Down) - B (Right). This is useful for twin stick shooters that use the diamond button layout for gameplay (like Xeno Crisis).
+
 
 ### Developer (Normal)
 
-- Coding routine adjustement for accuracy (FAST/BALANCED/ACCURATE)
 - 4/3 support (implemented, need fix on some games like Shenmue)
-- Wii U gamepad support like WiiStation ? ( https://github.com/FIX94/libwiidrc )
-- Dualshock 3support ? ( https://github.com/BenoitAdam94/nullDC4Wii/issues/15 )
 - Support for CHD/ELF game file
 
 ### Developer (Hard)
 
+- Fix Chuchu Rocket 16Bit PCM bug
+- Fix non WinCE games not launching (Rez, San Francisco 2049...)
 - Improve gxRend.cpp = main file about specific rendering for Wii
 - Splitting gxRend.cpp in multiple files ? (beware this is more tricky than it look)
-- Fix alpha/transparent stuff
 - Table convertion between SH4 Opcodes of SH4 and the WiiPPC ?
 - Use LLVM to port code for PowerPC ? (skmp says its not a good idea in this case)
-- Full Dynarec implementation (AI seems to know about this)
+- Dynarec improvement (very performant right now, bt if we can find boost...)
 - WinCE Games support https://github.com/BenoitAdam94/nullDC4Wii/issues/37
-- Wii direct MMU access implementation
 
 ## Installation
 
