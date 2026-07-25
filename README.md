@@ -1,4 +1,4 @@
-[![Discord](https://img.shields.io/discord/286429969104764928?label=Cemu&logo=discord&logoColor=FFFFFF)](https://discord.gg/fZzxdeXrZ)
+[![Discord](https://img.shields.io/discord/286429969104764928?label=NullDC4wii&logo=discord&logoColor=FFFFFF)](https://discord.gg/fZzxdeXrZ)
 
 # NullDC4Wii - Dreamcast Emulator for Wii
 
