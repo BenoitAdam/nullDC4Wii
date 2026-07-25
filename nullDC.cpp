@@ -23,6 +23,10 @@ __settings settings;
 // options-menu override for settings.emulator.AudioBuffers.
 extern "C" int get_audio_buffers_preset();
 
+// Defined in wii/main.cpp — options-menu preset selecting the SH4 core
+// back-end (0=Interpreter, 1=Dynarec, default).
+extern "C" int get_dynarec_preset();
+
 // ---------------------------------------------------------------------------
 // ELF boot state
 // Set by main___() if the selected file is a .elf.
@@ -254,7 +258,10 @@ int EmuMain(int argc, char* argv[])
 void LoadSettings()
 {
 	printf("[nullDC.cpp] Loading settings\n");
-	settings.dynarec.Enable = 1 | (cfgLoadInt("nullDC", "Dynarec.Enabled", 1) != 0);
+
+	// SH4 core back-end: options-menu preset (wii/main.cpp), default Dynarec.
+	// 0 = Interpreter, 1 = Dynarec.
+	settings.dynarec.Enable = (get_dynarec_preset() != 0);
 	settings.dynarec.CPpass=cfgLoadInt("nullDC","Dynarec.DoConstantPropagation",1)!=0;
 	settings.dynarec.UnderclockFpu=cfgLoadInt("nullDC","Dynarec.UnderclockFpu",0)!=0;
 	settings.dynarec.safemode=cfgLoadInt("nullDC","Dynarec.SafeMode",0)!=0;

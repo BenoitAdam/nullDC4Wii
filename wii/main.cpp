@@ -268,7 +268,7 @@ extern "C" {
   int get_tmem_cache_preset() { return g_tmem_cache_preset; }
 }
 
-int g_cdda_preset = 0; // 0=off (CD audio tracks silent, legacy), 1=on (GD-ROM Red Book audio fed to the AICA EXTS0 mixer input — CDDA music in games; costs ~75 disc-image sector reads/s while a track plays)
+int g_cdda_preset = 1; // 0=off (CD audio tracks silent, legacy), 1=on (GD-ROM Red Book audio fed to the AICA EXTS0 mixer input — CDDA music in games; costs ~75 disc-image sector reads/s while a track plays)
 
 extern "C" {
   int get_cdda_preset() { return g_cdda_preset; }
@@ -310,6 +310,17 @@ int g_sh4_clock_preset = 200; // MHz
 
 extern "C" {
   int get_sh4_clock_preset() { return g_sh4_clock_preset; }
+}
+
+// DYNAREC — SH4 core back-end select. 1=Dynarec (JIT recompiler, default,
+// fast), 0=Interpreter (slow, reference-correct — useful for isolating a
+// JIT-only bug). Read by nullDC.cpp LoadSettings() via get_dynarec_preset(),
+// which sets settings.dynarec.Enable; RunDC() (nullDC.cpp) picks the SH4
+// back-end from that flag once at boot.
+int g_dynarec_preset = 1;
+
+extern "C" {
+  int get_dynarec_preset() { return g_dynarec_preset; }
 }
 
 // JIT_SBP — JIT Stale Block Protection. One preset gates all three defenses
@@ -970,7 +981,8 @@ void displayAccuracyMenu()
 #define OPT_MUTE_PCM16  52
 #define OPT_HUD_PASS    53
 #define OPT_SCHED       54
-#define OPT_ROW_COUNT   55
+#define OPT_DYNAREC     55
+#define OPT_ROW_COUNT   56
 
 // Rows that are display-only (not selectable by cursor)
 static bool opt_row_is_display(int row)
@@ -994,6 +1006,9 @@ static int opt_row_page(int row)
     case OPT_BG_POLY:
     case OPT_X_SCALER:
     case OPT_CANVAS_WIDTH:
+    case OPT_RGB565_OPAQUE_ALPHA:
+    case OPT_PPZ_WRITE:
+    case OPT_RENDER_DELAY:
     case OPT_CDDA:
     case OPT_MUTE_PCM16:
     case OPT_HUD_PASS:
@@ -1001,12 +1016,9 @@ static int opt_row_page(int row)
     case OPT_ACCURACY:
     case OPT_HOKUTO_HACK:
     case OPT_JOJO_FIX:
-    case OPT_RGB565_OPAQUE_ALPHA:
-    case OPT_PPZ_WRITE:
     case OPT_ISP_DEPTH_FUNC:
     case OPT_ISP_CULL:
     case OPT_AUTOSORT:
-    case OPT_RENDER_DELAY:
     case OPT_SHOW_FPS:
     case OPT_ARM7_SPEED:
     case OPT_SH4_CLOCK:
@@ -1017,6 +1029,7 @@ static int opt_row_page(int row)
     case OPT_FPU_PIN:
     case OPT_JIT_ALIGN:
     case OPT_SCHED:
+    case OPT_DYNAREC:
       return 2;
     default:
       return 0;
@@ -1360,17 +1373,43 @@ bool displayOptionsMenu()
     printf(" SF3 double impact=384");
     printf("\n");
 
+    // --- Row: RGB565 Opaque Alpha ---
+    printf("%s RGB565 ALPHA   : ", (selectedRow == OPT_RGB565_OPAQUE_ALPHA) ? ">" : " ");
+    switch (g_rgb565_opaque_alpha_preset) {
+      case 0: printf("[< OFF (FMT0 ONLY)   >]"); break;
+      case 1: printf("[< ON (FMT0+FMT1)    >]"); break;
+    }
+    printf(" OFF for POD2");
+    printf("\n");
+
+    // --- Row: PPZ Write ---
+    printf("%s PPZ_WRITE      : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
+    switch (g_ppz_write_preset) {
+      case 0: printf("[< NO                >]"); break;
+      case 1: printf("[< YES               >]"); break;
+    }
+    printf("\n");
+
+    // --- Row: Hardware-like render/list IRQ delays ---
+    printf("%s RENDER DELAY   : ", (selectedRow == OPT_RENDER_DELAY) ? ">" : " ");
+    switch (g_render_delay_preset) {
+      case 0: printf("[< OFF (FASTER)      >]"); break;
+      case 1: printf("[< ON (HW-LIKE)      >]"); break;
+    }
+    printf(" ON for MVC2");
+    printf("\n");
+
     // --- Row: CDDA music (GD-ROM CD audio tracks) ---
-    printf("%s CDDA MUSIC      : ", (selectedRow == OPT_CDDA) ? ">" : " ");
+    printf("%s CDDA MUSIC     : ", (selectedRow == OPT_CDDA) ? ">" : " ");
     switch (g_cdda_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (CD MUSIC)     >]"); break;
     }
-    printf(" (mix CD audio tracks into sound)");
+    printf(" (GD-ROM CD audio tracks)");
     printf("\n");
 
     // --- Row: Mute 16-bit PCM channels (ChuChu Rocket SFX workaround) ---
-    printf("%s MUTE 16BIT PCM  : ", (selectedRow == OPT_MUTE_PCM16) ? ">" : " ");
+    printf("%s MUTE 16BIT PCM : ", (selectedRow == OPT_MUTE_PCM16) ? ">" : " ");
     switch (g_mute_pcm16_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (SILENCE 16B)  >]"); break;
@@ -1420,23 +1459,6 @@ bool displayOptionsMenu()
     printf(" for JoJo's Bizarre Adventure");
     printf("\n");
 
-    // --- Row: RGB565 Opaque Alpha ---
-    printf("%s RGB565 ALPHA   : ", (selectedRow == OPT_RGB565_OPAQUE_ALPHA) ? ">" : " ");
-    switch (g_rgb565_opaque_alpha_preset) {
-      case 0: printf("[< OFF (FMT0 ONLY)   >]"); break;
-      case 1: printf("[< ON (FMT0+FMT1)    >]"); break;
-    }
-    printf(" OFF for POD2");
-    printf("\n");
-
-    // --- Row: PPZ Write ---
-    printf("%s PPZ_WRITE      : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
-    switch (g_ppz_write_preset) {
-      case 0: printf("[< NO                >]"); break;
-      case 1: printf("[< YES               >]"); break;
-    }
-    printf("\n");
-
     // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
     printf("%s ISP DEPTH FUNC : ", (selectedRow == OPT_ISP_DEPTH_FUNC) ? ">" : " ");
     switch (g_isp_depth_func_preset) {
@@ -1464,15 +1486,6 @@ bool displayOptionsMenu()
     else
       printf("[< %d LAYERS (SLOW)   >]", g_autosort_preset);
     printf(" real per-pixel TR sort");
-    printf("\n");
-
-    // --- Row: Hardware-like render/list IRQ delays ---
-    printf("%s RENDER DELAY   : ", (selectedRow == OPT_RENDER_DELAY) ? ">" : " ");
-    switch (g_render_delay_preset) {
-      case 0: printf("[< OFF (FASTER)      >]"); break;
-      case 1: printf("[< ON (HW-LIKE)      >]"); break;
-    }
-    printf(" ON for MVC2");
     printf("\n");
 
     // --- Row: Gameplay FPS overlay ---
@@ -1565,6 +1578,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (DEADLINE)     >]"); break;
     }
     printf(" hw-order DMA/IRQ completions (exp)");
+    printf("\n");
+
+    // --- Row: DYNAREC - SH4 core back-end (Dynarec vs Interpreter) ---
+    printf("%s SH4 CORE       : ", (selectedRow == OPT_DYNAREC) ? ">" : " ");
+    switch (g_dynarec_preset) {
+      case 0: printf("[< INTERPRETER       >]"); break;
+      case 1: printf("[< DYNAREC (DEFAULT) >]"); break;
+    }
+    printf(" INTERPRETER is slow, for debugging");
     printf("\n\n");
 
     printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.61\n");
@@ -1657,6 +1679,7 @@ bool displayOptionsMenu()
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
+        case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -1718,6 +1741,7 @@ bool displayOptionsMenu()
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
+        case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
