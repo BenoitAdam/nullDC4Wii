@@ -385,6 +385,7 @@ extern int g_vertex_color_fix_preset;
 extern int g_blend_mode_preset;
 extern int g_rgb565_opaque_alpha_preset;
 extern int g_blend_fps_boost_preset;
+extern int g_show_fps_overlay;
 extern int g_punch_through_preset;
 extern int g_offset_color_preset;
 extern int g_trans_sort_preset;
@@ -468,6 +469,7 @@ struct GamePreset
     int hud_pass;
     int async_render;
     int tmem_cache;
+    int show_fps;
     int cdda;
     int mute_pcm16;
     int bg_poly;
@@ -737,6 +739,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "hud_pass"))       p->hud_pass       = atoi(val);
     else if (key_eq(key, "async_render"))   p->async_render   = parse_bool(val);
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = parse_bool(val);
+    else if (key_eq(key, "show_fps"))       p->show_fps       = parse_bool(val);
     else if (key_eq(key, "cdda"))           p->cdda           = parse_bool(val);
     else if (key_eq(key, "mute_pcm16"))     p->mute_pcm16     = parse_bool(val);
     else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
@@ -789,6 +792,7 @@ static void preset_clear(GamePreset* cur)
     cur->hud_pass = -1;
     cur->async_render = -1;
     cur->tmem_cache = -1;
+    cur->show_fps = -1;
     cur->cdda = -1;
     cur->mute_pcm16 = -1;
     cur->bg_poly = -1;
@@ -846,6 +850,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->hud_pass       >= 0) { g_hud_pass_preset      = p->hud_pass;        printf("  hud_pass       -> %d\n", p->hud_pass);       }
     if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
     if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
+    if (p->show_fps       >= 0) { g_show_fps_overlay     = p->show_fps;        printf("  show_fps       -> %d\n", p->show_fps);       }
     if (p->cdda           >= 0) { g_cdda_preset          = p->cdda;            printf("  cdda           -> %d\n", p->cdda);           }
     if (p->mute_pcm16     >= 0) { g_mute_pcm16_preset    = p->mute_pcm16;      printf("  mute_pcm16     -> %d\n", p->mute_pcm16);     }
     if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
