@@ -32,7 +32,7 @@
 //   0 = pass compiled out, identical to the original shipping behaviour
 // Bisect a regression by setting this back to 0 and rebuilding.
 // ---------------------------------------------------------------------------
-#define SHIL_DCE 1
+#define SHIL_DCE 0
 
 // Set to 1 to print a periodic "blocks / ops removed" summary. Off by default
 // so a speed A/B runs with zero console output (printf on the compile path
