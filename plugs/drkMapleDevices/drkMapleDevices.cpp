@@ -469,12 +469,15 @@ void UpdateInputState(u32 port)
 
         classicButtons |= SS_ToClassicButtons(port);
 
-        // Left stick (0-255, center ~128, same convention as the Nunchuck).
+        // Left stick (0-255, center ~128). Note: USB HID gives Y raw with
+        // 0 = up / 255 = down, the opposite of the Nunchuck/GameCube
+        // convention (positive = up) that MapAnalogStick() expects, so Y
+        // is negated here to match — otherwise up/down come out swapped.
         // Only used when no Wiimote expansion stick is deflected.
         if (ss_is_connected(&s_ssDev[port]) && expStickX == 0 && expStickY == 0)
         {
             expStickX = (s32)s_ssDev[port].pad.left_analog.x - 128;
-            expStickY = (s32)s_ssDev[port].pad.left_analog.y - 128;
+            expStickY = -((s32)s_ssDev[port].pad.left_analog.y - 128);
         }
     }
 
