@@ -178,43 +178,14 @@ https://wiibrew.org/wiki/NullDC4Wii/Compatibility
 
 ## Presets
 
-### 🧮 Calculation Accuracy Preset
+### General
 
-| Mode | Description |
-|------|------------|
-| **FAST** | Maximum FPS (higher frame rate), less loading times |
-| **BALANCED** | Good balance between speed and accuracy |
-| **ACCURATE (default)** | Closest behavior to original hardware |
+#### RATIO
 
-If you experience Freeze in some heavy games like Shenmue, put FAST or BALANCED. FAST may be the default setting in future versions
+#### SPEED
 
-If you experience various bugs (example that may happens : weird AI controled NPC, weird timing) put ACCURATE
+#### SHOW FPS
 
----
-
-### 🖼️ Graphics Preset
-
-| Mode | Settings | Best platform | 
-|------|----------| ------------------------- | 
-| **LOW** | `GX_NEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
-| **NORMAL (default)** | `GX_LINEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
-| **HIGH** | `GX_LINEAR` · `lod_bias -0.5f` · `GX_ENABLE` · Anisotropic x2 | Wii U |
-| **EXTRA** | `GX_LINEAR` · `lod_bias -1.0f` *(may need to adjust to -0.75)* · `GX_ENABLE` · Anisotropic x4 | Wii U |
-
-While the emulator is still in alpha, the visual difference is limited for now.
-
-<img width="1844" height="1456" alt="levels" src="https://github.com/user-attachments/assets/79d5271d-0689-43d4-92c0-66674013ddce" />
-
-- Use LOW for 2D and heavy 3D games
-- Use NORMAL for other games
-
-| Mode (4BPP/8BPP) | Settings | Rendering | 
-|------|----------| ------------------------- | 
-| **I4_STUB/I8_STUB** | Dummy algorythm  | Some element doesn't display at all, for max FPS |
-| **OPTIMIZED (defaut)** | Best performance/quality | Very good FPS |
-| **CI4 (FAST)/CI8 (FAST)** | Basic algorythm Display mostly correctly | Very good FPS |
-| **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Mid FPS |
-| **RGB565** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
 
 ####  Cache setting
 
@@ -225,6 +196,35 @@ While the emulator is still in alpha, the visual difference is limited for now.
 | **CACHE_NORMAL (default)** | Best performance/accuracy. Display mostly correctly | Mid FPS |
 | **CACHE_QUALITY** | Best accuracy. Display correctly | Mid FPS |
 | **CACHE_EXTRA** | Redraw every frame. Accurate (Only for dev & Debug) | Low FPS |
+
+
+### Advanced Graphics
+
+### 🖼️ Graphics Preset
+
+| Mode | Settings | Best platform | 
+|------|----------| ------------------------- | 
+| **LOW** | `GX_NEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
+| **NORMAL (default)** | `GX_LINEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
+| **HIGH** | `GX_LINEAR` · `lod_bias -0.5f` · `GX_ENABLE` · Anisotropic x2 | Wii U |
+| **EXTRA** | `GX_LINEAR` · `lod_bias -0.75f` · `GX_ENABLE` · Anisotropic x4 | Wii U |
+
+The visual difference is limited for NORMAL/HIGH/EXTRA
+
+<img width="1844" height="1456" alt="levels" src="https://github.com/user-attachments/assets/79d5271d-0689-43d4-92c0-66674013ddce" />
+
+- Use LOW for 240p games/modes
+- Use NORMAL for other games
+
+
+| Mode (4BPP/8BPP) | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **I4_STUB/I8_STUB** | Dummy algorythm  | Some element doesn't display at all, for max FPS |
+| **OPTIMIZED (defaut)** | Best performance/quality | Very good FPS |
+| **CI4 (FAST)/CI8 (FAST)** | Basic algorythm Display mostly correctly | Very good FPS |
+| **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Mid FPS |
+| **RGB565** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
+
 
 
 #### DECAL_ALPHA
@@ -273,14 +273,10 @@ note : ADVANCED ALPHA and BLEND_MODE needs to be on for FPS_BOOST
 
 Can resolve flickering in some games
 
-#### ASYNC_RENDER
 
-| Mode | Settings | Rendering | 
-|------|----------| ------------------------- | 
-| **NO (default)** | Disable | 0 frame latency |
-| **YES** | Some CPU stuff are drawn by GPU | Faster, to the cost of 1 frame |
+#### DEPTH_CLIP
 
-ASYNC_RENDER is generally faster, may be defaut yes in future version. Can resolve flickering
+It's basically like FIXED_DEPTH, leave it to NEAR MARGIN
 
 #### FIXED_DEPTH
 
@@ -292,9 +288,13 @@ ASYNC_RENDER is generally faster, may be defaut yes in future version. Can resol
 
 FIXED_DEPTH can help flickering and Z-Fighting
 
-#### DEPTH_CLIP
+### HUD_PASS
 
-It's basically like FIXED_DEPTH, leave it to NEAR MARGIN
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO (default)** | -  | Not active |
+| **Overlay** | Help hud to display when FIXED_DEPTH is on TIGHT | accurate |
+| **Protect** | Help hud to display when FIXED_DEPTH is on TIGHT | Perfect |
 
 #### PPZ_WRITE : PER POLYGON Z WRITE
 
@@ -305,12 +305,76 @@ It's basically like FIXED_DEPTH, leave it to NEAR MARGIN
 
 Try putting NO if you experience troubles, with HUD for example.
 
+
 #### Vertex Color
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **NO** | Grey Scale | Grey scale (a tiny bit faster) |
 | **YES** | Intensity color | Accurate |
+
+Color some pixel (Used in Jet Set Radio Future and Crazy Taxi 1/2)
+
+
+### Advanced Audio
+
+ADUIO_BUFFER 
+CDDA = CD audio music on/off  
+Mute PCM = fix for Chuchurocket  
+
+### Core / Special Hack
+
+#### 🧮 Calculation Accuracy Preset
+
+| Mode | Description |
+|------|------------|
+| **FAST** | Maximum FPS (higher frame rate), less loading times |
+| **BALANCED** | Good balance between speed and accuracy |
+| **ACCURATE (default)** | Closest behavior to original hardware |
+
+If you experience Freeze in some heavy games like Shenmue, put FAST or BALANCED. FAST may be the default setting in future versions
+
+If you experience various bugs (example that may happens : weird AI controled NPC, weird timing) put ACCURATE
+
+---
+
+SH4 Clock = Underclock SH4
+ARM7 SPEED = Underclock ARM
+
+TMEM_CACHE
+
+Hokuto hack = Specific hack for Hokuto No Ken  
+Jojo fix = For Jojo. May help other games  
+
+#### JIT BCACHE & JIT ALIGN
+
+L1/L2 cache related  
+JIT ALIGN = L1/L2 cache related
+
+#### FPU PIN
+
+Floating Point United related
+
+#### ASYNC_RENDER
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO (default)** | Disable | 0 frame latency |
+| **YES** | Some CPU stuff are drawn by GPU | Faster, to the cost of 1 frame |
+
+ASYNC_RENDER is generally faster, may be defaut yes in future version. Can resolve flickering
+
+### Experimental/Debug
+
+ISP_DEPTH_FUNC = ???
+ISP_CULL = ???
+AUTOSORT = ???
+SH4 CORE = Interpreter is slow (for debug only)
+DMA FIX = it's about loading CDI/GDI file
+SCHED (ORDER) = it's about loading CDI/GDI file
+
+
+
 
 
 ### Game Specific Presets
@@ -427,7 +491,10 @@ Z Fighting example :
 
 <img width="628" height="268" alt="Image" src="https://github.com/user-attachments/assets/f479152c-74ea-4af9-84d5-e693a929adf4" />
 
+Fastmem crash example :
 
+
+<img width="813" height="499" alt="Image" src="https://github.com/user-attachments/assets/9b731ce5-bb29-4fd2-aecf-8dc400eb680a" />
 
 ## For Developpers :
 
@@ -576,15 +643,23 @@ That an additionnal ressources in CPU and we are limited. That may would make se
 
 We are currently testing a branch with some implementation but it doesn't seem to work.
 
+### Will Retroachievement be implemented ?
+
+Probably not, we are super tight on RAM, and it also cost 1/2% of cpu cycle
+
+### Will Netplay be implemented ?
+
+Probably not, again, we are very short on RAM/CPU. And on Wii we don't have the 100% speed everytime.
+
 ### How is AI involved in the project ?
 
 Since I (BenoitAdam) digged the NullDC code, AI has been heavily used to make improvement to the emulator. The very first state of the emulator (alpha 0.02) is 99% hand written code by SKMP and NullDC contributors at the time. Only some few changes have been made to be able to recompile it and make it run. Various AI are used : MistalAI/ChatGPT/Codex/Claude and Deepseek. Claude is very convenient because of artifact and Claude Code. Gemini helped on some improvements, and Deepseek too.
 
 ### I hate AI !
 
-It's ok, you have the right, but without AI this project wouldn't have been resurected. AI for code is really a big help, definitly not the same thing with AI generated images and videos. For information AI for image ask ~10x more power, AI for video ask ~100x more power.
+It's ok, you have the right, but without AI this project wouldn't have been resurected. AI for code is really a big help, definitly not the same thing with AI generated images and videos. For information AI for image ask ~10x more power, AI for video ask ~100x more power. A Wii is also using 20x less power than a PS4/PS5.
 
-Reduce CO2 emission & grow trees is the plan for the planet.
+Reduce CO2 emission & grow trees is the plan for the planet. Also prevent stupid people throwing their cigarett butt & firmly condemn pyromaniacs.
 
 ### do you have a discord ?
 
