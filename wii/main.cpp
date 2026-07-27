@@ -2237,6 +2237,9 @@ int main(int argc, wchar *argv[])
   WiiDRC_Init();
   g_is_wiiu = WiiDRC_Inited();
 
+  printf("[Wii U] Is that a Wii U ? 0 = no, 1 = yes ");
+  printf(g_is_wiiu);
+
   rmode = VIDEO_GetPreferredMode(NULL);
 
   xfb[0] = MEM_K0_TO_K1(SYS_AllocateFramebuffer(rmode));
