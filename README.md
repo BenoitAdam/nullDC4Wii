@@ -427,7 +427,10 @@ Z Fighting example :
 
 <img width="628" height="268" alt="Image" src="https://github.com/user-attachments/assets/f479152c-74ea-4af9-84d5-e693a929adf4" />
 
+Fastmem crash example :
 
+
+<img width="813" height="499" alt="Image" src="https://github.com/user-attachments/assets/9b731ce5-bb29-4fd2-aecf-8dc400eb680a" />
 
 ## For Developpers :
 
@@ -575,6 +578,14 @@ Maybe it's possible, but we don't have time to focus on this. CDI Files on SD Ca
 That an additionnal ressources in CPU and we are limited. That may would make sense for a WiiU Port.
 
 We are currently testing a branch with some implementation but it doesn't seem to work.
+
+### Will Retroachievement be implemented ?
+
+Probably not, we are super tight on RAM, and it also cost 1/2% of cpu cycle
+
+### Will Netplay be implemented ?
+
+Probably not, again, we are very short on RAM/CPU. And on Wii we don't have the 100% speed everytime.
 
 ### How is AI involved in the project ?
 
