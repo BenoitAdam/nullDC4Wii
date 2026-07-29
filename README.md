@@ -14,8 +14,7 @@ a fork from https://github.com/skmp/nullDCe
 - Help me finding regression (NOT bugs or glitch, only regression for now please)
 - Comment / Guides / Documentation (WiiBrew Wiki)
 - Test and report Fishing Rod/USB Keyboard/Lightgun/Maracas support
-- Add a winCE preset to prevent that game isn't supported
-- Add SDHC support
+
 
 ### Developer (Easy)
 
@@ -27,7 +26,8 @@ a fork from https://github.com/skmp/nullDCe
 - DualShock 3 issue: left stick has the Y axis inverted, up is down, and down is up.
 - Custom layout : Chuchu rocket/Quake3 (bith Gamecube & wii)
 - Custom layout : a toggle to make the right analog stick with supported controllers act as buttons X (Left) - Y (Up) - A (Down) - B (Right). This is useful for twin stick shooters that use the diamond button layout for gameplay (like Xeno Crisis).
-
+- Add a winCE preset to prevent that game isn't supported
+- Add SDHC support
 
 ### Developer (Normal)
 
@@ -42,7 +42,7 @@ a fork from https://github.com/skmp/nullDCe
 - Splitting gxRend.cpp in multiple files ? (beware this is more tricky than it look)
 - Table convertion between SH4 Opcodes of SH4 and the WiiPPC ?
 - Use LLVM to port code for PowerPC ? (skmp says its not a good idea in this case)
-- Dynarec improvement (very performant right now, bt if we can find boost...)
+- Dynarec improvement (very performant right now, but if we can find boost...)
 - WinCE Games support https://github.com/BenoitAdam94/nullDC4Wii/issues/37
 
 ## Installation
