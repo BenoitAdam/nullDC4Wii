@@ -15,7 +15,7 @@ a fork from https://github.com/skmp/nullDCe
 - Comment / Guides / Documentation (WiiBrew Wiki)
 - Test and report Fishing Rod/USB Keyboard/Lightgun/Maracas support
 - Add a winCE preset to prevent that game isn't supported
-
+- Add SDHC support
 
 ### Developer (Easy)
 
