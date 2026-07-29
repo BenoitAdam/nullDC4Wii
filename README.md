@@ -725,7 +725,8 @@ All together, let's Cast the Dream.
 
 - skmp because he's the god
 - Senryoku, develloper of Deecy emulator
-- OriginalDave developer of Jocasta
+- OriginalDave, developer of Jocasta
+- MetalliC, developer of Demul
 - Dolphin Team, would have been a pain to test on real hardware everytime otherwise
 - devkitPPC/Libogc
 - Everyone helping on emuvdev/discord
