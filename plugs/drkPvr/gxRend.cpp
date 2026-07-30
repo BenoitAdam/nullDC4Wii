@@ -3244,7 +3244,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
         SetupPaletteForTexture(mod->tcw.PAL.PalSelect << 4, 16);
 
-        FMT = GX_TF_I4; // wha? the ?
+        FMT = GX_TF_I4; // Intensity 4 bit (Grayscale)
         }
       else if(TEXTURE_4BPP_OPTIMIZED()){ // BEST: LUT-baked palette decode -> GX RGB565/RGB5A3
         // Same accuracy as a full palette decode (correct ARGB8888/4444/1555
@@ -3515,7 +3515,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
         SetupPaletteForTexture(mod->tcw.PAL.PalSelect << 4, 256);
 
-        FMT = GX_TF_I8; // wha? the ? FUCK!
+        FMT = GX_TF_I8; // Intensity 8 bit (Grayscale)
 
       }
       else if(TEXTURE_8BPP_OPTIMIZED()) {
@@ -6314,38 +6314,27 @@ void StartRender()
         if(DEBUG_MESSAGE()) printf("[PATH] 2D-after-3D: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
           FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
         s_did_3d_render = false;
-        // The 3D frame is already in frameBuffer[fb] (or queued for flip in
-        // async mode) — just make sure it reaches the screen.  Do NOT
-        // GX_CopyDisp here: DoRender's display copy cleared the EFB, so a
-        // second copy would present the clear color (black frame flash).
-        gx_sync_pending(); // ASYNC_RENDER(): apply the queued frame's flip
-        reset_vtx_state(); // discard this render's geometry — it was never
-                           // drawn and would ghost into the next 3D frame
+        gx_sync_pending(); // ASYNC_RENDER(): apply the queued frame's flip first
+        GX_DrawDone();
+        GX_CopyDisp(frameBuffer[fb], GX_TRUE);
+        VIDEO_SetNextFramebuffer(frameBuffer[fb]);
+        VIDEO_Flush();
         wii_audio_frame();
+        // VIDEO_WaitVSync() // Not necessary here (don't block the SH4 thread)
         FrameCount++;
         return;
       }
 
       if (ShouldSkipFrame())
-      {
-        reset_vtx_state(); // discard the skipped frame's geometry too
         return;   // skip the 2D present, same as the VBlank() path
-      }
 
       if(DEBUG_MESSAGE()) printf("[PATH] 2D-blit: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
         FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
 
       PresentFramebuffer();
-      reset_vtx_state(); // geometry of a 2D-blit frame is never drawn;
-                         // without this it ghosts into the next 3D frame
       FrameCount++;
       return;
     } else {
-      // SILENT DROP: FB_W_SOF1 bit 24 (RTT) is set, but render_to_texture is
-      // off and framebuffer_2d is off — the frame is discarded entirely. This
-      // is the only StartRender exit with no [PATH] trace, so a game whose
-      // frames land here shows RPS=0 while still looping happily.
-      reset_vtx_state(); // drop the untaken render's geometry (see above)
       return; // just return
     }
   }
