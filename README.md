@@ -570,7 +570,11 @@ Activate :
 
 <img width="1366" height="728" alt="image" src="https://github.com/user-attachments/assets/4e1e3f65-2638-40c6-85a0-bcca3e4f43da" />
 
-## Questions and Answers (FAQ)
+## Frequently Asked Question (FAQ)
+
+### My SD Card isn't recognized
+
+Make sure you have a good brand (Samsung, Kingston). Optimal card would be between 2Gb and 32Gb (more should work, we support SDHX), formated in FAT32 with 32kb cluster (16kb or 64kb could work).
 
 ### It doesn't work
 
