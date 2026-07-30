@@ -2213,6 +2213,15 @@ void handleBIOSBoot()
 // MAIN
 // ============================================================================
 
+// Helper function to explicitly mount ONLY the front SD slot
+bool mountSDCard(void) {
+    // Optional: tiny delay to give stubborn SD controllers time to wake up after HBC handoff
+    usleep(200000);
+
+    // Mounts front SD directly to "sd:/" using libfat defaults
+    return fatMountSimple("sd", &__io_wiisd);
+}
+
 int main(int argc, wchar *argv[])
 {
   // Sixaxis/DualShock3 (USB): reloads IOS58 for raw USB HID access. Done as
@@ -2293,6 +2302,9 @@ int main(int argc, wchar *argv[])
   // ---------------------------------------------------------------------------
   // Mount SD card
   // ---------------------------------------------------------------------------
+  // Give hardware a brief moment to stabilize after HBC handoff
+  /*
+  usleep(500000); // 0.5 sec delay
   if (fatInitDefault())
   {
     printf("SD card mounted!\n");
@@ -2302,7 +2314,16 @@ int main(int argc, wchar *argv[])
     printf("WARNING: Could not mount SD card.\n");
     printf("You can press 2 in the file browser to switch to USB.\n");
     usleep(2000000);
-  }
+  }*/
+
+  // In your main setup logic:
+if (mountSDCard()) {
+    printf("SD card mounted!\n");
+} else {
+    printf("WARNING: Could not mount SD card.\n");
+    printf("You can press 2 in the file browser to switch to USB.\n");
+    usleep(2000000);
+}
 
   // ---------------------------------------------------------------------------
   // Load game presets  (optional — missing file is silently ignored)
