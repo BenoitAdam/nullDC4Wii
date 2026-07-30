@@ -1131,7 +1131,7 @@ bool displayOptionsMenu()
       case 2: printf("[< HIGH              >]"); break;
       case 3: printf("[< EXTRA             >]"); break;
     }
-    printf(" (2D Games should use LOW)");
+    printf(" 240p Games should use LOW");
     printf("\n");
 
     // --- Row: Texture Cache ---
@@ -1320,10 +1320,10 @@ bool displayOptionsMenu()
     // --- Row: 2D sprite seam fix (half-texel inset) ---
     printf("%s SEAM FIX       : ", (selectedRow == OPT_SEAM_FIX) ? ">" : " ");
     switch (g_seam_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON                >]"); break;
+      case 0: printf("[< OFF (A BIT FASTER)>]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
     }
-    printf(" black lines btwn 2D tiles (linear)");
+    printf(" fix black lines between 2D tiles");
     printf("\n");
 
     // --- Row: Fixed depth projection ---
@@ -1396,7 +1396,7 @@ bool displayOptionsMenu()
       case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (HW-LIKE)      >]"); break;
     }
-    printf(" ON for MVC2");
+    printf(" ON for MvC2 and CvSNK");
     printf("\n");
 
     // --- Row: CDDA music (GD-ROM CD audio tracks) ---
