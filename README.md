@@ -574,11 +574,15 @@ Activate :
 
 ### My SD Card isn't recognized
 
-Make sure you have a good brand (Samsung, Kingston). Optimal card would be between 2Gb and 32Gb (more should work, we support SDHX), formated in FAT32 with 32kb cluster (16kb or 64kb could work).
+Make sure you have a good brand (Samsung, Kingston). Optimal card would be between 2Gb and 32Gb (more should work, we support SDXC), formated in FAT32 with 32kb cluster (16kb or 64kb could work). Try another SD card if that's not working
 
-### It doesn't work
+### Games doesn't work
 
-First, try on SD card with a know game that work (Castlevana, Chuchu Rocket or Sega Tetris are best candidate). For USB, try a FAT32 USB key first before switching to any other device. It works on my 500HDD FAT32 for information
+First, try on SD card with a know working game (Castlevania, Chuchu Rocket or Sega Tetris are best candidate). 
+
+### My USB key/HDD isn't recognized
+
+For USB, try a FAT32 USB key first (32kb cluster) before switching to any other device. It works on my 500HDD FAT32 for information (with a cluster of 4kb)
 
 ### Does VMU work ?
 
