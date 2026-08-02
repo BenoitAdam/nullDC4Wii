@@ -142,7 +142,7 @@ extern "C" {
   int get_x_scaler_preset() { return g_x_scaler_preset; }
 }
 
-int g_canvas_width_preset = 0; // 0=off (legacy 640 canvas); else forced canvas width in 240p modes (SF3 Double Impact: 384, the CPS3 arcade width)
+int g_canvas_width_preset = 640 ; // 0=off (legacy 640 canvas); else forced canvas width in 240p modes (SF3 Double Impact: 384, the CPS3 arcade width)
 
 extern "C" {
   int get_canvas_width_preset() { return g_canvas_width_preset; }
@@ -196,7 +196,7 @@ extern "C" {
   int get_punch_through_preset() { return g_punch_through_preset; }
 }
 
-int g_offset_color_preset = 1; // 0=off (offset/specular color dropped, legacy), 1=on (PIX = base*tex + offset via 2nd TEV stage)
+int g_offset_color_preset = 0; // 0=off (offset/specular color dropped, legacy), 1=on (PIX = base*tex + offset via 2nd TEV stage)
 
 extern "C" {
   int get_offset_color_preset() { return g_offset_color_preset; }
@@ -984,64 +984,153 @@ void displayAccuracyMenu()
 #define OPT_DYNAREC     55
 #define OPT_ROW_COUNT   56
 
-// Rows that are display-only (not selectable by cursor)
-static bool opt_row_is_display(int row)
-{
-  return (row == 1 || row == 2 || row == 3);
-}
+// Options are split across six themed pages so no single page scrolls off
+// screen and related settings are grouped together.
+#define OPT_PAGE_COUNT 6
 
-// Options are split across three pages so no single page scrolls off screen.
-#define OPT_PAGE_COUNT 3
+// Explicit, ordered list of selectable rows for each page — in the SAME
+// order they are printf'd below. Cursor navigation (UP/DOWN) walks these
+// arrays directly instead of scanning raw OPT_* numeric IDs, so a row's
+// #define number no longer has to be numerically sandwiched between its
+// on-screen neighbors' numbers. (Previously e.g. OPT_SHOW_FPS=42 sat on
+// page 0 between OPT_SPEED_LIMIT and OPT_GRAPHICS on screen, but its ID put
+// it after OPT_SPLIT_SCREEN in ID order, so pressing DOWN skipped straight
+// past it and pressing DOWN again from the last row on the page would jump
+// back up to it — the "jumps to another option, then comes back" bug.)
+// OPT_LAUNCH is included on every page so A/B/1 keep working everywhere.
+// Page 0 - GENERAL
+static const int OPT_PAGE0_ROWS[] = {
+  OPT_LAUNCH,
+  OPT_RATIO,
+  OPT_SPEED_LIMIT,
+  OPT_SHOW_FPS,
+  OPT_GRAPHICS,
+  OPT_TEX_CACHE,
+  OPT_4BPP,
+  OPT_8BPP,
+  OPT_FRAMESKIP,
+  OPT_FRAMEBUFFER_2D,
+  OPT_ADV_ALPHA,
+  OPT_BLEND_MODE,
+  OPT_BLEND_FPS_BOOST,
+  OPT_PUNCH_THROUGH,
+  OPT_TRANS_SORT,
+  OPT_RENDER_TO_TEXTURE,
+  OPT_SPLIT_SCREEN
+};
 
-static int opt_row_page(int row)
+// Page 1 - GRAPHICS
+static const int OPT_PAGE1_ROWS[] = {
+  OPT_LAUNCH,
+  OPT_FMV_FORMAT,
+  OPT_VERTEX_COLOR_FIX,
+  OPT_DECAL_ALPHA,
+  OPT_SEAM_FIX,
+  OPT_BG_POLY,
+  OPT_RGB565_OPAQUE_ALPHA,
+  OPT_HOKUTO_HACK,
+  OPT_JOJO_FIX
+};
+
+// Page 2 - DEPTH & WIDTH
+static const int OPT_PAGE2_ROWS[] = {
+  OPT_LAUNCH,
+  OPT_DEPTH_CLIP,
+  OPT_FIXED_DEPTH,
+  OPT_HUD_PASS,
+  OPT_X_SCALER,
+  OPT_CANVAS_WIDTH,
+  OPT_PPZ_WRITE
+};
+
+// Page 3 - AUDIO
+static const int OPT_PAGE3_ROWS[] = {
+  OPT_LAUNCH,
+  OPT_AUDIO_BUFFERS,
+  OPT_CDDA,
+  OPT_MUTE_PCM16
+};
+
+// Page 4 - CORE
+static const int OPT_PAGE4_ROWS[] = {
+  OPT_LAUNCH,
+  OPT_ACCURACY,
+  OPT_ASYNC_RENDER,
+  OPT_RENDER_DELAY,
+  OPT_TMEM_CACHE,
+  OPT_SH4_CLOCK,
+  OPT_ARM7_SPEED,
+  OPT_JIT_SBP,
+  OPT_FASTMEM,
+  OPT_BCACHE,
+  OPT_FPU_PIN,
+  OPT_JIT_ALIGN
+};
+
+// Page 5 - EXPERIMENTAL STUFF & DEBUG
+static const int OPT_PAGE5_ROWS[] = {
+  OPT_LAUNCH,
+  OPT_MIPMAP,
+  OPT_OFFSET_COLOR,
+  OPT_ISP_DEPTH_FUNC,
+  OPT_ISP_CULL,
+  OPT_AUTOSORT,
+  OPT_DMA_FIX,
+  OPT_SCHED,
+  OPT_DYNAREC
+};
+
+static const int *opt_page_rows(int page, int *count)
 {
-  switch (row) {
-    case OPT_FMV_FORMAT:
-    case OPT_VERTEX_COLOR_FIX:
-    case OPT_DECAL_ALPHA:
-    case OPT_MIPMAP:
-    case OPT_SEAM_FIX:
-    case OPT_FIXED_DEPTH:
-    case OPT_DEPTH_CLIP:
-    case OPT_BG_POLY:
-    case OPT_X_SCALER:
-    case OPT_CANVAS_WIDTH:
-    case OPT_RGB565_OPAQUE_ALPHA:
-    case OPT_PPZ_WRITE:
-    case OPT_RENDER_DELAY:
-    case OPT_CDDA:
-    case OPT_MUTE_PCM16:
-    case OPT_HUD_PASS:
-      return 1;
-    case OPT_ACCURACY:
-    case OPT_HOKUTO_HACK:
-    case OPT_JOJO_FIX:
-    case OPT_ISP_DEPTH_FUNC:
-    case OPT_ISP_CULL:
-    case OPT_AUTOSORT:
-    case OPT_SHOW_FPS:
-    case OPT_ARM7_SPEED:
-    case OPT_SH4_CLOCK:
-    case OPT_JIT_SBP:
-    case OPT_DMA_FIX:
-    case OPT_FASTMEM:
-    case OPT_BCACHE:
-    case OPT_FPU_PIN:
-    case OPT_JIT_ALIGN:
-    case OPT_SCHED:
-    case OPT_DYNAREC:
-      return 2;
-    default:
-      return 0;
+  switch (page) {
+    case 0: *count = sizeof(OPT_PAGE0_ROWS) / sizeof(int); return OPT_PAGE0_ROWS;
+    case 1: *count = sizeof(OPT_PAGE1_ROWS) / sizeof(int); return OPT_PAGE1_ROWS;
+    case 2: *count = sizeof(OPT_PAGE2_ROWS) / sizeof(int); return OPT_PAGE2_ROWS;
+    case 3: *count = sizeof(OPT_PAGE3_ROWS) / sizeof(int); return OPT_PAGE3_ROWS;
+    case 4: *count = sizeof(OPT_PAGE4_ROWS) / sizeof(int); return OPT_PAGE4_ROWS;
+    case 5: *count = sizeof(OPT_PAGE5_ROWS) / sizeof(int); return OPT_PAGE5_ROWS;
+    default: *count = 1; return OPT_PAGE0_ROWS; // OPT_LAUNCH only, defensive fallback
   }
 }
 
-// OPT_LAUNCH is shared across both pages so A/B/1 keep working everywhere.
-static bool opt_row_on_page(int row, int page)
+// Moves selectedRow to the previous/next row within the CURRENT page's
+// ordered list, wrapping around at either end. dir: -1 = up, +1 = down.
+static int opt_step_row(int selectedRow, int page, int dir)
 {
-  if (row == OPT_LAUNCH)
-    return true;
-  return opt_row_page(row) == page;
+  int count;
+  const int *rows = opt_page_rows(page, &count);
+  int idx = 0;
+  for (int i = 0; i < count; i++) {
+    if (rows[i] == selectedRow) { idx = i; break; }
+  }
+  idx = (idx + dir + count) % count;
+  return rows[idx];
+}
+
+// Short titles shown in the page banner ("-- TITLE (PAGE n/6) --").
+static const char *opt_page_title(int page)
+{
+  switch (page) {
+    case 0: return "GENERAL";
+    case 1: return "GRAPHICS";
+    case 2: return "DEPTH & WIDTH";
+    case 3: return "AUDIO";
+    case 4: return "CORE";
+    case 5: return "EXPERIMENTAL STUFF & DEBUG";
+    default: return "";
+  }
+}
+
+// Prints the "1-Y: Previous | ..." hint pinned to the LAST row of the
+// console, no matter how many option rows a given page printed above it.
+// Without this, the footer would land on a different line on every page
+// (each page has a different row count) instead of always sitting at the
+// bottom of the screen.
+static void printOptionsFooter(void)
+{
+  int cols, rows;
+  CON_GetMetrics(&cols, &rows);
+  printf("\033[%d;1H1-Y: Previous | 2+X: Next | HOME: More Info | alpha 0.62", rows);
 }
 
 bool displayOptionsMenu()
@@ -1089,8 +1178,7 @@ bool displayOptionsMenu()
 
     printf("\n");
 
-    if (optionsPage > 0)
-      printf("    -- PRESETS PAGE %d/%d (1: Previous Page) --\n\n", optionsPage + 1, OPT_PAGE_COUNT);
+    printf("    -- %s (PAGE %d/%d) --\n\n", opt_page_title(optionsPage), optionsPage + 1, OPT_PAGE_COUNT);
 
     if (optionsPage == 0) {
     // --- Row: Ratio ---
@@ -1102,18 +1190,6 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
-    // --- Row: Audio queue pacing (settings.emulator.AudioBuffers) ---
-    printf("%s AUDIO BUFFERS  : ", (selectedRow == OPT_AUDIO_BUFFERS) ? ">" : " ");
-    switch (g_audio_buffers_preset) {
-      case -1: printf("[< DEFAULT (SAVED)   >]"); break;
-      case  0: printf("[< 0 (NEVER BLOCK)   >]"); break;
-      case  1: printf("[< 1                 >]"); break;
-      case  2: printf("[< 2                 >]"); break;
-      case  3: printf("[< 3 (MOST PACED)    >]"); break;
-    }
-    printf(" audio pacing depth");
-    printf("\n");
-
     // --- Row: Speed Limiter ---
     printf("%s SPEED LIMITER  : ", (selectedRow == OPT_SPEED_LIMIT) ? ">" : " ");
     switch (g_speed_limiter_preset) {
@@ -1121,6 +1197,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CAP 100%%)     >]"); break;
     }
     printf(" Stops speed exceeding 100%%");
+    printf("\n");
+
+    // --- Row: Gameplay FPS overlay ---
+    printf("%s SHOW FPS       : ", (selectedRow == OPT_SHOW_FPS) ? ">" : " ");
+    switch (g_show_fps_overlay) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON                >]"); break;
+    }
+    printf(" gameplay FPS and speed overlay");
     printf("\n");
 
     // --- Row: Graphics ---
@@ -1145,15 +1230,6 @@ bool displayOptionsMenu()
     printf(" Can have huge FPS impact");
     printf("\n");
 
-    // --- Row: TMEM texture cache ---
-    printf("%s TMEM CACHE     : ", (selectedRow == OPT_TMEM_CACHE) ? ">" : " ");
-    switch (g_tmem_cache_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FASTER?)      >]"); break;
-    }
-    printf(" keep GPU texture cache warm");
-    printf("\n");
-
     // --- Row: 4BPP ---
     printf("%s 4BPP MODE      : ", (selectedRow == OPT_4BPP) ? ">" : " ");
     switch (g_4bpp_preset) {
@@ -1174,15 +1250,6 @@ bool displayOptionsMenu()
       case 3: printf("[< CI8 (NORMAL)      >]"); break;
       case 4: printf("[< RGB565 (ACCURATE) >]"); break;
     }
-    printf("\n");
-
-    // --- Row: Async render (CPU/GPU overlap) ---
-    printf("%s ASYNC RENDER   : ", (selectedRow == OPT_ASYNC_RENDER) ? ">" : " ");
-    switch (g_async_render_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FASTER)       >]"); break;
-    }
-    printf(" use GPU, cost 1 frame input-lag");
     printf("\n");
 
     // --- Row: Frameskipping ---
@@ -1239,15 +1306,6 @@ bool displayOptionsMenu()
     printf(" PT list alpha test");
     printf("\n");
 
-    // --- Row: Offset (specular) color ---
-    printf("%s OFFSET COLOR   : ", (selectedRow == OPT_OFFSET_COLOR) ? ">" : " ");
-    switch (g_offset_color_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (CORRECT)      >]"); break;
-    }
-    printf(" specular highlights");
-    printf("\n");
-
     // --- Row: Translucent depth sort ---
     printf("%s TRANS SORT     : ", (selectedRow == OPT_TRANS_SORT) ? ">" : " ");
     switch (g_trans_sort_preset) {
@@ -1275,7 +1333,7 @@ bool displayOptionsMenu()
     printf(" 2P viewports, Daytona USA");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: More Info | 2: Next Page | alpha 0.62\n");
+    printOptionsFooter();
     } // end page 0
 
     if (optionsPage == 1) {
@@ -1307,16 +1365,6 @@ bool displayOptionsMenu()
     printf(" Fix Crazy Taxi's cars");
     printf("\n");
 
-    // --- Row: Mipmap generation ---
-    printf("%s MIPMAPS        : ", (selectedRow == OPT_MIPMAP) ? ">" : " ");
-    switch (g_mipmap_preset) {
-      case 0: printf("[< OFF (FASTEST)     >]"); break;
-      case 1: printf("[< FAST              >]"); break;
-      case 2: printf("[< TRILINEAR (SLOW)  >]"); break;
-    }
-    printf(" less shimmer far away");
-    printf("\n");
-
     // --- Row: 2D sprite seam fix (half-texel inset) ---
     printf("%s SEAM FIX       : ", (selectedRow == OPT_SEAM_FIX) ? ">" : " ");
     switch (g_seam_fix_preset) {
@@ -1324,6 +1372,56 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (DEFAULT)      >]"); break;
     }
     printf(" fix black lines between 2D tiles");
+    printf("\n");
+
+    // --- Row: Background polygon rendering ---
+    printf("%s BG POLYGON     : ", (selectedRow == OPT_BG_POLY) ? ">" : " ");
+    switch (g_bg_poly_preset) {
+      case 0: printf("[< OFF (FASTER)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" (bg gradient/texture)");
+    printf("\n");
+
+    // --- Row: RGB565 Opaque Alpha ---
+    printf("%s RGB565 ALPHA   : ", (selectedRow == OPT_RGB565_OPAQUE_ALPHA) ? ">" : " ");
+    switch (g_rgb565_opaque_alpha_preset) {
+      case 0: printf("[< OFF (FMT0 ONLY)   >]"); break;
+      case 1: printf("[< ON (FMT0+FMT1)    >]"); break;
+    }
+    printf(" OFF for POD2");
+    printf("\n");
+
+    // --- Row: Hokuto Hack (layer-tiered translucent sort) ---
+    printf("%s HOKUTO HACK    : ", (selectedRow == OPT_HOKUTO_HACK) ? ">" : " ");
+    switch (g_hokuto_hack_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (TR TIER SORT) >]"); break;
+    }
+    printf(" ON for Hokuto no Ken (Specific)");
+    printf("\n");
+
+    // --- Row: Jojo Fix ---
+    printf("%s JOJO FIX       : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
+    switch (g_jojo_fix_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" for JoJo's Bizarre Adventure");
+    printf("\n\n");
+
+    printOptionsFooter();
+    } // end page 1
+
+    if (optionsPage == 2) {
+    // --- Row: Depth clip behaviour ---
+    printf("%s DEPTH CLIP     : ", (selectedRow == OPT_DEPTH_CLIP) ? ">" : " ");
+    switch (g_depth_clip_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< NEAR MARGIN (WII) >]"); break;
+      case 2: printf("[< NO CLIP (DOLPHIN) >]"); break;
+    }
+    printf(" 2D/menus invisible on real Wii");
     printf("\n");
 
     // --- Row: Fixed depth projection ---
@@ -1336,24 +1434,15 @@ bool displayOptionsMenu()
     printf(" fixed near/far planes. Z-Fighting");
     printf("\n");
 
-    // --- Row: Depth clip behaviour ---
-    printf("%s DEPTH CLIP     : ", (selectedRow == OPT_DEPTH_CLIP) ? ">" : " ");
-    switch (g_depth_clip_preset) {
+    // --- Row: HUD pass (rescue HUD clipped by fixed_depth=tight) ---
+    printf("%s HUD PASS       : ", (selectedRow == OPT_HUD_PASS) ? ">" : " ");
+    switch (g_hud_pass_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< NEAR MARGIN (WII) >]"); break;
-      case 2: printf("[< NO CLIP (DOLPHIN) >]"); break;
+      case 1: printf("[< OVERLAY (NO ZW)   >]"); break;
+      case 2: printf("[< PROTECT (Z-WRITE) >]"); break;
     }
-    printf(" 2D/menus invisible on real Wii");
-    printf("\n");
-
-    // --- Row: Background polygon rendering ---
-    printf("%s BG POLYGON     : ", (selectedRow == OPT_BG_POLY) ? ">" : " ");
-    switch (g_bg_poly_preset) {
-      case 0: printf("[< OFF (FASTER)      >]"); break;
-      case 1: printf("[< ON (CORRECT)      >]"); break;
-    }
-    printf(" (bg gradient/texture)");
-    printf("\n");
+    printf(" HUD back w/ FIXED DEPTH=TIGHT");
+    printf("\n\n");
 
     // --- Row: PVR horizontal X-Scaler ---
     printf("%s X SCALER       : ", (selectedRow == OPT_X_SCALER) ? ">" : " ");
@@ -1373,30 +1462,28 @@ bool displayOptionsMenu()
     printf(" SF3 double impact=384");
     printf("\n");
 
-    // --- Row: RGB565 Opaque Alpha ---
-    printf("%s RGB565 ALPHA   : ", (selectedRow == OPT_RGB565_OPAQUE_ALPHA) ? ">" : " ");
-    switch (g_rgb565_opaque_alpha_preset) {
-      case 0: printf("[< OFF (FMT0 ONLY)   >]"); break;
-      case 1: printf("[< ON (FMT0+FMT1)    >]"); break;
-    }
-    printf(" OFF for POD2");
-    printf("\n");
-
     // --- Row: PPZ Write ---
     printf("%s PPZ_WRITE      : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
     switch (g_ppz_write_preset) {
       case 0: printf("[< NO                >]"); break;
       case 1: printf("[< YES               >]"); break;
     }
-    printf("\n");
+    printf("\n\n");
 
-    // --- Row: Hardware-like render/list IRQ delays ---
-    printf("%s RENDER DELAY   : ", (selectedRow == OPT_RENDER_DELAY) ? ">" : " ");
-    switch (g_render_delay_preset) {
-      case 0: printf("[< OFF (FASTER)      >]"); break;
-      case 1: printf("[< ON (HW-LIKE)      >]"); break;
+    printOptionsFooter();
+    } // end page 2
+
+    if (optionsPage == 3) {
+    // --- Row: Audio queue pacing (settings.emulator.AudioBuffers) ---
+    printf("%s AUDIO BUFFERS  : ", (selectedRow == OPT_AUDIO_BUFFERS) ? ">" : " ");
+    switch (g_audio_buffers_preset) {
+      case -1: printf("[< DEFAULT (SAVED)   >]"); break;
+      case  0: printf("[< 0 (NEVER BLOCK)   >]"); break;
+      case  1: printf("[< 1                 >]"); break;
+      case  2: printf("[< 2                 >]"); break;
+      case  3: printf("[< 3 (MOST PACED)    >]"); break;
     }
-    printf(" ON for MvC2 and CvSNK");
+    printf(" audio pacing depth");
     printf("\n");
 
     // --- Row: CDDA music (GD-ROM CD audio tracks) ---
@@ -1415,22 +1502,12 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (SILENCE 16B)  >]"); break;
     }
     printf(" ChuChu Rocket echoey SFX fix");
-    printf("\n");
-
-    // --- Row: HUD pass (rescue HUD clipped by fixed_depth=tight) ---
-    printf("%s HUD PASS       : ", (selectedRow == OPT_HUD_PASS) ? ">" : " ");
-    switch (g_hud_pass_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< OVERLAY (NO ZW)   >]"); break;
-      case 2: printf("[< PROTECT (Z-WRITE) >]"); break;
-    }
-    printf(" HUD back w/ FIXED DEPTH=TIGHT");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.62\n");
-    } // end page 1
+    printOptionsFooter();
+    } // end page 3
 
-    if (optionsPage == 2) {
+    if (optionsPage == 4) {
     // --- Row: Accuracy ---
     printf("%s ACCURACY       : ", (selectedRow == OPT_ACCURACY) ? ">" : " ");
     switch (g_accuracy_preset) {
@@ -1441,60 +1518,40 @@ bool displayOptionsMenu()
     printf(" ACCURATE if strange AI behavior");
     printf("\n");
 
-    // --- Row: Hokuto Hack (layer-tiered translucent sort) ---
-    printf("%s HOKUTO HACK    : ", (selectedRow == OPT_HOKUTO_HACK) ? ">" : " ");
-    switch (g_hokuto_hack_preset) {
+    // --- Row: Async render (CPU/GPU overlap) ---
+    printf("%s ASYNC RENDER   : ", (selectedRow == OPT_ASYNC_RENDER) ? ">" : " ");
+    switch (g_async_render_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (TR TIER SORT) >]"); break;
+      case 1: printf("[< ON (FASTER)       >]"); break;
     }
-    printf(" ON for Hokuto no Ken (Specific)");
+    printf(" use GPU, cost 1 frame input-lag");
     printf("\n");
 
-    // --- Row: Jojo Fix ---
-    printf("%s JOJO FIX       : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
-    switch (g_jojo_fix_preset) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    // --- Row: Hardware-like render/list IRQ delays ---
+    printf("%s RENDER DELAY   : ", (selectedRow == OPT_RENDER_DELAY) ? ">" : " ");
+    switch (g_render_delay_preset) {
+      case 0: printf("[< OFF (FASTER)      >]"); break;
+      case 1: printf("[< ON (HW-LIKE)      >]"); break;
     }
-    printf(" for JoJo's Bizarre Adventure");
+    printf(" ON for MvC2 and CvSNK");
     printf("\n");
 
-    // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
-    printf("%s ISP DEPTH FUNC : ", (selectedRow == OPT_ISP_DEPTH_FUNC) ? ">" : " ");
-    switch (g_isp_depth_func_preset) {
+    // --- Row: TMEM texture cache ---
+    printf("%s TMEM CACHE     : ", (selectedRow == OPT_TMEM_CACHE) ? ">" : " ");
+    switch (g_tmem_cache_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (OPAQUE/PT)    >]"); break;
-      case 2: printf("[< ON (ALL LISTS)    >]"); break;
+      case 1: printf("[< ON (FASTER?)      >]"); break;
     }
-    printf(" per-poly depth test (experimental)");
+    printf(" keep GPU texture cache warm");
     printf("\n");
 
-    // --- Row: Per-poly ISP backface cull (isp.CullMode) ---
-    printf("%s ISP CULL       : ", (selectedRow == OPT_ISP_CULL) ? ">" : " ");
-    switch (g_isp_cull_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON                >]"); break;
-      case 2: printf("[< ON (SWAP WINDING) >]"); break;
-    }
-    printf(" backface culling (experimental)");
-    printf("\n");
-
-    // --- Row: Per-pixel autosort (depth peeling) ---
-    printf("%s AUTOSORT       : ", (selectedRow == OPT_AUTOSORT) ? ">" : " ");
-    if (g_autosort_preset <= 0)
-      printf("[< OFF (LEGACY)      >]");
+    // --- Row: SH4 underclock (effective CPU clock; see plugin_types.h) ---
+    printf("%s SH4 CLOCK      : ", (selectedRow == OPT_SH4_CLOCK) ? ">" : " ");
+    if (g_sh4_clock_preset >= 200)
+      printf("[< 200MHZ (FULL)     >]");
     else
-      printf("[< %d LAYERS (SLOW)   >]", g_autosort_preset);
-    printf(" real per-pixel TR sort");
-    printf("\n");
-
-    // --- Row: Gameplay FPS overlay ---
-    printf("%s SHOW FPS       : ", (selectedRow == OPT_SHOW_FPS) ? ">" : " ");
-    switch (g_show_fps_overlay) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON                >]"); break;
-    }
-    printf(" gameplay FPS and speed overlay");
+      printf("[< %3dMHZ (UNDERCLK) >]", g_sh4_clock_preset);
+    printf(" lower=faster host,slower game");
     printf("\n");
 
     // --- Row: ARM7 sound-CPU speed divider (plugs/vbaARM/arm_aica.cpp) ---
@@ -1507,15 +1564,6 @@ bool displayOptionsMenu()
     printf(" sound CPU clock - check audio!");
     printf("\n");
 
-    // --- Row: SH4 underclock (effective CPU clock; see plugin_types.h) ---
-    printf("%s SH4 CLOCK      : ", (selectedRow == OPT_SH4_CLOCK) ? ">" : " ");
-    if (g_sh4_clock_preset >= 200)
-      printf("[< 200MHZ (FULL)     >]");
-    else
-      printf("[< %3dMHZ (UNDERCLK) >]", g_sh4_clock_preset);
-    printf(" lower=faster host,slower game");
-    printf("\n");
-
     // --- Row: JIT_SBP - Stale Block Protection (dc/sh4/rec_v2/driver.cpp) ---
     printf("%s JIT SBP        : ", (selectedRow == OPT_JIT_SBP) ? ">" : " ");
     switch (g_jit_sbp_preset) {
@@ -1524,15 +1572,6 @@ bool displayOptionsMenu()
       case 2: printf("[< ALL RAM (SLOW)    >]"); break;
     }
     printf(" stale/self-modified block guard");
-    printf("\n");
-
-    // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
-    printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? ">" : " ");
-    switch (g_dma_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (DEFAULT)      >]"); break;
-    }
-    printf(" ch2/PVR/Sort/AICA DMA fixes");
     printf("\n");
 
     // --- Row: FASTMEM - PPC-MMU branchless JIT memory access ---
@@ -1569,6 +1608,67 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (32B LINES)    >]"); break;
     }
     printf(" align JIT blocks to cache lines");
+    printf("\n\n");
+
+    printOptionsFooter();
+    } // end page 4
+
+    if (optionsPage == 5) {
+    // --- Row: Mipmap generation ---
+    printf("%s MIPMAPS        : ", (selectedRow == OPT_MIPMAP) ? ">" : " ");
+    switch (g_mipmap_preset) {
+      case 0: printf("[< OFF (FASTEST)     >]"); break;
+      case 1: printf("[< FAST              >]"); break;
+      case 2: printf("[< TRILINEAR (SLOW)  >]"); break;
+    }
+    printf(" less shimmer far away");
+    printf("\n");
+
+    // --- Row: Offset (specular) color ---
+    printf("%s OFFSET COLOR   : ", (selectedRow == OPT_OFFSET_COLOR) ? ">" : " ");
+    switch (g_offset_color_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" specular highlights");
+    printf("\n");
+
+    // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
+    printf("%s ISP DEPTH FUNC : ", (selectedRow == OPT_ISP_DEPTH_FUNC) ? ">" : " ");
+    switch (g_isp_depth_func_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (OPAQUE/PT)    >]"); break;
+      case 2: printf("[< ON (ALL LISTS)    >]"); break;
+    }
+    printf(" per-poly depth test (experimental)");
+    printf("\n");
+
+    // --- Row: Per-poly ISP backface cull (isp.CullMode) ---
+    printf("%s ISP CULL       : ", (selectedRow == OPT_ISP_CULL) ? ">" : " ");
+    switch (g_isp_cull_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON                >]"); break;
+      case 2: printf("[< ON (SWAP WINDING) >]"); break;
+    }
+    printf(" backface culling (experimental)");
+    printf("\n");
+
+    // --- Row: Per-pixel autosort (depth peeling) ---
+    printf("%s AUTOSORT       : ", (selectedRow == OPT_AUTOSORT) ? ">" : " ");
+    if (g_autosort_preset <= 0)
+      printf("[< OFF (LEGACY)      >]");
+    else
+      printf("[< %d LAYERS (SLOW)   >]", g_autosort_preset);
+    printf(" real per-pixel TR sort");
+    printf("\n");
+
+    // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
+    printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? ">" : " ");
+    switch (g_dma_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" ch2/PVR/Sort/AICA DMA fixes");
     printf("\n");
 
     // --- Row: SCHED - unified cycle-deadline event scheduler ---
@@ -1589,8 +1689,9 @@ bool displayOptionsMenu()
     printf(" INTERPRETER is slow, for debugging");
     printf("\n\n");
 
-    printf("A: Launch | B: Back | 1: Previous Page | 2: Next Page | alpha 0.62\n");
-    } // end page 2
+    printOptionsFooter();
+    } // end page 5
+
 
 
     WPAD_ScanPads();
@@ -1610,17 +1711,22 @@ bool displayOptionsMenu()
     if (gcPressed & PAD_BUTTON_Y)     pressed |= WPAD_BUTTON_1;
     if (gcPressed & PAD_BUTTON_X)     pressed |= WPAD_BUTTON_2;
 
+    // Page navigation: -/+ already arrive as WPAD_BUTTON_MINUS/PLUS from the
+    // Wiimote and (via CLASSIC_ToWPAD above) the Classic Controller. The
+    // Classic Controller's L/R shoulder buttons are page nav too, but are
+    // read straight off the raw word here rather than folded into the global
+    // CLASSIC_ToWPAD helper, so they don't collide with the MINUS+PLUS
+    // "exit" combo used elsewhere (e.g. the file browser).
+    bool classicPrevPage = (wmPressed & WPAD_CLASSIC_BUTTON_FULL_L) != 0;
+    bool classicNextPage = (wmPressed & WPAD_CLASSIC_BUTTON_FULL_R) != 0;
+
     if (pressed & WPAD_BUTTON_UP)
     {
-      do {
-        selectedRow = (selectedRow > 0) ? selectedRow - 1 : OPT_ROW_COUNT - 1;
-      } while (opt_row_is_display(selectedRow) || !opt_row_on_page(selectedRow, optionsPage));
+      selectedRow = opt_step_row(selectedRow, optionsPage, -1);
     }
     else if (pressed & WPAD_BUTTON_DOWN)
     {
-      do {
-        selectedRow = (selectedRow < OPT_ROW_COUNT - 1) ? selectedRow + 1 : 0;
-      } while (opt_row_is_display(selectedRow) || !opt_row_on_page(selectedRow, optionsPage));
+      selectedRow = opt_step_row(selectedRow, optionsPage, +1);
     }
     else if (pressed & WPAD_BUTTON_LEFT)
     {
@@ -1751,19 +1857,17 @@ bool displayOptionsMenu()
       if (selectedRow == OPT_LAUNCH)
         return true;
     }
-    else if (pressed & WPAD_BUTTON_1)
+    else if (pressed & WPAD_BUTTON_HOME)
     {
-      if (optionsPage > 0)
-      {
-        optionsPage--;
-        selectedRow = OPT_LAUNCH;
-      }
-      else
-      {
-        displayAccuracyMenu();
-      }
+      // HOME is the dedicated "More Info" shortcut — works on every page.
+      displayAccuracyMenu();
     }
-    else if (pressed & WPAD_BUTTON_2)
+    else if ((pressed & (WPAD_BUTTON_1 | WPAD_BUTTON_MINUS)) || classicPrevPage)
+    {
+      optionsPage = (optionsPage - 1 + OPT_PAGE_COUNT) % OPT_PAGE_COUNT;
+      selectedRow = OPT_LAUNCH;
+    }
+    else if ((pressed & (WPAD_BUTTON_2 | WPAD_BUTTON_PLUS)) || classicNextPage)
     {
       optionsPage = (optionsPage + 1) % OPT_PAGE_COUNT;
       selectedRow = OPT_LAUNCH;
@@ -2025,6 +2129,33 @@ bool displayControlsMenu()
 // FILE BROWSER MENU
 // ============================================================================
 
+// Total number of lines this footer prints (used to pin it to the bottom).
+// Keep this in sync if lines are added/removed below.
+#define FILE_BROWSER_FOOTER_LINES 11
+
+// Prints the page counter / GitHub-contact / storage / controls footer
+// pinned to the bottom of the console, regardless of how many files are
+// listed above it (the last page can have fewer than ITEMS_PER_PAGE
+// entries, which would otherwise leave the footer floating mid-screen).
+static void printFileBrowserFooter(int page, int totalPages)
+{
+  int cols, rows;
+  CON_GetMetrics(&cols, &rows);
+  printf("\033[%d;1H", rows - FILE_BROWSER_FOOTER_LINES + 1);
+
+  printf("--- Page %02d/%02d ---\n\n", page + 1, totalPages);
+  printf("If you are a develloper in C/C++, please check Github !!\n");
+  printf("https://github.com/BenoitAdam94/nullDC4Wii\n");
+  printf("Contact : xalegamingchannel@gmail.com\n");
+  printf("HELP ME ON THE COMPATIBILITY LIST !!\n");
+  printf("Compatibility WIKI : https://wiibrew.org/wiki/NullDC4Wii/Compatibility\n\n");
+  printf("Storage: %s\n", (g_storage_source == STORAGE_SD)
+    ? "[SD CARD]  (2: Switch to USB)"
+    : "[USB]      (2: Switch to SD)");
+  printf("A: Select | B: Back | 1: BIOS | (-) + (+): Exit\n");
+  printf("INGAME: Press (-) and (+) simultaneously to Exit\n");
+}
+
 int displayMenuAndSelectFile()
 {
   int selectedIndex = 0;
@@ -2048,18 +2179,7 @@ int displayMenuAndSelectFile()
     for (int i = startIndex; i < endIndex; i++)
       printf(i == selectedIndex ? "> %s\n" : "  %s\n", fileList[i].name);
 
-    printf("\n--- Page %02d/%02d ---\n\n", currentPage + 1, totalPages);
-    printf("If you are a develloper in C/C++, please check Github !!\n");
-    printf("https://github.com/BenoitAdam94/nullDC4Wii\n");
-    printf("Contact : xalegamingchannel@gmail.com\n");
-    printf("HELP ME ON THE COMPATIBILITY LIST !!\n");
-    printf("Compatibility WIKI : https://wiibrew.org/wiki/NullDC4Wii/Compatibility\n\n");
-    printf("Storage: %s", (g_storage_source == STORAGE_SD)
-      ? "[SD CARD]  (2: Switch to USB)"
-      : "[USB]      (2: Switch to SD)");
-    printf("\n");
-    printf("A: Select | B: Back | 1: BIOS | (-) + (+): Exit\n");
-    printf("INGAME: Press (-) and (+) simultaneously to Exit\n");
+    printFileBrowserFooter(currentPage, totalPages);
 
     WPAD_ScanPads();
     PAD_ScanPads();
