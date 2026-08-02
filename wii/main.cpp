@@ -6,6 +6,7 @@
 #include <wiiuse/wpad.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <malloc.h>   // memalign() — used by Detect_WiiU_IOS58Version()
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -499,9 +500,9 @@ typedef enum {
 StorageSource g_storage_source = STORAGE_SD;
 bool g_usb_mounted = false;
 
-// Set once at boot from WiiDRC_Inited() (see below): true only when the
-// vWii-only DRC memory signatures were found, which real Wii hardware never
-// has — independent of whether a physical GamePad is actually paired.
+// Set once at boot from Detect_IsWiiU() (see below): true when ANY of the
+// combined vWii detection signals fired, which real Wii hardware never
+// triggers — independent of whether a physical GamePad is actually paired.
 // Consumed by game_presets.cpp for <wii u> section conditions.
 bool g_is_wiiu = false;
 
@@ -739,6 +740,98 @@ static u32 DRC_ButtonsHeldWPAD()
   if (!WiiDRC_Inited())
     return 0;
   return DRC_ToWPAD(WiiDRC_ButtonsHeld());
+}
+
+// ============================================================================
+// WII U / vWII DETECTION
+// ============================================================================
+//
+// There is no single official "am I on a Wii U" flag, so this combines every
+// independent signal the Wii homebrew scene has found for it and ORs them
+// together in Detect_IsWiiU(): if ANY one of them says "yes", we call it a
+// Wii U. Each method below has its own known blind spot, which is exactly
+// why none of them is used alone.
+//
+// Credit: memory-signature method by Crediar (as used in USB Loader GX /
+// WiiFlow); IOS58 revision numbers and the AHBPROT caveat from the
+// #gc-wii community (GBAtemp / Discord).
+// ============================================================================
+
+// HW_AHBPROT: reads 0xFFFFFFFF only if this app currently has full,
+// unmediated hardware access (granted by the loader/forwarder's TMD, e.g.
+// Homebrew Channel, as long as IOS hasn't been reloaded since). This is
+// NOT a Wii-U detector by itself — real Wii and Wii U can both have it, or
+// not — it's only a gate that tells us whether Method 2 below can be
+// trusted this run.
+#define HW_AHBPROT_REG (*(vu32*)0xCD800064)
+
+// Latte (Wii U) memory-mapped register. Reported by the community as:
+//   top 16 bits == 0xCAFE  -> Wii U running vWii
+//   top 16 bits == 0x0000  -> real Wii
+//   top 16 bits == 0xFFFF  -> unmapped read (e.g. Dolphin emulator)
+#define WIIU_SIG_REG (*(vu32*)0xCD8005A0)
+
+// --- Method 1: Wii U GamePad (DRC) presence -----------------------------
+// WiiDRC_Init() only succeeds where the DRC IOS module exists, which is
+// vWii-only, so it's harmless to call on a real Wii (it just fails).
+// Doesn't require AHBPROT. NOTE: libwiidrc always brings DRC output up
+// from scratch here — it does not inherit whatever state the Wii U menu
+// left the GamePad in — so a failure here doesn't necessarily mean "not a
+// Wii U", which is why it's only one vote rather than the whole answer.
+static bool Detect_WiiU_DRC(void)
+{
+  WiiDRC_Init();
+  return WiiDRC_Inited();
+}
+
+// --- Method 2: direct-hardware register signature -----------------------
+// Bypasses IOS and reads real hardware directly, so it only works if the
+// app currently holds HW_AHBPROT (see above) — without it, this silently
+// reads back 0 on a Wii U too (false negative), which is the "may or may
+// not work depending on ahbprot" behavior reported on #gc-wii. Most
+// forwarders/HBC grant AHBPROT by default, so this works most of the time
+// for free, but must never be the only check.
+static bool Detect_WiiU_MMIO(void)
+{
+  return (HW_AHBPROT_REG == 0xFFFFFFFF) && ((WIIU_SIG_REG >> 16) == 0xCAFE);
+}
+
+// --- Method 3: installed IOS58 title version ----------------------------
+// Asks ES (over IOS, no direct hardware access / no AHBPROT needed) what
+// version of IOS58 is installed on the NAND, without loading it:
+//   6432               -> Wii U (vWii)
+//   5918 / 6175 / 6176 -> real Wii
+// Downside: needs IOS58 to actually be installed, and if Nintendo ever
+// ships another vWii IOS58 revision this table goes stale — another reason
+// this is only one vote among several instead of the final word.
+static bool Detect_WiiU_IOS58Version(void)
+{
+  const u64 IOS58_TITLE_ID = 0x0000000100000000ULL | 58;
+
+  u32 view_size = 0;
+  if (ES_GetTMDViewSize(IOS58_TITLE_ID, &view_size) < 0 || view_size == 0)
+    return false;
+
+  tmd_view* view = (tmd_view*)memalign(32, view_size);
+  if (!view)
+    return false;
+
+  bool is_wiiu = false;
+  if (ES_GetTMDView(IOS58_TITLE_ID, view, view_size) >= 0)
+    is_wiiu = (view->title_version == 6432);
+
+  free(view);
+  return is_wiiu;
+}
+
+// --- Combined check, call once at boot -----------------------------------
+static bool Detect_IsWiiU(void)
+{
+  bool drc   = Detect_WiiU_DRC();
+  bool mmio  = Detect_WiiU_MMIO();
+  bool ios58 = Detect_WiiU_IOS58Version();
+
+  return drc || mmio || ios58;
 }
 
 // ============================================================================
@@ -2144,8 +2237,7 @@ static void printFileBrowserFooter(int page, int totalPages)
   printf("\033[%d;1H", rows - FILE_BROWSER_FOOTER_LINES + 1);
 
   printf("--- Page %02d/%02d ---\n\n", page + 1, totalPages);
-  printf("If you are a develloper in C/C++, please check Github !!\n");
-  printf("https://github.com/BenoitAdam94/nullDC4Wii\n");
+  printf("Console detected : %s\n", g_is_wiiu ? "Wii U" : "Wii");
   printf("Contact : xalegamingchannel@gmail.com\n");
   printf("HELP ME ON THE COMPATIBILITY LIST !!\n");
   printf("Compatibility WIKI : https://wiibrew.org/wiki/NullDC4Wii/Compatibility\n\n");
@@ -2362,13 +2454,13 @@ int main(int argc, wchar *argv[])
   PAD_Init();
   WPAD_Init();
 
-  // Wii U GamePad (only succeeds on Wii U in vWii mode; harmless on real Wii)
-  WiiDRC_Init();
-  g_is_wiiu = WiiDRC_Inited();
+  // Wii U / vWii detection: ORs together every independent signal we have
+  // (Wii U GamePad presence, direct-hardware register signature, installed
+  // IOS58 revision) — see Detect_IsWiiU() above for details on each one.
+  g_is_wiiu = Detect_IsWiiU();
 
   /*
-  printf("[Wii U] Is that a Wii U ? 0 = no, 1 = yes ");
-  printf(g_is_wiiu);
+  printf("[Wii U] Is that a Wii U ? 0 = no, 1 = yes : %d\n", g_is_wiiu);
   */
 
   rmode = VIDEO_GetPreferredMode(NULL);
