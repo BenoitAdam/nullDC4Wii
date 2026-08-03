@@ -10,26 +10,25 @@
                                 (e.g. [streetfighter32][doubleimpact][double impact]).
                                 The FIRST alias is the canonical name shown in
                                 the options menu. Any number of aliases per section.
-        <wii u>[kw1][kw2]   <- a section may also carry <condition> groups,
-                                mixed with [alias] groups in any order. ALL
-                                <condition> groups must hold, on top of the
-                                usual filename match, for the section to
-                                apply. Currently the only condition is
-                                <wii u> (or <wiiu>), true only on real Wii U
+        <kw1><kw2>          <- angle brackets are the SAME alias match as
+                                square brackets, but ONLY apply on real Wii U
                                 hardware running vWii (see main.cpp g_is_wiiu,
                                 set from WiiDRC_Inited() — independent of
-                                whether a GamePad is actually paired).
-                                Put the <wii u> section BEFORE the plain
-                                section for the same game (first match wins,
-                                more specific first — same rule as aliases):
-                                    <wii u>[segatetris][sega tetris] ; Wii U
+                                whether a GamePad is actually paired). [square]
+                                and <angle> alias groups may be mixed freely
+                                on one line, in any order, any number of
+                                times; if ANY group on the line uses <angle>
+                                brackets, the whole section is Wii-U-gated.
+                                Put the <angle> section BEFORE the plain
+                                [square] section for the same game (first
+                                match wins, more specific first — same rule
+                                as before):
+                                    <segatetris><sega tetris>   ; Wii U
                                     accuracy=accurate
-                                    [segatetris][sega tetris]        ; Wii (fallback)
+                                    [segatetris][sega tetris]   ; Wii (fallback)
                                     accuracy=fast
-                                A real Wii simply fails the <wii u> gate and
+                                A real Wii simply fails the Wii U gate and
                                 falls through to the plain section below it.
-                                <condition>-only sections with no [alias] at
-                                all never match (nothing to apply them to).
         accuracy=fast       <- only fields listed are overridden
         graphics=low
         8bpp=i8_stub
@@ -421,7 +420,7 @@ extern int g_framebuffer_2d;
 extern int g_fmv_format_preset;
 
 // Set once at boot (main.cpp) from WiiDRC_Inited() — true only on real Wii U
-// hardware in vWii mode. Consumed below by <wii u> section conditions.
+// hardware in vWii mode. Consumed below by <angle-bracket> alias groups.
 extern bool g_is_wiiu;
 
 // ---------------------------------------------------------------------------
@@ -873,63 +872,44 @@ static void preset_apply_fields(const GamePreset* p)
 // Section header matching
 // ---------------------------------------------------------------------------
 
-// Evaluate one <condition> token against current hardware. Unknown tokens
-// fail closed (section never matches) rather than being silently ignored,
-// so a typo'd condition can't accidentally make a section apply everywhere.
-static bool condition_holds(const char* cond)
-{
-    if (key_eq(cond, "wii u") || key_eq(cond, "wiiu")) return g_is_wiiu;
-    printf("[game_presets] Unknown condition: '<%s>'\n", cond);
-    return false;
-}
-
 // Parse a section header line (s points at the first '[' or '<') and decide
 // whether the section applies. Two kinds of bracket group can appear, in any
-// order, any number of times:
-//   [alias]       filename OR-match, same as before. The FIRST [alias] on
-//                 the line is the canonical name shown in the options menu.
-//   <condition>   hardware/platform AND-gate (currently only "wii u"). ALL
-//                 <condition> groups on the line must hold, on top of the
-//                 usual filename match, for the section to apply.
-// want_default selects the special [default] section, which conditions can
-// still gate (e.g. <wii u>[default] for Wii-U-wide overrides) but which is
-// never matched against a filename. On a filename match, canonical and hit
-// (both MAX_KEYWORD_LEN) receive the first alias and the alias that matched.
+// order, any number of times, and both are filename OR-matched the same way:
+//   [alias]   matches on any hardware (Wii or Wii U).
+//   <alias>   matches ONLY on real Wii U hardware running vWii — the angle
+//             brackets themselves are the Wii U gate, no separate condition
+//             tag needed. If ANY group on the line uses <angle> brackets,
+//             the whole section requires g_is_wiiu.
+// The FIRST group on the line (whichever bracket style) is the canonical
+// name shown in the options menu.
+// want_default selects the special [default]/<default> section, which the
+// Wii-U gate can still apply to (e.g. <default> for Wii-U-wide overrides)
+// but which is never matched against a filename. On a filename match,
+// canonical and hit (both MAX_KEYWORD_LEN) receive the first alias and the
+// alias that matched.
 static bool section_matches(char* s, const char* lower_name, bool want_default,
                             char* canonical, char* hit)
 {
-    bool matched       = false;
-    bool have_alias    = false;
-    bool conditions_ok = true;
-    bool is_default    = false;
-    bool first         = true;
+    bool matched    = false;
+    bool have_alias = false;
+    bool wiiu_only  = false;
+    bool is_default = false;
+    bool first      = true;
     canonical[0] = hit[0] = '\0';
 
-    // Walk every [alias]/<condition> group on the line; stop at the first
+    // Walk every [alias]/<alias> group on the line; stop at the first
     // thing that isn't another group (e.g. a trailing ; comment).
     char* pos = s;
     while (*pos == '[' || *pos == '<')
     {
         char close = (*pos == '[') ? ']' : '>';
+        bool is_wiiu_group = (*pos == '<');
         char* end_bracket = strchr(pos, close);
         if (!end_bracket) break;
-        bool is_condition = (*pos == '<');
         *end_bracket = '\0';             // terminate this group
         char* kw = str_trim(pos + 1);    // content between the brackets
 
-        if (is_condition)
-        {
-            if (*kw)
-            {
-                char cond[MAX_KEYWORD_LEN];
-                strncpy(cond, kw, MAX_KEYWORD_LEN - 1);
-                cond[MAX_KEYWORD_LEN - 1] = '\0';
-                str_tolower_inplace(cond);
-                if (!condition_holds(cond))
-                    conditions_ok = false;
-            }
-        }
-        else if (*kw)
+        if (*kw)
         {
             char alias[MAX_KEYWORD_LEN];
             strncpy(alias, kw, MAX_KEYWORD_LEN - 1);
@@ -937,6 +917,8 @@ static bool section_matches(char* s, const char* lower_name, bool want_default,
             str_tolower_inplace(alias);
 
             have_alias = true;
+            if (is_wiiu_group) wiiu_only = true;
+
             if (first)
             {
                 strcpy(canonical, alias);
@@ -954,10 +936,13 @@ static bool section_matches(char* s, const char* lower_name, bool want_default,
         while (*pos && isspace((unsigned char)*pos)) pos++;
     }
 
-    if (!have_alias) return false;   // a bare <condition>-only line matches nothing
+    if (!have_alias) return false;
 
-    // [default] is special: only ever picked by the want_default pass,
-    // never matched against a filename — but conditions still gate it.
+    bool conditions_ok = !wiiu_only || g_is_wiiu;
+
+    // [default]/<default> is special: only ever picked by the want_default
+    // pass, never matched against a filename — but the Wii U gate still
+    // applies to it.
     if (is_default) return want_default && conditions_ok;
     if (want_default) return false;
 
