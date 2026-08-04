@@ -108,17 +108,6 @@ Files appears at root of /data/ :
 - vmu_save_A1.bin
 - vmu_save_A2.bin
 
-## Status (10/06/2026)
-
-launch on dolphin an real Wii with FPS between 8 and 50 Fps  
-game selector implemented  
-2 players controler implemented  
-Games tested : See compatibility
-
-Wii Dynarec has been improved & completed by AI. Compile but doesn't run (Black Screen). See /archive folder
-
-https://www.youtube.com/watch?v=Ug8V2XXO52Q
-
 ## Compatibility
 
 https://wiibrew.org/wiki/NullDC4Wii/Compatibility
