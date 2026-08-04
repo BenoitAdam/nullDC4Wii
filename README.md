@@ -27,12 +27,12 @@ a fork from https://github.com/skmp/nullDCe
 - Custom layout : Chuchu rocket/Quake3 (bith Gamecube & wii)
 - Custom layout : a toggle to make the right analog stick with supported controllers act as buttons X (Left) - Y (Up) - A (Down) - B (Right). This is useful for twin stick shooters that use the diamond button layout for gameplay (like Xeno Crisis).
 - Add a winCE preset to prevent that game isn't supported
-- Check SDHC support
 
 ### Developer (Normal)
 
 - 4/3 support (implemented, need fix on some games like Shenmue)
 - Support for CHD/ELF game file
+- Return to file list
 
 ### Developer (Hard)
 
