@@ -227,6 +227,19 @@ extern "C" {
   int get_split_screen_preset() { return g_split_screen_preset; }
 }
 
+// Special controller layouts remap the Dreamcast pad away from its normal
+// per-device buttons for games that play better with a fixed physical
+// layout (e.g. ChuChu Rocket, steered entirely by the D-Pad/D-Pad-like
+// input). Consumed by drkMapleDevices.cpp MapButtons(). 0=off (legacy
+// per-button mapping), 1=CHUCHU (see kSpecialLayoutNames below).
+enum { SPECIAL_LAYOUT_OFF = 0, SPECIAL_LAYOUT_CHUCHU = 1, SPECIAL_LAYOUT_COUNT };
+static const char *kSpecialLayoutNames[SPECIAL_LAYOUT_COUNT] = { "OFF", "CHUCHU ROCKET" };
+int g_special_layout_preset = SPECIAL_LAYOUT_OFF;
+
+extern "C" {
+  int get_special_layout_preset() { return g_special_layout_preset; }
+}
+
 int g_mipmap_preset = 0; // 0=off (legacy base-level-only, fastest), 1=fast (generated GX mip chain + nearest-mip bilinear), 2=trilinear (best quality, halves texture fill rate — e.g. -40% in Test Drive 6)
 
 extern "C" {
@@ -1994,7 +2007,8 @@ bool displayOptionsMenu()
 #define CTRL_PLAYER3    4
 #define CTRL_PLAYER4    5
 #define CTRL_TYPE       6
-#define CTRL_ROW_COUNT  7
+#define CTRL_SPECIAL_LAYOUT 7
+#define CTRL_ROW_COUNT  8
 
 static bool ctrl_row_is_display(int row)
 {
@@ -2137,11 +2151,16 @@ bool displayControlsMenu()
     }
     printf("\n");
 
-    // --- Row 7: Wii U GamePad status (display only) ---
+    // --- Row 7: Special controller layout ---
+    printf("%s SPECIAL LAYOUT  : [< %-20s >]\n",
+           (selectedRow == CTRL_SPECIAL_LAYOUT) ? ">" : " ",
+           kSpecialLayoutNames[g_special_layout_preset]);
+
+    // --- Row 8: Wii U GamePad status (display only) ---
     printf("    WII U GAMEPAD    : %s\n",
            WiiDRC_Inited() ? "[DETECTED]     (drives Player 1)" : "[NOT DETECTED]");
 
-    // --- Row 8: Sixaxis/DualShock3 (USB) status (display only) ---
+    // --- Row 9: Sixaxis/DualShock3 (USB) status (display only) ---
     {
       int ssCount = SS_ConnectedCount();
       if (ssCount > 0)
@@ -2185,6 +2204,7 @@ bool displayControlsMenu()
         case CTRL_PLAYER3: ctrl_cycle_player_mode(2, -1); break;
         case CTRL_PLAYER4: ctrl_cycle_player_mode(3, -1); break;
         case CTRL_TYPE:    g_controller_type = (g_controller_type + kControllerTypeCount - 1) % kControllerTypeCount; break;
+        case CTRL_SPECIAL_LAYOUT: g_special_layout_preset = (g_special_layout_preset + SPECIAL_LAYOUT_COUNT - 1) % SPECIAL_LAYOUT_COUNT; break;
         default: break;
       }
     }
@@ -2196,6 +2216,7 @@ bool displayControlsMenu()
         case CTRL_PLAYER3: ctrl_cycle_player_mode(2, 1); break;
         case CTRL_PLAYER4: ctrl_cycle_player_mode(3, 1); break;
         case CTRL_TYPE:    g_controller_type = (g_controller_type + 1) % kControllerTypeCount; break;
+        case CTRL_SPECIAL_LAYOUT: g_special_layout_preset = (g_special_layout_preset + 1) % SPECIAL_LAYOUT_COUNT; break;
         default: break;
       }
     }
@@ -2685,6 +2706,7 @@ int main(int argc, wchar *argv[])
       printf("Autosort       : OFF (LEGACY)\n");
     printf("Render To Tex  : %s\n", g_render_to_texture_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("Split Screen   : %s\n", g_split_screen_preset ? "ON (2P VIEWPORTS)" : "OFF (LEGACY)");
+    printf("Special Layout : %s\n", kSpecialLayoutNames[g_special_layout_preset]);
     printf("Mipmaps        : ");
     switch (g_mipmap_preset) {
       case 0: printf("OFF (FASTEST)\n");    break;

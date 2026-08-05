@@ -323,6 +323,15 @@
                                 frame once per vblank; off (default, legacy)
                                 presents every pass fullscreen, so only one
                                 player's view shows.
+        layout_chuchu=on    <- on/off, ChuChu Rocket special controller
+                                layout (see main.cpp g_special_layout_preset,
+                                drkMapleDevices.cpp MapButtons()). All players:
+                                Wiimote D-Pad Down/Right/Left/Up -> DC A/B/X/Y
+                                (DC D-Pad unassigned in this mode); GameCube
+                                A/B/X/Y -> DC A/X/B/Y; Classic Controller
+                                keeps its normal by-position mapping (already
+                                the same layout). off (default) restores the
+                                normal per-button mapping.
         audio_buffers=1     <- 0..3 or default/auto/saved, forces
                                 settings.emulator.AudioBuffers (see
                                 nullDC.cpp LoadSettings() and
@@ -391,6 +400,7 @@ extern int g_trans_sort_preset;
 extern int g_autosort_preset;
 extern int g_render_to_texture_preset;
 extern int g_split_screen_preset;
+extern int g_special_layout_preset;
 extern int g_mipmap_preset;
 extern int g_seam_fix_preset;
 extern int g_fixed_depth_preset;
@@ -461,6 +471,7 @@ struct GamePreset
     int autosort;
     int render_to_texture;
     int split_screen;
+    int layout; // -1=not set, 0=SPECIAL_LAYOUT_OFF, 1=SPECIAL_LAYOUT_CHUCHU (see main.cpp)
     int mipmap;
     int seam_fix;
     int fixed_depth;
@@ -731,6 +742,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "autosort"))       p->autosort       = atoi(val);
     else if (key_eq(key, "render_to_texture")) p->render_to_texture = parse_bool(val);
     else if (key_eq(key, "split_screen"))   p->split_screen   = parse_bool(val);
+    else if (key_eq(key, "layout_chuchu"))  { int b = parse_bool(val); if (b >= 0) p->layout = b ? 1 /* SPECIAL_LAYOUT_CHUCHU */ : 0 /* SPECIAL_LAYOUT_OFF */; }
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
     else if (key_eq(key, "seam_fix"))       p->seam_fix       = parse_bool(val);
     else if (key_eq(key, "fixed_depth"))    p->fixed_depth    = atoi(val);
@@ -784,6 +796,7 @@ static void preset_clear(GamePreset* cur)
     cur->autosort = -1;
     cur->render_to_texture = -1;
     cur->split_screen = -1;
+    cur->layout = -1;
     cur->mipmap = -1;
     cur->seam_fix = -1;
     cur->fixed_depth = -1;
@@ -842,6 +855,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->autosort       >= 0) { g_autosort_preset      = p->autosort;        printf("  autosort       -> %d\n", p->autosort);       }
     if (p->render_to_texture >= 0) { g_render_to_texture_preset = p->render_to_texture; printf("  render_to_texture -> %d\n", p->render_to_texture); }
     if (p->split_screen   >= 0) { g_split_screen_preset  = p->split_screen;    printf("  split_screen   -> %d\n", p->split_screen);   }
+    if (p->layout         >= 0) { g_special_layout_preset = p->layout;         printf("  layout_chuchu  -> %d\n", p->layout);         }
     if (p->mipmap         >= 0) { g_mipmap_preset        = p->mipmap;          printf("  mipmap         -> %d\n", p->mipmap);         }
     if (p->seam_fix       >= 0) { g_seam_fix_preset      = p->seam_fix;        printf("  seam_fix       -> %d\n", p->seam_fix);       }
     if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }

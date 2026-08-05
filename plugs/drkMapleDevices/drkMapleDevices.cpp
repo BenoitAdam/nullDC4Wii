@@ -30,6 +30,13 @@
 #include "plugs/libsicksaxis/libsicksaxis/sicksaxis.h" // Sixaxis/DualShock3 (USB)
 #include "dc/dc.h"
 
+// Special controller layout preset, set from the options menu / game presets
+// (see main.cpp g_special_layout_preset). Values must stay in sync with the
+// SPECIAL_LAYOUT_* enum in main.cpp.
+extern "C" int get_special_layout_preset(void);
+#define SPECIAL_LAYOUT_OFF    0
+#define SPECIAL_LAYOUT_CHUCHU 1
+
 // Dreamcast controller button definitions
 #define key_CONT_C          (1 << 0)
 #define key_CONT_B          (1 << 1)
@@ -121,21 +128,68 @@ static void MapButtons(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButt
     // Initialize to all buttons released (bits set = released in Dreamcast format)
     kcode[port] = 0xFFFF;
 
-    // Face buttons - A/B/X/Y
-    // Classic Controller face buttons are mapped by physical position, not label:
-    // Classic B (bottom) = DC A, Classic A (right) = DC B,
-    // Classic Y (left) = DC X, Classic X (top) = DC Y.
-    if (wiiButtons & WPAD_BUTTON_A || gcButtons & PAD_BUTTON_A || classicButtons & WPAD_CLASSIC_BUTTON_B)
+    int specialLayout = get_special_layout_preset();
+
+    // Classic Controller face buttons are always mapped by physical position,
+    // not label: Classic B (bottom) = DC A, Classic A (right) = DC B,
+    // Classic Y (left) = DC X, Classic X (top) = DC Y. This already matches
+    // the ChuChu Rocket layout below, so it needs no per-layout branch.
+    if (classicButtons & WPAD_CLASSIC_BUTTON_B)
         kcode[port] &= ~key_CONT_A;
 
-    if (wiiButtons & WPAD_BUTTON_B || gcButtons & PAD_BUTTON_B || classicButtons & WPAD_CLASSIC_BUTTON_A)
+    if (classicButtons & WPAD_CLASSIC_BUTTON_A)
         kcode[port] &= ~key_CONT_B;
 
-    if (wiiButtons & WPAD_BUTTON_1 || gcButtons & PAD_BUTTON_Y || classicButtons & WPAD_CLASSIC_BUTTON_X)
+    if (classicButtons & WPAD_CLASSIC_BUTTON_X)
         kcode[port] &= ~key_CONT_Y;
 
-    if (wiiButtons & WPAD_BUTTON_2 || gcButtons & PAD_BUTTON_X || classicButtons & WPAD_CLASSIC_BUTTON_Y)
+    if (classicButtons & WPAD_CLASSIC_BUTTON_Y)
         kcode[port] &= ~key_CONT_X;
+
+    if (specialLayout == SPECIAL_LAYOUT_CHUCHU)
+    {
+        // ChuChu Rocket layout: the Wiimote D-Pad drives DC A/B/X/Y directly
+        // (the DC D-Pad itself is unassigned in this mode — see below), and
+        // the GameCube face buttons are rotated one step.
+        if (wiiButtons & WPAD_BUTTON_DOWN)
+            kcode[port] &= ~key_CONT_A;
+
+        if (wiiButtons & WPAD_BUTTON_RIGHT)
+            kcode[port] &= ~key_CONT_B;
+
+        if (wiiButtons & WPAD_BUTTON_LEFT)
+            kcode[port] &= ~key_CONT_X;
+
+        if (wiiButtons & WPAD_BUTTON_UP)
+            kcode[port] &= ~key_CONT_Y;
+
+        if (gcButtons & PAD_BUTTON_A)
+            kcode[port] &= ~key_CONT_A;
+
+        if (gcButtons & PAD_BUTTON_X)
+            kcode[port] &= ~key_CONT_B;
+
+        if (gcButtons & PAD_BUTTON_B)
+            kcode[port] &= ~key_CONT_X;
+
+        if (gcButtons & PAD_BUTTON_Y)
+            kcode[port] &= ~key_CONT_Y;
+    }
+    else
+    {
+        // Face buttons - A/B/X/Y (legacy/default mapping)
+        if (wiiButtons & WPAD_BUTTON_A || gcButtons & PAD_BUTTON_A)
+            kcode[port] &= ~key_CONT_A;
+
+        if (wiiButtons & WPAD_BUTTON_B || gcButtons & PAD_BUTTON_B)
+            kcode[port] &= ~key_CONT_B;
+
+        if (wiiButtons & WPAD_BUTTON_1 || gcButtons & PAD_BUTTON_Y)
+            kcode[port] &= ~key_CONT_Y;
+
+        if (wiiButtons & WPAD_BUTTON_2 || gcButtons & PAD_BUTTON_X)
+            kcode[port] &= ~key_CONT_X;
+    }
 
     // Start button - HOME on Wiimote, START on GameCube, PLUS or HOME on Classic Controller
     if (wiiButtons & WPAD_BUTTON_HOME || gcButtons & PAD_BUTTON_START
@@ -152,18 +206,23 @@ static void MapButtons(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButt
         || classicButtons & (WPAD_CLASSIC_BUTTON_ZR | WPAD_CLASSIC_BUTTON_FULL_R))
         kcode[port] &= ~key_CONT_C;  // Right trigger
 
-    // D-Pad mapping - Wii Remote D-Pad
-    if (wiiButtons & WPAD_BUTTON_UP)
-        kcode[port] &= ~key_CONT_DPAD_UP;
+    // D-Pad mapping - Wii Remote D-Pad. Unassigned under the ChuChu Rocket
+    // layout, where these same physical presses drive the face buttons above
+    // instead (see specialLayout branch).
+    if (specialLayout != SPECIAL_LAYOUT_CHUCHU)
+    {
+        if (wiiButtons & WPAD_BUTTON_UP)
+            kcode[port] &= ~key_CONT_DPAD_UP;
 
-    if (wiiButtons & WPAD_BUTTON_DOWN)
-        kcode[port] &= ~key_CONT_DPAD_DOWN;
+        if (wiiButtons & WPAD_BUTTON_DOWN)
+            kcode[port] &= ~key_CONT_DPAD_DOWN;
 
-    if (wiiButtons & WPAD_BUTTON_LEFT)
-        kcode[port] &= ~key_CONT_DPAD_LEFT;
+        if (wiiButtons & WPAD_BUTTON_LEFT)
+            kcode[port] &= ~key_CONT_DPAD_LEFT;
 
-    if (wiiButtons & WPAD_BUTTON_RIGHT)
-        kcode[port] &= ~key_CONT_DPAD_RIGHT;
+        if (wiiButtons & WPAD_BUTTON_RIGHT)
+            kcode[port] &= ~key_CONT_DPAD_RIGHT;
+    }
 
     // D-Pad mapping - GameCube Controller D-Pad
     if (gcButtons & PAD_BUTTON_UP)
