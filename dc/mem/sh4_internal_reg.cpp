@@ -14,6 +14,7 @@
 #include "_vmem.h"
 #include "mmu.h"
 
+extern "C" int get_debug_loop();
 
 // 64 bytes of store queue buffer (256-byte aligned for hardware compatibility)
 ALIGN(256) u8 sq_both[64];
@@ -416,7 +417,9 @@ T FASTCALL ReadMem_area7(u32 addr)
 			return (T)RegSRead<sz>(CCN, addr & 0xFF);
 		// EMUERROR2("CCN register out of range, addr=0x%x", addr);
 		// printf instead of EMUERROR because tiny freeze otherwise
-		printf("CCN register out of range, addr=0x%x\n", addr);
+    if(get_debug_loop()){
+		  printf("CCN register out of range, addr=0x%x\n", addr);
+    }
 		break;
 
 	case A7_REG_HASH(UBC_BASE_addr):
@@ -537,7 +540,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 		}
 		// EMUERROR2("CCN register out of range, addr=0x%x", addr);
 		// printf instead of EMUERROR because tiny freeze otherwise
-		printf("CCN register out of range, addr=0x%x\n", addr);
+    if(get_debug_loop()){
+		  printf("CCN register out of range, addr=0x%x\n", addr);
+    }
 		break;
 
 	case A7_REG_HASH(UBC_BASE_addr):
@@ -655,7 +660,9 @@ void FASTCALL WriteMem_area7(u32 addr, T data)
 
 	// EMUERROR4("WriteMem_area7 not implemented, addr=0x%x, data=0x%x, sz=%d", addr, (u32)data, sz);
 	// printf instead of EMUERROR because tiny freeze otherwise
-	printf("WriteMem_area7 not implemented, addr=0x%x, data=0x%x, sz=%d\n", addr, (u32)data, sz);
+  if(get_debug_loop()){
+	  printf("WriteMem_area7 not implemented, addr=0x%x, data=0x%x, sz=%d\n", addr, (u32)data, sz);
+  }
 }
 
 
