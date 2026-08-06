@@ -27,12 +27,12 @@ a fork from https://github.com/skmp/nullDCe
 - Custom layout : Chuchu rocket/Quake3 (bith Gamecube & wii)
 - Custom layout : a toggle to make the right analog stick with supported controllers act as buttons X (Left) - Y (Up) - A (Down) - B (Right). This is useful for twin stick shooters that use the diamond button layout for gameplay (like Xeno Crisis).
 - Add a winCE preset to prevent that game isn't supported
-- Check SDHC support
 
 ### Developer (Normal)
 
 - 4/3 support (implemented, need fix on some games like Shenmue)
 - Support for CHD/ELF game file
+- Return to file list
 
 ### Developer (Hard)
 
@@ -83,74 +83,21 @@ Check nullDC.cfg at root
 
 ### Controls
 
-#### Wiimote :
+| Dreamcast | Wiimote | Wiimote (ChuChu Rocket!) | Gamecube | Gamecube (ChuChu Rocket!) |
+| --------- | ------- | ------------------------ | -------- | ------------------------- |
+| A         | A       | down & A                 | A        | A                         |
+| B         | B       | right & B                | B        | X                         |
+| Y         | 1       | up                       | Y        | Y                         |
+| X         | 2       | left                     | X        | B                         |
+| START     | Home    | Home                     | START    | START                     |
+| D-PAD     | D-PAD   | - no implementation -    | D-PAD    | D-PAD                     |
+| STICK     | Nunchuck Stick | Nunchuck Stick    | STICK    | STICK                     |
+| L         | - (and Nunchuck Z) | - (and Nunchuck Z) | L    | L                         |
+| R         | +       | +                        | R        | R                         |
+| To Exit   | - and + | - and +                  | R + L + Z | R + L + Z                |
 
-| Dreamcast | Wiimote |
-| --------- | ------- |
-| A | A |
-| B | B |
-| Y | 1 |
-| X | 2 |
-| START | Home |
-| D-PAD | D-PAD |
-| STICK | Nunchuck Stick |
-| L | - (and Nunchuck Z) |
-| R | + |
-
-To Exit : - and +  
-
-#### Wiimote (Chuchu Rocket!)
-
-Not implemented yes, but soon ! :)
-
-| Dreamcast | Wiimote |
-| --------- | ------- |
-| A | down & A |
-| B | right & B |
-| Y | up |
-| X | left |
-| START | Home|
-| D-PAD | - no implementation - |
-| STICK | Nunchuck Stick |
-| L | - (and Nunchuck Z) |
-| R | + |
-
-To Exit : - and +  
-
-#### Gamecube controller :
-
-| Dreamcast | Gamecube |
-| --------- | -------- |
-| A | A |
-| B | B |
-| Y | Y |
-| X | X |
-| START | START |
-| D-PAD | D-PAD |
-| STICK | STICK |
-| L | L |
-| R | R |
-
-To exit : R + L + Z  
-
-#### Gamecube controller (Chuchu Rocket !) :
-
-Not implemented -
-Need to swap B and X
-
-| Dreamcast | Gamecube |
-| --------- | -------- |
-| A | A |
-| B | X |
-| Y | Y |
-| X | B |
-| START | START |
-| D-PAD | D-PAD |
-| STICK | STICK |
-| L | L |
-| R | R |
-
-To exit : R + L + Z  
+Exit :  
+Press - and + (wiimote) or Press L + R + Z (or L + R + Start)  
 
 
 ### VMU (Memory card)
@@ -160,17 +107,6 @@ It seems to be supported, but 1rst you'll need to format the VMU in the bios
 Files appears at root of /data/ :  
 - vmu_save_A1.bin
 - vmu_save_A2.bin
-
-## Status (10/06/2026)
-
-launch on dolphin an real Wii with FPS between 8 and 50 Fps  
-game selector implemented  
-2 players controler implemented  
-Games tested : See compatibility
-
-Wii Dynarec has been improved & completed by AI. Compile but doesn't run (Black Screen). See /archive folder
-
-https://www.youtube.com/watch?v=Ug8V2XXO52Q
 
 ## Compatibility
 
