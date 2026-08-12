@@ -114,29 +114,33 @@ https://wiibrew.org/wiki/NullDC4Wii/Compatibility
 
 ## Presets
 
-### General
+Presets are grouped in the in-emulator menu across 6 pages. The order below follows that exact same order (Page 1 to Page 6).
+
+### Page 1 : General
 
 #### RATIO
 
-#### SPEED
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **ORIGINAL** | 4/3 pillarbox | Original Dreamcast ratio |
+| **FULLSCREEN (default)** | Stretched to fill screen | Fullscreen |
+| **AUTO** | Picks by console aspect ratio setting (4:3 console → full width, 16:9 console → pillarbox) | Depends on console setting |
+
+#### SPEED LIMITER
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (uncapped)** | Emulator can run above 100% speed | Uncapped |
+| **ON (cap 100%)** | Stops speed exceeding 100% | Capped |
 
 #### SHOW FPS
 
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF** | No overlay | Nothing displayed |
+| **ON** | Displays gameplay FPS and speed overlay | Overlay shown |
 
-####  Cache setting
-
-| Mode | Settings | Rendering | 
-|------|----------| ------------------------- | 
-| **CACHE_VERY_FAST** | skmp original algorythm (magic numbers). Very fast but buggy  | Max FPS |
-| **CACHE_FAST** | Works better  | Almost Max FPS |
-| **CACHE_NORMAL (default)** | Best performance/accuracy. Display mostly correctly | Mid FPS |
-| **CACHE_QUALITY** | Best accuracy. Display correctly | Mid FPS |
-| **CACHE_EXTRA** | Redraw every frame. Accurate (Only for dev & Debug) | Low FPS |
-
-
-### Advanced Graphics
-
-### 🖼️ Graphics Preset
+#### 🖼️ Graphics Preset
 
 | Mode | Settings | Best platform | 
 |------|----------| ------------------------- | 
@@ -152,25 +156,46 @@ The visual difference is limited for NORMAL/HIGH/EXTRA
 - Use LOW for 240p games/modes
 - Use NORMAL for other games
 
+#### TEXTURE CACHE
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **VERY_FAST** | skmp original algorythm (magic numbers). Buggy in most games  | Max FPS |
+| **FAST** | Best performance/accuracy in most case  | Almost Max FPS |
+| **NORMAL (default)** | Display mostly correctly | Good FPS |
+| **QUALITY (SLOW)** | Best accuracy. Display correctly | Mid FPS |
+
+Can have huge FPS impact, try to have the lowest parameter.
+
+#### 4BPP MODE / 8BPP MODE
 
 | Mode (4BPP/8BPP) | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **I4_STUB/I8_STUB** | Dummy algorythm  | Some element doesn't display at all, for max FPS |
-| **OPTIMIZED (defaut)** | Best performance/quality | Very good FPS |
-| **CI4 (FAST)/CI8 (FAST)** | Basic algorythm Display mostly correctly | Very good FPS |
+| **OPTIMIZED** | Served as test, in the end CI4/CI(FAST) is better | Very good FPS |
+| **CI4 (FAST)/CI8 (FAST)** | Best performance/quality | Very good FPS |
 | **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Mid FPS |
-| **RGB565** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
+| **RGB565 (ACCURATE)** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
 
+#### FRAMESKIPPING
 
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **0 (default)** | No frame skipped | Every frame drawn |
+| **1** | Skip 1 frame | Faster, less smooth |
+| **2** | Skip 2 frames | Faster still, less smooth |
+| **AUTO** | Skips frames automatically depending on load | Adaptive |
 
-#### DECAL_ALPHA
+Still on testing, doesn't have the expected effect for now  
 
-| Mode | Settings | Rendering | 
-|------|----------| ------------------------- | 
-| **NO (default)** | no decal alpha  | Not accurate |
-| **YES** | Decal alpha implemented | Accurate |
+#### 2D FRAMEBUFFER
 
-See more : https://github.com/BenoitAdam/nullDC4Wii/issues/68
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **NO (default)** | Disable | Standard rendering |
+| **YES** | Enable 2D framebuffer | Try for 2D games |
+
+Still on testing  
 
 #### ADVANCED_ALPHA
 
@@ -179,38 +204,145 @@ See more : https://github.com/BenoitAdam/nullDC4Wii/issues/68
 | **NO** | basic alpha threathment  | Not accurate |
 | **YES (default)** | additionnal alpha threatment | Near perfect |
 
+Mostly for debug. Should always be on
 
 #### > BLEND_MODE
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
-| **NO** | Disable | Not accurate |
-| **YES (default)** | Activate BLEND_MODE | Accurate |
+| **OFF (LEGACY)** | Disable | Not accurate |
+| **ON (CORRECT) (default)** | Activate BLEND_MODE | Accurate, correct for Resident Evil 3 |
 
 If flickerings, try turning off
 
-note : ADVANCED ALPHA needs to be on for BLEND_MODE
+Note : ADVANCED ALPHA needs to be on for BLEND_MODE
 
 #### >> FPS_BOOST
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
-| **NO (default)** | Disable | Accurate |
-| **YES** | Boost FPS to the cost of wrong Alpha/Transparency | Not Accurate |
+| **OFF (CORRECT) (default)** | Disable | Accurate |
+| **ON (FASTER)** | +2 FPS in BLEND MODE, to the cost of wrong Alpha/Transparency | Not Accurate |
 
 note : ADVANCED ALPHA and BLEND_MODE needs to be on for FPS_BOOST
+
+#### PUNCH THROUGH
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (faster)** | Legacy: PT polys drawn last in TR blend state | Faster, less accurate |
+| **ON (correct)** | OP → PT → TR order + PT_ALPHA_REF alpha test | Correct PT list alpha test |
+
+Needed in lot of games
 
 #### TRANS_SORT
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
-| **NO (default)** | Disable | not Accurate (faster) |
-| **YES** | can display stuff | Accurate |
+| **OFF (default)** | Disable | not Accurate (faster) |
+| **ON** | can display stuff | Accurate |
 
 Can resolve flickering in some games
+Needed in lot of games
 
+#### RENDER TO TEX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (faster)** | RTT frames dropped (legacy) | Faster, mirrors/TV screens missing |
+| **ON (correct)** | EFB copied back into VRAM | Correct mirrors/TV screens |
+
+Needed in some games
+
+#### SPLIT SCREEN
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (faster)** | Every render pass presented fullscreen (legacy) | Faster |
+| **ON (correct)** | Partial-clip passes scissored, presented once per vblank | Correct 2P viewports, e.g. Daytona USA |
+
+Needed for 2 players splitscreen or any 2 camera angle games.
+
+### Page 2 : Graphics
+
+#### FMV FORMAT
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **CMPR (DXT1)** | Compressed format | Use if some movie displays white |
+| **RGBA8** | Uncompressed, full quality | Slower |
+| **RGB565 (default, faster)** | Uncompressed, no alpha | Faster |
+
+#### Vertex Color
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **OFF (grey scale)** | Grey Scale | Grey scale (a tiny bit faster) |
+| **ON (default)** | Intensity color | Accurate |
+
+Color some pixel (Used in Jet Set Radio Future and Crazy Taxi 1/2)
+
+#### DECAL_ALPHA
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **OFF (faster, default)** | no decal alpha  | Not accurate |
+| **ON (correct)** | Decal alpha implemented | Accurate, fixes Crazy Taxi's cars |
+
+See more : https://github.com/BenoitAdam/nullDC4Wii/issues/68
+
+#### SEAM FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (a bit faster)** | Disable | Thin black seam lines between 2D tiles/sprites remain |
+| **ON (default)** | Half-texel UV inset | Fixes black lines between 2D tiles |
+
+Use this or LOW to fix seam lines. See https://github.com/BenoitAdam/nullDC4Wii/issues/18
+
+#### BG POLYGON
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (faster, default)** | v0 color used for EFB clear only, no background quad drawn | Faster |
+| **ON (correct)** | Barycentric-extrapolated background quad drawn | Correct bg gradient/texture, e.g. Who Wants to Be a Millionaire |
+
+#### RGB565 ALPHA
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (fmt0 only, default)** | Only fmt0 (ARGB1555) forced opaque | Correct for POD 2 |
+| **ON (fmt0+fmt1)** | Force opaque for fmt0(ARGB1555)+fmt1(RGB565) | Turn off for POD 2 |
+
+May disapear in a future
+
+#### HOKUTO HACK
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Disable | Standard sort |
+| **ON (TR tier sort)** | Layer-tiered translucent sort | Specific fix for Hokuto no Ken |
+
+Helps determine which what should be front and back trough looking at texture format/properties. For some textures it even check RAM address. Only work for stage 1/2 at the moment
+
+#### JOJO FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF** | Disable | Pre-fix behavior |
+| **ON (default)** | Enable fix | For JoJo's Bizarre Adventure |
+
+Has to be used with CI4_FAST/CI8_FAST to reduce massive FPS drop in battle. May use the same technique in other games.
+
+### Page 3 : Depth & Width
 
 #### DEPTH_CLIP
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | XF Z-clipping on, no near margin | 2D/menus can be invisible on real Wii |
+| **NEAR MARGIN (Wii, default)** | Pads vtx_min_Z 0.1% so the nearest 2D layer can't land exactly on the near clip plane | Recommended for Wii |
+| **NO CLIP (Dolphin)** | Matches Dolphin: out-of-range depth clamps instead of the poly vanishing | Matches Dolphin behavior |
 
 It's basically like FIXED_DEPTH, leave it to NEAR MARGIN
 
@@ -224,13 +356,33 @@ It's basically like FIXED_DEPTH, leave it to NEAR MARGIN
 
 FIXED_DEPTH can help flickering and Z-Fighting
 
-### HUD_PASS
+#### HUD_PASS
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **NO (default)** | -  | Not active |
 | **Overlay** | Help hud to display when FIXED_DEPTH is on TIGHT | accurate |
 | **Protect** | Help hud to display when FIXED_DEPTH is on TIGHT | Perfect |
+Mostly needed if Fixed Depth is set to tight
+
+
+#### X SCALER
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | PVR SCALER_CTL.hscale support disabled | Standard |
+| **ON (default)** | PVR SCALER_CTL.hscale support | ON for Omicron / Wacky Races (render 1280 wide, scaler halves 2:1) |
+
+For Nomad Soul and Wacky Racer. Maybe other games
+
+#### CANVAS WIDTH
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (640, legacy, default)** | Legacy 640 canvas | Standard |
+| **Custom value** | Forces canvas width in 240p modes | e.g. SF3 Double Impact = 384 (the CPS3 arcade width) |
+
+See compatiblity wiki for more info
 
 #### PPZ_WRITE : PER POLYGON Z WRITE
 
@@ -241,77 +393,199 @@ FIXED_DEPTH can help flickering and Z-Fighting
 
 Try putting NO if you experience troubles, with HUD for example.
 
+### Page 4 : Audio
 
-#### Vertex Color
+#### AUDIO BUFFERS
 
-| Mode | Settings | Rendering | 
-|------|----------| ------------------------- | 
-| **NO** | Grey Scale | Grey scale (a tiny bit faster) |
-| **YES** | Intensity color | Accurate |
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **DEFAULT (saved)** | Leaves the value at its cfg/UI setting | Depends on saved config |
+| **0 (never block)** | Never blocks/drops on overrun | Fastest, most likely to drop |
+| **1 / 2** | Blocks until below N queued buffers | More paced |
+| **3 (most paced)** | Most conservative pacing | Most paced, safest |
 
-Color some pixel (Used in Jet Set Radio Future and Crazy Taxi 1/2)
+Put audio buffers = 1 generally leads to good audio. To the cost of FPS unfortunatly.
 
+#### CDDA MUSIC
 
-### Advanced Audio
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF** | CD audio tracks silent | No CD music |
+| **ON (default)** | GD-ROM Red Book audio fed to the AICA mixer | CDDA music plays in games |
 
-ADUIO_BUFFER 
-CDDA = CD audio music on/off  
-Mute PCM = fix for Chuchurocket  
+#### MUTE 16BIT PCM
 
-### Core / Special Hack
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | All AICA sample formats audible | Standard |
+| **ON (silence 16B)** | 16-bit PCM channels silenced at KEY_ON | Fixes ChuChu Rocket's echoey 16-bit SFX (also mutes any other 16-bit music/voices, so game-specific) |
+
+### Page 5 : Core / Special Hack
 
 #### 🧮 Calculation Accuracy Preset
 
 | Mode | Description |
 |------|------------|
-| **FAST** | Maximum FPS (higher frame rate), less loading times |
+| **FAST (default)** | Maximum FPS (higher frame rate), less loading times |
 | **BALANCED** | Good balance between speed and accuracy |
-| **ACCURATE (default)** | Closest behavior to original hardware |
+| **ACCURATE** | Closest behavior to original hardware |
 
 If you experience Freeze in some heavy games like Shenmue, put FAST or BALANCED. FAST may be the default setting in future versions
 
 If you experience various bugs (example that may happens : weird AI controled NPC, weird timing) put ACCURATE
 
----
-
-SH4 Clock = Underclock SH4
-ARM7 SPEED = Underclock ARM
-
-TMEM_CACHE
-
-Hokuto hack = Specific hack for Hokuto No Ken  
-Jojo fix = For Jojo. May help other games  
-
-#### JIT BCACHE & JIT ALIGN
-
-L1/L2 cache related  
-JIT ALIGN = L1/L2 cache related
-
-#### FPU PIN
-
-Floating Point United related
-
 #### ASYNC_RENDER
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
-| **NO (default)** | Disable | 0 frame latency |
-| **YES** | Some CPU stuff are drawn by GPU | Faster, to the cost of 1 frame |
+| **OFF (legacy)** | CPU blocks in GX_DrawDone until the GPU finishes each frame | 0 frame latency |
+| **ON (faster, default)** | Frame queued, presented one vblank later; SH4 emulates while GPU draws | Faster, to the cost of 1 frame input-lag |
 
-ASYNC_RENDER is generally faster, may be defaut yes in future version. Can resolve flickering
+ASYNC_RENDER is generally faster. Can resolve flickering. Works better on real hardware than dolphin
 
-### Experimental/Debug
+#### RENDER DELAY
 
-ISP_DEPTH_FUNC = ???
-ISP_CULL = ???
-AUTOSORT = ???
-SH4 CORE = Interpreter is slow (for debug only)
-DMA FIX = it's about loading CDI/GDI file
-SCHED (ORDER) = it's about loading CDI/GDI file
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (faster, default)** | Legacy: instant list-complete IRQs | Faster |
+| **ON (hw-like)** | Hardware-like staggered ISP/TSP/Video timings | ON for MvC2 and CvSNK |
 
+#### TMEM CACHE
 
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Full GPU texture cache invalidate every frame | Standard |
+| **ON (faster?, default)** | Invalidate only on texture re-decode | Keeps GPU texture cache warm |
 
+Haven't seen any effect but keeping on for now
 
+#### SH4 CLOCK
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **200MHZ (full, default)** | Nominal Dreamcast speed | Full speed |
+| **Underclock (150-200MHz, step 5)** | Lower value = fewer emulated cycles per real second | Lower = faster host, slower game |
+
+Underclocking is supposed to raise FPS. Didn't see any difference
+
+#### ARM7 SPEED
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **10MHZ (default)** | Sound CPU at normal speed | Standard audio |
+| **5MHZ (faster)** | Underclocked sound CPU | Faster, check audio! |
+| **2.5MHZ (risky)** | Heavily underclocked sound CPU | Risky, check audio! |
+
+5 mhz generally works and bring FPS boost
+
+#### JIT SBP
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF** | No stale/self-modified block guard | Fastest, riskiest |
+| **KNOWN (default)** | Guards known self-modifying regions | Balanced |
+| **ALL RAM (slow)** | Guards all RAM | Safest, slowest |
+
+Generally work, no difference
+
+#### FASTMEM
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Standard PPC-MMU memory access | Slower |
+| **ON (faster, default)** | Branchless JIT MMU-mapped memory access | Faster |
+
+Crash observed in Re-Volt when launching a race. Only game that does that for now.
+
+#### JIT BCACHE
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Legacy dynamic-branch dispatch | Standard |
+| **ON (flat)** | Flat, 1-cacheline dynamic jump dispatch | Faster dispatch |
+
+L1/L2 cache related. Can help heavy scene with Fast cache like in Shenmue intro maybe
+
+#### FPU PIN
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | fr0-15 not pinned | Standard |
+| **ON (experimental)** | Pins fr0-15 to real PPC FPU registers f14..f29 | Experimental, Floating Point Unit related |
+
+Can help heavy scene with Fast cache like in Shenmue intro maybe
+
+#### JIT ALIGN
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | No block alignment | Standard |
+| **ON (32B lines)** | Pads every SH4-dynarec block entry to a 32-byte L1 cache line | Better cache hygiene, L1/L2 cache related |
+
+L1/L2 cache related. Can help heavy scene with Fast cache like in Shenmue intro maybe
+
+### Page 6 : Experimental/Debug
+
+These doesn't make any change, or usually worse.
+
+#### MIPMAPS
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (fastest, default)** | No mip chain | Fastest, more shimmer far away |
+| **FAST** | Generated GX mip chain + nearest-mip bilinear | Less shimmer far away |
+| **TRILINEAR (slow)** | Best quality | Best quality, halves texture fill rate (e.g. -40% in Test Drive 6) |
+
+#### OFFSET COLOR
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Offset/specular color dropped | Standard |
+| **ON (correct)** | PIX = base*tex + offset via 2nd TEV stage | Correct specular highlights |
+
+#### ISP_DEPTH_FUNC
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Disable | Standard |
+| **ON (opaque/PT)** | Per-poly depth test on opaque/PT lists | Experimental |
+| **ON (all lists)** | Per-poly depth test on all lists | Experimental |
+
+#### ISP_CULL
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Disable | Standard |
+| **ON** | Per-poly backface cull | Experimental |
+| **ON (swap winding)** | Per-poly backface cull, two cullable windings swapped | Experimental |
+
+#### AUTOSORT
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Disable | Standard |
+| **N layers (slow)** | Real per-pixel PVR autosort via GX depth peeling, N = max translucent depth layers per pixel | Very GPU-heavy (~2 extra TR walks + 2 EFB Z copies per layer) — per-game only |
+
+#### DMA FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Disable | Standard |
+| **ON (default)** | ch2/PVR/Sort/AICA-G2 DMA correctness fixes | Fixes related to loading CDI/GDI file |
+
+#### SCHED (ORDER)
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (cascade, default)** | Legacy cascade scheduling | Standard |
+| **ON (deadline)** | Unified cycle-deadline scheduler | Hardware-order DMA/IRQ completions, related to loading CDI/GDI file (experimental) |
+
+#### SH4 CORE
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **INTERPRETER** | Interpreted SH4 core | Slow, for debugging only |
+| **DYNAREC (default)** | JIT recompiler | Fast |
 
 ### Game Specific Presets
 
@@ -333,7 +607,7 @@ game_presets is a file that reads the file name and directly apply matching pres
 
 game_presets.cfg needs to be in sd:/discs/
 
-With recent version, multiple file names are suppported (up to 8) :
+With recent version, multiple file names are suppported :
 
 ```
 [crazytaxi2][crazy taxi 2] ; more specific first
