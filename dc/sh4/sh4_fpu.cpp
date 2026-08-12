@@ -70,7 +70,7 @@ void iNimp(const char *str);
 #define WriteMemBOU8(addr, offset, data) WriteMemU8(addr + offset, data)
 
 // ============================================================================
-// NaN FIXING - Flycast improvement for better accuracy
+// NaN FIXING - improvement for better accuracy
 // ============================================================================
 
 // Fix NaN values according to SH4 spec
@@ -112,7 +112,7 @@ INLINE void Denorm32(float &value)
   }
 }
 
-// Use fixNaN for better accuracy (Flycast improvement)
+// Use fixNaN for better accuracy (improvement)
 #define CHECK_FPU_32(v) v = fixNaN(v)
 #define CHECK_FPU_64(v) v = fixNaN64(v)
 
@@ -123,7 +123,7 @@ INLINE void Denorm32(float &value)
 #define ENDMODE64()
 
 // ============================================================================
-// HELPER FUNCTIONS FOR DOUBLE PRECISION (Flycast style)
+// HELPER FUNCTIONS FOR DOUBLE PRECISION (style)
 // ============================================================================
 
 static INLINE double getDRn(u32 op)
@@ -563,7 +563,7 @@ sh4op(i1111_nnmm_1110_1101)
 sh4op(i1111_nnnn_1000_1101)
 {
   if (fpscr.PR != 0)
-    return; // Flycast improvement: just return instead of iNimp
+    return; // improvement: just return instead of iNimp
 
   u32 n = GetN(op);
   fr[n] = 0.0f;
@@ -573,7 +573,7 @@ sh4op(i1111_nnnn_1000_1101)
 sh4op(i1111_nnnn_1001_1101)
 {
   if (fpscr.PR != 0)
-    return; // Flycast improvement: just return instead of iNimp
+    return; // improvement: just return instead of iNimp
 
   u32 n = GetN(op);
   fr[n] = 1.0f;
@@ -654,7 +654,7 @@ sh4op(i1111_nnnn_0011_1101)
   {
     u32 n = GetN(op);
 
-    // Flycast improvement: Better NaN handling
+    // improvement: Better NaN handling
     if (isnan(fr[n]))
     {
       fpul = 0x80000000;
@@ -682,7 +682,7 @@ sh4op(i1111_nnnn_0011_1101)
   {
     double d = getDRn(op);
 
-    // Flycast improvement: Better NaN handling for double precision
+    // improvement: Better NaN handling for double precision
     if (isnan(d))
     {
       fpul = 0x80000000;
@@ -712,7 +712,7 @@ sh4op(i1111_nnnn_mmmm_1110)
     u32 m = GetM(op);
 
 #ifdef __cpp_lib_math_special_functions
-    // Flycast improvement: Use FMA if available for better accuracy
+    // improvement: Use FMA if available for better accuracy
     fr[n] = fmaf(fr[0], fr[m], fr[n]);
 #else
     // Fallback: Use double precision for intermediate calculation

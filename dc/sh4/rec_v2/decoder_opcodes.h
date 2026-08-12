@@ -24,7 +24,7 @@ sh4dec(i0111_nnnn_iiii_iiii);
 sh4dec(i0000_0000_0000_1001);
 sh4dec(i1111_0011_1111_1101);
 
-// Additional handlers from Flycast
+// Additional handlers
 sh4dec(i1111_1011_1111_1101);  // frchg
 sh4dec(i0100_nnnn_0010_0100);  // rotcl <REG_N>
 sh4dec(i0100_nnnn_0010_0101);  // rotcr <REG_N>

@@ -620,6 +620,7 @@ NullDC for Xbox360 https://github.com/gligli/nulldc-360
 Reicast : https://github.com/skmp/reicast-emulator  
 Flycast : https://github.com/flyinghead/flycast  
 Deecy : https://github.com/Senryoku/Deecy
+Redream : http://redream.io/
 
 ### Devkitpro
  
@@ -658,7 +659,6 @@ https://www.biteyourconsole.net/2026/05/13/nulldc4wii-alpha-v0-22-porta-il-dream
 - Xale00 (also know as Benoit Adam) - 2026 recompilation
 - gligli (Xbox 360 port)
 - Xeihro (Xiro28 PSP Port)
-- Flyinghead/Flycast Team  
 - AI because this project would have never existed otherwise lol
 - Probably Reicast Team also
 - Welcome to the IA-age guys and good luck everyone.
