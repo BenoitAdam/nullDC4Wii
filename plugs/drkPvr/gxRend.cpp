@@ -136,71 +136,13 @@ extern "C" int get_punch_through_preset();
 #define PUNCH_THROUGH_FIX() (get_punch_through_preset() == 1)
 
 // hokuto_hack preset: layer-tiered translucent sort for games that submit
-// their whole 2D scene at ONE depth. Named after its origin case — Hokuto
-// no Ken sends every TR strip
-// with dm=6 zw=0 at identical W=10000 (only HUD fonts differ, at W=1 =
-// nearest) and relies on PVR per-pixel autosort: a fade quad is even
-// submitted FIRST at W=1, expecting the hardware to composite it last.
-// Drawing in submission order instead lets the mid-list stage-art grid
-// erase the fighters, and that fade quad Z-stamps the frame black. With
-// the preset on, the TRANS_SORT machinery activates (implied — no need for
-// trans_sort=on) and its back-to-front strip sort gains a tie tier at
-// equal depth:
-//   tier 3  untextured full-screen ONE/ZERO plate  background plate, bottom
-//   tier 2  VQ (fmt=2 + VQ_Comp)                   stage art (bottom instead,
-//                                                   whenever tier 3's gate is closed)
-//   tier 1  8bpp bank 32-47 (PalSelect>>4==2)      stage sprites (crowd)
-//   tier 0  everything else                        submission order (painter)
-// So the backdrop lands under the crowd, the crowd under the fighters/HUD,
-// and fades/dim-bands keep plain painter compositing. Within a tier,
-// submission order is preserved — VQ-vs-VQ compositing stays exactly
-// legacy (a low/high VRAM address split was tried and broke the
-// character-select screen by reordering VQ against VQ). No depth-compare
-// tricks: every strip renders with the legacy GEQUAL painter state.
-// SCENE GATE (tier 3 only — tiers 1/2 are unconditional whenever the
-// preset is on, matching pre-gate behavior): tier 3's full-screen plate
-// rule only describes the battle's "truth of retribution" moment (inside
-// a >=80-VQ list). Gating tiers 1/2 too was tried and broke char select
-// and presentation — disabling tier 1 moved crowd-bank content into tier
-// 0, where it could draw over characters that used to sit above it.
-//
-// A tier for "other 8bpp-palette translucent sprites" (any bank != 32-47,
-// real alpha blend) was tried to move HnK's stage-1 debris pile behind the
-// crowd, but that signature also matches the fighting characters — they
-// pulled into the same tier and ended up behind the crowd too. Reverted;
-// the debris pile is still unfixed and needs a narrower signature (its
-// actual palette bank, not yet captured) to scope correctly.
+// their whole 2D scene at ONE depth. 
 extern "C" int get_hokuto_hack_preset();
 #define HOKUTO_HACK() (get_hokuto_hack_preset() == 1)
 
 // hokuto_hack debug: flip to 1, rebuild, and play up to the next stage's
-// battle to capture a [HOKUTO_STAGE] log the same way the stage 1 and 2
-// debris clusters were found (see hokuto_is_debris_tex() below) — logs
-// every tier-2 (VQ) strip's address and screen bbox once every 120 frames
-// while in a >=80-VQ battle scene. Flip back to 0 once captured; left on
-// it'd flood real playthroughs with per-frame printf overhead and log
-// spam for no benefit outside an active investigation.
+// battle to capture a [HOKUTO_STAGE] log the same way of stage 1 and 2
 #define HOKUTO_DEBUG_LOG 0
-
-// Per-polygon ISP depth compare (isp.DepthMode -> GX depth func). This is a
-// DIFFERENT feature from HOKUTO_HACK above (that one is a translucent
-// layer-tier sort; this one honors the polygon's actual DepthMode register).
-// 0 = off (legacy: every poly uses the GEQUAL painter compare)
-// 1 = honor DepthMode on the opaque/PT lists only (translucent stays GEQUAL,
-//     matching real PVR per-pixel autosort, which overrides DepthMode there)
-// 2 = honor DepthMode on every list.
-// DC DepthMode (0=Never .. 7=Always, compared on 1/W with larger=nearer) maps
-// 1:1 onto GX_NEVER..GX_ALWAYS: vertex z holds W and the projection maps
-// near->screen 1 / far->screen 0, so GX screen Z grows toward the viewer
-// exactly like DC 1/W does, preserving the compare direction.
-extern "C" int get_isp_depth_func_preset();
-#define ISP_DEPTH_FUNC() (get_isp_depth_func_preset())
-
-// Per-polygon backface culling (isp.CullMode -> GX cull mode).
-// 0 = off (legacy: never cull), 1 = on, 2 = on with the two cullable windings
-// swapped (use if 1 makes geometry vanish / render inside-out in a game).
-extern "C" int get_isp_cull_preset();
-#define ISP_CULL() (get_isp_cull_preset())
 
 // Offset (specular) color
 extern "C" int get_offset_color_preset();
@@ -283,52 +225,35 @@ extern "C" int get_mipmap_preset();
 #define MIPMAP_FAST()      (get_mipmap_preset() == 1) // Slow
 #define MIPMAP_TRILINEAR() (get_mipmap_preset() == 2) // Slower
 
-// Fixed depth projection: skip the per-vertex min/max W tracking in vert_base
-// and project with fixed near/far planes instead (see DoRender). Saves a few
-// float compares/branches on every single TA vertex; the cost is Z-buffer
-// precision, since the fixed planes must cover the whole possible range
-// instead of hugging the scene like the dynamic tracking does.
+// 1. FIXED DEPTH: Use FIXED_DEPTH_TIGHT (2) for fine Z-precision.
+//    Paired with HUD_PASS (1 or 2), this completely eliminates 3D Z-fighting
+//    without clipping the UI.
 extern "C" int get_fixed_depth_preset();
 #define FIXED_DEPTH_OFF()   (get_fixed_depth_preset() == 0) // legacy dynamic range tracking
 #define FIXED_DEPTH_WIDE()  (get_fixed_depth_preset() == 1) // fixed [0.0001 .. 100000] (safe, coarse Z)
 #define FIXED_DEPTH_TIGHT() (get_fixed_depth_preset() == 2) // fixed [0.1 .. 25000] (finer Z, extremes clip)
 
-// Dolphin does not emulate the XF unit's near/far Z clipping (it depth-clamps
-// instead), so polys whose depth lands on or beyond the projection's near/far
-// planes render fine in Dolphin but are clipped away by a real Wii — the
-// classic "menu/intro shows in Dolphin, invisible on hardware" symptom
-// (Crazy Taxi / ChuChu Rocket menus with FIXED_DEPTH off).
+// 2. DEPTH CLIP: Use DEPTH_CLIP_MARGIN (1) to prevent near-plane clipping
+//    or DEPTH_CLIP_NOCLIP (2) if running on Dolphin.
 extern "C" int get_depth_clip_preset();
 #define DEPTH_CLIP_OFF()    (get_depth_clip_preset() == 0) // legacy: XF clipping on, no near margin
 #define DEPTH_CLIP_MARGIN() (get_depth_clip_preset() == 1) // pad vtx_min_Z by 0.1% so the nearest layer can't sit exactly on the near plane
 #define DEPTH_CLIP_NOCLIP() (get_depth_clip_preset() == 2) // GX_SetClipMode(GX_CLIP_DISABLE): behave like Dolphin, out-of-range Z clamps instead of clipping
 
-// hud_pass preset: rescue the 2D HUD/overlay that FIXED_DEPTH_TIGHT() clips.
-// A tight near plane (W=0.1) buys the 3D scene real Z-buffer precision, but the
-// HUD parks NEARER than that (tiny W) so the XF unit clips it away — the exact
-// "Z-fighting fixed but the HUD vanished" case (Rayman 2, Cannon Spike). This
-// preset finds any strip sitting nearer than the near plane and re-parks those
-// vertices onto the plane itself: each vertex's x,y are W-prescaled in vert_base
-// (screen x = x/W), so scaling x,y AND z by the same factor moves the vertex to
-// the near plane with its screen position bit-identical. The strip then draws
-// with GX_ALWAYS so it clears the tight range and composites on top. Companion
-// to fixed_depth=tight — a pure no-op under dynamic/wide ranges (nothing ever
-// sits past their near plane), costing one min-Z compare per strip. Not applied
-// inside AUTOSORT segments (they own the Z pipeline); a TR HUD under autosort
-// keeps the legacy path.
-//   1 = OVERLAY : GX_ALWAYS, Z-write OFF. The HUD paints on top but claims no
-//                 depth, so geometry drawn AFTER it in the frame (translucent
-//                 effects, a later list) can still paint over it. Safe where a
-//                 large near-clipped quad is drawn EARLY (it won't stamp the
-//                 whole scene's depth), but the HUD may be partly overdrawn.
-//   2 = PROTECT : GX_ALWAYS, Z-write ON at the near plane. Later scene geometry
-//                 (farther) now fails GEQUAL over HUD pixels, so the HUD stays
-//                 on top. Use this when mode 1 leaves polys poking in front of
-//                 the HUD. Trade-off: a FULLSCREEN near-clipped quad drawn early
-//                 would stamp nearest-Z across the screen and hide the scene —
-//                 for such games use mode 1 instead.
+// 3. HUD PASS: Re-parks near-clipped HUD geometry back onto the near plane.
+//    Mode 1 (OVERLAY) = GX_ALWAYS, Z-write OFF (Safest default).
+//    Mode 2 (PROTECT) = GX_ALWAYS, Z-write ON (For HUDs being drawn over).
 extern "C" int get_hud_pass_preset();
 #define HUD_PASS() (get_hud_pass_preset())
+
+// 4. ISP DEPTH FUNC: Set to 1 (Honor DepthMode on Opaque/PT lists) so 3D objects 
+//    respect hardware Z-tests while Translucent objects fall back to PVR autosort.
+extern "C" int get_isp_depth_func_preset();
+#define ISP_DEPTH_FUNC() (get_isp_depth_func_preset())
+
+// 5. PER-POLYGON Z-WRITE: Forces depth updates on depth-tested polygons.
+extern "C" int get_isp_cull_preset();
+#define ISP_CULL() (get_isp_cull_preset())
 
 // Async render: don't block the CPU in GX_DrawDone() at the end of a 3D display
 // frame. The frame is queued with GX_SetDrawDone() and the wait + VIDEO flip
@@ -892,11 +817,6 @@ struct TextureCacheDesc
 // -- CACHE_VERY_FAST: direct nullDC4Wii slot -------------------------------------
 // Slot position = vram_buffer[tex_addr * 2] - O(1), no lookup.
 //
-// NOTE: this fixed mapping assumes a texture's decoded size never exceeds twice
-// the VRAM distance to the next texture's address — false in general (e.g. a
-// small VQ/CI4 source decodes into a much larger RGB565/RGB5A3 buffer), so two
-// unrelated textures can overlap and corrupt each other ("puzzled" textures).
-// CACHE_FAST/CACHE_NORMAL below replace this with a correctly-sized bump allocator instead.
 static INLINE TextureCacheDesc* skimp_slot(u32 tex_addr)
 {
   u32 cache_offset = tex_addr * 2;
@@ -912,8 +832,6 @@ static u32 s_bump_offset = 0;
 static void bump_reset() { s_bump_offset = 0; }
 
 // ── O(1) Hash Map for CACHE_QUALITY bump_find ─────────────────────────────────
-//
-// Replaces the old O(n) linear scan over the bump arena.
 //
 // Layout:
 //   - 512 slots, power-of-two so index = hash & (TEXMAP_SIZE-1).
@@ -1278,77 +1196,112 @@ static f32 CVT16UV(u32 uv)
   return *(f32 *)&uv;
 }
 
-// Primary decoder that translates raw PVR vertex data into the 'Vertex' struct.
-void decode_pvr_vertex(u32 base, u32 ptr, Vertex *cv)
+// ============================================================================
+// OPTIMIZED DEPTH & MAPPER HELPER FUNCTIONS
+// ============================================================================
+
+// Helper: Converts Dreamcast 1/W inverse depth to normalized GX Screen Z [0.0, 1.0]
+static INLINE float TransformDCDepthToGX(float w, float near_plane, float far_plane)
 {
-  ISP_TSP isp;
-  TSP tsp;
-  TCW tcw;
+    // Clamp W to valid bounds
+    if (w < near_plane) w = near_plane;
+    if (w > far_plane)  w = far_plane;
 
-  isp.full = vri(base);
-  tsp.full = vri(base + 4);
-  tcw.full = vri(base + 8);
-  (void)tsp;
-  (void)tcw; // Currently unused but may be needed later
-
-  // Read coordinates: PVR positions are typically already transformed.
-  // XYZ
-  // UV
-  // Base Col
-  // Offset Col
-
-  // XYZ are _allways_ there :)
-  cv->x = vrf(ptr);  ptr += 4;
-  cv->y = vrf(ptr);  ptr += 4;
-  cv->z = vrf(ptr);  ptr += 4;
-
-  // Handle Texture Coordinates (UVs)
-  if (isp.Texture)
-  { // Do texture , if any
-    if (isp.UV_16b)
-    {
-      u32 uv = vri(ptr);
-      cv->u = CVT16UV((u16)uv);
-      cv->v = CVT16UV((u16)(uv >> 16));
-      ptr += 4;
-    }
-    else
-    {
-      cv->u = vrf(ptr);  ptr += 4;
-      cv->v = vrf(ptr);  ptr += 4;
-    }
-  }
-
-  // Handle Vertex Color
-  // Converted to the RGBA8 byte order (R/B swapped from the DC's native
-  // ARGB8888) that the rest of the renderer uses for Vertex::col/spc — see
-  // ABGR8888() and its other callers — so the background path can share the
-  // same interpolation and GX_Color1u32 submission code as regular polys.
-  u32 col = vri(ptr);  ptr += 4;
-  cv->col = ABGR8888(col);
-  cv->spc = 0;
-  if (isp.Offset)
-  {
-    cv->spc = ABGR8888(vri(ptr));  ptr += 4;
-  }
+    // Linear translation from DC 1/W range into GX [0..1] range
+    float z_normalized = (w - near_plane) / (far_plane - near_plane);
+    return z_normalized;
 }
 
+// Global active plane definitions based on active preset
+static float g_near_z = 0.1f;
+static float g_far_z  = 25000.0f;
+
+void UpdateDepthPlanes()
+{
+    if (FIXED_DEPTH_WIDE()) {
+        g_near_z = 0.0001f;
+        g_far_z  = 100000.0f;
+    } else if (FIXED_DEPTH_TIGHT()) {
+        g_near_z = 0.1f;
+        g_far_z  = 25000.0f;
+    }
+}
+
+/*
+
+What You Need to Verify (Potential Caveats)Coordinate Scaling Math: In the snippet, I included this math to snap HUD elements to the near plane:C++float scale = g_near_z / cv->z;
+cv->x *= scale;
+cv->y *= scale;
+cv->z = g_near_z;
+Check this: The Dreamcast Tile Accelerator (TA) usually receives pre-transformed screen-space coordinates. If your backend treats cv->x and cv->y as absolute 2D screen coordinates and bypasses the hardware perspective divide, you do not need to scale cv->x and cv->y. You would only scale them if your specific graphics backend (like the GX unit) is going to divide $X$ and $Y$ by your new $Z$ value later in the pipeline.
+
+*/
+
+// Updated PVR Vertex Decoder Depth Processing
+void decode_pvr_vertex(u32 base, u32 ptr, Vertex *cv)
+{
+    ISP_TSP isp;
+    TSP tsp;
+    TCW tcw;
+
+    isp.full = vri(base);
+    tsp.full = vri(base + 4);
+    tcw.full = vri(base + 8);
+    (void)tsp;
+    (void)tcw;
+
+    // Fetch coordinates
+    cv->x = vrf(ptr); ptr += 4;
+    cv->y = vrf(ptr); ptr += 4;
+    cv->z = vrf(ptr); ptr += 4; // Raw DC 'W' coordinate
+
+    // Track dynamic bounds if FIXED_DEPTH is OFF
+    if (!g_fixed_depth_cached) {
+        if (cv->z < vtx_min_Z) vtx_min_Z = cv->z;
+        if (cv->z > vtx_max_Z) vtx_max_Z = cv->z;
+    } else {
+        // Apply Margin Padding if enabled to prevent edge-case near plane clipping
+        if (DEPTH_CLIP_MARGIN() && cv->z < g_near_z) {
+            if (HUD_PASS() != 0) {
+                // Prescale screen coords and push W directly onto the near plane
+                float scale = g_near_z / cv->z;
+                cv->x *= scale;
+                cv->y *= scale;
+                cv->z = g_near_z;
+            }
+        }
+    }
+
+    // Process Texture Coordinates (UVs)
+    if (isp.Texture) {
+        if (isp.UV_16b) {
+            u32 uv = vri(ptr);
+            cv->u = CVT16UV((u16)uv);
+            cv->v = CVT16UV((u16)(uv >> 16));
+            ptr += 4;
+        } else {
+            cv->u = vrf(ptr); ptr += 4;
+            cv->v = vrf(ptr); ptr += 4;
+        }
+    }
+
+    // Process Colors
+    u32 col = vri(ptr); ptr += 4;
+    cv->col = ABGR8888(col);
+    cv->spc = 0;
+    if (isp.Offset) {
+        cv->spc = ABGR8888(vri(ptr)); ptr += 4;
+    }
+}
 // Interpolates a scalar attribute using barycentric weights that were derived
-// from the 3 background vertices — the weights are affine in (x,y), so this
-// also produces the correct value when the query point (a screen corner) lies
-// outside the original triangle, matching how the PVR2 rasterizer treats the
-// background "triangle" as an infinite plane rather than a clipped shape.
+// from the 3 background vertices
 static INLINE f32 bg_lerp_f32(f32 a0, f32 a1, f32 a2, f32 w0, f32 w1, f32 w2)
 {
   return a0 * w0 + a1 * w1 + a2 * w2;
 }
 
 // Interpolates a packed 8/8/8/8 color component-wise (byte order doesn't
-// matter as long as all 3 inputs share it — see bg_lerp_f32). Each channel is
-// clamped because a screen corner extrapolated outside the source triangle
-// can otherwise under/overshoot past 0/255. force_opaque_alpha implements
-// TSP.UseAlpha==0: real hardware forces vertex alpha to 1.0 in that case so it
-// can never zero out a modulated texture's alpha.
+// matter as long as all 3 inputs share it — see bg_lerp_f32).
 static u32 bg_lerp_color(u32 c0, u32 c1, u32 c2, f32 w0, f32 w1, f32 w2, bool force_opaque_alpha)
 {
   u32 out = 0;
