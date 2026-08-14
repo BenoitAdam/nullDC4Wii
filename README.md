@@ -27,6 +27,7 @@ a fork from https://github.com/skmp/nullDCe
 - Custom layout : Chuchu rocket/Quake3 (bith Gamecube & wii)
 - Custom layout : a toggle to make the right analog stick with supported controllers act as buttons X (Left) - Y (Up) - A (Down) - B (Right). This is useful for twin stick shooters that use the diamond button layout for gameplay (like Xeno Crisis).
 - Add a winCE preset to prevent that game isn't supported
+- check fps_boost preset matching from cfg, seems not working
 
 ### Developer (Normal)
 
@@ -880,7 +881,7 @@ It's ok, you have the right, but without AI this project wouldn't have been resu
 
 Reduce CO2 emission & grow trees is the plan for the planet. Also prevent stupid people throwing their cigarett butt & firmly condemn pyromaniacs.
 
-### do you have a discord ?
+### Do you have a discord ?
 
 Yes : https://discord.gg/fZzxdeXrZ
 
