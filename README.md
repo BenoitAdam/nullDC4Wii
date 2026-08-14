@@ -32,7 +32,8 @@ a fork from https://github.com/skmp/nullDCe
 
 - 4/3 support (implemented, need fix on some games like Shenmue)
 - Support for CHD/ELF game file
-- Return to file list
+- Return to file list (instead return to homebrew menu)
+- Synchronise Dreamcast clock to Wii's clock
 
 ### Developer (Hard)
 
