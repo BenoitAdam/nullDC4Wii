@@ -545,6 +545,9 @@ These doesn't make any change, or usually worse.
 | **OFF (legacy, default)** | Offset/specular color dropped | Standard |
 | **ON (correct)** | PIX = base*tex + offset via 2nd TEV stage | Correct specular highlights |
 
+May cause white surface on some games (ie = berserk, Tokyo highway challenge...)  
+May fix black surface on some games (ie = sega worldwide soccer)  
+
 #### ISP_DEPTH_FUNC
 
 | Mode | Settings | Rendering |
