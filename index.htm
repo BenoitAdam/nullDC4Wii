@@ -178,6 +178,47 @@
     width:fit-content;
   }
 
+  .top-bar{
+    background:var(--navy-card);
+    border-bottom:2px solid var(--vmu-orange);
+    padding:26px 0;
+  }
+  .top-bar .wrap{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:34px;
+    flex-wrap:wrap;
+  }
+  .top-bar .label{
+    font-family:'Press Start 2P', monospace;
+    font-size:0.95rem;
+    color:var(--vmu-orange);
+    letter-spacing:0.06em;
+    width:100%;
+    text-align:center;
+    margin-bottom:6px;
+  }
+  .top-bar a{
+    color:var(--paper);
+    text-decoration:none;
+    font-size:1.15rem;
+    font-weight:700;
+    display:inline-flex;
+    align-items:center;
+    gap:9px;
+    padding:10px 18px;
+    border:2px solid var(--line);
+    border-radius:8px;
+    transition:all .15s ease;
+  }
+  .top-bar a:hover{
+    color:var(--navy-deep);
+    background:var(--cyan-disc);
+    border-color:var(--cyan-disc);
+    transform:translateY(-2px);
+  }
+
   footer{
     padding:40px 0 60px;
     text-align:center;
@@ -187,6 +228,16 @@
 </style>
 </head>
 <body>
+
+  <div class="top-bar">
+    <div class="wrap">
+      <span class="label">Support NullDC4Wii</span>
+      <a href="https://buymeacoffee.com/nulldc4wii" target="_blank" rel="noopener">☕ Buy Me a Coffee</a>
+      <a href="https://www.patreon.com/cw/NullDC4Wii" target="_blank" rel="noopener">🎮 Patreon</a>
+      <a href="https://www.paypal.com/ncp/payment/2NE7AYS77K6AJ" target="_blank" rel="noopener">💳 PayPal</a>
+    </div>
+  </div>
+
 
   <section class="hero">
     <div class="wrap">
@@ -199,6 +250,8 @@
       </div>
     </div>
   </section>
+
+
 
   <section id="download">
     <div class="wrap">
@@ -226,13 +279,15 @@
     </div>
   </section>
 
+
+
   <section id="donate">
     <div class="wrap">
       <div class="section-head">
         <span class="eyebrow">03 — Donations</span>
         <h2>Keep the disc spinning</h2>
       </div>
-      <p class="give-lede">NullDC4Wii is built and maintained by volunteers developers, on nights and weekends. Every donation means "thank you for the already accomplished job", and also goes straight back into debugging time, hardware for testing, and the occasional game that just refuses to boot right.</p>
+      <p class="give-lede">NullDC4Wii is built and maintained solo, on nights and weekends. Every donation goes straight back into debugging time, hardware for testing, and the occasional game that just refuses to boot right.</p>
 
       <div class="cards">
         <div class="card">
