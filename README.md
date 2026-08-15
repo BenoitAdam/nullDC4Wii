@@ -892,11 +892,12 @@ Yes : https://discord.gg/fZzxdeXrZ
 
 Yes ! Initially I was against donation but spending this much time & effort (and sometimes money) to this project led me to ask for donation. Not trying to getting rich, just staying afloat.
 
-#### Buy Me a Coffee
+#### Buy Me a Coffee / Ko-Fi
 
-This is very popular amongst small dev project, here is the link :  
+This is very popular amongst small dev project, I don't know what's the difference or if some people would prefer one over the other one, anyway here are the links : 
 
-https://buymeacoffee.com/nulldc4wii
+- https://buymeacoffee.com/nulldc4wii
+- https://ko-fi.com/nulldc4wii
 
 #### Patreon
 
