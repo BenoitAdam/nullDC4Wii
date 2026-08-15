@@ -888,6 +888,28 @@ Reduce CO2 emission & grow trees is the plan for the planet. Also prevent stupid
 
 Yes : https://discord.gg/fZzxdeXrZ
 
+### Do you accept donation ?
+
+Yes ! Initially I was against donation but spending this much time & effort (and sometimes money) to this project led me to ask for donation. Not trying to getting rich, just staying afloat.
+
+#### Buy Me a Coffee
+
+This is very popular amongst small dev project, here is the link :  
+
+https://buymeacoffee.com/nulldc4wii
+
+#### Patreon
+
+The classic "Patreon" subscribing is here :
+
+https://www.patreon.com/cw/NullDC4Wii
+
+#### Paypal
+
+For those used to Paypal, the link is here :
+https://www.paypal.com/ncp/payment/2NE7AYS77K6AJ
+
+
 ## Ressources
 
 ### Dreamcast Emulators 
