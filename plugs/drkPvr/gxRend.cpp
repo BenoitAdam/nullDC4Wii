@@ -1227,6 +1227,61 @@ void UpdateDepthPlanes()
     }
 }
 
+// Primary decoder that translates raw PVR vertex data into the 'Vertex' struct.
+void decode_pvr_vertex(u32 base, u32 ptr, Vertex *cv)
+{
+  ISP_TSP isp;
+  TSP tsp;
+  TCW tcw;
+
+  isp.full = vri(base);
+  tsp.full = vri(base + 4);
+  tcw.full = vri(base + 8);
+  (void)tsp;
+  (void)tcw; // Currently unused but may be needed later
+
+  // Read coordinates: PVR positions are typically already transformed.
+  // XYZ
+  // UV
+  // Base Col
+  // Offset Col
+
+  // XYZ are _allways_ there :)
+  cv->x = vrf(ptr);  ptr += 4;
+  cv->y = vrf(ptr);  ptr += 4;
+  cv->z = vrf(ptr);  ptr += 4;
+
+  // Handle Texture Coordinates (UVs)
+  if (isp.Texture)
+  { // Do texture , if any
+    if (isp.UV_16b)
+    {
+      u32 uv = vri(ptr);
+      cv->u = CVT16UV((u16)uv);
+      cv->v = CVT16UV((u16)(uv >> 16));
+      ptr += 4;
+    }
+    else
+    {
+      cv->u = vrf(ptr);  ptr += 4;
+      cv->v = vrf(ptr);  ptr += 4;
+    }
+  }
+
+  // Handle Vertex Color
+  // Converted to the RGBA8 byte order (R/B swapped from the DC's native
+  // ARGB8888) that the rest of the renderer uses for Vertex::col/spc — see
+  // ABGR8888() and its other callers — so the background path can share the
+  // same interpolation and GX_Color1u32 submission code as regular polys.
+  u32 col = vri(ptr);  ptr += 4;
+  cv->col = ABGR8888(col);
+  cv->spc = 0;
+  if (isp.Offset)
+  {
+    cv->spc = ABGR8888(vri(ptr));  ptr += 4;
+  }
+}
+
 /*
 
 What You Need to Verify (Potential Caveats)Coordinate Scaling Math: In the snippet, I included this math to snap HUD elements to the near plane:C++float scale = g_near_z / cv->z;
@@ -1237,7 +1292,8 @@ Check this: The Dreamcast Tile Accelerator (TA) usually receives pre-transformed
 
 */
 
-// Updated PVR Vertex Decoder Depth Processing
+// Updated PVR Vertex Decoder Depth Processing (seems to make a regression in MSR : Z-fighting)
+/*
 void decode_pvr_vertex(u32 base, u32 ptr, Vertex *cv)
 {
     ISP_TSP isp;
@@ -1293,6 +1349,8 @@ void decode_pvr_vertex(u32 base, u32 ptr, Vertex *cv)
         cv->spc = ABGR8888(vri(ptr)); ptr += 4;
     }
 }
+*/
+
 // Interpolates a scalar attribute using barycentric weights that were derived
 // from the 3 background vertices
 static INLINE f32 bg_lerp_f32(f32 a0, f32 a1, f32 a2, f32 w0, f32 w1, f32 w2)
