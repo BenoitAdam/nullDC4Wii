@@ -27,12 +27,14 @@ a fork from https://github.com/skmp/nullDCe
 - Custom layout : Chuchu rocket/Quake3 (bith Gamecube & wii)
 - Custom layout : a toggle to make the right analog stick with supported controllers act as buttons X (Left) - Y (Up) - A (Down) - B (Right). This is useful for twin stick shooters that use the diamond button layout for gameplay (like Xeno Crisis).
 - Add a winCE preset to prevent that game isn't supported
+- check fps_boost preset matching from cfg, seems not working
 
 ### Developer (Normal)
 
 - 4/3 support (implemented, need fix on some games like Shenmue)
 - Support for CHD/ELF game file
-- Return to file list
+- Return to file list (instead return to homebrew menu)
+- Synchronise Dreamcast clock to Wii's clock
 
 ### Developer (Hard)
 
@@ -543,6 +545,9 @@ These doesn't make any change, or usually worse.
 | **OFF (legacy, default)** | Offset/specular color dropped | Standard |
 | **ON (correct)** | PIX = base*tex + offset via 2nd TEV stage | Correct specular highlights |
 
+May cause white surface on some games (ie = berserk, Tokyo highway challenge...)  
+May fix black surface on some games (ie = sega worldwide soccer)  
+
 #### ISP_DEPTH_FUNC
 
 | Mode | Settings | Rendering |
@@ -879,9 +884,32 @@ It's ok, you have the right, but without AI this project wouldn't have been resu
 
 Reduce CO2 emission & grow trees is the plan for the planet. Also prevent stupid people throwing their cigarett butt & firmly condemn pyromaniacs.
 
-### do you have a discord ?
+### Do you have a discord ?
 
 Yes : https://discord.gg/fZzxdeXrZ
+
+### Do you accept donation ?
+
+Yes ! Initially I was against donation but spending this much time & effort (and sometimes money) to this project led me to ask for donation. Not trying to getting rich, just staying afloat.
+
+#### Buy Me a Coffee / Ko-Fi
+
+This is very popular amongst small dev project, I don't know what's the difference or if some people would prefer one over the other one, anyway here are the links : 
+
+- https://buymeacoffee.com/nulldc4wii
+- https://ko-fi.com/nulldc4wii
+
+#### Patreon
+
+The classic "Patreon" subscribing is here :
+
+https://www.patreon.com/cw/NullDC4Wii
+
+#### Paypal
+
+For those used to Paypal, the link is here :
+https://www.paypal.com/ncp/payment/2NE7AYS77K6AJ
+
 
 ## Ressources
 
