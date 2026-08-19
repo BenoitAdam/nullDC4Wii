@@ -35,6 +35,8 @@ a fork from https://github.com/skmp/nullDCe
 - Support for CHD/ELF game file
 - Return to file list (instead return to homebrew menu)
 - Synchronise Dreamcast clock to Wii's clock
+- Get RGB565_opaque_alpha AUTO mode
+- Get Offset color AUTO mode
 
 ### Developer (Hard)
 
