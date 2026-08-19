@@ -1066,13 +1066,13 @@ void displayAccuracyMenu()
 
 // --- Page 3: accuracy / experimental presets ---
 #define OPT_ACCURACY    33
-#define OPT_HOKUTO_HACK 34
+#define OPT_HOKUTO_HACK 34 // now shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_JOJO_FIX    35
 #define OPT_RGB565_OPAQUE_ALPHA 36
 #define OPT_PPZ_WRITE   37
-#define OPT_ISP_DEPTH_FUNC 38
-#define OPT_ISP_CULL    39
-#define OPT_AUTOSORT    40
+#define OPT_ISP_DEPTH_FUNC 38 // now shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
+#define OPT_ISP_CULL    39    // now shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
+#define OPT_AUTOSORT    40    // now shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_RENDER_DELAY 41
 #define OPT_SHOW_FPS    42
 #define OPT_ARM7_SPEED  43
@@ -1134,7 +1134,6 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_SEAM_FIX,
   OPT_BG_POLY,
   OPT_RGB565_OPAQUE_ALPHA,
-  OPT_HOKUTO_HACK,
   OPT_JOJO_FIX
 };
 
@@ -1144,6 +1143,10 @@ static const int OPT_PAGE2_ROWS[] = {
   OPT_DEPTH_CLIP,
   OPT_FIXED_DEPTH,
   OPT_HUD_PASS,
+  OPT_ISP_DEPTH_FUNC,
+  OPT_ISP_CULL,
+  OPT_AUTOSORT,
+  OPT_HOKUTO_HACK,
   OPT_X_SCALER,
   OPT_CANVAS_WIDTH,
   OPT_PPZ_WRITE
@@ -1178,9 +1181,6 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_LAUNCH,
   OPT_MIPMAP,
   OPT_OFFSET_COLOR,
-  OPT_ISP_DEPTH_FUNC,
-  OPT_ISP_CULL,
-  OPT_AUTOSORT,
   OPT_DMA_FIX,
   OPT_SCHED,
   OPT_DYNAREC
@@ -1498,15 +1498,6 @@ bool displayOptionsMenu()
     printf(" OFF for POD2");
     printf("\n");
 
-    // --- Row: Hokuto Hack (layer-tiered translucent sort) ---
-    printf("%s HOKUTO HACK    : ", (selectedRow == OPT_HOKUTO_HACK) ? ">" : " ");
-    switch (g_hokuto_hack_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (TR TIER SORT) >]"); break;
-    }
-    printf(" ON for Hokuto no Ken (Specific)");
-    printf("\n");
-
     // --- Row: Jojo Fix ---
     printf("%s JOJO FIX       : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
     switch (g_jojo_fix_preset) {
@@ -1548,6 +1539,44 @@ bool displayOptionsMenu()
       case 2: printf("[< PROTECT (Z-WRITE) >]"); break;
     }
     printf(" HUD back w/ FIXED DEPTH=TIGHT");
+    printf("\n\n");
+
+    // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
+    printf("%s ISP DEPTH FUNC : ", (selectedRow == OPT_ISP_DEPTH_FUNC) ? ">" : " ");
+    switch (g_isp_depth_func_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (OPAQUE/PT)    >]"); break;
+      case 2: printf("[< ON (ALL LISTS)    >]"); break;
+    }
+    printf(" per-poly depth test (experimental)");
+    printf("\n");
+
+    // --- Row: Per-poly ISP backface cull (isp.CullMode) ---
+    printf("%s ISP CULL       : ", (selectedRow == OPT_ISP_CULL) ? ">" : " ");
+    switch (g_isp_cull_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON                >]"); break;
+      case 2: printf("[< ON (SWAP WINDING) >]"); break;
+    }
+    printf(" backface culling (experimental)");
+    printf("\n");
+
+    // --- Row: Per-pixel autosort (depth peeling) ---
+    printf("%s AUTOSORT       : ", (selectedRow == OPT_AUTOSORT) ? ">" : " ");
+    if (g_autosort_preset <= 0)
+      printf("[< OFF (LEGACY)      >]");
+    else
+      printf("[< %d LAYERS (SLOW)   >]", g_autosort_preset);
+    printf(" real per-pixel TR sort");
+    printf("\n");
+
+    // --- Row: Hokuto Hack (layer-tiered translucent sort) ---
+    printf("%s HOKUTO HACK    : ", (selectedRow == OPT_HOKUTO_HACK) ? ">" : " ");
+    switch (g_hokuto_hack_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (TR TIER SORT) >]"); break;
+    }
+    printf(" ON for Hokuto no Ken (Specific)");
     printf("\n\n");
 
     // --- Row: PVR horizontal X-Scaler ---
@@ -1737,35 +1766,6 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
     printf(" specular highlights");
-    printf("\n");
-
-    // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
-    printf("%s ISP DEPTH FUNC : ", (selectedRow == OPT_ISP_DEPTH_FUNC) ? ">" : " ");
-    switch (g_isp_depth_func_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (OPAQUE/PT)    >]"); break;
-      case 2: printf("[< ON (ALL LISTS)    >]"); break;
-    }
-    printf(" per-poly depth test (experimental)");
-    printf("\n");
-
-    // --- Row: Per-poly ISP backface cull (isp.CullMode) ---
-    printf("%s ISP CULL       : ", (selectedRow == OPT_ISP_CULL) ? ">" : " ");
-    switch (g_isp_cull_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON                >]"); break;
-      case 2: printf("[< ON (SWAP WINDING) >]"); break;
-    }
-    printf(" backface culling (experimental)");
-    printf("\n");
-
-    // --- Row: Per-pixel autosort (depth peeling) ---
-    printf("%s AUTOSORT       : ", (selectedRow == OPT_AUTOSORT) ? ">" : " ");
-    if (g_autosort_preset <= 0)
-      printf("[< OFF (LEGACY)      >]");
-    else
-      printf("[< %d LAYERS (SLOW)   >]", g_autosort_preset);
-    printf(" real per-pixel TR sort");
     printf("\n");
 
     // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
