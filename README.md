@@ -160,6 +160,8 @@ The visual difference is limited for NORMAL/HIGH/EXTRA
 - Use LOW for 240p games/modes
 - Use NORMAL for other games
 
+Important note : LOW can cause Z-Fighting (example in jet set radio, see https://github.com/BenoitAdam/nullDC4Wii/issues/115)
+
 #### TEXTURE CACHE
 
 | Mode | Settings | Rendering | 
