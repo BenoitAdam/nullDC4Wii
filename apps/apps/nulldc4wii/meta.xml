@@ -3,14 +3,7 @@
   <name>NullDC4Wii alpha 0.63</name>
   <coder>Xale00, Skmp, NulldcTeam, Joseph Jordan, Team, AI</coder>
   <version>alpha 0.63</version>
-<<<<<<< HEAD
-<<<<<<< HEAD
   <release_date>20262108</release_date>
-=======
-=======
->>>>>>> 74d974893a8ebd07d190eb80f9889aef68df897d
-  <release_date>20260706</release_date>
->>>>>>> 74d974893a8ebd07d190eb80f9889aef68df897d
   <short_description>Dreamcast Emulator (Experimental)</short_description> 
   <long_description>NullDC4Wii is an attempt to port NullDC for Wii.
   More info :
