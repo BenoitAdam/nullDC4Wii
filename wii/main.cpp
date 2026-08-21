@@ -1545,7 +1545,11 @@ bool displayOptionsMenu()
     // --- Row: legacy (1bb8c27) depth pipeline ---
     printf("%s LEGACY DEPTH   : ", (selectedRow == OPT_LEGACY_DEPTH) ? ">" : " ");
 <<<<<<< HEAD
+<<<<<<< HEAD
     printf(g_legacy_depth_preset ? "[< ON                >]" : "[< OFF (DEFAULT)     >]");
+=======
+    printf(g_legacy_depth_preset ? "[< ON (1bb8c27)      >]" : "[< OFF               >]");
+>>>>>>> 74d974893a8ebd07d190eb80f9889aef68df897d
 =======
     printf(g_legacy_depth_preset ? "[< ON (1bb8c27)      >]" : "[< OFF               >]");
 >>>>>>> 74d974893a8ebd07d190eb80f9889aef68df897d
