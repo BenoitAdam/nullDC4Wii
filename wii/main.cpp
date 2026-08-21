@@ -1152,24 +1152,25 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_SEAM_FIX,
   OPT_BG_POLY,
   OPT_RGB565_OPAQUE_ALPHA,
-  OPT_JOJO_FIX
+  OPT_JOJO_FIX,
+  OPT_OFFSET_COLOR
 };
 
 // Page 2 - DEPTH & WIDTH
 static const int OPT_PAGE2_ROWS[] = {
   OPT_LAUNCH,
+  OPT_LEGACY_DEPTH,
   OPT_DEPTH_CLIP,
   OPT_FIXED_DEPTH,
-  OPT_LEGACY_DEPTH,
   OPT_HUD_PASS,
   OPT_SUBPASS_ZCLEAR,
+  OPT_PPZ_WRITE,
   OPT_ISP_DEPTH_FUNC,
   OPT_ISP_CULL,
   OPT_AUTOSORT,
   OPT_HOKUTO_HACK,
   OPT_X_SCALER,
   OPT_CANVAS_WIDTH,
-  OPT_PPZ_WRITE,
   OPT_POLY_OFFSET
 };
 
@@ -1201,7 +1202,6 @@ static const int OPT_PAGE4_ROWS[] = {
 static const int OPT_PAGE5_ROWS[] = {
   OPT_LAUNCH,
   OPT_MIPMAP,
-  OPT_OFFSET_COLOR,
   OPT_DMA_FIX,
   OPT_SCHED,
   OPT_DYNAREC
@@ -1257,7 +1257,7 @@ static void printOptionsFooter(void)
 {
   int cols, rows;
   CON_GetMetrics(&cols, &rows);
-  printf("\033[%d;1H1-Y: Previous | 2+X: Next | HOME: More Info | alpha 0.62", rows);
+  printf("\033[%d;1H1-Y: Previous | 2+X: Next | HOME: More Info | alpha 0.63", rows);
 }
 
 bool displayOptionsMenu()
@@ -1396,7 +1396,7 @@ bool displayOptionsMenu()
       case 0: printf("[< NO                >]"); break;
       case 1: printf("[< YES               >]"); break;
     }
-    printf(" Try for 2D games");
+    printf(" Can improve CACHE_VERY_FAST");
     printf("\n");
 
     // --- Row: Advanced Alpha ---
@@ -1527,12 +1527,27 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (DEFAULT)      >]"); break;
     }
     printf(" for JoJo's Bizarre Adventure");
+    printf("\n");
+
+    // --- Row: Offset (specular) color ---
+    printf("%s OFFSET COLOR   : ", (selectedRow == OPT_OFFSET_COLOR) ? ">" : " ");
+    switch (g_offset_color_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" SPECULAR : OFF if all white");
     printf("\n\n");
 
     printOptionsFooter();
     } // end page 1
 
     if (optionsPage == 2) {
+    // --- Row: legacy (1bb8c27) depth pipeline ---
+    printf("%s LEGACY DEPTH   : ", (selectedRow == OPT_LEGACY_DEPTH) ? ">" : " ");
+    printf(g_legacy_depth_preset ? "[< ON (1bb8c27)      >]" : "[< OFF               >]");
+    printf(" Overrides FIXED DEPTH");
+    printf("\n");
+
     // --- Row: Depth clip behaviour ---
     printf("%s DEPTH CLIP     : ", (selectedRow == OPT_DEPTH_CLIP) ? ">" : " ");
     switch (g_depth_clip_preset) {
@@ -1553,12 +1568,6 @@ bool displayOptionsMenu()
     printf(" fixed near/far planes. Z-Fighting");
     printf("\n");
 
-    // --- Row: legacy (1bb8c27) depth pipeline ---
-    printf("%s LEGACY DEPTH   : ", (selectedRow == OPT_LEGACY_DEPTH) ? ">" : " ");
-    printf(g_legacy_depth_preset ? "[< ON (1bb8c27)      >]" : "[< OFF               >]");
-    printf(" known-good depth. Overrides ^");
-    printf("\n");
-
     // --- Row: HUD pass (rescue HUD clipped by fixed_depth=tight) ---
     printf("%s HUD PASS       : ", (selectedRow == OPT_HUD_PASS) ? ">" : " ");
     switch (g_hud_pass_preset) {
@@ -1576,7 +1585,16 @@ bool displayOptionsMenu()
       case 1: printf("[< ON                >]"); break;
     }
     printf(" re-park Z before HUD PASS");
-    printf("\n\n");
+    printf("\n");
+
+    // --- Row: PPZ Write ---
+    printf("%s PPZ_WRITE      : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
+    switch (g_ppz_write_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" OFF to fix black remanence");
+    printf("\n");
 
     // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
     printf("%s ISP DEPTH FUNC : ", (selectedRow == OPT_ISP_DEPTH_FUNC) ? ">" : " ");
@@ -1596,7 +1614,7 @@ bool displayOptionsMenu()
       case 2: printf("[< ON (SWAP WINDING) >]"); break;
     }
     printf(" backface culling (experimental)");
-    printf("\n");
+    printf("\n\n");
 
     // --- Row: Per-pixel autosort (depth peeling) ---
     printf("%s AUTOSORT       : ", (selectedRow == OPT_AUTOSORT) ? ">" : " ");
@@ -1632,15 +1650,6 @@ bool displayOptionsMenu()
     else
       printf("[< %-4d              >]", g_canvas_width_preset);
     printf(" SF3 double impact=384");
-    printf("\n");
-
-    // --- Row: PPZ Write ---
-    printf("%s PPZ_WRITE      : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
-    switch (g_ppz_write_preset) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (DEFAULT)      >]"); break;
-    }
-    printf(" OFF to fix black remanence");
     printf("\n\n");
 
     // --- Row: Native polygon offset (Z-texture bias, PT list) ---
@@ -1806,15 +1815,6 @@ bool displayOptionsMenu()
       case 2: printf("[< TRILINEAR (SLOW)  >]"); break;
     }
     printf(" less shimmer far away");
-    printf("\n");
-
-    // --- Row: Offset (specular) color ---
-    printf("%s OFFSET COLOR   : ", (selectedRow == OPT_OFFSET_COLOR) ? ">" : " ");
-    switch (g_offset_color_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (CORRECT)      >]"); break;
-    }
-    printf(" specular highlights");
     printf("\n");
 
     // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
@@ -2332,7 +2332,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - alpha 0.62   ");
+    printf("\nNullDC4Wii - alpha 0.63   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");
