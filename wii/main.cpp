@@ -254,7 +254,10 @@ extern "C" {
 
 int g_fixed_depth_preset = 0; // 0=off (per-vertex min/max W tracking, legacy), 1=wide fixed planes [0.0001..100000] (safe, coarse Z), 2=tight fixed planes [0.1..25000] (finer Z, extreme near/far geometry clips)
 
+int g_legacy_depth_preset = 0; // 0=off, 1=reproduce the 1bb8c27 depth pipeline verbatim: fixed planes NEAR=0.001/FAR=10000*1.001, vert_base 1/W clamp at 0.001 (not 0.0001), and no per-vertex tracking or margin/HUD vertex fixups. Overrides fixed_depth. Buggy Heat: logo + VMU screen + gameplay were all correct there.
+
 extern "C" {
+  int get_legacy_depth_preset() { return g_legacy_depth_preset; }
   int get_fixed_depth_preset() { return g_fixed_depth_preset; }
 }
 
@@ -1102,7 +1105,8 @@ void displayAccuracyMenu()
 #define OPT_DYNAREC     55
 #define OPT_SUBPASS_ZCLEAR 56 // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_POLY_OFFSET 57    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
-#define OPT_ROW_COUNT   58
+#define OPT_LEGACY_DEPTH 58   // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
+#define OPT_ROW_COUNT   59
 
 // Options are split across six themed pages so no single page scrolls off
 // screen and related settings are grouped together.
@@ -1156,6 +1160,7 @@ static const int OPT_PAGE2_ROWS[] = {
   OPT_LAUNCH,
   OPT_DEPTH_CLIP,
   OPT_FIXED_DEPTH,
+  OPT_LEGACY_DEPTH,
   OPT_HUD_PASS,
   OPT_SUBPASS_ZCLEAR,
   OPT_ISP_DEPTH_FUNC,
@@ -1548,6 +1553,12 @@ bool displayOptionsMenu()
     printf(" fixed near/far planes. Z-Fighting");
     printf("\n");
 
+    // --- Row: legacy (1bb8c27) depth pipeline ---
+    printf("%s LEGACY DEPTH   : ", (selectedRow == OPT_LEGACY_DEPTH) ? ">" : " ");
+    printf(g_legacy_depth_preset ? "[< ON (1bb8c27)      >]" : "[< OFF               >]");
+    printf(" known-good depth. Overrides ^");
+    printf("\n");
+
     // --- Row: HUD pass (rescue HUD clipped by fixed_depth=tight) ---
     printf("%s HUD PASS       : ", (selectedRow == OPT_HUD_PASS) ? ">" : " ");
     switch (g_hud_pass_preset) {
@@ -1902,6 +1913,7 @@ bool displayOptionsMenu()
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 2) % 3; break;
+        case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 2) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
@@ -1966,6 +1978,7 @@ bool displayOptionsMenu()
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 1) % 3; break;
+        case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 1) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
@@ -2767,6 +2780,7 @@ int main(int argc, wchar *argv[])
       case 1: printf("WIDE\n");          break;
       case 2: printf("TIGHT\n");         break;
     }
+    printf("Legacy Depth   : %s\n", g_legacy_depth_preset ? "ON" : "OFF (Default)");
     printf("Depth Clip     : ");
     switch (g_depth_clip_preset) {
       case 0: printf("OFF (LEGACY)\n");      break;

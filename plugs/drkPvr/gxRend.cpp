@@ -234,6 +234,22 @@ extern "C" int get_fixed_depth_preset();
 #define FIXED_DEPTH_WIDE()  (get_fixed_depth_preset() == 1) // fixed [0.0001 .. 100000] (safe, coarse Z)
 #define FIXED_DEPTH_TIGHT() (get_fixed_depth_preset() == 2) // fixed [0.1 .. 25000] (finer Z, extremes clip)
 
+// 1b. LEGACY DEPTH: reproduce the depth pipeline exactly as it stood at commit
+//     1bb8c27 ("Optimize vertex processing with fixed-depth projection"), the
+//     last state where Buggy Heat rendered its intro logo, its VMU screen and
+//     gameplay all correctly. Three things differ from today and all three are
+//     restored together, because that combination is what was verified - not
+//     any one of them in isolation:
+//       1. fixed planes NEAR=0.001 / FAR=10000 (FAR extended by 1.001)
+//       2. vert_base clamps 1/W at 0.001f, not 0.0001f (see g_vert_z_clamp)
+//       3. no per-vertex min/max tracking anywhere, and none of the newer
+//          DEPTH_CLIP_MARGIN / HUD_PASS vertex fixups, which did not exist yet
+//     Overrides FIXED_DEPTH_*(). Not a superset of FIXED_DEPTH_WIDE/TIGHT: the
+//     clamp change (2) is what those presets cannot express, and it is why
+//     fixed_depth alone never reproduced 1bb8c27.
+extern "C" int get_legacy_depth_preset();
+#define LEGACY_DEPTH() (get_legacy_depth_preset() == 1)
+
 // 2. DEPTH CLIP: Use DEPTH_CLIP_MARGIN (1) to prevent near-plane clipping
 //    or DEPTH_CLIP_NOCLIP (2) if running on Dolphin.
 extern "C" int get_depth_clip_preset();
@@ -1177,6 +1193,12 @@ bool g_split_screen_cached     = false; // same idea, for SPLIT_SCREEN(): gates
                                         // the listTileClip[] store per param
 bool g_fixed_depth_cached      = false; // same idea, for FIXED_DEPTH_*(): skips
                                         // the per-vertex min/max W tracking
+bool  g_legacy_depth_cached    = false; // same idea, for LEGACY_DEPTH()
+float g_vert_z_clamp           = 0.0001f; // vert_base 1/W floor: 0.0001 normally,
+                                        // 0.001 under LEGACY_DEPTH (1bb8c27).
+                                        // A per-frame global rather than a
+                                        // literal so the hot macro stays one
+                                        // compare, not a branch on a preset.
 
 char fps_text[512];
 
@@ -1346,8 +1368,15 @@ void decode_pvr_vertex(u32 base, u32 ptr, Vertex *cv)
     cv->y = vrf(ptr); ptr += 4;
     cv->z = vrf(ptr); ptr += 4; // Raw DC 'W' coordinate
 
+    // LEGACY_DEPTH: at 1bb8c27 this decoder did no depth work whatsoever -
+    // neither the tracking below nor the margin/HUD re-park, both of which
+    // came later. Skipping the whole thing is part of reproducing it.
+    // (Only the background polygon reaches here, a few vertices per frame,
+    // so the extra test costs nothing measurable.)
     // Track dynamic bounds if FIXED_DEPTH is OFF
-    if (!g_fixed_depth_cached) {
+    if (g_legacy_depth_cached) {
+        // nothing: matches 1bb8c27
+    } else if (!g_fixed_depth_cached) {
         if (cv->z < vtx_min_Z) vtx_min_Z = cv->z;
         if (cv->z > vtx_max_Z) vtx_max_Z = cv->z;
     } else {
@@ -1430,7 +1459,11 @@ void reset_vtx_state()
   g_vertex_color_fix_cached = VERTEX_COLOR_FIX();
   g_offset_color_fix_cached = OFFSET_COLOR_FIX();
   g_split_screen_cached     = SPLIT_SCREEN();
-  g_fixed_depth_cached      = !FIXED_DEPTH_OFF();
+  g_legacy_depth_cached     = LEGACY_DEPTH();
+  // 1bb8c27 tracked nothing per vertex, so legacy takes the "skip tracking" path
+  // that FIXED_DEPTH_*() uses; DoRender() supplies the planes for both.
+  g_fixed_depth_cached      = !FIXED_DEPTH_OFF() || g_legacy_depth_cached;
+  g_vert_z_clamp            = g_legacy_depth_cached ? 0.001f : 0.0001f;
 }
 
 #define VTX_TFX(x) (x)
@@ -1626,7 +1659,6 @@ pixelcvt_next(convYUV_PL, 4, 1)
   s32 Yu = (p_in[0] >> 0) & 255;  // p_in[0]
   s32 Y1 = (p_in[0] >> 24) & 255; // p_in[3]
   s32 Yv = (p_in[0] >> 16) & 255; // p_in[2]
-  
   pb_prel(pb, pbw, x + 0, y, YUV422(Y0, Yu, Yv)); // 0,0  
   pb_prel(pb, pbw, x + 1, y, YUV422(Y1, Yu, Yv)); // 1,0
 
@@ -1889,7 +1921,6 @@ void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
   for (u32 y = 0; y < Height; y += PixelConvertor::ypp)
   {
     u32 offset_y = table_y[y];
-    
     for (u32 x = 0; x < Width; x += PixelConvertor::xpp)
     {
 
@@ -2891,7 +2922,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   }
 
   // === End of Palette TLUT setup ===
-  
+
 
   //// 2. Cache Check ////
 
@@ -4722,7 +4753,7 @@ void DoRender()
   // GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
 
   // Note : making an if/else statement here also cause FIFO (CPU desynchronisation)
-																	 
+
   
 
   // Offset (specular) color support. Read once per frame like the other
@@ -4962,49 +4993,62 @@ void DoRender()
   // intro FMV); TIGHT trades total range for far better Z-buffer precision
   // on typical scenes — geometry closer than W=0.1 or farther than W=25000
   // gets clipped, so it is strictly a per-game setting.
-  if (FIXED_DEPTH_WIDE())
+  // LEGACY_DEPTH:
+  float p5, p6;
+  if (LEGACY_DEPTH())
   {
-    vtx_min_Z = 0.0001f;
-    vtx_max_Z = 100000.0f;
+    vtx_min_Z = 0.001f;             // NEAR
+    vtx_max_Z = 10000.0f * 1.001f;  // FAR, extended to not clip vtx_max verts
+
+    p6 = -1.0f / (1.0f / vtx_max_Z - 1.0f / vtx_min_Z);
+    p5 = p6 / vtx_min_Z;
   }
-  else if (FIXED_DEPTH_TIGHT())
+  else
   {
-    vtx_min_Z = 0.1f;
-    vtx_max_Z = 25000.0f;
+    if (FIXED_DEPTH_WIDE())
+    {
+      vtx_min_Z = 0.0001f;
+      vtx_max_Z = 100000.0f;
+    }
+    else if (FIXED_DEPTH_TIGHT())
+    {
+      vtx_min_Z = 0.1f;
+      vtx_max_Z = 25000.0f;
+    }
+
+    // Allow W to be much smaller to push the far plane out for massive environments (like racing games)
+    // Important : Keep 0.0001f ! 0.001f is not enough
+    if (vtx_min_Z <= 0.0001f)
+      vtx_min_Z = 0.0001f;
+
+    if (vtx_max_Z < 0 || vtx_max_Z > 128 * 1024)
+      vtx_max_Z = 100000.0f;
+
+    // Extra guard: if EFB garbage or NaN slipped through...
+    // Z range so that min >= max, the projection math below produces NaN/inf
+    // which desyncs the GX FIFO ("GFX Fifo Opcode unknown 0x64").
+    // Reset to a safe default range so the frame renders without a crash.
+    // Don't remove this part or Bomberman intro FMV will not display on real hardware
+    if (vtx_min_Z >= vtx_max_Z || vtx_max_Z != vtx_max_Z || vtx_min_Z != vtx_min_Z)
+    {
+      vtx_min_Z = 0.0001f;
+      vtx_max_Z = 100000.0f;  
+    }
+
+    // extend range
+    vtx_max_Z *= 1.001; // to not clip vtx_max verts
+    // Near-side mirror of the 1.001 above. In dynamic mode the nearest layer
+    // (typically the 2D UI/menu, which DEFINES vtx_min_Z) maps exactly onto the
+    // near clip plane; XF float rounding on real hardware then pushes the whole
+    // quad just outside and it is clipped away — Dolphin doesn't Z-clip, so it
+    // still shows there. The margin keeps that layer strictly inside the range.
+    if (DEPTH_CLIP_MARGIN())
+      vtx_min_Z *= 0.999f;
+
+    // convert to [-1 .. 0]
+    p6 = -1 / (1 / vtx_max_Z - 1 / vtx_min_Z);
+    p5 = p6 / vtx_min_Z;
   }
-
-  // Allow W to be much smaller to push the far plane out for massive environments (like racing games)
-  // Important : Keep 0.0001f ! 0.001f is not enough
-  if (vtx_min_Z <= 0.0001f)
-    vtx_min_Z = 0.0001f;
-
-  if (vtx_max_Z < 0 || vtx_max_Z > 128 * 1024)
-    vtx_max_Z = 100000.0f;
-
-  // Extra guard: if EFB garbage or NaN slipped through...
-  // Z range so that min >= max, the projection math below produces NaN/inf
-  // which desyncs the GX FIFO ("GFX Fifo Opcode unknown 0x64").
-  // Reset to a safe default range so the frame renders without a crash.
-  // Don't remove this part or Bomberman intro FMV will not display on real hardware
-  if (vtx_min_Z >= vtx_max_Z || vtx_max_Z != vtx_max_Z || vtx_min_Z != vtx_min_Z)
-  {
-    vtx_min_Z = 0.0001f;
-    vtx_max_Z = 100000.0f;  
-  }
-
-  // extend range
-  vtx_max_Z *= 1.001; // to not clip vtx_max verts
-  // Near-side mirror of the 1.001 above. In dynamic mode the nearest layer
-  // (typically the 2D UI/menu, which DEFINES vtx_min_Z) maps exactly onto the
-  // near clip plane; XF float rounding on real hardware then pushes the whole
-  // quad just outside and it is clipped away — Dolphin doesn't Z-clip, so it
-  // still shows there. The margin keeps that layer strictly inside the range.
-  if (DEPTH_CLIP_MARGIN())
-    vtx_min_Z *= 0.999f;
-
-  // convert to [-1 .. 0]
-  float p6 = -1 / (1 / vtx_max_Z - 1 / vtx_min_Z);
-  float p5 = p6 / vtx_min_Z;
 
   // The projection matrix maps DC screen-space coords to GX clip space.
   // X aspect ratio is NOT corrected here — DC vertices are already in screen
@@ -6716,7 +6760,7 @@ struct VertexDecoder
 // including sprites) is skipped entirely. g_fixed_depth_cached is refreshed
 // once per frame in reset_vtx_state() like the other cached preset flags.
 #define vert_base(dst, _x, _y, _z) /*VertexCount++;*/         \
-  float _safe_z = (_z >= 0.0001f) ? _z : 0.0001f;            \
+  float _safe_z = (_z >= g_vert_z_clamp) ? _z : g_vert_z_clamp; \
   float W = 1.0f / _safe_z;                                   \
   curVTX[dst].x = VTX_TFX(_x) * W;                           \
   curVTX[dst].y = VTX_TFY(_y) * W;                           \

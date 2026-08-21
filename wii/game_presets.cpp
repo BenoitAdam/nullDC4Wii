@@ -231,6 +231,16 @@
                                 Z-fight); tight covers W=[0.1..25000] (much
                                 finer Z, but geometry outside that range clips,
                                 so per-game only).
+        legacy_depth=on     <- reproduce the depth pipeline exactly as it stood
+                                at commit 1bb8c27, the last state known to render
+                                certain games correctly. Three things differ from
+                                today and all three are restored together: fixed
+                                planes NEAR=0.001 / FAR=10000*1.001; vert_base
+                                clamps 1/W at 0.001 instead of 0.0001; and no
+                                per-vertex min/max tracking or margin/HUD vertex
+                                fixups. The clamp is the part fixed_depth cannot
+                                express, which is why no fixed_depth value
+                                reproduces 1bb8c27. Overrides fixed_depth.
         depth_clip=1        <- 0/1/2, real-Wii Z-clip workaround (see gxRend.cpp
                                 DEPTH_CLIP_*()). Dolphin never Z-clips, so
                                 menus/intros that sit on or beyond the depth
@@ -433,6 +443,7 @@ extern int g_special_layout_preset;
 extern int g_mipmap_preset;
 extern int g_seam_fix_preset;
 extern int g_fixed_depth_preset;
+extern int g_legacy_depth_preset;
 extern int g_depth_clip_preset;
 extern int g_hud_pass_preset;
 extern int g_async_render_preset;
@@ -506,6 +517,7 @@ struct GamePreset
     int mipmap;
     int seam_fix;
     int fixed_depth;
+    int legacy_depth;
     int depth_clip;
     int hud_pass;
     int async_render;
@@ -780,6 +792,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
     else if (key_eq(key, "seam_fix"))       p->seam_fix       = parse_bool(val);
     else if (key_eq(key, "fixed_depth"))    p->fixed_depth    = atoi(val);
+    else if (key_eq(key, "legacy_depth"))   p->legacy_depth   = parse_bool(val);
     else if (key_eq(key, "depth_clip"))     p->depth_clip     = atoi(val);
     else if (key_eq(key, "hud_pass"))       p->hud_pass       = atoi(val);
     else if (key_eq(key, "async_render"))   p->async_render   = parse_bool(val);
@@ -836,6 +849,7 @@ static void preset_clear(GamePreset* cur)
     cur->mipmap = -1;
     cur->seam_fix = -1;
     cur->fixed_depth = -1;
+    cur->legacy_depth = -1;
     cur->depth_clip = -1;
     cur->hud_pass = -1;
     cur->async_render = -1;
@@ -897,6 +911,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->mipmap         >= 0) { g_mipmap_preset        = p->mipmap;          printf("  mipmap         -> %d\n", p->mipmap);         }
     if (p->seam_fix       >= 0) { g_seam_fix_preset      = p->seam_fix;        printf("  seam_fix       -> %d\n", p->seam_fix);       }
     if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }
+    if (p->legacy_depth    >= 0) { g_legacy_depth_preset  = p->legacy_depth;     printf("  legacy_depth   -> %d\n", p->legacy_depth);    }
     if (p->depth_clip     >= 0) { g_depth_clip_preset    = p->depth_clip;      printf("  depth_clip     -> %d\n", p->depth_clip);     }
     if (p->hud_pass       >= 0) { g_hud_pass_preset      = p->hud_pass;        printf("  hud_pass       -> %d\n", p->hud_pass);       }
     if (p->async_render   >= 0) { g_async_render_preset  = p->async_render;    printf("  async_render   -> %d\n", p->async_render);   }
