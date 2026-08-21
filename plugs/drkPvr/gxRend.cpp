@@ -291,6 +291,40 @@ extern "C" int get_bg_poly_preset();
 extern "C" int get_canvas_width_preset();
 #define CANVAS_WIDTH() (get_canvas_width_preset())
 
+// 6. NATIVE POLYGON OFFSET (GX depth bias). Real hardware note: GX has no
+//    glPolygonOffset-style register — no programmable shaders means there is
+//    no way to nudge a fragment's post-transform Z from the pixel pipeline.
+//    The real-hardware equivalent is a Z-TEXTURE in ADD mode (GX_SetZTexture):
+//    every fragment drawn while it's bound gets a constant bias added to its
+//    depth before the Z test/write, which is exactly a slope-independent
+//    "units" depth bias. Applied to the Punch-Through (PT) list, since that's
+//    where the Dreamcast pipes co-planar decals / shadows / road-markings
+//    that PVR's tile order used to just sort "for free". 0 = off (legacy).
+//    1..N = bias strength tier, see s_poly_offset_bias_w[] in DoRender().
+extern "C" int get_poly_offset_preset();
+#define POLY_OFFSET() (get_poly_offset_preset()) // 0, 1 2 or 3
+
+// 7. REVERSED DEPTH MAPPING — NOTE: already the case in this renderer.
+//    The projection built in DoRender() (p5/p6, see the algorithm comment
+//    above the Mtx44 mtx) maps W=vtx_min_Z (near) -> viewport z 1.0 and
+//    W=vtx_max_Z (far) -> viewport z 0.0 (see as_setup_frame()'s "0=far
+//    1=near" note), paired with GX_SetZMode(..., GX_GEQUAL, ...) — i.e. the
+//    24-bit integer Z buffer already spends most of its precision near the
+//    camera, the way the PVR's 32-bit float W-buffer does natively. There is
+//    no separate toggle added for this; kept here only so the numbered list
+//    matches the mitigation write-up this file gets compared against.
+
+// 8. SUB-PASS DEPTH-ONLY CLEAR: re-park the whole Z buffer at a given W
+//    (near or far) WITHOUT touching color, so a geometry group drawn right
+//    after (e.g. HUD_PASS() PROTECT-mode 3D overlays) starts from a known,
+//    clean depth baseline instead of whatever the main scene left behind.
+//    GX has no partial/depth-only EFB clear outside of a real copy-out, so
+//    this is implemented the same way AUTOSORT() already parks the Z buffer:
+//    a full-canvas quad, color/alpha writes off, Z func ALWAYS, Z write on.
+//    0 = off (legacy, single shared depth pass — the current default).
+extern "C" int get_subpass_zclear_preset();
+#define SUBPASS_ZCLEAR() (get_subpass_zclear_preset() == 1)
+
 
 int frame_counter;
 
@@ -4418,6 +4452,75 @@ static void as_submit_zquad(float dcw, float dch, float W, bool offset_fix)
   GX_End();
 }
 
+// ── SUBPASS_ZCLEAR(): depth-only re-clear between geometry groups ──────────
+// GX has no partial/depth-only EFB clear short of a real copy-out (which
+// would also cost the color buffer), so re-parking the Z buffer at a chosen
+// depth is done the same way AUTOSORT() already does it above: rasterize a
+// full-canvas quad with color/alpha writes off and Z func ALWAYS, Z write
+// on. Caller is responsible for restoring whatever GX_SetZMode /
+// GX_SetColorUpdate / GX_SetAlphaUpdate state it needs afterward — this is a
+// low-level primitive, not a state save/restore wrapper (same contract as
+// as_submit_zquad, which this reuses).
+//   atW      : the W (Dreamcast depth convention, see vtx_min_Z/vtx_max_Z)
+//              every pixel is re-initialised to. Pass vtx_min_Z to mark the
+//              buffer "everything is as close as the near plane" (nothing
+//              already-drawn survives GEQUAL against later geometry), or
+//              vtx_max_Z for the opposite ("everything is at the far
+//              plane" — the same state a fresh frame's clear leaves it in).
+static void ClearDepthOnlyPass(float dcw, float dch, float atW, bool offset_fix)
+{
+  GX_SetColorUpdate(GX_FALSE);
+  GX_SetAlphaUpdate(GX_FALSE);
+  GX_SetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
+  GX_SetZCompLoc(GX_TRUE);
+  GX_SetZMode(GX_TRUE, GX_ALWAYS, GX_TRUE);
+  GX_SetNumTevStages(1);
+  GX_SetNumTexGens(1);
+  GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
+  GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
+  as_submit_zquad(dcw, dch, atW, offset_fix);
+  GX_SetColorUpdate(GX_TRUE);
+  GX_SetAlphaUpdate(GX_TRUE);
+}
+
+// ── POLY_OFFSET(): depth bias for co-planar PT-list decals ─────────────────
+// GX has no glPolygonOffset-style register to reach from the fixed-function
+// pixel pipeline. GX_SetZTexture(GX_ZT_ADD,...) can inject a constant into
+// the Z test, but it samples whatever texture the LAST ACTIVE TEV stage has
+// bound (there is no independent "bias map" slot) — coupling the bias to
+// each strip's own decal texture is fragile and unverifiable without real
+// hardware to test against, so this renderer instead biases depth the same
+// way it already does everywhere else that needs a Z nudge (see the HUD_PASS
+// rescue and the AUTOSORT near-plane park above): scale W (and, to keep the
+// screen-space x/y bit-identical, x/y by the same ratio — x/y here are
+// already W-premultiplied). Software, not a hardware register, but it is
+// the technique this codebase already relies on and it is exactly correct
+// per-vertex, unlike the texture-coupled hardware trick.
+//
+// Smaller W = nearer camera (this file's convention, see vtx_min_Z/vtx_max_Z
+// and as_setup_frame()'s "0=far 1=near" note), so shrinking W nudges the
+// PT-list decal strictly closer than the opaque geometry it sits on,
+// guaranteeing it wins the co-planar GX_GEQUAL tie instead of flickering.
+// Tiers are fractions of W, not fixed Z units, so the bias scales correctly
+// whether FIXED_DEPTH_TIGHT() or the legacy dynamic range is in effect.
+static const float s_poly_offset_frac[4] = { 0.0f, 0.0005f, 0.0015f, 0.004f };
+
+static inline void ApplyPolyOffset(Vertex *v, int count, int tier)
+{
+  if (tier <= 0) return;
+  if (tier > 3) tier = 3;
+  const float frac = s_poly_offset_frac[tier];
+  for (int i = 0; i < count; i++)
+  {
+    const float w = v[i].z;
+    if (w <= 0.0f) continue; // already clamped upstream, but stay defensive
+    const float r = (1.0f - frac); // biasedW / w
+    v[i].x *= r;
+    v[i].y *= r;
+    v[i].z  = w * r;
+  }
+}
+
 // Copy the finished EFB scene back into emulated VRAM at FB_W_SOF1, the way
 // the real PVR writes an RTT frame, then leave the EFB cleared for the next
 // frame (the display path gets that clear from GX_CopyDisp's clear flag).
@@ -5008,6 +5111,12 @@ void DoRender()
   // 0=off, 1=overlay (no Z-write), 2=protect (Z-write at the near plane).
   const int   hud_pass     = HUD_PASS();
   const float scene_near_W = vtx_min_Z;
+
+  // POLY_OFFSET() / SUBPASS_ZCLEAR(): read once per frame, same rationale as
+  // every other preset above.
+  const int  poly_offset_tier = POLY_OFFSET();
+  const bool subpass_zclear   = SUBPASS_ZCLEAR();
+  bool hud_zcleared_this_frame = false;
 
   // Per-polygon ISP state presets, read once per frame (macros at top of file).
   const bool ppz_write      = PER_POLYGON_Z_WRITE();
@@ -5613,6 +5722,39 @@ void DoRender()
         }
       }
 
+      // SUBPASS_ZCLEAR(): the FIRST time this frame a strip actually needs
+      // hud_pass rescue, re-park the whole Z buffer at the far plane before
+      // any of its state (texture/TEV/blend) is set up below — a clean depth
+      // baseline for the HUD/cockpit layer instead of whatever the main 3D
+      // scene left behind. Must run BEFORE the stripMod block, since
+      // ClearDepthOnlyPass reprograms TEV/texgen state that block also
+      // touches; the cache invalidation below forces it to be reissued
+      // fresh for this strip afterward. Cheap: one extra vertex scan, only
+      // for the single strip (if any) that triggers it per frame. Matches
+      // "don't share a depth pass with the main scene" for games that
+      // submit their HUD as one trailing run of strips (the common DC
+      // pattern: 3D scene, then 2D-in-3D overlay). Caveat: if a game
+      // interleaves HUD strips back into the middle of its 3D geometry, this
+      // would wipe the main scene's depth early — opt-in and per-game like
+      // every other preset here, off by default.
+      if (hud_pass && subpass_zclear && !hud_zcleared_this_frame && !seg_as && count)
+      {
+        bool needs_rescue = false;
+        for (int i = 0; i < count; i++)
+          if (drawVTX[i].z < scene_near_W) { needs_rescue = true; break; }
+        if (needs_rescue)
+        {
+          ClearDepthOnlyPass(dc_width, dc_height, vtx_max_Z, offset_fix);
+          hud_zcleared_this_frame = true;
+          // Force full state reissue for this strip: ClearDepthOnlyPass
+          // reprogrammed TEV stages/texgens/alpha-compare out from under it.
+          last_textured   = -1;
+          last_shad_instr = -1;
+          last_alpha_fmt  = -1;
+          last_tev_stages = 1;
+        }
+      }
+
       if (stripMod)
       {
         // Honor the polygon's user tile clip (GX scissor). Cached inside
@@ -5884,6 +6026,15 @@ void DoRender()
         if (hud_strip)
           GX_SetZMode(GX_TRUE, GX_ALWAYS, hud_pass == 2 ? GX_TRUE : GX_FALSE);
       }
+
+      // POLY_OFFSET(): PT list only — nudge co-planar decals/shadows/road-
+      // marks a hair closer than the opaque geometry beneath them (see the
+      // macro doc at the top of the file), so they win the depth tie instead
+      // of flickering. Runs before the hud_pass rescue above already ran
+      // (which only touches strips that crossed the near plane), so the two
+      // never fight over the same vertices in the common case.
+      if (seg_is_pt && poly_offset_tier > 0 && count)
+        ApplyPolyOffset(drawVTX, count, poly_offset_tier);
 
       if (count)
       {

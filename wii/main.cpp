@@ -270,6 +270,18 @@ extern "C" {
   int get_hud_pass_preset() { return g_hud_pass_preset; }
 }
 
+int g_subpass_zclear_preset = 0; // 0=off (legacy: single shared depth pass, current scene's Z carries into the next pass), 1=on (re-park the whole Z buffer at a known W via a full-canvas GX_ALWAYS quad before a later geometry group — e.g. HUD_PASS() PROTECT-mode overlays — starts from a clean depth baseline; see gxRend.cpp SUBPASS_ZCLEAR())
+
+extern "C" {
+  int get_subpass_zclear_preset() { return g_subpass_zclear_preset; }
+}
+
+int g_poly_offset_preset = 0; // 0=off (legacy, no bias), 1..3=native polygon offset tier applied to the Punch-Through list: real hardware has no glPolygonOffset-style register, so this uses a Z-texture in ADD mode (GX_SetZTexture) to add a constant, slope-independent depth bias to every fragment drawn while it's bound — the GX equivalent for co-planar decals/shadows/road-markings (see gxRend.cpp POLY_OFFSET() / s_poly_offset_frac[])
+
+extern "C" {
+  int get_poly_offset_preset() { return g_poly_offset_preset; }
+}
+
 int g_async_render_preset = 1; // 0=off (CPU blocks in GX_DrawDone until the GPU finishes each frame, legacy), 1=on (frame queued, presented one vblank later; SH4 emulates while the GPU draws)
 
 extern "C" {
@@ -1088,7 +1100,9 @@ void displayAccuracyMenu()
 #define OPT_HUD_PASS    53
 #define OPT_SCHED       54
 #define OPT_DYNAREC     55
-#define OPT_ROW_COUNT   56
+#define OPT_SUBPASS_ZCLEAR 56 // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
+#define OPT_POLY_OFFSET 57    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
+#define OPT_ROW_COUNT   58
 
 // Options are split across six themed pages so no single page scrolls off
 // screen and related settings are grouped together.
@@ -1143,13 +1157,15 @@ static const int OPT_PAGE2_ROWS[] = {
   OPT_DEPTH_CLIP,
   OPT_FIXED_DEPTH,
   OPT_HUD_PASS,
+  OPT_SUBPASS_ZCLEAR,
   OPT_ISP_DEPTH_FUNC,
   OPT_ISP_CULL,
   OPT_AUTOSORT,
   OPT_HOKUTO_HACK,
   OPT_X_SCALER,
   OPT_CANVAS_WIDTH,
-  OPT_PPZ_WRITE
+  OPT_PPZ_WRITE,
+  OPT_POLY_OFFSET
 };
 
 // Page 3 - AUDIO
@@ -1539,6 +1555,15 @@ bool displayOptionsMenu()
       case 2: printf("[< PROTECT (Z-WRITE) >]"); break;
     }
     printf(" HUD back w/ FIXED DEPTH=TIGHT");
+    printf("\n");
+
+    // --- Row: Sub-pass depth-only Z clear ---
+    printf("%s SUBPASS ZCLEAR : ", (selectedRow == OPT_SUBPASS_ZCLEAR) ? ">" : " ");
+    switch (g_subpass_zclear_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON                >]"); break;
+    }
+    printf(" re-park Z before HUD PASS");
     printf("\n\n");
 
     // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
@@ -1600,9 +1625,21 @@ bool displayOptionsMenu()
     // --- Row: PPZ Write ---
     printf("%s PPZ_WRITE      : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
     switch (g_ppz_write_preset) {
-      case 0: printf("[< NO                >]"); break;
-      case 1: printf("[< YES               >]"); break;
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
     }
+    printf(" OFF to fix black remanence");
+    printf("\n\n");
+
+    // --- Row: Native polygon offset (Z-texture bias, PT list) ---
+    printf("%s POLY OFFSET    : ", (selectedRow == OPT_POLY_OFFSET) ? ">" : " ");
+    switch (g_poly_offset_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< TIER 1            >]"); break;
+      case 2: printf("[< TIER 2            >]"); break;
+      case 3: printf("[< TIER 3            >]"); break;
+    }
+    printf(" Z-bias for co-planar PT decals");
     printf("\n\n");
 
     printOptionsFooter();
@@ -1618,7 +1655,7 @@ bool displayOptionsMenu()
       case  2: printf("[< 2                 >]"); break;
       case  3: printf("[< 3 (MOST PACED)    >]"); break;
     }
-    printf(" audio pacing depth");
+    printf(" 1 fix most audio 1 but slower fps");
     printf("\n");
 
     // --- Row: CDDA music (GD-ROM CD audio tracks) ---
@@ -1841,6 +1878,7 @@ bool displayOptionsMenu()
         case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 2) % 3; break;
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 2) % 3; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
+        case OPT_POLY_OFFSET: g_poly_offset_preset  = (g_poly_offset_preset    + 3) % 4; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
@@ -1890,6 +1928,7 @@ bool displayOptionsMenu()
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
+        case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
@@ -1903,6 +1942,7 @@ bool displayOptionsMenu()
         case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 1) % 3; break;
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 3; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
+        case OPT_POLY_OFFSET: g_poly_offset_preset  = (g_poly_offset_preset    + 1) % 4; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
@@ -1952,6 +1992,7 @@ bool displayOptionsMenu()
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
+        case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
@@ -2628,6 +2669,11 @@ int main(int argc, wchar *argv[])
     printf("Decal Alpha Fix: %s\n", g_decal_alpha_preset ? "YES (DEFAULT)" : "NO");
     printf("2D Framebuffer : %s\n", g_framebuffer_2d ? "YES" : "NO");
     printf("PPZ_WRITE      : %s\n", g_ppz_write_preset ? "YES" : "NO");
+    printf("Poly Offset    : ");
+    switch (g_poly_offset_preset) {
+      case 0: printf("OFF (LEGACY)\n"); break;
+      default: printf("TIER %d\n", g_poly_offset_preset); break;
+    }
     printf("FMV Format     : ");
     switch(g_fmv_format_preset) {
       case 0: printf("CMPR (DXT1)\n"); break;
@@ -2731,6 +2777,7 @@ int main(int argc, wchar *argv[])
       case 1: printf("OVERLAY (NO ZW)\n");   break;
       case 2: printf("PROTECT (Z-WRITE)\n"); break;
     }
+    printf("Subpass ZClear : %s\n", g_subpass_zclear_preset ? "ON" : "OFF (LEGACY)");
     printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("CDDA Music     : %s\n", g_cdda_preset ? "ON (CD MUSIC)" : "OFF (LEGACY)");

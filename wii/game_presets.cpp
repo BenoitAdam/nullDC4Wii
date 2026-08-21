@@ -254,6 +254,35 @@
                                 near-clipped quad drawn early (it would stamp the
                                 whole scene's depth). Companion to fixed_depth=2 —
                                 a no-op without it.
+        subpass_zclear=on   <- on/off, sub-pass depth-only Z clear (see gxRend.cpp
+                                SUBPASS_ZCLEAR()). Re-parks the whole Z buffer at a
+                                known W (a full-canvas GX_ALWAYS quad, color/alpha
+                                writes off — GX has no partial/depth-only EFB clear
+                                outside a real copy-out) WITHOUT touching color, so
+                                a geometry group drawn right after (e.g. a
+                                hud_pass=2 PROTECT-mode overlay) starts from a
+                                clean depth baseline instead of whatever the main
+                                scene left behind. off (default): single shared
+                                depth pass, legacy. on: re-park before that later
+                                pass — opt-in per-game, since a game that
+                                interleaves HUD strips back into the middle of its
+                                3D geometry would have its main scene's depth
+                                wiped early.
+        poly_offset=1       <- 0..3, native polygon offset / Z bias tier (see
+                                gxRend.cpp POLY_OFFSET()). Real hardware has no
+                                glPolygonOffset-style register — no programmable
+                                shaders means there is no way to nudge a
+                                fragment's post-transform Z from the pixel
+                                pipeline. The GX equivalent is a Z-TEXTURE in ADD
+                                mode (GX_SetZTexture): every fragment drawn while
+                                it's bound gets a constant bias added to its depth
+                                before the Z test/write, a slope-independent
+                                "units" bias. Applied to the Punch-Through (PT)
+                                list, where the Dreamcast pipes co-planar decals /
+                                shadows / road-markings that PVR's tile order used
+                                to sort for free. 0 (default): off, legacy.
+                                1..3: increasing bias strength tier (see
+                                s_poly_offset_frac[] in gxRend.cpp).
         async_render=on     <- on/off, async GPU present (see gxRend.cpp
                                 ASYNC_RENDER()). off (default, legacy) blocks the
                                 CPU in GX_DrawDone() until the GPU finishes the
@@ -414,6 +443,8 @@ extern int g_bg_poly_preset;
 extern int g_hokuto_hack_preset;
 extern int g_isp_depth_func_preset;
 extern int g_isp_cull_preset;
+extern int g_subpass_zclear_preset;
+extern int g_poly_offset_preset;
 extern int g_audio_buffers_preset;
 extern int g_arm7_speed_preset;
 extern int g_sh4_clock_preset;
@@ -486,6 +517,8 @@ struct GamePreset
     int hokuto_hack;
     int isp_depth_func;
     int isp_cull;
+    int subpass_zclear;
+    int poly_offset;
     int audio_buffers;
     int arm7_speed;
     int sh4_clock;
@@ -757,6 +790,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "hokuto_hack"))    p->hokuto_hack    = parse_bool(val);
     else if (key_eq(key, "isp_depth_func")) p->isp_depth_func = atoi(val);
     else if (key_eq(key, "isp_cull"))       p->isp_cull       = atoi(val);
+    else if (key_eq(key, "subpass_zclear")) p->subpass_zclear = parse_bool(val);
+    else if (key_eq(key, "poly_offset"))    p->poly_offset    = atoi(val);
     else if (key_eq(key, "audio_buffers"))  p->audio_buffers  = parse_audio_buffers(val);
     else if (key_eq(key, "arm7_speed"))     p->arm7_speed     = atoi(val);
     else if (key_eq(key, "sh4_clock"))      p->sh4_clock      = parse_sh4_clock(val);
@@ -811,6 +846,8 @@ static void preset_clear(GamePreset* cur)
     cur->hokuto_hack = -1;
     cur->isp_depth_func = -1;
     cur->isp_cull = -1;
+    cur->subpass_zclear = -1;
+    cur->poly_offset = -1;
     cur->audio_buffers = -2; // -2 = absent (leave live state alone); -1 is a real value here (see parse_audio_buffers)
     cur->arm7_speed = -1;
     cur->sh4_clock = -1;
@@ -870,6 +907,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->hokuto_hack    >= 0) { g_hokuto_hack_preset   = p->hokuto_hack;     printf("  hokuto_hack    -> %d\n", p->hokuto_hack);    }
     if (p->isp_depth_func >= 0) { g_isp_depth_func_preset = p->isp_depth_func; printf("  isp_depth_func -> %d\n", p->isp_depth_func); }
     if (p->isp_cull       >= 0) { g_isp_cull_preset      = p->isp_cull;        printf("  isp_cull       -> %d\n", p->isp_cull);       }
+    if (p->subpass_zclear >= 0) { g_subpass_zclear_preset = p->subpass_zclear; printf("  subpass_zclear -> %d\n", p->subpass_zclear); }
+    if (p->poly_offset    >= 0) { g_poly_offset_preset   = p->poly_offset;     printf("  poly_offset    -> %d\n", p->poly_offset);    }
     if (p->audio_buffers  != -2) { g_audio_buffers_preset = p->audio_buffers;  printf("  audio_buffers  -> %d\n", p->audio_buffers);  }
     if (p->arm7_speed     >= 0) { g_arm7_speed_preset     = p->arm7_speed;     printf("  arm7_speed     -> %d\n", p->arm7_speed);     }
     if (p->sh4_clock      >= 0) { g_sh4_clock_preset      = p->sh4_clock;      printf("  sh4_clock      -> %d\n", p->sh4_clock);      }
