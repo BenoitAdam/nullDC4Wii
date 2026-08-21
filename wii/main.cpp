@@ -1381,6 +1381,7 @@ bool displayOptionsMenu()
       case 1: printf("[< 1                 >]"); break;
       case 2: printf("[< 2                 >]"); break;
       case 3: printf("[< AUTO              >]"); break;
+      case 4: printf("[< AUTO MAX          >]"); break;
     }
     printf("\n");
 
@@ -1883,7 +1884,7 @@ bool displayOptionsMenu()
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
         case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 2) % 3; break;
-        case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 3) % 4; break;
+        case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 4) % 5; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 3) % 4; break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 4) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 4) % 5; break;
@@ -1947,7 +1948,7 @@ bool displayOptionsMenu()
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
         case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 1) % 3; break;
-        case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 1) % 4; break;
+        case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 1) % 5; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 1) % 4; break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 1) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 1) % 5; break;
@@ -2685,7 +2686,8 @@ int main(int argc, wchar *argv[])
       case 0: printf("0\n");    break;
       case 1: printf("1\n");    break;
       case 2: printf("2\n");    break;
-      case 3: printf("AUTO\n"); break;
+      case 3: printf("AUTO\n");     break;
+      case 4: printf("AUTO MAX\n"); break;
     }
     printf("Texture Cache  : ");
     switch(g_texture_cache_preset) {

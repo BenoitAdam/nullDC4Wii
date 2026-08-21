@@ -644,6 +644,7 @@ static int parse_frameskip(const char* v)
     if (strcmp(v, "1")      == 0) return 1;
     if (strcmp(v, "2")      == 0) return 2;
     if (key_eq(v, "auto"))        return 3;
+    if (key_eq(v, "auto_max") || key_eq(v, "automax")) return 4;
     printf("[game_presets] Unknown frameskip value: '%s'\n", v);
     return -1;
 }

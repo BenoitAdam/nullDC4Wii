@@ -26,12 +26,19 @@ s32 spg_ScanlineSh4CycleCounter = 0;
 u32 spg_ScanlineCount = 512;
 u32 spg_CurrentScanline = (u32)-1;  // Explicit -1 cast, avoids signed/unsigned warning
 u32 spg_VblankCount = 0;
-u32 spg_VblankCountTotal = 0; // monotonic, never reset — frameskip AUTO pace reference (gxRend.cpp)
+u32 spg_VblankCountTotal = 0; // monotonic vblank count since boot, never reset
 s32 spg_LineSh4Cycles = 0;
 u32 spg_FrameSh4Cycles = 0;
 
 double spg_last_vps = 0;
-static double s_limiter_next_deadline = 0.0; // os_GetSeconds() deadline for the next vblank (speed limiter)
+
+// ── Frame pacer state (see spg_PaceFrame() below) ───────────────────────────
+// Shared with gxRend.cpp's frameskip AUTO; declared in drkPvr.h.
+double spg_PaceErrorSec = 0.0;  // cumulative wall-clock deviation from the real-time
+                                // schedule at the last vblank (+ = late, - = early)
+double spg_PaceFrameSec = 0.0;  // real-time duration of one emulated video frame,
+                                // 0 until the SPG has been programmed
+static double s_pace_deadline = 0.0; // os_GetSeconds() time this vblank should occur at
 
 // 54 MHz pixel clock (register defines it as 27 MHz, doubled here)
 //54 mhz pixel clock (actually, this is defined as 27 .. why ? --drk)
@@ -137,6 +144,104 @@ void spg_SchedListEndIrq(u32 list)
     s_list_irq_active |= 1u << list;
 }
 
+// ── Frame pacer: one schedule for BOTH speed-control arms ───────────────────
+//
+// Called once per emulated vblank, from the vblank handler below — a point
+// that is reached whether or not anything was drawn. That is what makes the
+// measurement usable: the controller gets exactly one sample per *emulated*
+// frame, never one per *rendered* frame, so dropping renders cannot starve it.
+//
+//   running EARLY -> sleep out the surplus            (speed_limiter preset)
+//   running LATE  -> publish the lateness in spg_PaceErrorSec, which gxRend's
+//                    frameskip AUTO turns into dropped renders
+//
+// The schedule is ABSOLUTE: s_pace_deadline advances by exactly one frame
+// period every vblank and is never re-anchored to the actual wake time, so
+// spg_PaceErrorSec is the CUMULATIVE deviation from real time, not a per-frame
+// delta. That distinction is the whole point of this rewrite:
+//
+//   * A per-frame measurement (what frameskip AUTO used to do: "was the last
+//     interval slower than one frame period?") reports "fine" the instant one
+//     render is dropped, because a skipped frame is cheap. It therefore stops
+//     skipping again immediately and settles on a duty cycle whose *average*
+//     is still below 100% speed — exactly the symptom of "auto mode just
+//     lowers the framerate without restoring speed".
+//   * A cumulative error keeps asking for skips until the debt the heavy
+//     frames actually built up has been repaid, so the average converges on
+//     100%. It is the same absolute-schedule trick the speed limiter below
+//     already relied on, now shared with the skipper instead of duplicated.
+//
+// Anti-windup: the error is CLAMPED to a few frames either way rather than
+// forgiven on a fixed window (Yabause zeroes its integrator once a second,
+// which bounds how exactly it can hold 100%). Clamping bounds the catch-up
+// burst after a stall — a disc load, a debugger break, a mode change — without
+// ever forgiving debt that is still repayable.
+//
+// usleep() overshoot does not accumulate here: the error is re-derived from
+// the absolute schedule every vblank, so one frame's overshoot merely shortens
+// the next frame's wait. (Re-anchoring to the wake time instead bakes the
+// overshoot in permanently — that was the 50 Hz PAL -> ~37 FPS bug.)
+
+#define PACE_MAX_LATE_FRAMES  4.0   // catch-up burst ceiling after a stall/load
+#define PACE_MAX_EARLY_FRAMES 1.0   // credit ceiling when running unthrottled
+
+static void spg_PaceFrame()
+{
+    if (spg_FrameSh4Cycles == 0)
+        return;     // SPG not programmed yet: no meaningful frame period
+
+    // Divide by the SAME (effective) clock spg_FrameSh4Cycles was built from,
+    // so the target stays the real video period (1/60 NTSC etc.) regardless of
+    // the sh4_clock underclock preset — underclocking must not change the
+    // refresh rate we pace to.
+    const double period = (double)spg_FrameSh4Cycles / (double)SH4_CLOCK_EFF;
+
+    // First vblank, or the video mode changed under us (NTSC<->PAL, interlace,
+    // VGA): the old deadline is on the wrong cadence. Start a fresh schedule
+    // and report "on time" so the skipper doesn't act on a stale error.
+    if (s_pace_deadline == 0.0 ||
+        period < spg_PaceFrameSec * 0.99 || period > spg_PaceFrameSec * 1.01)
+    {
+        spg_PaceFrameSec = period;
+        spg_PaceErrorSec = 0.0;
+        s_pace_deadline  = os_GetSeconds() + period;
+        return;
+    }
+
+    double now = os_GetSeconds();
+    double err = now - s_pace_deadline;     // + = behind real time
+
+    // ── EARLY arm: cap emulation at real-hardware (100%) speed ──────────────
+    // The SH4 thread doesn't VIDEO_WaitVSync() (see gxRend.cpp) so it normally
+    // runs as fast as the host CPU allows; light frames push speed past 100%.
+    // Sleeping only the surplus never penalizes a frame that is already at or
+    // below real speed.
+    if (err < 0.0 && SPEED_LIMITER())
+    {
+        usleep((useconds_t)(-err * 1000000.0));
+        now = os_GetSeconds();
+        err = now - s_pace_deadline;
+    }
+
+    // ── Anti-windup clamp ───────────────────────────────────────────────────
+    // Late side bounds the catch-up burst after a stall (a disc load, a mode
+    // change, a debugger break). Early side bounds the credit a fast stretch
+    // can bank with the limiter off — without it, minutes of menu at 300%
+    // would mask the first heavy scene completely.
+    const double max_late  =  PACE_MAX_LATE_FRAMES  * period;
+    const double max_early = -PACE_MAX_EARLY_FRAMES * period;
+
+    if (err > max_late || err < max_early)
+    {
+        err = (err > max_late) ? max_late : max_early;
+        s_pace_deadline = now - err;   // re-anchor so the next vblank measures
+                                       // from the clamp, not from the backlog
+    }
+
+    spg_PaceErrorSec = err;
+    s_pace_deadline += period;         // next vblank's ideal time
+}
+
 // Called from SH4 context each dispatch; updates PVR/TA state
 void FASTCALL libPvr_UpdatePvr(u32 cycles)
 {
@@ -240,54 +345,10 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 // PSP profiler logging removed for Wii build — not applicable
             }
 
-            // ── Speed limiter: cap emulation at real-hardware (100%) speed ──
-            // The SH4 thread doesn't VIDEO_WaitVSync() (see gxRend.cpp) so it
-            // normally runs as fast as the host CPU allows; light frames push
-            // speed past 100%. Sleeping only the amount we're AHEAD of the
-            // real-hardware vblank period caps the top end without ever
-            // penalizing frames that are already at/below real speed.
-            //
-            // Uses a fixed-cadence absolute deadline (deadline += target_sec)
-            // rather than re-anchoring to the actual wake time. usleep() can
-            // overshoot by a few ms depending on host scheduler granularity;
-            // re-anchoring to the (overshot) wake time bakes that overshoot
-            // into every subsequent frame permanently (observed as a steady
-            // FPS well below the target, e.g. 50Hz PAL collapsing to ~37).
-            // Anchoring to the deadline instead means one frame's overshoot
-            // just shortens the next frame's wait, so the average converges
-            // on the true target instead of drifting.
-            if (SPEED_LIMITER())
-            {
-                // Divide by the SAME (effective) clock spg_FrameSh4Cycles was
-                // built from, so the target stays the real video period (1/60
-                // NTSC etc.) regardless of the sh4_clock underclock preset —
-                // underclocking must not change the refresh rate we cap to.
-                double target_sec = (double)spg_FrameSh4Cycles / (double)SH4_CLOCK_EFF;
-                double cur        = os_GetSeconds();
-
-                if (s_limiter_next_deadline == 0.0)
-                {
-                    s_limiter_next_deadline = cur + target_sec;
-                }
-                else
-                {
-                    if (cur < s_limiter_next_deadline)
-                        usleep((useconds_t)((s_limiter_next_deadline - cur) * 1000000.0));
-
-                    s_limiter_next_deadline += target_sec;
-
-                    // If we fell badly behind (debugger stall, frame hitch...),
-                    // don't burn through a burst of unthrottled catch-up frames —
-                    // resync the schedule to "now".
-                    cur = os_GetSeconds();
-                    if (s_limiter_next_deadline < cur - 0.25)
-                        s_limiter_next_deadline = cur + target_sec;
-                }
-            }
-            else
-            {
-                s_limiter_next_deadline = 0.0; // reset so re-enabling doesn't use a stale deadline
-            }
+            // Frame pacing: speed limiter (sleep when early) + the lateness
+            // signal frameskip AUTO consumes. One absolute schedule drives
+            // both — see spg_PaceFrame() above.
+            spg_PaceFrame();
         }
     }
 
@@ -366,6 +427,13 @@ void spg_Reset(bool Manual)
     render_tsp_pending_cycles = 0;
     render_vd_pending_cycles  = 0;
     s_list_irq_active = 0;
+
+    // Drop the frame-pacing schedule: the wall-clock deadline built before the
+    // reset says nothing about the machine that is about to boot, and holding
+    // it would hand the skipper a huge phantom debt on the first vblank.
+    s_pace_deadline  = 0.0;
+    spg_PaceErrorSec = 0.0;
+    spg_PaceFrameSec = 0.0;
 
     CalculateSync();
 }

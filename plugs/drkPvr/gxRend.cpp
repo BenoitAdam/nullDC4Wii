@@ -60,6 +60,7 @@ extern "C" int get_frameskip_preset();
 #define FRAMESKIP_1() (get_frameskip_preset() == 1)
 #define FRAMESKIP_2() (get_frameskip_preset() == 2)
 #define FRAMESKIP_AUTO() (get_frameskip_preset() == 3)
+#define FRAMESKIP_AUTO_MAX() (get_frameskip_preset() == 4)
 
 // 4BPP palette texture management
 extern "C" int get_4bpp_preset();
@@ -3994,33 +3995,61 @@ void PresentFramebuffer();
 // Frame-skip state
 // ============================
 
-// FRAMESKIP_AUTO(): skip when the emulator is running slower than real time.
+// FRAMESKIP_AUTO() / FRAMESKIP_AUTO_MAX(): drop renders while the emulator is
+// behind real time, so EMULATED time keeps advancing at 100% speed even when
+// the display rate collapses. The game's clocks, music and physics stay on
+// schedule; only the number of frames you see goes down.
 //
-// The previous implementation timed DoRender() alone against a fixed 1/60 s
-// budget. That never fired in practice:
-//   * With ASYNC_RENDER() (default ON) DoRender() returns right after queuing
-//     the display copy — both blocking GX_DrawDone() calls are skipped, and
-//     the gx_sync_pending() wait at its top is a no-op because the previous
-//     frame's GPU work drained while the SH4 was emulating — so the measured
-//     span was CPU submit time only, a few ms even on GPU-heavy frames.
-//   * Games slowed down by SH4/AICA emulation rather than by rendering never
-//     exceed a render-only budget at all.
+// Two earlier attempts and why they failed, so neither gets reinvented:
 //
-// Measure instead the wall-clock time between consecutive skip decisions vs
-// the EMULATED time between them: vblanks elapsed x the frame period SPG
-// derives from the game's own video registers (spg_FrameSh4Cycles/SH4_CLOCK —
-// 1/60 NTSC, 1/50 PAL, interlace handled; same formula the speed limiter
-// uses). Ratio > 1 means the emulator is behind real time, whatever the
-// bottleneck. Behind at all -> skip like FRAMESKIP_1; behind more than 2x ->
-// like FRAMESKIP_2; always render after the allowed skips so the screen can
-// never freeze. The duty cycle self-regulates: a skipped frame's interval is
-// cheap, its ratio lands under the margin, and the next frame renders.
+//   1. Timing DoRender() alone against a fixed 1/60 s budget. Never fired:
+//      with ASYNC_RENDER() (default ON) DoRender() returns right after queuing
+//      the display copy — both blocking GX_DrawDone() calls are skipped, and
+//      the gx_sync_pending() wait at its top is a no-op because the previous
+//      frame's GPU work drained while the SH4 was emulating — so the measured
+//      span was CPU submit time only. It also cannot see a game that is slow
+//      because of SH4/AICA emulation rather than rendering.
+//
+//   2. Comparing the wall-clock time between two skip decisions against the
+//      emulated time between them (vblanks x frame period) and skipping when
+//      the RATIO exceeded ~1.1. This fired, but it under-skipped by
+//      construction, which is the "auto mode lowers the framerate but doesn't
+//      restore speed" symptom. A skipped frame is cheap, so the very next
+//      interval measures near 1.0 and the controller immediately stops
+//      skipping. Take a 25 ms frame with a 16.7 ms target and 9 ms of render
+//      in it: it settles into render/skip/render/skip, average 20.5 ms — a
+//      stable 81% speed that it is perfectly happy with, because no single
+//      interval ever looks bad for two frames running.
+//
+// The fix is to stop measuring one interval at a time. spg_PaceFrame() (SPG.cpp)
+// keeps an ABSOLUTE real-time schedule — one deadline per emulated vblank,
+// advanced by exactly one frame period, never re-anchored to the wake time —
+// and publishes the CUMULATIVE deviation in spg_PaceErrorSec. Debt built up by
+// heavy frames survives the cheap skipped frames that follow, so the skipper
+// keeps dropping frames until the debt is actually repaid rather than until
+// one frame happens to look cheap. In the example above it converges on the
+// 2-in-3 skip rate that genuinely holds 100%, instead of stalling at 81%.
+//
+// The decision itself is Yabause-style bang-bang: skip while the debt exceeds
+// a deadband, with a hard cap on consecutive skips so the screen can never
+// freeze. The deadband is what stops it alternating skip/draw every frame on
+// timer jitter; the cap sets the worst-case display rate.
+//
+// Sampling lives at the vblank, not here: spg_PaceFrame() runs once per
+// EMULATED frame whether or not anything was drawn, so dropping renders cannot
+// starve the controller of samples. This function only consumes the verdict.
+//
+// If a game still can't hold 100% with AUTO MAX, rendering is not the
+// bottleneck — the SH4/AICA emulation alone is over budget, and frame skipping
+// has nothing left to give. The lever for that case is the sh4_clock preset
+// (guest underclock), not this one.
 
-static double s_auto_last_time    = 0.0; // os_GetSeconds() at the previous decision
-static u32    s_auto_last_vblank  = 0;   // spg_VblankCountTotal at the previous decision
-static int    s_auto_consec_skips = 0;   // frames skipped since the last rendered one
+#define AUTO_DEADBAND_FRAC     0.50 // AUTO: tolerate half a frame of lateness
+#define AUTO_MAX_DEADBAND_FRAC 0.25 // AUTO MAX: tighter, reacts a frame sooner
+#define AUTO_CONSEC_CAP        3    // AUTO: >= 1 render in 4  -> 15 FPS floor @60Hz
+#define AUTO_MAX_CONSEC_CAP    9    // AUTO MAX: >= 1 render in 10 -> 6 FPS floor
 
-#define AUTO_SKIP_MARGIN 1.10 // skip only when >10% behind real time (timer jitter guard)
+static int s_auto_consec_skips = 0;  // renders dropped since the last one that ran
 
 static bool ShouldSkipFrame() // Returns true when the current frame should be dropped
 {
@@ -4037,56 +4066,33 @@ static bool ShouldSkipFrame() // Returns true when the current frame should be d
         frame_counter = (frame_counter + 1) % 3;
         return frame_counter != 0;
     }
-    if (FRAMESKIP_AUTO())
+    if (FRAMESKIP_AUTO() || FRAMESKIP_AUTO_MAX())
     {
-        double now = os_GetSeconds();
-        u32 vbl    = spg_VblankCountTotal;
-
-        // First call, or SPG not programmed yet: anchor the baseline only.
-        if (s_auto_last_time == 0.0 || spg_FrameSh4Cycles == 0)
-        {
-            s_auto_last_time   = now;
-            s_auto_last_vblank = vbl;
-            return false;
-        }
-
-        double elapsed = now - s_auto_last_time;
-        u32 dv         = vbl - s_auto_last_vblank;
-        s_auto_last_time   = now;
-        s_auto_last_vblank = vbl;
-
-        // No vblank since the previous frame: either the game presents faster
-        // than the display (definitely not behind), or this game programs
-        // vbstart outside the scanline range so the SPG vblank event never
-        // fires (see CalculateSync's [SPG] note) — no usable pace signal.
-        if (dv == 0)
+        // No schedule yet: SPG not programmed, or spg_PaceFrame() just
+        // re-anchored on a video-mode change / reset. Render, and let the
+        // pacer build a fresh baseline.
+        if (spg_PaceFrameSec <= 0.0)
         {
             s_auto_consec_skips = 0;
             return false;
         }
 
-        // A huge gap (loading screen with no presents, disc swap, debugger
-        // stall) says nothing about steady-state speed — resync, don't skip.
-        if (elapsed > 0.5)
-        {
-            s_auto_consec_skips = 0;
-            return false;
-        }
+        const bool   maxmode  = FRAMESKIP_AUTO_MAX();
+        const double deadband = spg_PaceFrameSec *
+            (maxmode ? AUTO_MAX_DEADBAND_FRAC : AUTO_DEADBAND_FRAC);
+        const int    cap      = maxmode ? AUTO_MAX_CONSEC_CAP : AUTO_CONSEC_CAP;
 
-        // Real-time budget for the emulated interval that just elapsed.
-        // SH4_CLOCK_EFF (not nominal SH4_CLOCK) matches the clock
-        // spg_FrameSh4Cycles was derived from, so the per-vblank period stays
-        // 1/60 (NTSC) etc. under the sh4_clock underclock preset.
-        double budget = (double)dv * ((double)spg_FrameSh4Cycles / (double)SH4_CLOCK_EFF);
-        double ratio  = elapsed / budget;
-
-        int max_skips = (ratio > 2.0 * AUTO_SKIP_MARGIN) ? 2 : 1;
-        if (ratio > AUTO_SKIP_MARGIN && s_auto_consec_skips < max_skips)
+        if (spg_PaceErrorSec > deadband && s_auto_consec_skips < cap)
         {
             s_auto_consec_skips++;
             return true;
         }
 
+        // Either we're on schedule, or the cap forces a render. Note that
+        // hitting the cap while still behind is the intended floor behaviour:
+        // the counter resets here, the rendered frame pushes the debt back up,
+        // and the next cap-length run of skips starts — a bounded worst case
+        // rather than a frozen screen.
         s_auto_consec_skips = 0;
         return false;
     }
