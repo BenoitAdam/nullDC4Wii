@@ -196,15 +196,23 @@
                                 interleaved translucent geometry). Overrides
                                 trans_sort; hokuto_hack overrides it. Best with
                                 punch_through=on. 0 (default): off.
-        render_to_texture=on <- on/off, render-to-texture support (see gxRend.cpp
-                                RENDER_TO_TEXTURE()). Frames whose write address
-                                (FB_W_SOF1) has bit 24 set target the 64-bit
-                                texture area — mirrors, TV screens, some menu
-                                effects. on renders them and copies the EFB back
-                                into emulated VRAM at FB_W_SOF1 so the game can
-                                bind the result as a texture, at the cost of an
-                                EFB copy + CPU convert per RTT frame;
-                                off (default, legacy) drops those frames.
+        render_to_texture=on <- on/off/overlay, render-to-texture support (see
+                                gxRend.cpp RENDER_TO_TEXTURE()). Frames whose
+                                write address (FB_W_SOF1) has bit 24 set target
+                                the 64-bit texture area — mirrors, TV screens,
+                                sniper scopes, some menu effects.
+                                on renders them and copies the EFB back into
+                                emulated VRAM at FB_W_SOF1 so the game can bind
+                                the result as a texture, at the cost of an EFB
+                                copy + CPU convert per RTT frame;
+                                overlay does not resolve a texture but carries
+                                the pass's geometry into the next display frame
+                                and draws it last, flat on top (near-plane
+                                parked, GX_ALWAYS, no Z-write) — for passes we
+                                cannot resolve, e.g. Silent Scope's crosshair;
+                                off (default, legacy) drops those frames, but
+                                leaves their geometry in the buffers where it
+                                leaks into the next frame uncontrolled.
         mipmap=fast         <- off/fast/trilinear (or 0/1/2), GX mipmap
                                 generation (see gxRend.cpp MIPMAP_*()).
                                 off (default) = legacy base-level-only, fastest;
@@ -630,6 +638,15 @@ static int parse_bool(const char* v)
     return -1;
 }
 
+// render_to_texture is on/off plus a third "overlay" state (carry the dropped
+// RTT pass into the next display frame and draw it flat on top — see
+// RTT_CARRY_OVERLAY() in gxRend.cpp). Every existing on/off line keeps working.
+static int parse_rtt(const char* v)
+{
+    if (key_eq(v, "overlay") || key_eq(v, "carry") || strcmp(v, "2") == 0) return 2;
+    return parse_bool(v);
+}
+
 static int parse_accuracy(const char* v)
 {
     if (key_eq(v, "fast"))     return 0;
@@ -794,7 +811,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "offset_color"))   p->offset_color   = parse_bool(val);
     else if (key_eq(key, "trans_sort"))     p->trans_sort     = parse_bool(val);
     else if (key_eq(key, "autosort"))       p->autosort       = atoi(val);
-    else if (key_eq(key, "render_to_texture")) p->render_to_texture = parse_bool(val);
+    else if (key_eq(key, "render_to_texture")) p->render_to_texture = parse_rtt(val);
     else if (key_eq(key, "split_screen"))   p->split_screen   = parse_bool(val);
     else if (key_eq(key, "layout_chuchu"))  { int b = parse_bool(val); if (b >= 0) p->layout = b ? 1 /* SPECIAL_LAYOUT_CHUCHU */ : 0 /* SPECIAL_LAYOUT_OFF */; }
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);

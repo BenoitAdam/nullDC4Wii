@@ -216,8 +216,40 @@ extern "C" int get_autosort_preset();
 #define AUTOSORT() (get_autosort_preset())
 
 // Render-to-texture. May behave differently depending on FRAMEBUFFER_2D()
+//
+//   0 = off     legacy. A bit-24 (RTT) render is dropped, but its geometry is
+//               left sitting in the vertices/lists buffers, so the NEXT display
+//               render draws it too — an accident, not a feature (see the
+//               RTT_CARRY_OVERLAY() note below for why it misbehaves).
+//   1 = on      real RTT: render the pass at the target size and copy the EFB
+//               back into VRAM at FB_W_SOF1 so the game samples it as a texture.
+//   2 = overlay the pass is still not rendered to a texture, but its geometry is
+//               deliberately carried into the next display frame and drawn LAST
+//               as a flat overlay. This is the mode-0 accident made correct —
+//               see RTT_CARRY_OVERLAY().
 extern "C" int get_render_to_texture_preset();
 #define RENDER_TO_TEXTURE() (get_render_to_texture_preset() == 1)
+
+// render_to_texture=2 (overlay / "carry"): for a game whose scope, mirror or
+// picture-in-picture pass we cannot render to a texture, draw that pass's
+// geometry on top of the next display frame instead of silently leaking it.
+//
+// Mode 0 already leaks it, which is why some games (Silent Scope's sniper
+// crosshair) show *something* with RTT off — but the leak is broken in three
+// ways, all of which this mode fixes:
+//   * The next pass's StartList() overwrites TransLST/PTLST/TransVTX/..., so
+//     the carried pass's TR and PT strips are re-classified as opaque and drawn
+//     first, in the wrong blend state. Here the carried boundaries are snapshot
+//     at the drop and replayed on their own segment.
+//   * The carried geometry is drawn BEFORE the scene, with Z-write on, so the
+//     scene overdraws whatever does not win the GEQUAL painter compare — the
+//     "crosshair survives, its black surround does not" symptom. Here it is
+//     drawn last, re-parked onto the near plane, GX_ALWAYS + no Z-write.
+//   * Its vertices feed the frame's dynamic vtx_min_Z / vtx_max_Z tracking, so
+//     a scope pass at a completely different depth compresses the scene's whole
+//     Z range. Here the range is reset at the drop, so the display frame tracks
+//     only its own geometry.
+#define RTT_CARRY_OVERLAY() (get_render_to_texture_preset() == 2)
 
 // Hardware-like HOLLY IRQ delays (list-complete + staggered render-done, see SPG.cpp)
 extern "C" int get_render_delay_preset();
@@ -1152,6 +1184,18 @@ PolyParam *PT_Mod = 0;
 PolyParam *curMod = listModes;
 bool global_regd;
 
+// ── RTT_CARRY_OVERLAY() state ────────────────────────────────────────────────
+// When a bit-24 render is dropped in carry mode, StartRender() snapshots that
+// pass here and moves the frame origin past it. DoRender() then builds the
+// display frame's segments from carry_frame_* instead of the buffer origin, and
+// appends one extra segment for [lists .. carry_lst_end) drawn as an overlay.
+// carry_lst_end == 0 means "nothing carried", the normal case.
+VertexList *carry_lst_end   = 0; // one past the last carried strip
+VertexList *carry_trans_lst = 0; // carried pass's own TR boundary (0 = none)
+VertexList *carry_frame_lst = lists;      // display frame's first strip
+Vertex     *carry_frame_vtx = vertices;   //  "        "     first vertex
+PolyParam  *carry_frame_mod = listModes;  //  "        "     first param
+
 // PVR User Tile Clip state, latched from the TA stream (VertexDecoder::
 // SetTileClip / TileClipMode) and captured into listTileClip[] by
 // glob_param_bdc. The rect persists until the game sends a new User Tile Clip
@@ -1459,6 +1503,14 @@ void reset_vtx_state()
   TransMod = 0;
   PT_VTX = 0;
   PT_Mod = 0;
+  // RTT_CARRY_OVERLAY(): a carried pass only ever survives into the ONE display
+  // frame that follows it, so the frame origin goes back to the buffer origin
+  // here like everything else.
+  carry_lst_end   = 0;
+  carry_trans_lst = 0;
+  carry_frame_lst = lists;
+  carry_frame_vtx = vertices;
+  carry_frame_mod = listModes;
   global_regd = false;
   vtx_min_Z = 131072;
   vtx_max_Z = 0;
@@ -5358,8 +5410,13 @@ void DoRender()
     u8 as_peel; // peel index for as_pass != 0
     u8 as_last; // set on the final draw pass: restore the painter baseline after it
     u8 as_tail; // strips submitted after an autosorted TR range (legacy PT tail)
+    u8 overlay; // RTT_CARRY_OVERLAY(): carried pass, drawn flat on top of the frame
+    // Strip that switches this segment into the translucent blend state. Normally
+    // the frame's TransLST; the carried overlay segment replays its own boundary
+    // instead, so its TR strips blend like they did in the pass they came from.
+    const VertexList *trans_begin;
   };
-  DrawSeg segs[4 + 2 * AS_MAX_PEELS];
+  DrawSeg segs[5 + 2 * AS_MAX_PEELS];
   int seg_count = 0;
   memset(segs, 0, sizeof(segs));
 
@@ -5375,8 +5432,8 @@ void DoRender()
     const VertexList *op_end = crLST;
     if (TransLST && TransLST < op_end) op_end = TransLST;
     if (PTLST < op_end) op_end = PTLST;
-    segs[seg_count].begin = lists;    segs[seg_count].end = op_end;
-    segs[seg_count].vtx = vertices;   segs[seg_count].mod = listModes;
+    segs[seg_count].begin = carry_frame_lst; segs[seg_count].end = op_end;
+    segs[seg_count].vtx = carry_frame_vtx;   segs[seg_count].mod = carry_frame_mod;
     segs[seg_count].punch_through = false; seg_count++;
 
     segs[seg_count].begin = PTLST;
@@ -5410,8 +5467,8 @@ void DoRender()
     // Legacy list order with peeling: everything before TR, the 2N peel
     // walks, then (rare: PT list submitted after TR without the PT fix)
     // whatever follows the TR range, with cursors pre-walked past it.
-    segs[seg_count].begin = lists;  segs[seg_count].end = TransLST;
-    segs[seg_count].vtx = vertices; segs[seg_count].mod = listModes;
+    segs[seg_count].begin = carry_frame_lst; segs[seg_count].end = TransLST;
+    segs[seg_count].vtx = carry_frame_vtx;   segs[seg_count].mod = carry_frame_mod;
     seg_count++;
     for (int k = 0; k < as_frame_peels; k++)
     {
@@ -5440,14 +5497,36 @@ void DoRender()
   }
   else
   {
-    segs[seg_count].begin = lists;  segs[seg_count].end = crLST;
-    segs[seg_count].vtx = vertices; segs[seg_count].mod = listModes;
+    segs[seg_count].begin = carry_frame_lst; segs[seg_count].end = crLST;
+    segs[seg_count].vtx = carry_frame_vtx;   segs[seg_count].mod = carry_frame_mod;
     segs[seg_count].punch_through = false; seg_count++;
+  }
+
+  // Every segment built above walks the display frame's own lists, so they all
+  // flip into the translucent blend state at the frame's TR boundary.
+  for (int i = 0; i < seg_count; i++)
+    segs[i].trans_begin = TransLST;
+
+  // RTT_CARRY_OVERLAY(): the pass dropped by StartRender goes last, so it
+  // composites over the finished frame instead of being overdrawn by it. It
+  // replays its own TR boundary (carry_trans_lst) and is marked `overlay`, which
+  // re-parks its vertices onto the near plane and draws them GX_ALWAYS with
+  // Z-write off — see the per-strip block further down.
+  if (carry_lst_end && !s_rtt_pass)
+  {
+    segs[seg_count].begin = lists;    segs[seg_count].end = carry_lst_end;
+    segs[seg_count].vtx = vertices;   segs[seg_count].mod = listModes;
+    segs[seg_count].punch_through = false;
+    segs[seg_count].overlay = 1;
+    segs[seg_count].trans_begin = carry_trans_lst;
+    seg_count++;
   }
 
   for (int seg = 0; seg < seg_count; seg++)
   {
     const bool seg_is_pt = segs[seg].punch_through;
+    const bool seg_overlay = segs[seg].overlay != 0;      // RTT_CARRY_OVERLAY()
+    const VertexList *const seg_trans_begin = segs[seg].trans_begin;
     const VertexList *const seg_end = segs[seg].end;
     drawLST = segs[seg].begin;
     drawVTX = segs[seg].vtx;
@@ -5463,6 +5542,19 @@ void DoRender()
       GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
       GX_SetAlphaCompare(GX_GEQUAL, (u8)(PT_ALPHA_REF & 0xFF), GX_AOP_AND, GX_ALWAYS, 0);
       GX_SetZCompLoc(GX_FALSE);
+    }
+
+    if (seg_overlay)
+    {
+      // RTT_CARRY_OVERLAY() runs after the display frame's own segments, so it
+      // inherits whatever blend state the last of them left behind (TR blending,
+      // or a PT alpha test). Restart from the opaque baseline the frame itself
+      // starts from — the carried pass gets to switch into blending on its own
+      // TR boundary, exactly like it would have in its own render.
+      in_trans_list = false;
+      last_src_blend = -1;
+      last_dst_blend = -1;
+      GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
     }
 
     const int seg_as = segs[seg].as_pass;
@@ -5600,12 +5692,14 @@ void DoRender()
         drawMod = ts_end_mod;
       }
 
-      if (drawLST == TransLST && !seg_as)
+      if (drawLST == seg_trans_begin && !seg_as)
       {
         // Enable blending for the translucent list. Blend factors are set
         // per-polygon below based on TSP.SrcInstr / DstInstr.
         // (AUTOSORT() segments start at TransLST too, but manage their own
         // blend/Z state at segment start — hence the !seg_as guard.)
+        // seg_trans_begin is TransLST for every normal segment; the
+        // RTT_CARRY_OVERLAY() segment replays the boundary its own pass had.
         in_trans_list = true;
         last_src_blend = -1; // force first per-polygon update
         last_dst_blend = -1;
@@ -5623,7 +5717,10 @@ void DoRender()
         // per-poly GX state churn, and the DC CullMode->GX FRONT/BACK winding
         // pairing (try ISP_CULL()==2 to swap it for this projection).
 
-        if (trans_sort)
+        // The sorter's range math is expressed in TransLST/PTLST/crLST, which
+        // describe the DISPLAY frame — meaningless for a carried overlay, whose
+        // strips are all re-parked to one depth anyway. Painter order there.
+        if (trans_sort && !seg_overlay)
         {
           // Build one record per TR strip by pre-walking the range with the
           // same cursor rules as the draw loop (drawVTX/drawMod are exactly
@@ -6096,7 +6193,31 @@ void DoRender()
       // (those own the Z pipeline) and to strips that actually cross the plane,
       // so it is one min-Z compare per strip when on and untouched when off.
       bool hud_strip = false;
-      if (hud_pass && !seg_as && count)
+      if (seg_overlay && count)
+      {
+        // RTT_CARRY_OVERLAY(): this strip was submitted for a pass we never
+        // rendered, so its depth means nothing in this frame's projection —
+        // it can sit anywhere, including outside the near/far planes, where
+        // the XF unit would clip it away entirely (the "we see nothing at
+        // all" case). Re-park the whole strip onto the near plane with the
+        // hud_pass math (x,y are W-prescaled, so scaling x,y,z by the same
+        // ratio keeps the screen position bit-identical) and draw it
+        // GX_ALWAYS + no Z-write: it can neither be hidden by the scene
+        // already in the EFB nor stamp depth that would hide what follows.
+        // Blending still comes from the strip's own TSP, so a translucent
+        // scope surround composites as it did in its own pass.
+        const float clamp_W = scene_near_W * 1.002f;
+        for (int i = 0; i < count; i++)
+        {
+          const float r = clamp_W / drawVTX[i].z;
+          drawVTX[i].x *= r;
+          drawVTX[i].y *= r;
+          drawVTX[i].z  = clamp_W;
+        }
+        GX_SetZMode(GX_TRUE, GX_ALWAYS, GX_FALSE);
+        hud_strip = true;  // reuse the per-strip Z-state restore below
+      }
+      else if (hud_pass && !seg_as && count)
       {
         const float clamp_W = scene_near_W * 1.002f; // land just inside the near plane
         for (int i = 0; i < count; i++)
@@ -6544,10 +6665,25 @@ void StartRender()
       u32 yclip = FB_Y_CLIP.full;
       u32 rtt_w = ((xclip >> 16) & 0x7FF) + 1 - (xclip & 0x7FF); // clip max is inclusive
       u32 rtt_h = ((yclip >> 16) & 0x3FF) + 1 - (yclip & 0x3FF);
-      if ((s32)rtt_w < 8 || rtt_w > (u32)rmode->fbWidth || rtt_w > FB2D_W)
-        rtt_w = 8;
-      if ((s32)rtt_h < 8 || rtt_h > (u32)rmode->efbHeight || rtt_h > FB2D_H)
+
+      // Not every game programs FB_X_CLIP/FB_Y_CLIP for its RTT pass; some
+      // leave the previous frame's full-screen clip in place and describe the
+      // target through FB_W_LINESTRIDE alone. The old code collapsed anything
+      // it didn't like to 8x8, i.e. it rendered a 64-pixel thumbnail and wrote
+      // that back as the texture — visually indistinguishable from "RTT does
+      // nothing". Derive a usable size instead, and only fall back to 8 when
+      // there is genuinely nothing to go on.
+      u32 stride_px = ((FB_W_LINESTRIDE & 0x1FF) * 8) / 2; // 8 bytes/unit, 16bpp
+      if ((s32)rtt_w < 8 || rtt_w > FB2D_W || rtt_w > (u32)rmode->fbWidth)
+        rtt_w = stride_px;                                  // stride wins over a bogus clip
+      if ((s32)rtt_w < 8 || rtt_w > FB2D_W || rtt_w > (u32)rmode->fbWidth)
+        rtt_w = 8;                                          // nothing usable
+      if ((s32)rtt_h < 8)
         rtt_h = 8;
+      // Clamp (don't discard) a target taller than what we can render/copy:
+      // the top rtt_h lines are still the right pixels, a 8-line stub never is.
+      if (rtt_h > FB2D_H)               rtt_h = FB2D_H;
+      if (rtt_h > (u32)rmode->efbHeight) rtt_h = (u32)rmode->efbHeight;
 
       if(DEBUG_MESSAGE()) printf("[PATH] RTT: FB_W_SOF1=%08X %ux%u packmode=%d stride=%d VtxCnt=%d\n",
         FB_W_SOF1, rtt_w, rtt_h, (int)(FB_W_CTRL & 7), (int)((FB_W_LINESTRIDE & 0x1FF) * 8), VtxCnt);
@@ -6558,6 +6694,32 @@ void StartRender()
       DoRender();
       s_rtt_pass = false;
       return; // not a presented frame: no FrameCount++, display untouched
+    }
+
+    // RTT_CARRY_OVERLAY(): don't render this pass to a texture, but hand its
+    // geometry to the next display frame as a proper overlay instead of leaving
+    // it to leak (see the macro doc at the top of the file). Everything stays in
+    // the buffers exactly where it is — only the bookkeeping moves.
+    if (RTT_CARRY_OVERLAY() && VtxCnt > 0 && curLST > lists)
+    {
+      if(DEBUG_MESSAGE()) printf("[PATH] RTT-carry: FB_W_SOF1=%08X strips=%d VtxCnt=%d TR=%d\n",
+        FB_W_SOF1, (int)(curLST - lists), VtxCnt, TransLST ? (int)(TransLST - lists) : -1);
+
+      carry_lst_end   = curLST;
+      carry_trans_lst = TransLST;   // may be 0: an all-opaque carried pass
+      carry_frame_lst = curLST;     // the display frame starts here
+      carry_frame_vtx = curVTX;
+      carry_frame_mod = curMod;
+
+      // Give the display frame a clean list-boundary and depth-range slate; the
+      // carried pass keeps its own copies above. Vertex/list cursors are NOT
+      // rewound — that is the whole point, the geometry has to survive.
+      TransLST = 0;  TransVTX = 0;  TransMod = 0;
+      PTLST    = 0;  PT_VTX   = 0;  PT_Mod   = 0;
+      global_regd = false;
+      vtx_min_Z = 131072;
+      vtx_max_Z = 0;
+      return; // no present, no FrameCount++ — this pass was never a frame
     }
 
     if(FRAMEBUFFER_2D()){

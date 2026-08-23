@@ -221,7 +221,7 @@ extern "C" {
   int get_autosort_preset() { return g_autosort_preset; }
 }
 
-int g_render_to_texture_preset = 0; // 0=off (RTT frames dropped, legacy), 1=on (EFB copied back into VRAM at FB_W_SOF1)
+int g_render_to_texture_preset = 0; // 0=off (RTT frames dropped, legacy: the pass's geometry is left in the buffers and leaks into the next display frame), 1=on (EFB copied back into VRAM at FB_W_SOF1), 2=overlay (pass not rendered to a texture, but its geometry is carried into the next display frame and drawn last, flat, on top — see RTT_CARRY_OVERLAY() in gxRend.cpp; for scope/mirror passes we cannot resolve as a texture, e.g. Silent Scope's sniper crosshair)
 
 extern "C" {
   int get_render_to_texture_preset() { return g_render_to_texture_preset; }
@@ -1456,8 +1456,9 @@ bool displayOptionsMenu()
     switch (g_render_to_texture_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
+      case 2: printf("[< OVERLAY (CARRY)   >]"); break;
     }
-    printf(" mirrors/TV screens");
+    printf(" mirrors/TV screens/scope");
     printf("\n");
 
     // --- Row: Split-screen multiplayer ---
@@ -1925,7 +1926,7 @@ bool displayOptionsMenu()
         case OPT_PUNCH_THROUGH: g_punch_through_preset = (g_punch_through_preset + 1) % 2; break;
         case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
         case OPT_TRANS_SORT: g_trans_sort_preset = (g_trans_sort_preset + 1) % 2; break;
-        case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 2; break;
+        case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 2) % 3; break;
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
@@ -1991,7 +1992,7 @@ bool displayOptionsMenu()
         case OPT_PUNCH_THROUGH: g_punch_through_preset = (g_punch_through_preset + 1) % 2; break;
         case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
         case OPT_TRANS_SORT: g_trans_sort_preset = (g_trans_sort_preset + 1) % 2; break;
-        case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 2; break;
+        case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 3; break;
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
@@ -2784,7 +2785,8 @@ int main(int argc, wchar *argv[])
       printf("Autosort       : ON (%d LAYERS, PER-PIXEL)\n", g_autosort_preset);
     else
       printf("Autosort       : OFF (LEGACY)\n");
-    printf("Render To Tex  : %s\n", g_render_to_texture_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
+    printf("Render To Tex  : %s\n", g_render_to_texture_preset == 2 ? "OVERLAY (CARRY)" :
+                                    g_render_to_texture_preset == 1 ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("Split Screen   : %s\n", g_split_screen_preset ? "ON (2P VIEWPORTS)" : "OFF (LEGACY)");
     printf("Special Layout : %s\n", kSpecialLayoutNames[g_special_layout_preset]);
     printf("Mipmaps        : ");
