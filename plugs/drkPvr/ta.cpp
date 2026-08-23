@@ -1,4 +1,5 @@
 #include "ta.h"
+#include "wii/frame_profile.h"
 
 // Tile Accelerator (TA) state machine for PowerVR2 (Dreamcast) emulation
 // Handles DMA and Store Queue writes, dispatches polygon/vertex/control params
@@ -14,6 +15,7 @@ using namespace TASplitter;
 // Store Queue path: single 32-byte write (e.g. via SQ registers)
 void libPvr_TaSQ(u32* data)
 {
+    FP_SCOPE(FP_TA);
     verify(TaCmd != nullptr);
     Ta_Dma* t = (Ta_Dma*)data;
     TaCmd(t, t);
@@ -23,6 +25,7 @@ void libPvr_TaSQ(u32* data)
 // 'size' is in units of Ta_Dma (32 bytes), not bytes
 void libPvr_TaDMA(u32* data, u32 size)
 {
+    FP_SCOPE(FP_TA);
     verify(TaCmd != nullptr);
     verify(size > 0);
 

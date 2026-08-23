@@ -96,8 +96,96 @@ struct
 	}
 } state;
 
+// ── shop_ifb execution profiler (IFB_PROFILE) ───────────────────────────────
+// The [IFB] list below says WHICH instructions fall back to the interpreter.
+// It does not say how OFTEN, and frequency is the whole game: fschg looked
+// harmless too until it turned out to be firing 1.3 M times a second inside
+// the per-vertex loop, and fixing it was worth 12%.
+//
+// So: give every distinct fallback opcode a slot on first sight, and have the
+// JIT emit a 4-instruction increment of that slot's counter next to the
+// interpreter call it already pays ~100+ cycles for. dec_ifb_report() prints
+// the top offenders once a second. Set IFB_PROFILE to 0 to compile all of it
+// out (both the counters and the emitted increment). The switch itself lives
+// in decoder.h so the JIT backend and the stats printer see the same value.
+
+#if IFB_PROFILE
+u32 g_ifb_count[IFB_SLOTS];
+u16 g_ifb_op[IFB_SLOTS];
+u32 g_ifb_slots = 0;
+static u8 ifb_slot_of[0x10000];   // 0 = unassigned, else slot+1. 64 KB.
+
+// Slot for `op`, allocating on first sight. Compile-time only (called from
+// dec_fallback and from the JIT while emitting), never on the execution path.
+u32 dec_ifb_slot(u32 op)
+{
+	op &= 0xFFFF;
+	if (ifb_slot_of[op])
+		return ifb_slot_of[op] - 1;
+	if (g_ifb_slots >= IFB_SLOTS)
+		return IFB_SLOTS - 1;        // overflow bucket, shared
+	u32 slot = g_ifb_slots++;
+	ifb_slot_of[op] = (u8)(slot + 1);
+	g_ifb_op[slot]  = (u16)op;
+	return slot;
+}
+
+// Once-a-second report, called from the SPG stats block. Prints the busiest
+// fallbacks as a rate, then clears. Anything here running at hundreds of
+// thousands per second is worth a native SHIL decoder.
+void dec_ifb_report(double tdiff)
+{
+	u32 total = 0;
+	for (u32 i = 0; i < g_ifb_slots; i++)
+		total += g_ifb_count[i];
+	if (total == 0)
+		return;
+
+	printf("[IFB] %.0f/s total via interpreter:", total / tdiff);
+	for (u32 shown = 0; shown < 5; shown++)
+	{
+		u32 best = 0, bi = 0;
+		for (u32 i = 0; i < g_ifb_slots; i++)
+			if (g_ifb_count[i] > best) { best = g_ifb_count[i]; bi = i; }
+		if (best == 0)
+			break;
+		printf("  %04X:%.0f/s", g_ifb_op[bi], best / tdiff);
+		g_ifb_count[bi] = 0;        // consumed, so the next pass finds the runner-up
+	}
+	printf("\n");
+	fflush(stdout);
+	for (u32 i = 0; i < g_ifb_slots; i++)
+		g_ifb_count[i] = 0;
+}
+#endif
+
 static void dec_fallback(u32 op)
 {
+	// ── Interpreter-fallback report (compile time, once per opcode) ──────
+	// shop_ifb is the most expensive thing this decoder can emit: the JIT
+	// brackets the interpreter call with reg_flush_all() + reg_flush_all_fpu()
+	// and both reloads, so with the fpu_pin preset on that is a 16-store /
+	// 16-load FPU spill plus the whole GPR file, for ONE SH4 instruction.
+	//
+	// This is exactly the shape of the fschg/sync_fpscr problem that cost 12%
+	// of ChuChu until it was found: an op nobody suspected, executing inside
+	// the per-vertex T&L loop, paying a full spill to do very little. So name
+	// each opcode the first time it falls back -- once, at COMPILE time, so
+	// there is no steady-state cost. Anything in the resulting list that looks
+	// like it belongs in a hot float loop is worth a native SHIL decoder.
+#if IFB_PROFILE
+	{
+		static bool ifb_seen[0x10000] = { false };
+		if (!ifb_seen[op & 0xFFFF])
+		{
+			ifb_seen[op & 0xFFFF] = true;
+			printf("[IFB] %04X %s -> interpreter call + full GPR/FPU spill\n",
+				op & 0xFFFF, OpDesc[op]->diss ? OpDesc[op]->diss : "?");
+			fflush(stdout);
+		}
+	}
+#endif
+
 	shil_opcode opcd;
 	opcd.op=shop_ifb;
 
@@ -339,7 +427,11 @@ sh4dec(i1111_0011_1111_1101)
 {
 	//fpscr.SZ is bit 20
 	block.Emit(shop_xor,reg_fpscr,reg_fpscr,mk_imm(1<<20));
-	block.Emit(shop_sync_fpscr);
+	// SZ-only: flag it so a backend can skip UpdateFPSCR() entirely. Measured at
+	// ~1.3 M/s (2.3 per transformed vertex) in ChuChu, of which ~0.05% actually
+	// changed FP banks -- every other one was paying a C call bracketed by a
+	// full pinned-FPU spill/reload for no state change at all.
+	block.Emit(shop_sync_fpscr,shil_param(),shil_param(),shil_param(),SYNC_FPSCR_SZ_ONLY);
 	state.cpu.FSZ64=!state.cpu.FSZ64;
 	
 	if (!state.cpu.is_delayslot)

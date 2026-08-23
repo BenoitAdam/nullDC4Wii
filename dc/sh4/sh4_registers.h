@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "sh4_if.h"
+#include <stddef.h>	// offsetof, for SH4CTX_OFS_* below
 
 struct Sh4Context
 {
@@ -41,6 +42,13 @@ struct Sh4Context
 };
 
 
+// Field offsets needed by the native recompiler, captured HERE because the
+// convenience macros below redefine the bare field names as Sh4cntx.<field>.
+// After line "#define old_fpscr Sh4cntx.old_fpscr", writing
+// offsetof(Sh4Context, old_fpscr) expands to offsetof(Sh4Context,
+// Sh4cntx.old_fpscr) and fails to compile — so any new offset constant must
+// be declared above them, not at the point of use.
+enum { SH4CTX_OFS_OLD_FPSCR = offsetof(Sh4Context, old_fpscr) };
 
 extern ALIGN(64) Sh4Context Sh4cntx;
 #define r Sh4cntx.r
@@ -71,6 +79,9 @@ extern ALIGN(64) Sh4Context Sh4cntx;
 
 
 void UpdateFPSCR();
+// FPSCR sync counters (see sh4_registers.cpp): fschg/frchg/ldc..FPSCR rate.
+extern u32 sh4_fpscr_sync_count;
+extern u32 sh4_fpscr_bank_count;
 bool UpdateSR();
 
 union DoubleReg

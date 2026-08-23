@@ -98,7 +98,7 @@ struct plugin_interface
 #define SH4_CLOCK (200*1000*1000) // 200 Mhz (nominal Dreamcast SH4 clock)
 
 // SH4 underclock preset (wii/main.cpp get_sh4_clock_preset / game_presets
-// `sh4_clock`): effective SH4 clock in MHz, 150..200. Emulation timing/pacing
+// `sh4_clock`): effective SH4 clock in MHz, 100..200. Emulation timing/pacing
 // (SPG video, arm_aica sample step, RTC, DMA) divides by SH4_CLOCK_EFF instead
 // of the nominal SH4_CLOCK so that underclocking scales the audio/video/RTC
 // anchors together — fewer emulated SH4 cycles are budgeted per frame, giving
@@ -109,7 +109,7 @@ struct plugin_interface
 #ifdef __cplusplus
 extern "C" {
 #endif
-int get_sh4_clock_preset(void); // effective SH4 clock in MHz (150..200)
+int get_sh4_clock_preset(void); // effective SH4 clock in MHz (100..200)
 #ifdef __cplusplus
 }
 #endif

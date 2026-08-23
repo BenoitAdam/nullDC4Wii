@@ -6,6 +6,9 @@
 #include "spg.h"
 #include "Renderer_if.h"
 #include "regs.h"
+#include "wii/frame_profile.h" // render-cost meter + ticks_to_microsecs()
+#include "dc/sh4/sh4_registers.h" // sh4_fpscr_sync_count / sh4_fpscr_bank_count
+#include "dc/sh4/rec_v2/decoder.h" // dec_ifb_report / IFB_PROFILE
 #include <ogc/system.h>
 #include <unistd.h>
 
@@ -38,7 +41,16 @@ double spg_PaceErrorSec = 0.0;  // cumulative wall-clock deviation from the real
                                 // schedule at the last vblank (+ = late, - = early)
 double spg_PaceFrameSec = 0.0;  // real-time duration of one emulated video frame,
                                 // 0 until the SPG has been programmed
+double spg_PaceBestSpeed = 1.0; // speed reachable if EVERY render were dropped
+                                // (1.0 = 100% still achievable); recomputed once
+                                // a second in the vblank stats block below
 static double s_pace_deadline = 0.0; // os_GetSeconds() time this vblank should occur at
+
+#if FRAME_PROFILE
+u64 g_fp_acc[FP_BUCKETS]  = { 0 };
+u64 g_fp_hits[FP_BUCKETS] = { 0 };
+u64 g_fp_child_total      = 0;
+#endif
 
 // 54 MHz pixel clock (register defines it as 27 MHz, doubled here)
 //54 mhz pixel clock (actually, this is defined as 27 .. why ? --drk)
@@ -295,12 +307,51 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 double spd_fps = FrameCount    / tdiff;
                 double spd_vbs = spg_VblankCount / tdiff;
                 double spd_cpu = (spd_vbs * spg_FrameSh4Cycles) / 1000000.0;
-                double fullvbs = (spd_vbs / spd_cpu) * 200.0;
                 double mv      = VertexCount  / 1000.0;
+
+                // 100% reference is the EFFECTIVE clock, not a hardcoded 200.
+                // spg_FrameSh4Cycles is derived from SH4_CLOCK_EFF, so with the
+                // sh4_clock underclock preset on, dividing by 200 reported a
+                // game that was actually at full speed as (clock/200) of it —
+                // e.g. sh4_clock=130 made a true 100% print as 65%, which is
+                // exactly the kind of thing that sends an optimisation hunt off
+                // in the wrong direction. Underclocking is supposed to change
+                // how much work a frame costs, not what "full speed" means.
+                double ref_mhz = (double)SH4_CLOCK_EFF / 1000000.0;
+                double spd_pct = spd_cpu * 100.0 / ref_mhz;
+                double fullvbs = (spd_cpu > 0.0) ? (spd_vbs / spd_cpu) * ref_mhz : 0.0;
 
                 VertexCount     = 0;
                 FrameCount      = 0;
                 spg_VblankCount = 0;
+
+                // ── What could frame skipping possibly buy? ────────────────
+                // Skipping removes exactly one thing: the wall time inside
+                // DoRender()/PresentFramebuffer() (gxRend.cpp's
+                // g_fp_render_ticks). So the ceiling on frame skipping is the
+                // speed the emulator would reach with that time removed
+                // entirely — every single render dropped:
+                //
+                //     best = emulated seconds produced / (host seconds - render)
+                //
+                // If that is still under 1.0, no skip rate reaches 100% and
+                // dropping frames only trades framerate for a target it cannot
+                // hit. frameskip AUTO reads this and backs off; AUTO MAX
+                // deliberately ignores it. It is also the number to read in the
+                // log when a game runs slow: best ~= current speed means
+                // rendering is NOT the bottleneck, and the lever is the
+                // sh4_clock underclock preset (or the FRAME_PROFILE breakdown
+                // in wii/frame_profile.h to find out what is).
+                double render_sec = (double)ticks_to_microsecs(g_fp_render_ticks) / 1000000.0;
+                g_fp_render_ticks = 0;
+
+                double period_now = (spg_FrameSh4Cycles != 0)
+                    ? (double)spg_FrameSh4Cycles / (double)SH4_CLOCK_EFF : 0.0;
+                double emu_sec    = spd_vbs * tdiff * period_now; // emulated seconds produced
+                double host_free  = tdiff - render_sec;           // host seconds minus all rendering
+
+                spg_PaceBestSpeed = (host_free > 0.001 && period_now > 0.0)
+                    ? (emu_sec / host_free) : 9.99;
 
                 // Determine video mode strings
                 const char* mode;
@@ -328,18 +379,106 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                     fpsStr,
                     "FPS: %.2f\nSPEED: %.2f%%",
                     spd_fps,
-                    spd_cpu * 100.0 / 200.0);
+                    spd_pct);
 
                 rend_set_fps_text(fpsStr);
 
 #ifndef TARGET_PSP
                 printf(
-                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK\n",
-                    spd_cpu * 100.0 / 200.0, spd_vbs,
+                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK rend:%2.0f%% best:%3.0f%%\n",
+                    spd_pct, spd_vbs,
                     mode, res, fullvbs,
                     spd_fps,
                     (spd_fps > 0.0 ? mv / spd_fps / tdiff : 0.0),
-                    mv / tdiff);
+                    mv / tdiff,
+                    render_sec / tdiff * 100.0,
+                    spg_PaceBestSpeed * 100.0);
+
+                // FPSCR sync rate — a REGRESSION TRIPWIRE, not routine output.
+                // `fschg` used to route through UpdateFPSCR 1.3 MILLION times a
+                // second in mouse mania (2.3 per vertex), each one a C call
+                // bracketed by a full pinned-FPU spill/reload; giving it an
+                // SZ-only fast path in the JIT was worth 12-13% speed. A healthy
+                // build sits at a few thousand per second, so this stays silent.
+                // If it ever shouts again, SYNC_FPSCR_SZ_ONLY has stopped
+                // reaching the backend. bank = the subset that really did swap
+                // FP banks (frchg), which must always go the slow way.
+                if (sh4_fpscr_sync_count / tdiff > 50000.0)
+                    printf("       fpscr/s:%.0f (bank:%.0f)  vt/s:%.0f  -> %.2f per vertex\n",
+                    sh4_fpscr_sync_count / tdiff,
+                    sh4_fpscr_bank_count / tdiff,
+                    mv * 1000.0 / tdiff,
+                    (mv > 0.0) ? sh4_fpscr_sync_count / (mv * 1000.0) : 0.0);
+                sh4_fpscr_sync_count = 0;
+                sh4_fpscr_bank_count = 0;
+
+                // Busiest interpreter fallbacks, as a rate (decoder.cpp).
+                // Silent when nothing fell back this second, and compiled
+                // out entirely with IFB_PROFILE 0.
+#if IFB_PROFILE
+                dec_ifb_report(tdiff);
+#endif
+#if FRAME_PROFILE
+                // Where the second went (wii/frame_profile.h). Buckets are
+                // exclusive, so "other" is a true residual: SH4 dynarec block
+                // execution plus the memory handlers it calls — the part no
+                // frameskip controller can ever touch.
+                double sec[FP_BUCKETS];
+                double pct[FP_BUCKETS];
+                double accounted = 0.0;
+                for (int i = 0; i < FP_BUCKETS; i++)
+                {
+                    sec[i]     = (double)ticks_to_microsecs(g_fp_acc[i]) / 1000000.0;
+                    pct[i]     = sec[i] / tdiff * 100.0;
+                    accounted += sec[i];
+                }
+                printf(
+                    "[PROF] sh4:%4.1f%%  ta:%4.1f%%  aica:%4.1f%%  rend:%4.1f%%  pvr:%4.1f%%  sys:%4.1f%%  snd:%4.1f%%   ta/s:%llu\n",
+                    (tdiff - accounted) / tdiff * 100.0,
+                    pct[FP_TA], pct[FP_AICA], pct[FP_REND],
+                    pct[FP_PVR], pct[FP_SYS], pct[FP_SND],
+                    (unsigned long long)g_fp_hits[FP_TA]);
+
+                // ── Load-normalised: cost per unit of WORK, not per second ──
+                // The percentages above are only comparable between runs that
+                // did the SAME amount of work, and in a game whose load is
+                // driven by the player (ChuChu: how many mice are alive right
+                // now) that never happens twice. These are per-call / per-cycle
+                // costs, so they hold still while the scene changes underneath
+                // them — in the run that measured the TA changes, the board
+                // went from nearly empty to full (a 2.2x swing in TA calls per
+                // second) and ta-ns moved by 3.6%.
+                //
+                // THESE are the numbers to A/B an optimisation with. A change
+                // is real when the per-work cost moves further than its own
+                // scatter across a single run; anything smaller is the scene,
+                // not the patch.
+                //
+                //   ta   ns per TA command (~1 per vertex): decode efficiency
+                //   rend us per rendered frame: GX submit + texture + GPU wait
+                //   aica us per MediumUpdate: AICA mixer + ARM7 cost
+                //   sh4  host ns per 1000 emulated SH4 cycles: dynarec quality.
+                //        Still mix-dependent (an idle-spin loop is cheaper per
+                //        cycle than real work), but far steadier than a share
+                //        of the second.
+                double emu_kcycles =
+                    spd_vbs * tdiff * (double)spg_FrameSh4Cycles / 1000.0;
+                printf(
+                    "[PROF/work] ta:%.0fns/cmd  rend:%.0fus/frame  aica:%.1fus/upd  sh4:%.1fns/kcyc\n",
+                    g_fp_hits[FP_TA]   ? sec[FP_TA]   * 1e9 / (double)g_fp_hits[FP_TA]   : 0.0,
+                    g_fp_hits[FP_REND] ? sec[FP_REND] * 1e6 / (double)g_fp_hits[FP_REND] : 0.0,
+                    g_fp_hits[FP_AICA] ? sec[FP_AICA] * 1e6 / (double)g_fp_hits[FP_AICA] : 0.0,
+                    (emu_kcycles > 0.0) ? (tdiff - accounted) * 1e9 / emu_kcycles : 0.0);
+                for (int i = 0; i < FP_BUCKETS; i++)
+                {
+                    g_fp_acc[i]  = 0;
+                    g_fp_hits[i] = 0;
+                }
+                // g_fp_child_total is deliberately NOT reset: this print runs
+                // INSIDE the FP_PVR scope, and zeroing the running total here
+                // would make that scope's "children" delta underflow. Only
+                // differences of it are ever read, and u64 will not wrap.
+#endif
                 fflush(stdout); // once per 1s: keep the log tail intact if the Wii is powered off
 #endif
                 // PSP profiler logging removed for Wii build — not applicable

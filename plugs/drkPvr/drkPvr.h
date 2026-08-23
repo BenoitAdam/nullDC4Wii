@@ -45,6 +45,9 @@ extern double spg_PaceErrorSec;  // cumulative deviation from the real-time sche
                                  // (+ = behind real time, - = ahead)
 extern double spg_PaceFrameSec;  // real-time duration of one emulated video frame,
                                  // 0 until the SPG has been programmed
+extern double spg_PaceBestSpeed; // speed reachable if EVERY render were dropped;
+                                 // < 1.0 means no skip rate can reach 100% and
+                                 // skipping is only trading framerate for nothing
 extern pvr_init_params PVRPARAMS;
 
 // Function declarations

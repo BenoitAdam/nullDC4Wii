@@ -62,5 +62,25 @@ public:
 };
 
 DecodedBlock* dec_DecodeBlock(u32 rpc,fpscr_type fpu_cfg,u32 max_cycles);
+
+// shop_ifb execution profiler (see IFB_PROFILE in decoder.cpp). Distinct
+// interpreter-fallback opcodes get a slot on first sight; the JIT emits an
+// increment of that slot next to the interpreter call, and dec_ifb_report()
+// prints the busiest as a rate once a second. IFB_SLOTS lives here so the
+// backend can size nothing and just call dec_ifb_slot().
+// Master switch: 0 compiles out the counters, the [IFB] boot list, and the
+// increment the JIT emits. Left OFF: measured on ChuChu 2026-08-23 at only
+// 17-25 K fallbacks/s during mouse mania (~0.5% of the frame), i.e. the
+// interpreter path is NOT a bottleneck there. Transient bursts do reach
+// ~330 K/s during CD seek/loading (stc SR / ldc SR / rotcl), but those phases
+// already run at 100% speed. Flip to 1 if a game behaves as though it is
+// interpreting a hot loop.
+#define IFB_PROFILE 0
+#define IFB_SLOTS 64
+extern u32 g_ifb_count[IFB_SLOTS];
+extern u16 g_ifb_op[IFB_SLOTS];
+extern u32 g_ifb_slots;
+u32  dec_ifb_slot(u32 op);   // compile-time only
+void dec_ifb_report(double tdiff);
 void dec_Cleanup();
 

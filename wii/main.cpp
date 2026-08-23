@@ -1949,7 +1949,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
-        case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
+        case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 100) ? 200 : g_sh4_clock_preset - 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
@@ -2015,7 +2015,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
-        case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
+        case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 100 : g_sh4_clock_preset + 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;

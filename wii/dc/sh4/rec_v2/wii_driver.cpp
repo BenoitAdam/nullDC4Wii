@@ -2317,6 +2317,20 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			{
 				reg_flush_all();
 				reg_flush_all_fpu();
+#if IFB_PROFILE
+				// Count how often this particular fallback actually executes.
+				// Four instructions next to a call that already costs 100+
+				// cycles of spill/reload, and rarg1/rarg2 are scratch and
+				// already flushed above. The [IFB] list tells us WHICH ops
+				// fall back; only this tells us which ones matter.
+				{
+					u32 slot = dec_ifb_slot(op->rs3._imm);
+					ppc_li(ppc_rarg1, (u32)((u8*)&g_ifb_count[slot] - (u8*)0));
+					ppc_lwz(ppc_rarg2, ppc_rarg1, 0);
+					ppc_addi(ppc_rarg2, ppc_rarg2, 1);
+					ppc_stw(ppc_rarg2, ppc_rarg1, 0);
+				}
+#endif
 				if (op->rs1._imm)
 				{
 					ppc_li(ppc_rarg0,op->rs2._imm);
@@ -2883,9 +2897,37 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		// after (fr[] now holds the new front bank). reg_flush/reload_all_fpu
 		// are no-ops when the preset is off.
 		case shop_sync_fpscr:
-			reg_flush_all_fpu();
-			ppc_call(&UpdateFPSCR);
-			reg_reload_all_fpu();
+			// SYNC_FPSCR_SZ_ONLY: emitted by `fschg`, which toggles FPSCR.SZ and
+			// nothing else. FR cannot have changed, so ChangeFP() is impossible;
+			// RM/DN are untouched, so SetFloatStatusReg() has nothing to do (and
+			// on Wii its body is x86-only anyway). Everything left of
+			// UpdateFPSCR() is keeping old_fpscr in step — two instructions.
+			//
+			// This matters far more than it looks. Dreamcast T&L brackets its
+			// vertex loop with fschg to get pair-width fmov, so this op fired
+			// ~1.3 MILLION times a second in ChuChu mouse mania — 2.3 per
+			// transformed vertex — while the bank-swap counter showed only ~650
+			// of those per second actually changed anything. The other 99.95%
+			// were each paying 16 stfs + a C call + 16 lfs to do nothing.
+			//
+			// old_fpscr is plain context memory (never pinned), so a raw stw is
+			// safe; fpscr itself may live in a pinned GPR, hence ppc_sh_load
+			// rather than a bare lwz. rarg0 is scratch here (shop_pref uses it
+			// the same way) and no GPR flush is needed — this never touches r[].
+			// The offset comes from SH4CTX_OFS_OLD_FPSCR rather than offsetof()
+			// because sh4_registers.h later does "#define old_fpscr
+			// Sh4cntx.old_fpscr", which would rewrite the member name here.
+			if (op->flags & SYNC_FPSCR_SZ_ONLY)
+			{
+				ppc_sh_load(ppc_rarg0, reg_fpscr);
+				ppc_stw(ppc_rarg0, ppc_contex, (u32)SH4CTX_OFS_OLD_FPSCR);
+			}
+			else
+			{
+				reg_flush_all_fpu();
+				ppc_call(&UpdateFPSCR);
+				reg_reload_all_fpu();
+			}
 			break;
 
 		// pref: store-queue prefetch. Only addresses in the SQ region trigger a
@@ -2927,6 +2969,28 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
           printf("OH CRAP %d\n", op->op);
           die("Recompiler doesn't know about that opcode");
       }
+			// ── Canonical-fallback report (compile time, once per op type) ──────
+			// This arm is EXPENSIVE. Every op without a native case above becomes a
+			// C call bracketed by reg_flush_all() + reg_flush_all_fpu() and their
+			// reloads — with the fpu_pin preset on that is 16 stfs + 16 lfs on top
+			// of the full GPR spill, for ONE SHIL op. An op landing here inside a
+			// hot loop costs hundreds of cycles every iteration.
+			//
+			// So: name each op the first time it falls through, once, at COMPILE
+			// time — zero steady-state cost, and the list is short enough to read.
+			// Anything in it that shows up in a per-vertex T&L loop is a direct,
+			// bounded codegen fix; that is the difference between guessing at
+			// dynarec cost and knowing where it is.
+			{
+				static bool fallback_seen[512] = { false };
+				if (op->op < 512 && !fallback_seen[op->op])
+				{
+					fallback_seen[op->op] = true;
+					printf("[JIT] no native case for shop_%s (%d) -> C call + full GPR/FPU spill\n",
+						shil_opcode_name[op->op], (int)op->op);
+					fflush(stdout);
+				}
+			}
 			// Bracket the canonical fallback with flush/reload: some fallback
 			// handlers (notably sync_sr -> UpdateSR) mutate context GPRs directly
 			// (e.g. SR.RB bank switch), so pinned regs must be coherent in memory

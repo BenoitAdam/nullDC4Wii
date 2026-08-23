@@ -360,6 +360,7 @@ int frame_counter;
 #include <stdlib.h> // qsort, for TRANS_SORT()
 #include "regs.h"
 #include "wii/wii_audio.h"
+#include "wii/frame_profile.h"
 #include <stdio.h> // needed for log
 
 // The FIFO is the command buffer for the GX hardware. 
@@ -829,7 +830,27 @@ void ApplyGraphismPreset() {
   }
 
 
+// ── TA_DCBZ: dcbz the vertex line before writing it ─────────────────────────
+// MEASURED ON HARDWARE AND NOT WORTH IT — default 0. Kept because the reasoning
+// is worth not repeating: the idea was that storing to a line absent from cache
+// costs a write-allocate (fetch the line from MEM1 only to overwrite all of
+// it), and vertices[] is far past the 256 KB L2 so every vertex paid one.
+// Wrong conclusion, right premise: PowerPC stores are POSTED. A store miss
+// does not stall the pipeline — the fill happens in the background while the
+// core runs on — so on a pure sequential write stream with no dependent loads
+// the write-allocate costs BANDWIDTH (~16 MB/s against MEM1's ~1.9 GB/s, i.e.
+// nothing), not latency. Turning it on moved the TA decode from 378 to 365 ns
+// per call: -3.8% of a bucket worth 18%, so about +0.5% total speed, in
+// exchange for 168 KB of MEM1 (Vertex 28 -> 32 bytes). Flip to 1 only if MEM1
+// is comfortable and half a point matters.
+//   Full correctness rules for the dcbz placement live at vtx_prep() below.
+#define TA_DCBZ 0
+
 // Vertex structure used to feed the Wii's GX pipeline.
+// With TA_DCBZ the layout must be EXACTLY 32 bytes (one Broadway cache line)
+// and vertices[] 32-byte aligned, because dcbz zeroes a whole line and a
+// 28-byte Vertex would have it reach into its neighbour. Without it, keep the
+// tight 28-byte form: 42K of these live in MEM1.
 struct Vertex
 {
   float u, v;        // Texture coordinates
@@ -839,6 +860,9 @@ struct Vertex
                      // has no offset color or OFFSET_COLOR_FIX() is off), only
                      // submitted to GX when OFFSET_COLOR_FIX() is on.
   float x, y, z;     // 3D coordinates
+#if TA_DCBZ
+  unsigned int _pad; // -> 32 bytes = 1 cache line. Required by TA_DCBZ.
+#endif
 };
 
 // Structures to manage the internal drawing lists and state 
@@ -1128,7 +1152,16 @@ static void tex_frame_reset()
 
 // Static arrays for vertex data to avoid frequent heap allocations.
 // Limited by the Wii's MEM1/MEM2 availability.
+// TA_DCBZ needs every element on a cache-line boundary (and 168 KB more
+// MEM1); without it the tight 16-byte alignment is enough.
+#if TA_DCBZ
+Vertex ALIGN32 vertices[42*1024]; // Wii memory limit
+// dcbz zeroes a whole 32-byte line, so a Vertex that is not exactly one line
+// would corrupt its neighbour. Fail the build, not the frame.
+typedef char Vertex_must_be_one_cache_line[(sizeof(Vertex) == 32) ? 1 : -1];
+#else
 Vertex ALIGN16 vertices[42*1024]; // Wii memory limit
+#endif
 VertexList ALIGN16 lists[8*1024];
 PolyParam ALIGN16 listModes[8*1024];
 // Per-param user tile clip, parallel to listModes (same index). Kept OUT of
@@ -1137,8 +1170,92 @@ PolyParam ALIGN16 listModes[8*1024];
 // when SPLIT_SCREEN() is on (g_split_screen_cached) — zero cost otherwise.
 u32 listTileClip[8*1024]; // 32KB BSS
 
-Vertex *curVTX = vertices;
-VertexList *curLST = lists;
+// ── TA decode hot state: one cache line ─────────────────────────────────────
+// These nine were separate globals scattered across .data/.bss, i.e. up to
+// nine distinct cache lines touched to decode ONE vertex. The vertex output
+// stream (vertices[], ~500 K writes/s) continuously allocates L1 lines and
+// evicts them, so they were being re-fetched far more often than their access
+// pattern suggests. Packed into a single 32-byte aligned struct they occupy
+// exactly one line, which also lets the compiler keep one base address in a
+// register and reach every field by displacement.
+//
+// Same trick as the jit_scratch relocation. The #defines below keep every
+// existing reference in this file working unchanged — nothing else touches
+// these names (they are all file-local; wii/main.cpp only mentions vtx_min_Z
+// in a comment), so the aliases stay confined to this translation unit.
+//
+// Ordering is deliberate: the per-vertex fields come first, the per-parameter
+// ones after. Total is 30 bytes + 2 pad = the full line, so do not add a field
+// without removing one.
+struct TaHotState
+{
+  Vertex     *vtx;          // vertex write cursor          (per vertex)
+  float       minZ, maxZ;   // scene W range being tracked  (per vertex)
+  float       zClamp;       // vert_base 1/W floor          (per vertex)
+  u32         polyOffsMask; // offset-colour keep/drop mask (per vertex)
+  VertexList *lst;          // strip cursor                 (per strip)
+  PolyParam  *mod;          // render-state cursor          (per param)
+  bool        fixedDepth;   // skip the min/max W tracking  (per vertex)
+  bool        globalRegd;   // a new param is pending       (per param)
+  bool        vertexColFix; // INTESITY() uses FaceColor    (per vertex)
+};
+ALIGN32 TaHotState g_ta_hot =
+{
+  vertices,       // vtx
+  0.0f, 0.0f,     // minZ, maxZ   (reset_vtx_state sets the real sentinels)
+  0.0001f,        // zClamp
+  0,              // polyOffsMask
+  lists,          // lst
+  listModes,      // mod
+  false,          // fixedDepth
+  false,          // globalRegd
+  false           // vertexColFix
+};
+
+// Member names deliberately differ from the alias names: with a member also
+// called curVTX, any later source text spelling g_ta_hot.curVTX would expand
+// to g_ta_hot.g_ta_hot.curVTX. Distinct names make that impossible.
+#define curVTX                    g_ta_hot.vtx
+#define curLST                    g_ta_hot.lst
+#define curMod                    g_ta_hot.mod
+#define vtx_min_Z                 g_ta_hot.minZ
+#define vtx_max_Z                 g_ta_hot.maxZ
+#define g_vert_z_clamp            g_ta_hot.zClamp
+#define curPolyOffsMask           g_ta_hot.polyOffsMask
+#define global_regd               g_ta_hot.globalRegd
+#define g_fixed_depth_cached      g_ta_hot.fixedDepth
+#define g_vertex_color_fix_cached g_ta_hot.vertexColFix
+
+// ── dcbz on the vertex output stream (TA_DCBZ, default OFF) ─────────────────
+// WHY it is off is at the TA_DCBZ define near struct Vertex. What follows is
+// the placement contract, which anyone re-enabling it must preserve.
+//
+// Placed in vert_cvt_base (i.e. vert_base(0, ...)) rather than in vert_base
+// itself, and that is a correctness requirement, not a style choice:
+//   * Every 32-byte poly handler and every 64-byte "A" handler starts with
+//     vert_cvt_base on a FRESH slot and reads nothing from it first — safe.
+//   * The "B" handlers only finish the slot their "A" already opened, so they
+//     must NOT re-zero it. They don't use vert_cvt_base.
+//   * Sprites are the reason this can't live in vert_base: AppendSpriteVertexA
+//     writes col/spc for all four vertices BEFORE calling vert_base(2)/(3),
+//     and AppendSpriteVertexB feeds vert_base(1) with curVTX[1].x written by
+//     A. Zeroing there would eat both. Sprites use vert_base(N, ...) directly
+//     and keep the old write-allocate behaviour — they are ~2% of the vertices
+//     in the games this was measured on, so there is nothing to win there.
+// Requires sizeof(Vertex) == 32 and vertices[] 32-byte aligned; both enforced
+// at the definitions above (compile-time assert).
+//
+// The "=m"(*curVTX) output is what makes this correct: it tells the compiler
+// the asm writes this Vertex, so the field stores that follow can't be hoisted
+// above the dcbz that would then erase them. A blanket "memory" clobber would
+// also work, but it would force g_ta_hot to be spilled and reloaded around
+// every single vertex — undoing the packing directly above.
+#if TA_DCBZ
+#define vtx_prep() __asm__ __volatile__("dcbz 0,%1" : "=m"(*curVTX) : "r"(curVTX))
+#else
+#define vtx_prep() ((void)0)
+#endif
+
 VertexList *TransLST = 0;
 // Punch-through list boundary, plus the vertex/param cursors captured when the
 // TR and PT lists start: lists/vertices/listModes are parallel streams that
@@ -1149,8 +1266,6 @@ Vertex *TransVTX = 0;
 PolyParam *TransMod = 0;
 Vertex *PT_VTX = 0;
 PolyParam *PT_Mod = 0;
-PolyParam *curMod = listModes;
-bool global_regd;
 
 // PVR User Tile Clip state, latched from the TA stream (VertexDecoder::
 // SetTileClip / TileClipMode) and captured into listTileClip[] by
@@ -1164,8 +1279,6 @@ bool global_regd;
 // in the rare latch calls, so glob_param_bdc just copies one u32.
 u32 ta_tileclip_rect = 0; // rect bits of ta_tileclip
 u32 ta_tileclip = 0;      // packed mode<<30 | rect
-float vtx_min_Z;
-float vtx_max_Z;
 
 // Scratch face color for the polygon currently being decoded, used by
 // Intensity (Col_Type==2) Gouraud shading: AppendPolyParam1/2B/4B set this
@@ -1184,8 +1297,7 @@ float curFaceOffsR = 0.0f, curFaceOffsG = 0.0f, curFaceOffsB = 0.0f;
 // 0xFFFFFFFF while the polygon being decoded has PCW.Offset set AND
 // OFFSET_COLOR_FIX() is on, else 0. Lets the vertex handlers keep/drop the
 // offset color with a mask (the TA vertex structs always reserve the field,
-// but its content is garbage when PCW.Offset is 0).
-u32 curPolyOffsMask = 0;
+// but its content is garbage when PCW.Offset is 0). Lives in g_ta_hot.
 
 // Per-polygon offset color for sprites (they carry it in the header, not per
 // vertex). Already ABGR-converted and masked by curPolyOffsMask.
@@ -1193,24 +1305,25 @@ u32 curSpriteSpc = 0;
 
 // Cached once per frame in reset_vtx_state() instead of calling
 // VERTEX_COLOR_FIX() (an uncached extern getter) on every Intensity vertex —
-// the preset can't change mid-frame anyway.
-bool g_vertex_color_fix_cached = false;
+// the preset can't change mid-frame anyway. The two consulted per VERTEX
+// (vertex_color_fix, fixed_depth) live in g_ta_hot; these are per-parameter.
 bool g_offset_color_fix_cached = false; // same idea, for OFFSET_COLOR_FIX()
 bool g_split_screen_cached     = false; // same idea, for SPLIT_SCREEN(): gates
                                         // the listTileClip[] store per param
-bool g_fixed_depth_cached      = false; // same idea, for FIXED_DEPTH_*(): skips
-                                        // the per-vertex min/max W tracking
 bool  g_legacy_depth_cached    = false; // same idea, for LEGACY_DEPTH()
-float g_vert_z_clamp           = 0.0001f; // vert_base 1/W floor: 0.0001 normally,
-                                        // 0.001 under LEGACY_DEPTH (1bb8c27).
-                                        // A per-frame global rather than a
-                                        // literal so the hot macro stays one
-                                        // compare, not a branch on a preset.
 
 char fps_text[512];
 
 struct VertexDecoder;
 FifoSplitter<VertexDecoder> TileAccel;
+
+// Render-cost meter (declared in wii/frame_profile.h, scoped by
+// RenderCostScope). This is the ONLY cost frame skipping removes, so the
+// frameskip AUTO controller needs it to know whether skipping can achieve
+// anything at all — a game starved by SH4/AICA/TA work gets nothing back for
+// the frames it drops. Consumed once a second by SPG.cpp's vblank stats block,
+// which turns it into spg_PaceBestSpeed.
+u64 g_fp_render_ticks = 0;
 
 union _ISP_BACKGND_T_type
 {
@@ -4110,10 +4223,15 @@ void PresentFramebuffer();
 // EMULATED frame whether or not anything was drawn, so dropping renders cannot
 // starve the controller of samples. This function only consumes the verdict.
 //
-// If a game still can't hold 100% with AUTO MAX, rendering is not the
-// bottleneck — the SH4/AICA emulation alone is over budget, and frame skipping
-// has nothing left to give. The lever for that case is the sh4_clock preset
-// (guest underclock), not this one.
+// Third failure mode, found on hardware (ChuChu Rocket "mouse mania"): the
+// controller worked — it skipped up to its cap — and the speed did not move.
+// AUTO pinned the display at 15 FPS, AUTO MAX at 6, and both still ran at 60%.
+// A controller can only give back what the thing it disables was costing, and
+// here rendering was not the cost. So the cap is now gated on a measurement of
+// exactly that: spg_PaceBestSpeed (SPG.cpp) is the speed the game would reach
+// with EVERY render dropped. Under 100%, plain AUTO stops skipping instead of
+// trading framerate for a target that is out of reach. See the futility gate
+// below, and wii/frame_profile.h for finding out where the time really goes.
 
 #define AUTO_DEADBAND_FRAC     0.50 // AUTO: tolerate half a frame of lateness
 #define AUTO_MAX_DEADBAND_FRAC 0.25 // AUTO MAX: tighter, reacts a frame sooner
@@ -4151,7 +4269,22 @@ static bool ShouldSkipFrame() // Returns true when the current frame should be d
         const bool   maxmode  = FRAMESKIP_AUTO_MAX();
         const double deadband = spg_PaceFrameSec *
             (maxmode ? AUTO_MAX_DEADBAND_FRAC : AUTO_DEADBAND_FRAC);
-        const int    cap      = maxmode ? AUTO_MAX_CONSEC_CAP : AUTO_CONSEC_CAP;
+        int          cap      = maxmode ? AUTO_MAX_CONSEC_CAP : AUTO_CONSEC_CAP;
+
+        // ── Futility gate (AUTO only) ───────────────────────────────────────
+        // Dropping a frame removes the render cost and nothing else. SPG.cpp
+        // measures that cost and publishes spg_PaceBestSpeed: the speed this
+        // game would reach with EVERY render dropped. When that is still below
+        // 100%, the emulator is starved by SH4/AICA/TA work, skipping cannot
+        // fix it, and skipping anyway just buys 6 FPS at the same 60% speed —
+        // the worst of both. Stop skipping and let the player have the frames.
+        // Re-evaluated every second, so it resumes the moment the scene gets
+        // light enough for skipping to matter again. AUTO MAX deliberately
+        // ignores this: it is the "speed over everything" setting, and more
+        // skipping does still creep the speed up even when 100% is out of
+        // reach.
+        if (!maxmode && spg_PaceBestSpeed < 1.0)
+            cap = 0;
 
         if (spg_PaceErrorSec > deadband && s_auto_consec_skips < cap)
         {
@@ -4697,6 +4830,8 @@ static void rtt_copy_efb_to_vram()
 
 void DoRender()
 {
+  RenderCostScope render_cost_; // see g_fp_render_ticks
+
   // ASYNC_RENDER(): wait for the previous queued frame and apply its deferred
   // VIDEO flip before anything else — texture decode below re-writes bump
   // slots the GPU may still be sampling. No-op when nothing is pending.
@@ -6302,6 +6437,8 @@ void DoRender()
 
 void PresentFramebuffer()
 {
+  RenderCostScope render_cost_; // see g_fp_render_ticks
+
   // ASYNC_RENDER(): a queued 3D frame may still be in flight — wait and apply
   // its deferred flip first, or the stale pending flip would override this
   // present on the next DoRender. This path itself stays fully synchronous.
@@ -6566,6 +6703,7 @@ void StartRender()
         if(DEBUG_MESSAGE()) printf("[PATH] 2D-after-3D: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
           FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
         s_did_3d_render = false;
+        RenderCostScope render_cost_; // blocking GPU sync + copy: see g_fp_render_ticks
         gx_sync_pending(); // ASYNC_RENDER(): apply the queued frame's flip first
         GX_DrawDone();
         GX_CopyDisp(frameBuffer[fb], GX_TRUE);
@@ -6813,8 +6951,15 @@ struct VertexDecoder
   }                                                           \
   curVTX[dst].z = W; /*Linearly scaled later*/
 
-  // Poly Vertex handlers
-#define vert_cvt_base vert_base(0, vtx->xyz[0], vtx->xyz[1], vtx->xyz[2])
+  // Poly Vertex handlers.
+  //
+  // vtx_prep() takes ownership of this vertex's cache line without fetching it
+  // (see TA_DCBZ up top). Correct here and ONLY here: every handler that uses
+  // vert_cvt_base opens a fresh slot and reads nothing out of it first. The
+  // "B" handlers and the sprite path deliberately do not use it.
+#define vert_cvt_base                                                    \
+  vtx_prep();                                                            \
+  vert_base(0, vtx->xyz[0], vtx->xyz[1], vtx->xyz[2])
 
   // Handlers for various PVR vertex types (Packed color, Float color, Intensity, etc.)
   //(Non-Textured, Packed Color)

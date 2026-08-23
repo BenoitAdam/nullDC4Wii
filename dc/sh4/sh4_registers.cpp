@@ -90,11 +90,27 @@ void SetFloatStatusReg()
 		// and causes rendering artifacts. The Wii does not use SSE/MXCSR.
 	}
 }
+// Execution counters for the FPSCR sync path. This is not a cheap call in the
+// JIT: the recompiler brackets it with reg_flush_all_fpu()/reg_reload_all_fpu()
+// (16 stfs + 16 lfs once the fpu_pin preset is on), and the SH4 instructions
+// that reach it -- fschg / frchg / ldc..FPSCR -- also TERMINATE the JIT block
+// in the decoder. Dreamcast T&L loops toggle fschg (single<->pair fmov) and
+// frchg (front<->back FP bank, where the matrix lives) constantly, so if this
+// fires once or twice per transformed vertex it is a large share of the
+// ~700 host cycles/vertex the cost model attributes to translated game code.
+// Read as a rate next to the FPS line; compare against vertices/second.
+u32 sh4_fpscr_sync_count = 0;   // every UpdateFPSCR()
+u32 sh4_fpscr_bank_count = 0;   // of those, the ones that swapped FP banks
+
 //called when fpscr is changed and we must check for reg banks ect..
 void UpdateFPSCR()
 {
+	sh4_fpscr_sync_count++;
 	if (fpscr.FR !=old_fpscr.FR)
+	{
+		sh4_fpscr_bank_count++;
 		ChangeFP();//fpu bank change
+	}
 	old_fpscr=fpscr;
 	SetFloatStatusReg();//ensure they are on sync :)
 }

@@ -24,6 +24,7 @@
 #include "dc/mem/sb.h"   // SB_C2DSTAT/SB_C2DLEN/SB_C2DST for the [DMA] probe
 #include "dc/gdrom/gdrom_if.h"
 #include "dc/maple/maple_if.h"
+#include "wii/frame_profile.h"  // FP_SCOPE — profile buckets, no-ops when off
 #include "intc.h"
 #include "tmu.h"
 #include "dc/mem/sh4_mem.h"
@@ -348,8 +349,11 @@ void FASTCALL SlowUpdate()
 
 void FASTCALL MediumUpdate()
 {
-	UpdateAica(s_timeslice * s_medium_period);
-	UpdateArm(s_timeslice * s_medium_period);  // ARM7 tick — same cycle count, arm_aica.cpp divides by arm_sh4_bias (8)
+	{
+		FP_SCOPE(FP_AICA);
+		UpdateAica(s_timeslice * s_medium_period);
+		UpdateArm(s_timeslice * s_medium_period);  // ARM7 tick — same cycle count, arm_aica.cpp divides by arm_sh4_bias (8)
+	}
 	UpdateDMA();
 
 	if (!(update_cnt & (s_slow_period - 1)))
@@ -358,13 +362,18 @@ void FASTCALL MediumUpdate()
 
 int FASTCALL UpdateSystem()
 {
+	FP_SCOPE(FP_SYS);   // self time = the cascade minus the nested AICA/PVR/rend scopes
+
 	if (!(update_cnt & (s_medium_period - 1)))
 		MediumUpdate();
 
 	update_cnt++;
 
 	UpdateTMU(s_timeslice);
-	UpdatePvr(s_timeslice);
+	{
+		FP_SCOPE(FP_PVR);           // SPG scanline/vblank + the frame pacer's sleep
+		UpdatePvr(s_timeslice);
+	}
 	UpdateAicaDma(s_timeslice);     // deferred AICA G2-DMA completion IRQ (DMA_FIX)
 
 	// SCHED preset: advance the deadline scheduler and fire due completion/IRQ
@@ -397,13 +406,18 @@ int FASTCALL UpdateSystem()
 // -------------------------------------------------------------------------
 int FASTCALL UpdateSystem_no_event()
 {
+	FP_SCOPE(FP_SYS);   // self time = the cascade minus the nested AICA/PVR/rend scopes
+
 	if (!(update_cnt & (s_medium_period - 1)))
 		MediumUpdate();
 
 	update_cnt++;
 
 	UpdateTMU(s_timeslice);
-	UpdatePvr(s_timeslice);
+	{
+		FP_SCOPE(FP_PVR);           // SPG scanline/vblank + the frame pacer's sleep
+		UpdatePvr(s_timeslice);
+	}
 	UpdateAicaDma(s_timeslice);     // deferred AICA G2-DMA completion IRQ (DMA_FIX)
 
 	// SCHED preset: advance the deadline scheduler and fire due completion/IRQ

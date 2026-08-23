@@ -69,6 +69,21 @@
 #   define shil_canonical(rv,name,args,code) static rv cimpl_##name args;
 #   define shil_compile(code)   static void compile(shil_opcode* op);
 
+#elif SHIL_MODE == 4
+// ---- Generate the opcode NAME table ----------------------------------------
+// Diagnostics only (see the canonical-fallback report in wii_driver.cpp): the
+// JIT has a native case for most shop_*, and anything that falls through to
+// default: is emitted as a C call bracketed by a FULL GPR + FPU spill/reload.
+// Knowing WHICH ops those are is the difference between guessing at dynarec
+// cost and fixing it. Generated from the same list as the enum so it can never
+// drift out of sync.
+#   define SHIL_START           const char* shil_opcode_name[] = {
+#   define SHIL_END             };
+#   define shil_opc(name)       #name,
+#   define shil_opc_end()
+#   define shil_canonical(rv,name,args,code)
+#   define shil_compile(code)
+
 #elif SHIL_MODE == 3
 // ---- Generate the dispatch table -------------------------------------------
 #   define SHIL_START           shil_chfp* shil_chf[] = {

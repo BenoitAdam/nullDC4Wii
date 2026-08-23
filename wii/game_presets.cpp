@@ -66,7 +66,7 @@
                                 (off/legacy); per-game, verify music/SFX
                                 timing by ear before keeping — stage 2 has
                                 been found to break audio timing.
-        sh4_clock=175       <- 150..200, SH4 underclock: effective SH4 core
+        sh4_clock=175       <- 100..200, SH4 underclock: effective SH4 core
                                 clock in MHz (clamped to [150,200]; see
                                 plugins/plugin_types.h SH4_CLOCK_EFF). 200
                                 (default) is real-Dreamcast full speed. Lower
@@ -756,7 +756,7 @@ static int parse_sh4_clock(const char* v)
         printf("[game_presets] Unknown sh4_clock value: '%s'\n", v);
         return -1;
     }
-    if (n < 150) n = 150;
+    if (n < 100) n = 100;
     if (n > 200) n = 200;
     return n;
 }

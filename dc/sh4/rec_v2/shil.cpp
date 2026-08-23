@@ -224,3 +224,8 @@ bool UpdateSR();
 // Instantiate the dispatch table (SHIL_MODE 3).
 #define SHIL_MODE 3
 #include "shil_canonical.h"
+
+// Instantiate the opcode name table (SHIL_MODE 4) — used by the JIT backend to
+// report which ops it had no native case for.
+#define SHIL_MODE 4
+#include "shil_canonical.h"

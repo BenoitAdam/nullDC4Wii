@@ -4,6 +4,17 @@
 struct shil_opcode;
 typedef void shil_chfp(shil_opcode* op);
 extern shil_chfp* shil_chf[];
+// Opcode names, generated from the same list as the shop_ enum (SHIL_MODE 4).
+// Diagnostics: lets the JIT backend name the ops it has no native case for.
+extern const char* shil_opcode_name[];
+
+// shil_opcode::flags bit for shop_sync_fpscr. Set by the `fschg` decoder,
+// which toggles FPSCR.SZ (bit 20) and NOTHING else: FPSCR.FR cannot change,
+// so no FP bank swap is possible, and RM/DN are untouched so the host float
+// status register needs no update either. That lets a backend skip the whole
+// UpdateFPSCR() call. `frchg` (toggles FR) and `ldc Rn,FPSCR` (arbitrary
+// value) must NOT set it.
+#define SYNC_FPSCR_SZ_ONLY 1
 
 enum shil_param_type
 {

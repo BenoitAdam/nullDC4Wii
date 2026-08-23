@@ -27,6 +27,7 @@
 #endif
 
 #include "wii_audio.h"
+#include "frame_profile.h"
 #include <asndlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -142,8 +143,11 @@ void wii_audio_push_sample(s16 l, s16 r)
     if (settings.emulator.AudioBuffers == 0)
         return;
 
-    while (stage_ready)
-        usleep(50);
+    {
+        FP_SCOPE(FP_SND); // real time the SH4 thread spends waiting on the DAC
+        while (stage_ready)
+            usleep(50);
+    }
 }
 
 // Legacy no-op kept so existing call sites (gxRend present path) still link.

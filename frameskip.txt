@@ -1,0 +1,319 @@
+================================================================================
+ FRAMESKIP AUTO REWRITE + THE CHUCHU SPEED HUNT
+ branch: chuchu_frameskip_speed          2026-08-23
+================================================================================
+
+The ask was "make frameskip AUTO hold 100% speed". Answering it properly meant
+first proving frameskip could not do that, then finding what actually could.
+
+  RESULT: frameskip AUTO rewritten and now correct (it holds 100% where 100%
+          is achievable, and stands down where it is not);
+          + 12-13% real speed in ChuChu mouse mania from an unrelated JIT find
+            (fschg / sync_fpscr) that the frameskip measurement work uncovered.
+
+  ChuChu normal gameplay: 100% with ~20% headroom.
+  ChuChu mouse mania:     54-72% (was 49-58%). 100% is NOT reachable - see
+                          "WHERE THIS LANDED".
+
+
+================================================================================
+ PART 1 - FRAMESKIP AUTO
+================================================================================
+
+Two earlier designs and why they failed (both documented in the source so
+neither gets reinvented):
+
+  v1  Timed DoRender() against a fixed 1/60 s budget. Never fired: with
+      ASYNC_RENDER on, DoRender returns right after queuing the display copy,
+      so it measured CPU submit time only. Blind to SH4/AICA-bound slowdowns.
+
+  v2  Compared wall-clock time between skip decisions against emulated time
+      and skipped when the ratio exceeded ~1.1. Fired, but UNDER-SKIPPED by
+      construction: a skipped frame is cheap, so the next interval measures
+      ~1.0 and it stops skipping immediately. A 25 ms frame against a 16.7 ms
+      target settles into render/skip/render/skip - a stable 81% speed it is
+      perfectly happy with, because no single interval ever looks bad twice.
+      That is exactly the reported "lowers the framerate but not the speed".
+
+v3 - what is in the tree now
+----------------------------
+Stop measuring one interval at a time.
+
+  spg_PaceFrame()  (plugs/drkPvr/SPG.cpp)
+      Runs once per EMULATED vblank - a point reached whether or not anything
+      was drawn, so dropping renders cannot starve the controller of samples.
+      Keeps ONE absolute schedule: a deadline advanced by exactly one frame
+      period per vblank, never re-anchored to the actual wake time. Publishes
+      the CUMULATIVE deviation in spg_PaceErrorSec.
+
+      Debt built up by heavy frames therefore survives the cheap skipped frames
+      that follow, so the skipper keeps dropping until the debt is repaid
+      rather than until one frame happens to look cheap. It converges on the
+      MINIMUM skip rate that holds 100%.
+
+      It also swallowed the old speed limiter, which was a second independent
+      schedule doing the other half of the same job:
+          running EARLY -> usleep to the deadline   (speed_limiter preset)
+          running LATE  -> feed the skipper
+      The hard-won fixed-cadence semantics are preserved, including why usleep
+      overshoot does not accumulate (that was the 50 Hz PAL -> ~37 FPS bug).
+
+      Anti-windup CLAMPS the error to +4 / -1 frames instead of Yabause's
+      once-a-second integrator reset. A fixed window forgives repayable debt
+      and caps how exactly 100% can be held; clamping bounds the catch-up
+      burst after a stall without forgiving anything still repayable.
+
+  ShouldSkipFrame()  (plugs/drkPvr/gxRend.cpp)
+      Yabause-style bang-bang on the published debt: skip while it exceeds a
+      deadband, with a hard cap on consecutive skips so the screen can never
+      freeze. The skip CONTRACT was already correct in this codebase and is
+      untouched - render-done IRQs are armed before the early-out, and RTT
+      passes are excluded.
+
+New mode: AUTO MAX
+------------------
+  frameskip = auto      deadband 1/2 frame, max 3 skips in a row (15 FPS floor @60Hz)
+  frameskip = auto_max  deadband 1/4 frame, max 9 skips in a row ( 6 FPS floor)
+
+Menu gained a 5th entry; cfg accepts auto_max / automax.
+
+The futility gate (the part that matters)
+-----------------------------------------
+Hardware test showed the controller working perfectly and the speed not
+moving: AUTO pinned the display at 15 FPS, AUTO MAX at 6, and both still ran
+at 60%. A controller can only give back what the thing it disables was
+costing, and rendering was not the cost.
+
+So the cap is now gated on a measurement of exactly that. SPG.cpp times
+DoRender()/PresentFramebuffer() into g_fp_render_ticks and turns it into
+
+    spg_PaceBestSpeed  = the speed this game would reach with EVERY render dropped
+
+Below 100%, plain AUTO STOPS SKIPPING instead of trading framerate for a target
+it cannot hit. Re-evaluated every second, so it resumes the moment a scene
+becomes render-heavy. AUTO MAX deliberately ignores the gate - that is now the
+real semantic difference between the two modes.
+
+Visible in the stats line as  rend:N%  best:N%.
+  best ~= current speed  ->  rendering is NOT the bottleneck, skipping is futile
+  best >> current speed  ->  skipping will help, and AUTO will do it
+
+
+================================================================================
+ PART 2 - MEASUREMENT TOOLS BUILT
+================================================================================
+
+Four rounds of this hunt were null results. The tools are why the fifth was not,
+and they are the durable part of this work.
+
+wii/frame_profile.h  -  FRAME_PROFILE (default 0)
+    Splits the SH4 thread's second into EXCLUSIVE (self-time) buckets - a scope
+    subtracts what nested scopes consumed, so the numbers partition the second
+    and "sh4" is a true residual:
+
+      [PROF] sh4:.. ta:.. aica:.. rend:.. pvr:.. sys:.. snd:..  ta/s:..
+
+      rend  DoRender + PresentFramebuffer (ALWAYS measured - the AUTO gate needs it)
+      ta    libPvr_TaSQ / libPvr_TaDMA vertex decode
+      aica  UpdateAica + UpdateArm
+      pvr   UpdatePvr (includes the limiter's usleep - large means FAST, not slow)
+      sys   rest of the peripheral cascade
+      snd   blocked in the audio sink
+      sh4   residual: dynarec + memory handlers
+
+    MEASUREMENT COST IS NOT SMALL: gettime() is an mftbu/mftb/mftbu retry loop,
+    ~70-90 cycles per scope. At ~475 K TA calls/s that is ~5.5% of the second,
+    landing inside the ta bucket. Read a profiled ta:18% as ~12-13% unprofiled,
+    and NEVER A/B a speed change with the profiler on.
+
+[PROF/work]  -  load-normalised costs (same switch)
+    ChuChu's load is player-driven (how many mice are alive), so no two runs do
+    the same work and raw percentages are not comparable between runs. These are
+    cost per unit of WORK and hold still while the scene changes:
+
+      [PROF/work] ta:Nns/cmd  rend:Nus/frame  aica:Nus/upd  sh4:N.Nns/kcyc
+
+    A/B OPTIMISATIONS ON THESE, NEVER ON THE PERCENTAGES. A change is real when
+    the per-work cost moves further than its own scatter within a single run.
+    (Proof it works: one run spanned a 2.2x load swing and ta-ns moved 3.6%.)
+
+IFB_PROFILE  (dc/sh4/rec_v2/decoder.h, default 0)
+    Interpreter fallbacks. shop_ifb emits reg_flush_all() + reg_flush_all_fpu()
+    + interpreter call + both reloads - with fpu_pin on that is a 32-op FPU
+    spill plus the whole GPR file, for ONE SH4 instruction.
+      - one-shot [IFB] boot list: which opcodes fall back, with disassembly
+      - per-opcode execution counters, 4 instructions emitted next to the call
+      - dec_ifb_report() prints the top 5 as a rate once a second
+
+SHIL_MODE 4  (dc/sh4/rec_v2/shil_canonical.h)  -  always on, zero cost
+    Generates shil_opcode_name[] from the same list as the shop_ enum, so it
+    cannot drift. The JIT's default: arm names any opcode it has no native case
+    for, once, at compile time. Currently silent (all 56 have native cases) and
+    will speak up instantly if an opcode is ever added without one.
+
+fpscr/s tripwire  (SPG.cpp)  -  always on, silent
+    Counters in UpdateFPSCR(), printed only above 50 K/s. A healthy build sits
+    at ~2-3 K/s. If it ever shouts, SYNC_FPSCR_SZ_ONLY has stopped reaching the
+    backend and 12% of speed just walked out the door.
+
+Also fixed: the SPEED% readout divided by a hardcoded 200 MHz while
+spg_FrameSh4Cycles comes from SH4_CLOCK_EFF, so under sh4_clock=130 a genuine
+100% printed as 65%. That bug actively misled the underclock experiment. Now
+divides by the effective clock. sh4_clock range also widened 150..200 -> 100..200.
+
+
+================================================================================
+ PART 3 - THE FIND:  fschg / sync_fpscr    (+12-13%)
+================================================================================
+
+Measured in mouse mania:
+
+    fpscr/s: 1,300,000     bank: ~650     ->  2.3 per vertex
+
+shop_sync_fpscr fired 1.3 MILLION times a second - 2.3 per transformed vertex -
+and only ~650/s (0.05%) actually swapped FP banks. Dreamcast T&L brackets its
+vertex loop with fschg to get pair-width fmov, so it toggles twice per vertex.
+
+Each one was emitting, in wii_driver.cpp:
+
+    reg_flush_all_fpu();      // 16 stfs   (fpu_pin is ON via the cfg [default] block)
+    ppc_call(&UpdateFPSCR);   // C call
+    reg_reload_all_fpu();     // 16 lfs
+
+= ~41.6 M FP memory ops/second plus 1.3 M calls, to do NOTHING.
+
+THE FIX
+    fschg toggles FPSCR.SZ (bit 20) and nothing else. FR cannot change, so no
+    bank swap is possible; RM/DN are untouched, so SetFloatStatusReg() has
+    nothing to do (and its body is x86-only anyway). All that is left of
+    UpdateFPSCR() is keeping old_fpscr in step - two instructions.
+
+      SYNC_FPSCR_SZ_ONLY   flag in shil.h, set ONLY by the fschg decoder
+      decoder.cpp          fschg emits it; frchg and ldc Rn,FPSCR do NOT
+      wii_driver.cpp       case shop_sync_fpscr branches on it:
+                             ppc_sh_load(rarg0, reg_fpscr)
+                             ppc_stw(rarg0, ppc_contex, SH4CTX_OFS_OLD_FPSCR)
+
+    Details that make it safe: old_fpscr is plain context memory (never pinned)
+    so a raw stw is correct; fpscr MAY live in a pinned GPR so it goes through
+    ppc_sh_load, not a bare lwz; fpscr_type is a union with u32 full so one stw
+    covers it; rarg0 is scratch and no GPR flush is needed.
+
+    BUILD TRAP: offsetof(Sh4Context, old_fpscr) does not compile. sh4_registers.h
+    defines convenience macros AFTER the struct (#define old_fpscr
+    Sh4cntx.old_fpscr, and the same for r/sr/fpscr/pr/mach/...), so the bare
+    field name expands and you get offsetof(Sh4Context, Sh4cntx.old_fpscr).
+    Hence SH4CTX_OFS_OLD_FPSCR, declared in that header ABOVE the macro block.
+    Any future context-field offset the JIT needs must go in the same place.
+
+RESULT (matched load)
+      18.0 K vt/frame   59.5%  ->  67.3%
+      20.0 K vt/frame   55.0%  ->  61.9%
+      21.7 K vt/frame   51.7%  ->  57.9%
+    ~+12-13% relative. Vertex throughput 550-580 K/s -> 600-630 K/s.
+
+
+================================================================================
+ CLOSED AVENUES - measured on hardware, do not re-open without new evidence
+================================================================================
+
+  frameskip                     rend is only 3-4% of the frame
+  sh4_clock underclock          cost is per-VERTEX, not per-cycle; cutting the
+                                cycle budget 33% moved VPS by 2%
+  TA dcbz on the vertex stream  ~+0.5%; PowerPC stores are POSTED, so a store
+                                miss costs bandwidth (16 MB/s of 1.9 GB/s), not
+                                stall cycles. Treating it like a load miss was
+                                the error. Reverted; TA_DCBZ default 0.
+  TA hot-global packing         kept (g_ta_hot, one cache line, zero cost)
+  SHIL canonical-fallback       all 56 opcodes have native cases - unreachable
+  FTRV / FIPR as helper calls   FALSE. They are natively emitted by the Wii
+                                backend. The scalar C in shil_canonical.h is the
+                                PORTABLE fallback. Check the backend, not the
+                                semantics header.
+  shop_ifb fallbacks            17-25 K/s in mania = ~0.5%. fschg alone was 65x
+                                more traffic than all of them combined. Do NOT
+                                port the wip addc-family for ChuChu's sake.
+  fschg block termination       superblocks work already capped this at 1-2%
+                                (static links are patched to a direct b)
+
+
+================================================================================
+ WHERE THIS LANDED
+================================================================================
+
+Cost model fitted from the logs (17 points, 4.2x geometry range):
+
+    A = ~1.29 us per Dreamcast vertex  (~940 PPC cycles @ 729 MHz)
+    B = ~7.6 ms per emulated vblank    (everything not per-vertex)
+
+Mouse mania submits ~21 K vertices per emulated frame. At 50 Hz that must fit
+in 20 ms; it takes ~36 ms.
+
+    >>> 100% in mouse mania requires being ~1.7x faster. <<<
+
+Of the ~940 cycles per vertex, ta is ~180 and rend ~54. The remaining ~700 are
+ordinary translated game code with NO SINGLE CONSTRUCT RESPONSIBLE - a Dreamcast
+T&L loop is ~30-60 SH4 instructions per vertex, so that is ~15 PPC cycles per
+SH4 instruction where a good dynarec runs 3-6.
+
+That is a per-operation CODEGEN problem, not a bug. Note that every past perf
+campaign here (superblocks, bcache, jit_align, hot-block clustering) was about
+block LAYOUT and DISPATCH - none of them touched per-operation code quality.
+That is where any further work has to go, and it is a project, not a patch.
+
+Normal ChuChu gameplay already runs 100% with headroom. Mania does not, and no
+identified lever is remotely 1.7x.
+
+
+================================================================================
+ SWITCH / PRESET REFERENCE
+================================================================================
+
+  frameskip = 0 | 1 | 2 | auto | auto_max      apps/discs/game_presets.cfg
+  speed_limiter = on | off      the "too fast" arm of the SAME schedule as
+                                frameskip auto - pair them to pin a game at 100%
+  sh4_clock = 100..200          widened from 150..200
+
+  FRAME_PROFILE   wii/frame_profile.h            default 0
+  IFB_PROFILE     dc/sh4/rec_v2/decoder.h        default 0
+  TA_DCBZ         plugs/drkPvr/gxRend.cpp        default 0 (needs Vertex=32B)
+
+  Reading the stats line:
+    rend:N%   share of the second spent rendering  = frameskip's entire ceiling
+    best:N%   speed with EVERY render dropped      < 100% means skipping is futile
+    RPS<VPS   AUTO is actively skipping
+
+  The FPS counter is the RENDER rate. Low FPS with SPEED at 100% is frameskip
+  AUTO working as intended, not a fault.
+
+
+================================================================================
+ FILES TOUCHED
+================================================================================
+
+  frameskip controller + pacer
+    plugs/drkPvr/SPG.cpp          pacer, best-speed, stats, tripwire
+    plugs/drkPvr/gxRend.cpp       ShouldSkipFrame, AUTO MAX, futility gate,
+                                  g_ta_hot packing, TA_DCBZ, render meter
+    plugs/drkPvr/drkPvr.h         pacer/best-speed externs
+    plugs/drkPvr/ta.cpp           FP_TA scopes
+    wii/frame_profile.h           NEW - profiler + render-cost meter
+    wii/wii_audio.cpp             FP_SND scope on the DAC wait
+    dc/sh4/sh4_interpreter.cpp    FP_AICA / FP_PVR / FP_SYS scopes
+
+  presets / menu
+    wii/main.cpp                  AUTO MAX menu entry, sh4_clock range
+    wii/game_presets.cpp          auto_max parsing, sh4_clock clamp
+    apps/discs/game_presets.cfg   docs + arm7_speed=1 on chuchu
+    plugins/plugin_types.h        sh4_clock range comment
+
+  the fschg fix + JIT diagnostics
+    dc/sh4/rec_v2/shil.h              SYNC_FPSCR_SZ_ONLY, shil_opcode_name
+    dc/sh4/rec_v2/shil.cpp            SHIL_MODE 4 instantiation
+    dc/sh4/rec_v2/shil_canonical.h    SHIL_MODE 4 name table
+    dc/sh4/rec_v2/decoder.cpp         fschg flag, IFB profiler
+    dc/sh4/rec_v2/decoder.h           IFB_PROFILE / IFB_SLOTS
+    dc/sh4/sh4_registers.cpp/.h       FPSCR counters, SH4CTX_OFS_OLD_FPSCR
+    wii/dc/sh4/rec_v2/wii_driver.cpp  SZ-only fast path, IFB counter, SHIL report
+
+================================================================================
