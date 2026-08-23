@@ -119,6 +119,13 @@ extern "C" int get_fmv_format_preset();
 #define FMV_FORMAT_RGBA8()  (get_fmv_format_preset() == 1)
 #define FMV_FORMAT_RGB565() (get_fmv_format_preset() == 2)
 
+// Twiddled YUV422 texture decode fix. Only touches the TWIDDLED YUV422 source
+// path (static YUV artwork); planar/scan-order sources — which is what the YUV
+// converter produces for real FMV — are already correct and are left alone.
+// See yuv_tw_fetch() for the layout and for what the legacy path got wrong.
+extern "C" int get_yuv_twiddle_fix_preset();
+#define YUV_TW_FIX() (get_yuv_twiddle_fix_preset() == 1)
+
 // Blend mode: per-polygon TSP SrcInstr/DstInstr blending (necessary for Resident Evil 3)
 extern "C" int get_blend_mode_preset();
 #define BLEND_MODE() (get_blend_mode_preset() == 1)
@@ -2279,22 +2286,79 @@ static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
   }
 }
 
-// YUV422 twiddled -> GX_TF_CMPR
+// -----------------------------------------------------------------
+// Twiddled YUV422 source fetch (shared by the CMPR/RGBA8/RGB565 decoders)
+// -----------------------------------------------------------------
+// A twiddled YUV422 texture stores each 2x2 pixel block as one 8-byte chunk of
+// four DC u16s, every u16 being (Y << 8) | chroma:
+//   dc16[0] : Y(col0,row0) | U(row0)
+//   dc16[1] : Y(col0,row1) | U(row1)
+//   dc16[2] : Y(col1,row0) | V(row0)
+//   dc16[3] : Y(col1,row1) | V(row1)
+// (column-major inside the block, which is just how DC twiddling interleaves
+// the axes — this is exactly what the legacy convYUV422_TW converter reads
+// through host_ptr_xor in texture_TW, and it is the reference for ON.)
 //
-// Twiddled YUV422 stores pixels in 2x2 blocks (xpp=2, ypp=2). Each 8-byte chunk
-// (4x u16, after host_ptr_xor byte-swap) holds one 2x2 block, matching the
-// original convYUV422_TW logic:
-//   buf[0]: Y(row0,col0) high byte, U low byte
-//   buf[1]: Y(row1,col0) high byte, U low byte  (same U as buf[0])
-//   buf[2]: Y(row0,col1) high byte, V low byte
-//   buf[3]: Y(row1,col1) high byte, V low byte  (same V as buf[2])
-// host_ptr_xor for u16 is ^2 (swaps the two u16 halves within each u32 on Wii BE):
-//   *host_ptr_xor((u16*)&p[0]) reads bytes [2,3] of the u32 at p[0..3]
-//   *host_ptr_xor((u16*)&p[2]) reads bytes [0,1] of the u32 at p[0..3]
-// So per 8-byte chunk: w0 = *(u32*)&p[0] gives buf0=(w0>>16), buf1=(w0&0xFFFF);
-//                       w1 = *(u32*)&p[4] gives buf2=(w1>>16), buf3=(w1&0xFFFF).
+// VRAM on this big-endian host is byte-swapped inside every u32 so that a u32
+// read returns the DC little-endian u32 verbatim, and host_ptr_xor for u16 is
+// ^2. So dc16[0] is the LOW half of the first u32 and dc16[1] the HIGH half:
+//   w0 = *(u32*)&p[0]  ->  dc16[0] = w0 & 0xFFFF,  dc16[1] = w0 >> 16
+//   w1 = *(u32*)&p[4]  ->  dc16[2] = w1 & 0xFFFF,  dc16[3] = w1 >> 16
+//
+// The legacy (fix OFF) extraction had BOTH of those backwards: it took the u32
+// halves the other way round, and it read luma from the low byte and chroma
+// from the high byte. Net effect: every luma slot received a chroma sample
+// (~128, near constant over a normal picture) while both chroma slots received
+// luma. The image keeps its geometry but collapses onto the green<->magenta
+// axis, dark->green and bright->magenta, with 1-column striping because U and V
+// then come from two different columns' luma. That is the Virtua Fighter 3tb
+// "FIRST MATCH" loading screen, and any other game using static twiddled YUV422
+// artwork. Real FMV is unaffected because the YUV converter writes planar
+// (scan-order) data, which goes through the separate — and correct — planar
+// decoders.
+//
+// OFF is kept byte-for-byte identical to that legacy behaviour (including its
+// single chroma pair shared by both rows) so the preset is a true no-op.
+struct yuv_tw_block { s32 Y00, Y01, Y10, Y11, Yu0, Yv0, Yu1, Yv1; };
+
+static inline void __attribute__((always_inline))
+yuv_tw_fetch(const u8 *p, int fix, yuv_tw_block &b)
+{
+  u32 w0 = *(const u32*)&p[0];
+  u32 w1 = *(const u32*)&p[4];
+
+  if (fix)
+  {
+    u16 d0 = (u16)(w0      ); // Y(col0,row0) | U(row0)
+    u16 d1 = (u16)(w0 >> 16); // Y(col0,row1) | U(row1)
+    u16 d2 = (u16)(w1      ); // Y(col1,row0) | V(row0)
+    u16 d3 = (u16)(w1 >> 16); // Y(col1,row1) | V(row1)
+
+    b.Y00 = (d0 >> 8) & 255; b.Yu0 = d0 & 255;
+    b.Y10 = (d1 >> 8) & 255; b.Yu1 = d1 & 255;
+    b.Y01 = (d2 >> 8) & 255; b.Yv0 = d2 & 255;
+    b.Y11 = (d3 >> 8) & 255; b.Yv1 = d3 & 255;
+  }
+  else
+  {
+    u16 buf0 = (u16)(w0 >> 16);
+    u16 buf1 = (u16)(w0      );
+    u16 buf2 = (u16)(w1 >> 16);
+    u16 buf3 = (u16)(w1      );
+
+    b.Y00 = buf0 & 255; b.Yv0 = b.Yv1 = (buf0 >> 8) & 255;
+    b.Y10 = buf1 & 255;
+    b.Y01 = buf2 & 255; b.Yu0 = b.Yu1 = (buf2 >> 8) & 255;
+    b.Y11 = buf3 & 255;
+  }
+}
+
+// YUV422 twiddled -> GX_TF_CMPR
+// Source layout, the u32-half mapping and what the legacy path got wrong are
+// all documented on yuv_tw_fetch() above.
 static void YUV422_to_CMPR_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
+  const int tw_fix = YUV_TW_FIX() ? 1 : 0; // read once per texture, not per block
   static const u32 sub_ox[4] = {0,4,0,4};
   static const u32 sub_oy[4] = {0,0,4,4};
 
@@ -2321,24 +2385,16 @@ static void YUV422_to_CMPR_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
         u32 y   = by + row;
         u32 tw  = (table_y[y] | table_x[x]) / 4; // 2x2 block index (divider = xpp*ypp = 4)
         u8 *p   = &src_vram[tw * 8];
-        u32 w0  = *(u32*)&p[0];
-        u32 w1  = *(u32*)&p[4];
-        u16 buf0 = (u16)(w0 >> 16);
-        u16 buf1 = (u16)(w0      );
-        u16 buf2 = (u16)(w1 >> 16);
-        u16 buf3 = (u16)(w1      );
-
-        s32 Y00 = buf0 & 255; s32 Yv = (buf0 >> 8) & 255;
-        s32 Y10 = buf1 & 255;
-        s32 Y01 = buf2 & 255; s32 Yu = (buf2 >> 8) & 255;
-        s32 Y11 = buf3 & 255;
+        yuv_tw_block b;
+        yuv_tw_fetch(p, tw_fix, b);
 
         s32 Bc, Gc, Rc;
-        YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
-        block_pixels[row*4+col    ] = (u16)YUV422_luma(Y00, Bc, Gc, Rc);
-        block_pixels[row*4+col+1  ] = (u16)YUV422_luma(Y01, Bc, Gc, Rc);
-        block_pixels[(row+1)*4+col  ] = (u16)YUV422_luma(Y10, Bc, Gc, Rc);
-        block_pixels[(row+1)*4+col+1] = (u16)YUV422_luma(Y11, Bc, Gc, Rc);
+        YUV422_chroma(b.Yu0, b.Yv0, Bc, Gc, Rc); // row 0 shares one U/V pair
+        block_pixels[row*4+col    ] = (u16)YUV422_luma(b.Y00, Bc, Gc, Rc);
+        block_pixels[row*4+col+1  ] = (u16)YUV422_luma(b.Y01, Bc, Gc, Rc);
+        YUV422_chroma(b.Yu1, b.Yv1, Bc, Gc, Rc); // row 1 has its own U/V pair
+        block_pixels[(row+1)*4+col  ] = (u16)YUV422_luma(b.Y10, Bc, Gc, Rc);
+        block_pixels[(row+1)*4+col+1] = (u16)YUV422_luma(b.Y11, Bc, Gc, Rc);
       }
       encode_cmpr_block(block_pixels, super_dst + sub*8);
     }
@@ -2402,10 +2458,11 @@ static void YUV422_to_RGBA8_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
 }
 
 // YUV422 twiddled -> GX_TF_RGBA8
-// See YUV422_to_CMPR_Twiddled for full explanation of the 2x2 twiddled YUV layout
-// and the host_ptr_xor (^2) byte-swap replication via raw u32 reads.
+// See yuv_tw_fetch() for the 2x2 twiddled YUV layout and the host_ptr_xor (^2)
+// byte-swap replication via raw u32 reads.
 static void YUV422_to_RGBA8_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
+  const int tw_fix = YUV_TW_FIX() ? 1 : 0; // read once per texture, not per block
   u32 tiles_x = w / 4, tiles_y = h / 4;
 
   // Same per-axis twiddle precompute as YUV422_to_CMPR_Twiddled — see there.
@@ -2425,25 +2482,16 @@ static void YUV422_to_RGBA8_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
       u32 y  = ty*4 + row;
       u32 tw = (table_y[y] | table_x[x]) / 4;
       u8 *p  = &src_vram[tw * 8];
-      u32 w0 = *(u32*)&p[0];
-      u32 w1 = *(u32*)&p[4];
-      u16 buf0 = (u16)(w0 >> 16);
-      u16 buf1 = (u16)(w0      );
-      u16 buf2 = (u16)(w1 >> 16);
-      u16 buf3 = (u16)(w1      );
-
-      // FIX: swap Yu/Yv source halves (was crossing R<->B, e.g. orange -> blue)
-      s32 Y00 = buf0 & 255; s32 Yv = (buf0 >> 8) & 255;
-      s32 Y10 = buf1 & 255;
-      s32 Y01 = buf2 & 255; s32 Yu = (buf2 >> 8) & 255;
-      s32 Y11 = buf3 & 255;
+      yuv_tw_block b;
+      yuv_tw_fetch(p, tw_fix, b);
 
       s32 Bc, Gc, Rc;
-      YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
-      u16 c00 = (u16)YUV422_luma(Y00, Bc, Gc, Rc);
-      u16 c01 = (u16)YUV422_luma(Y01, Bc, Gc, Rc);
-      u16 c10 = (u16)YUV422_luma(Y10, Bc, Gc, Rc);
-      u16 c11 = (u16)YUV422_luma(Y11, Bc, Gc, Rc);
+      YUV422_chroma(b.Yu0, b.Yv0, Bc, Gc, Rc); // row 0 shares one U/V pair
+      u16 c00 = (u16)YUV422_luma(b.Y00, Bc, Gc, Rc);
+      u16 c01 = (u16)YUV422_luma(b.Y01, Bc, Gc, Rc);
+      YUV422_chroma(b.Yu1, b.Yv1, Bc, Gc, Rc); // row 1 has its own U/V pair
+      u16 c10 = (u16)YUV422_luma(b.Y10, Bc, Gc, Rc);
+      u16 c11 = (u16)YUV422_luma(b.Y11, Bc, Gc, Rc);
 
       u32 idx00 = row*4+col,         idx01 = row*4+col+1;
       u32 idx10 = (row+1)*4+col,     idx11 = (row+1)*4+col+1;
@@ -2510,9 +2558,11 @@ static void YUV422_to_RGB565_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
 }
 
 // YUV422 twiddled -> GX_TF_RGB565
-// See YUV422_to_CMPR_Twiddled for the twiddled YUV layout and twiddle-table precompute.
+// See yuv_tw_fetch() for the twiddled YUV layout, and YUV422_to_CMPR_Twiddled
+// for the twiddle-table precompute.
 static void YUV422_to_RGB565_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
+  const int tw_fix = YUV_TW_FIX() ? 1 : 0; // read once per texture, not per block
   u32 tiles_x = w / 4, tiles_y = h / 4;
   u16 *dst16  = (u16 *)dst;
 
@@ -2530,24 +2580,16 @@ static void YUV422_to_RGB565_Twiddled(u8 *src_vram, u32 w, u32 h, u8 *dst)
       u32 y  = ty*4 + row;
       u32 tw = (table_y[y] | table_x[x]) / 4;
       u8 *p  = &src_vram[tw * 8];
-      u32 w0 = *(u32*)&p[0];
-      u32 w1 = *(u32*)&p[4];
-      u16 buf0 = (u16)(w0 >> 16);
-      u16 buf1 = (u16)(w0      );
-      u16 buf2 = (u16)(w1 >> 16);
-      u16 buf3 = (u16)(w1      );
-
-      s32 Y00 = buf0 & 255; s32 Yv = (buf0 >> 8) & 255;
-      s32 Y10 = buf1 & 255;
-      s32 Y01 = buf2 & 255; s32 Yu = (buf2 >> 8) & 255;
-      s32 Y11 = buf3 & 255;
+      yuv_tw_block b;
+      yuv_tw_fetch(p, tw_fix, b);
 
       s32 Bc, Gc, Rc;
-      YUV422_chroma(Yu, Yv, Bc, Gc, Rc);
-      tile[(row  )*4+col  ] = (u16)YUV422_luma(Y00, Bc, Gc, Rc);
-      tile[(row  )*4+col+1] = (u16)YUV422_luma(Y01, Bc, Gc, Rc);
-      tile[(row+1)*4+col  ] = (u16)YUV422_luma(Y10, Bc, Gc, Rc);
-      tile[(row+1)*4+col+1] = (u16)YUV422_luma(Y11, Bc, Gc, Rc);
+      YUV422_chroma(b.Yu0, b.Yv0, Bc, Gc, Rc); // row 0 shares one U/V pair
+      tile[(row  )*4+col  ] = (u16)YUV422_luma(b.Y00, Bc, Gc, Rc);
+      tile[(row  )*4+col+1] = (u16)YUV422_luma(b.Y01, Bc, Gc, Rc);
+      YUV422_chroma(b.Yu1, b.Yv1, Bc, Gc, Rc); // row 1 has its own U/V pair
+      tile[(row+1)*4+col  ] = (u16)YUV422_luma(b.Y10, Bc, Gc, Rc);
+      tile[(row+1)*4+col+1] = (u16)YUV422_luma(b.Y11, Bc, Gc, Rc);
     }
   }
 }
@@ -3198,16 +3240,14 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
           u8 *p  = &yuv_src[tw * 8];
           u32 tw0 = *(u32*)&p[0];
           u32 tw1 = *(u32*)&p[4];
-          u16 buf0 = (u16)(tw0 >> 16);
-          u16 buf1 = (u16)(tw0      );
-          u16 buf2 = (u16)(tw1 >> 16);
-          u16 buf3 = (u16)(tw1      );
-          s32 Y00 = buf0 & 255; s32 Yv = (buf0 >> 8) & 255;
-          s32 Y10 = buf1 & 255;
-          s32 Y01 = buf2 & 255; s32 Yu = (buf2 >> 8) & 255;
-          s32 Y11 = buf3 & 255;
-          printf("[YUV] twiddled-style decode block0: tw_idx=%u raw=%08X %08X\n", tw, tw0, tw1);
-          printf("[YUV]   Y00=%d Y10=%d Y01=%d Y11=%d U=%d V=%d\n", Y00, Y10, Y01, Y11, Yu, Yv);
+          // Decode through the same helper the real twiddled decoders use, so
+          // the log shows what the ACTIVE yuv_twiddle_fix setting produces.
+          yuv_tw_block b;
+          yuv_tw_fetch(p, YUV_TW_FIX() ? 1 : 0, b);
+          printf("[YUV] twiddled-style decode block0: tw_idx=%u raw=%08X %08X tw_fix=%d\n",
+                 tw, tw0, tw1, YUV_TW_FIX() ? 1 : 0);
+          printf("[YUV]   Y00=%d Y10=%d Y01=%d Y11=%d  U0=%d V0=%d U1=%d V1=%d\n",
+                 b.Y00, b.Y10, b.Y01, b.Y11, b.Yu0, b.Yv0, b.Yu1, b.Yv1);
         }
 
         // ASCII brightness thumbnail of the FULL raw source (every cell is a

@@ -161,6 +161,12 @@ extern "C" {
   int get_fmv_format_preset() { return g_fmv_format_preset; }
 }
 
+int g_yuv_twiddle_fix_preset = 1; // 0=off (legacy extraction), 1=on. TWIDDLED YUV422 textures only (planar/FMV is untouched): the legacy decoder took the two u16 halves of each source u32 the wrong way round AND read luma from the low byte / chroma from the high byte, so every luma slot received a chroma sample (~128, near-constant) and both chroma slots received luma. The picture keeps its shape but collapses onto the green<->magenta axis - Virtua Fighter 3tb's "FIRST MATCH" loading screen.
+
+extern "C" {
+  int get_yuv_twiddle_fix_preset() { return g_yuv_twiddle_fix_preset; }
+}
+
 int g_jojo_fix_preset = 0; // 0=off (pre-fix behavior), 1 = On
 
 extern "C" {
@@ -1106,7 +1112,8 @@ void displayAccuracyMenu()
 #define OPT_SUBPASS_ZCLEAR 56 // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_POLY_OFFSET 57    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_LEGACY_DEPTH 58   // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
-#define OPT_ROW_COUNT   59
+#define OPT_YUV_TWIDDLE_FIX 59 // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
+#define OPT_ROW_COUNT   60
 
 // Options are split across six themed pages so no single page scrolls off
 // screen and related settings are grouped together.
@@ -1147,6 +1154,7 @@ static const int OPT_PAGE0_ROWS[] = {
 static const int OPT_PAGE1_ROWS[] = {
   OPT_LAUNCH,
   OPT_FMV_FORMAT,
+  OPT_YUV_TWIDDLE_FIX,
   OPT_VERTEX_COLOR_FIX,
   OPT_DECAL_ALPHA,
   OPT_SEAM_FIX,
@@ -1473,6 +1481,15 @@ bool displayOptionsMenu()
       case 2: printf("[< RGB565 (FASTER)   >]"); break;
     }
     printf(" CMPR if some movie display white");
+    printf("\n");
+
+    // --- Row: Twiddled YUV422 texture decode fix ---
+    printf("%s YUV TWIDDLE FIX: ", (selectedRow == OPT_YUV_TWIDDLE_FIX) ? ">" : " ");
+    switch (g_yuv_twiddle_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" green YUV art (VF3tb FIRST MATCH)");
     printf("\n");
 
     // --- Row: Intensity Color Fix ---
@@ -1912,6 +1929,7 @@ bool displayOptionsMenu()
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
+        case OPT_YUV_TWIDDLE_FIX: g_yuv_twiddle_fix_preset = (g_yuv_twiddle_fix_preset + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 2) % 3; break;
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 2) % 3; break;
@@ -1977,6 +1995,7 @@ bool displayOptionsMenu()
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
+        case OPT_YUV_TWIDDLE_FIX: g_yuv_twiddle_fix_preset = (g_yuv_twiddle_fix_preset + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 1) % 3; break;
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 1) % 3; break;
