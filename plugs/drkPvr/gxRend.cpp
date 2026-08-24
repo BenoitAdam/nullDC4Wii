@@ -169,6 +169,22 @@ extern "C" int get_hokuto_hack_preset();
 // multi-pass game; nothing else needs changing.
 #define SCOPE_DEBUG_LOG 0
 
+// [RTT] probe: is the render-to-texture pass actually producing pixels? Prints
+// one line per ~120 RTT passes with how many strips it drew/skipped, their
+// screen bbox, the EFB source rect it lifted, how many of those pixels were
+// non-zero, and the first word it wrote into emulated VRAM. It also poisons the
+// grab buffer with 0xA5A5 first, so "poison=<all>" cleanly means GX_CopyTex
+// never wrote RAM while "nonzero=0 poison=0" means the EFB really was black.
+// Compile-time, not DEBUG_MESSAGE()-gated, on purpose: the per-strip bbox scan
+// and the 64K-pixel sweep are far too expensive to leave in a shipping build,
+// and at 0 none of it is compiled at all. Flip to 1 to re-arm.
+//
+// NOTE (Dolphin): with "Store EFB Copies to Texture Only" on — its default —
+// Dolphin never writes EFB copies to emulated RAM, so every RTT read-back comes
+// back empty no matter how correct this code is. Uncheck that and "Skip EFB
+// Access from CPU" before concluding anything about render-to-texture there.
+#define RTT_DEBUG_LOG 0
+
 // Where the [SS] output goes. InitRenderer() normally does
 // freopen("/ndclog.txt", "w", stdout) the moment the renderer starts, so EVERY
 // printf from gameplay onward disappears into a file on the SD card — which is
@@ -4424,6 +4440,10 @@ static u16 fb2d_tex[FB2D_W * FB2D_H] ATTRIBUTE_ALIGN(32);
 static bool s_rtt_pass = false;
 static u32  s_rtt_w = 0;   // RTT target size, from FB_X_CLIP / FB_Y_CLIP
 static u32  s_rtt_h = 0;
+#if RTT_DEBUG_LOG
+static u32 s_rtt_drawn = 0, s_rtt_skipped = 0, s_rtt_probe_n = 0;
+static float s_rtt_bx0, s_rtt_bx1, s_rtt_by0, s_rtt_by1;
+#endif
 static u32  s_rtt_x = 0;   // ... and its ORIGIN: the clip is a window into the
 static u32  s_rtt_y = 0;   // normal screen space, not a canvas of its own
 
@@ -4772,11 +4792,52 @@ static void rtt_copy_efb_to_vram()
 
   // Grab the RTT pixels without clearing yet — the EFB is cleared as a whole
   // below so color AND depth start fresh everywhere, not just in this rect.
+#if RTT_DEBUG_LOG
+  // Poison the destination first. After the copy: still 0xA5A5 => GX_CopyTex
+  // never wrote anything; all zeros => the copy ran and the EFB really is black.
+  const bool rtt_probe = ((s_rtt_probe_n++ % 120) == 0);
+  if (rtt_probe)
+  {
+    for (u32 i = 0; i < copy_w * copy_h; i++) fb2d_tex[i] = 0xA5A5;
+    DCFlushRange(fb2d_tex, copy_w * copy_h * 2);
+  }
+#endif
+  // EFB-copy hygiene, the same discipline the AUTOSORT() depth snapshot uses:
+  //   * the deflicker/AA copy filter blends neighbouring EFB rows, which is
+  //     right for a picture and wrong for a texture the game will sample —
+  //     turn it off for this copy and restore it for the display copy;
+  //   * GX_PixModeSync() before reading the EFB back, so the pixel engine has
+  //     retired the writes this pass just made instead of copying stale tiles.
+  GX_SetCopyFilter(GX_FALSE, NULL, GX_FALSE, NULL);
+  GX_PixModeSync();
   GX_SetTexCopySrc((u16)src_x, (u16)src_y, (u16)copy_w, (u16)copy_h);
   GX_SetTexCopyDst((u16)copy_w, (u16)copy_h, GX_TF_RGB565, GX_FALSE);
   GX_CopyTex(fb2d_tex, GX_FALSE);
+  GX_PixModeSync();
+  GX_SetCopyFilter(rmode->aa, rmode->sample_pattern, GX_TRUE, rmode->vfilter);
   GX_DrawDone(); // wait for the copy to land in main memory
   DCInvalidateRange(fb2d_tex, copy_w * copy_h * 2);
+
+#if RTT_DEBUG_LOG
+  if (rtt_probe)
+  {
+    u32 nz = 0, firsti = 0, poison = 0; u16 firstv = 0;
+    for (u32 i = 0; i < copy_w * copy_h; i++)
+    {
+      const u16 v = fb2d_tex[i];
+      if (v == 0xA5A5) poison++;
+      else if (v) { if (!nz) { firstv = v; firsti = i; } nz++; }
+    }
+    printf("[RTT] drawn=%u skipped=%u drawn_bbox=(%.0f,%.0f)-(%.0f,%.0f) | "
+           "src=(%u,%u) %ux%u scale=(%.3f,%.3f) efb=%dx%d | "
+           "nonzero=%u poison=%u of %u first=%04X@%u\n",
+           s_rtt_drawn, s_rtt_skipped, s_rtt_bx0, s_rtt_by0, s_rtt_bx1, s_rtt_by1,
+           src_x, src_y, copy_w, copy_h,
+           s_clip_sx, s_clip_sy, (int)rmode->fbWidth, (int)rmode->efbHeight,
+           nz, poison, copy_w * copy_h, firstv, firsti);
+    fflush(stdout);
+  }
+#endif
 
   u32 packmode = FB_W_CTRL & 7;
   if (packmode <= 3)
@@ -4818,6 +4879,14 @@ static void rtt_copy_efb_to_vram()
         *(u32 *)&params.vram[(line + x * 2) & VRAM_MASK] = ((u32)p1 << 16) | p0;
       }
     }
+#if RTT_DEBUG_LOG
+    if (rtt_probe)
+    {
+      printf("[RTT] wrote VRAM base=%06X stride=%u pack=%u W_SOF1=%08X first=%08X\n",
+             base, stride, packmode, (u32)FB_W_SOF1, *(u32 *)&params.vram[base]);
+      fflush(stdout);
+    }
+#endif
   }
   else if (DEBUG_MESSAGE())
   {
@@ -4901,6 +4970,12 @@ void DoRender()
     // the 4:3 pillarbox. rtt_copy_efb_to_vram() then lifts the clip window out
     // of the EFB, using exactly the s_clip_* mapping set here.
     GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
+    // GX scissor state persists across frames and across passes, and nothing on
+    // the RTT path ever set it — so a sub-rect left by a user tile clip (or by
+    // the carry overlay) would silently reject every pixel of this render.
+    // Open it explicitly; the tile clip re-applies per strip if it is on.
+    GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+    s_tileclip_applied = 0;
     s_clip_sx = (float)rmode->fbWidth / dc_width;
     s_clip_sy = (float)rmode->efbHeight / dc_height;
     s_clip_ox = 0.f; s_clip_oy = 0.f;
@@ -5368,6 +5443,11 @@ void DoRender()
   // RTT_KEEP_LIST(): read once per frame; last_clip_mod tracks the param in
   // effect for the current strip (strips without a header reuse the previous).
   const bool rtt_keep = RTT_KEEP_LIST();
+#if RTT_DEBUG_LOG
+  if (s_rtt_pass) { s_rtt_drawn = 0; s_rtt_skipped = 0;
+                    s_rtt_bx0 = s_rtt_by0 =  1e30f;
+                    s_rtt_bx1 = s_rtt_by1 = -1e30f; }
+#endif
   const PolyParam *last_clip_mod = 0;
 
   // POLY_OFFSET() / SUBPASS_ZCLEAR(): read once per frame, same rationale as
@@ -6410,6 +6490,29 @@ void DoRender()
       if (seg_is_pt && poly_offset_tier > 0 && count)
         ApplyPolyOffset(drawVTX, count, poly_offset_tier);
 
+#if RTT_DEBUG_LOG
+      if (s_rtt_pass && count)
+      {
+        if (strip_skip) s_rtt_skipped++;
+        else
+        {
+          s_rtt_drawn++;
+          // Screen bbox of what this pass really rasterises — if it never
+          // covers the clip window the grab is black for a boring reason.
+          for (int i = 0; i < count; i++)
+          {
+            const float z = drawVTX[i].z;
+            if (z <= 0.0f) continue;
+            const float iw = 1.0f / z;
+            const float sx = drawVTX[i].x * iw, sy = drawVTX[i].y * iw;
+            if (sx < s_rtt_bx0) s_rtt_bx0 = sx;
+            if (sx > s_rtt_bx1) s_rtt_bx1 = sx;
+            if (sy < s_rtt_by0) s_rtt_by0 = sy;
+            if (sy > s_rtt_by1) s_rtt_by1 = sy;
+          }
+        }
+      }
+#endif
       if (strip_skip)
       {
         // Not for this render (see the RTT_KEEP_LIST() split above). State was
@@ -7754,7 +7857,7 @@ bool InitRenderer()
 {
   // Diagnostic file logger
   printf("Log to file check ndclog.txt\n");
-#if SCOPE_DEBUG_LOG && SCOPE_LOG_TO_CONSOLE
+#if (SCOPE_DEBUG_LOG || RTT_DEBUG_LOG) && SCOPE_LOG_TO_CONSOLE
   // Deliberately NOT redirecting: the whole point of the [SS] capture is to read
   // it live. Everything keeps going wherever libogc's stdout points (Dolphin log
   // window / USB Gecko). Restore the redirect by setting SCOPE_LOG_TO_CONSOLE 0.
