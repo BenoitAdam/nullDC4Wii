@@ -241,6 +241,17 @@
                                 texels, killing the thin black "seam" line between
                                 2D tiles/sprites without dropping to GX_NEAR. Keeps
                                 wrap/tiling intact (sub-texel shift only).
+        fog=on              <- on/off (default off). Per-polygon PVR2 fog (see
+                                gxRend.cpp FOG()): honours each polygon's
+                                TSP.FogCtrl - look-up table (FOG_TABLE +
+                                FOG_DENSITY, colour FOG_COL_RAM), per-vertex
+                                (coefficient = the vertex's offset-colour alpha,
+                                colour FOG_COL_VERT), no fog, and LUT mode 2.
+                                Evaluated per vertex on the CPU and blended by one
+                                extra TEV stage. Gives racers/outdoor games their
+                                distance haze back instead of hard geometry that
+                                pops in. Costs 4 bytes/vertex plus a TEV stage on
+                                fogged polygons only.
         fixed_depth=1       <- 0/1/2, fixed depth projection (see gxRend.cpp
                                 FIXED_DEPTH_*()). 0 (default, legacy) tracks the
                                 scene's min/max depth on every TA vertex to fit
@@ -463,6 +474,7 @@ extern int g_split_screen_preset;
 extern int g_special_layout_preset;
 extern int g_mipmap_preset;
 extern int g_seam_fix_preset;
+extern int g_fog_preset;
 extern int g_yuv_twiddle_fix_preset;
 extern int g_fixed_depth_preset;
 extern int g_legacy_depth_preset;
@@ -538,6 +550,7 @@ struct GamePreset
     int layout; // -1=not set, 0=SPECIAL_LAYOUT_OFF, 1=SPECIAL_LAYOUT_CHUCHU (see main.cpp)
     int mipmap;
     int seam_fix;
+    int fog;
     int yuv_twiddle_fix;
     int fixed_depth;
     int legacy_depth;
@@ -824,6 +837,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "layout_chuchu"))  { int b = parse_bool(val); if (b >= 0) p->layout = b ? 1 /* SPECIAL_LAYOUT_CHUCHU */ : 0 /* SPECIAL_LAYOUT_OFF */; }
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
     else if (key_eq(key, "seam_fix"))       p->seam_fix       = parse_bool(val);
+    else if (key_eq(key, "fog"))            p->fog            = parse_bool(val);
     else if (key_eq(key, "yuv_twiddle_fix")) p->yuv_twiddle_fix = parse_bool(val);
     else if (key_eq(key, "fixed_depth"))    p->fixed_depth    = atoi(val);
     else if (key_eq(key, "legacy_depth"))   p->legacy_depth   = parse_bool(val);
@@ -882,6 +896,7 @@ static void preset_clear(GamePreset* cur)
     cur->layout = -1;
     cur->mipmap = -1;
     cur->seam_fix = -1;
+    cur->fog = -1;
     cur->yuv_twiddle_fix = -1;
     cur->fixed_depth = -1;
     cur->legacy_depth = -1;
@@ -945,6 +960,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->layout         >= 0) { g_special_layout_preset = p->layout;         printf("  layout_chuchu  -> %d\n", p->layout);         }
     if (p->mipmap         >= 0) { g_mipmap_preset        = p->mipmap;          printf("  mipmap         -> %d\n", p->mipmap);         }
     if (p->seam_fix       >= 0) { g_seam_fix_preset      = p->seam_fix;        printf("  seam_fix       -> %d\n", p->seam_fix);       }
+    if (p->fog            >= 0) { g_fog_preset           = p->fog;             printf("  fog            -> %d\n", p->fog);            }
     if (p->yuv_twiddle_fix >= 0) { g_yuv_twiddle_fix_preset = p->yuv_twiddle_fix; printf("  yuv_twiddle_fix -> %d\n", p->yuv_twiddle_fix); }
     if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }
     if (p->legacy_depth    >= 0) { g_legacy_depth_preset  = p->legacy_depth;     printf("  legacy_depth   -> %d\n", p->legacy_depth);    }

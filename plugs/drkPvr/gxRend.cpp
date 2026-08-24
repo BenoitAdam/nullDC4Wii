@@ -208,6 +208,46 @@ extern "C" int get_offset_color_preset();
 extern "C" int get_seam_fix_preset();
 #define SEAM_FIX() (get_seam_fix_preset() == 1)
 
+// ── FOG() ─────────────────────────────────────────────────────────────────
+// PVR2 fog. Real hardware fogs every pixel in the TSP stage, before the
+// blending unit, and each polygon picks its own mode through TSP.FogCtrl:
+//   0 = Look Up Table   fog coefficient = FOG_TABLE[] sampled with the pixel's
+//                       W scaled by FOG_DENSITY; colour = FOG_COL_RAM
+//   1 = Per Vertex      fog coefficient = the vertex's OFFSET COLOUR ALPHA
+//                       (the game computes the ramp itself); colour = FOG_COL_VERT
+//   2 = No Fog          polygon is not fogged
+//   3 = LUT Mode 2      the LUT coefficient becomes the pixel's ALPHA and the
+//                       pixel's colour is replaced by FOG_COL_RAM outright
+//                       ("fog as a blended layer", rare)
+// None of that existed here: FogCtrl was decoded into the TSP struct and never
+// read, so foggy games rendered with hard, un-hazed geometry and horizons that
+// pop in (racers and anything outdoors).
+//
+// GX has a fog unit, but it derives its coefficient from the fragment's screen
+// Z through a fixed linear/exponential curve, which cannot express an arbitrary
+// 128-entry PVR table, and this renderer's projection is rebuilt every frame
+// from the scene's own W range (see vtx_min_Z/vtx_max_Z) so its start/end
+// planes would have to be re-derived per frame on top of that. So fog is
+// evaluated per VERTEX on the CPU instead — inside the strip walk that is
+// already submitting the vertices — and the coefficient rides into the pipeline
+// in the ALPHA of the CLR1 vertex attribute, which is exactly where real PVR
+// per-vertex fog keeps it. One extra TEV stage then performs the blend the TSP
+// would have done:  colour = lerp(stage_result, fog_colour, CLR1.alpha).
+// The ramp is Gouraud-interpolated across the strip rather than evaluated per
+// pixel; for the smooth distance ramps fog is actually used for that is
+// visually the same thing (mode 1 IS per-vertex on hardware too) and it costs
+// no fill rate.
+//
+// Cost: +4 bytes/vertex (the CLR1 attribute is forced on even when
+// OFFSET_COLOR_FIX() is off), one extra TEV stage on fogged polygons only, and
+// a table lookup per vertex of a LUT-fogged strip (integer, ~10 ops, no libm).
+// Polygons with FogCtrl==2 fall back to the exact legacy stage count.
+//
+// Off by default: it changes the colour of every fogged polygon in the scene,
+// so it is a per-game opt-in like every other renderer preset here.
+extern "C" int get_fog_preset();
+#define FOG() (get_fog_preset() == 1)
+
 // Translucent depth sort
 extern "C" int get_trans_sort_preset();
 #define TRANS_SORT() (get_trans_sort_preset() == 1)
@@ -1340,6 +1380,11 @@ u32 curSpriteSpc = 0;
 // the preset can't change mid-frame anyway.
 bool g_vertex_color_fix_cached = false;
 bool g_offset_color_fix_cached = false; // same idea, for OFFSET_COLOR_FIX()
+bool g_fog_cached              = false; // same idea, for FOG(): makes the TA
+                                        // decoder keep a polygon's offset-colour
+                                        // ALPHA (the per-vertex fog coefficient)
+                                        // even when the offset colour itself is
+                                        // being dropped
 bool g_split_screen_cached     = false; // same idea, for SPLIT_SCREEN(): gates
                                         // the listTileClip[] store per param
 bool g_fixed_depth_cached      = false; // same idea, for FIXED_DEPTH_*(): skips
@@ -1433,6 +1478,84 @@ void UpdateDepthPlanes()
         g_near_z = 0.1f;
         g_far_z  = 25000.0f;
     }
+}
+
+// ============================================================================
+// PVR2 FOG (see FOG() at the top of the file)
+// ============================================================================
+
+// Decoded once per render from the PVR fog registers.
+static float s_fog_density  = 0.0f; // FOG_DENSITY as a plain float
+static u32   s_fog_col_ram  = 0;    // FOG_COL_RAM,  0x00RRGGBB (LUT modes)
+static u32   s_fog_col_vert = 0;    // FOG_COL_VERT, 0x00RRGGBB (per-vertex mode)
+
+// Refreshes the decoded fog registers. Called once per DoRender() when the
+// preset is on; the registers are written by the game outside the render, so
+// per-frame is exactly as often as they can change.
+static void FogFrameSetup()
+{
+    // FOG_DENSITY is a tiny float: [15:8] = 8-bit mantissa, [7:0] = signed
+    // 8-bit exponent, value = mantissa/128 * 2^exponent.
+    const u32 den  = FOG_DENSITY;
+    const u32 mant = (den >> 8) & 0xFFu;
+    const s32 expo = (s32)(s8)(den & 0xFFu);
+
+    // 2^expo without libm: build the float straight from its exponent field.
+    // Denormal/overflow ends are clamped rather than encoded, so a garbage
+    // register can never hand the table lookup an inf/NaN.
+    const s32 be = expo + 127;
+    float p2;
+    if (be <= 0)        p2 = 0.0f;
+    else if (be >= 255) p2 = 3.4028235e38f;
+    else { union { u32 i; float f; } u2; u2.i = (u32)be << 23; p2 = u2.f; }
+
+    s_fog_density  = (float)mant * (1.0f / 128.0f) * p2;
+    s_fog_col_ram  = FOG_COL_RAM  & 0x00FFFFFFu;
+    s_fog_col_vert = FOG_COL_VERT & 0x00FFFFFFu;
+}
+
+// Evaluates the 128-entry PVR fog look-up table for one vertex, returning the
+// fog coefficient as 0 (no fog) .. 255 (fully fogged).
+//
+// Hardware indexes the table by the FLOATING-POINT SHAPE of z = W*FOG_DENSITY
+// clamped to [1, 256): the exponent (0..7) picks one of 8 octaves and the top
+// 4 mantissa bits pick one of 16 steps inside it, so the ramp is fine near the
+// fog start and coarse far away. That is why this needs no log2/pow — the
+// exponent and mantissa fields ARE the index, so the whole lookup is integer
+// bit work on the float's bit pattern.
+//
+// Each table entry packs two 8-bit values: bits [15:8] is the coefficient at
+// the start of that step and bits [7:0] the coefficient at its end; the
+// leftover mantissa bits interpolate between them.
+//
+// W here is this file's depth convention (see vtx_min_Z/vtx_max_Z): the real
+// eye-space W, larger = farther, so a larger index means more fog.
+//
+// If a Wii test shows the ramp running the wrong way WITHIN each step (banded
+// or sawtooth fog rather than smooth), the two bytes of an entry are the pair
+// to swap — a and b below. If the whole scene is uniformly fogged or uniformly
+// clear instead, the suspect is FogFrameSetup()'s FOG_DENSITY decode, not this.
+static INLINE u32 FogTableLookup(float W)
+{
+    float z = W * s_fog_density;
+    // Written as !(z > 1.0f) so NaN lands in the clamp too — same reasoning as
+    // vert_base()'s depth guard: every comparison against NaN is false, so a
+    // "<"-shaped test would let NaN through and index the table with garbage.
+    if (!(z > 1.0f))        z = 1.0f;
+    else if (z > 255.999f)  z = 255.999f;
+
+    union { float f; u32 i; } u;
+    u.f = z;
+    const u32 e    = ((u.i >> 23) & 0xFFu) - 127u; // 0..7 for z in [1,256)
+    const u32 mant = u.i & 0x7FFFFFu;
+    const u32 idx  = (e << 4) | (mant >> 19);      // octave | step -> 0..127
+    const u32 frac = (mant >> 11) & 0xFFu;         // position inside the step
+
+    const u32 ent = FOG_TABLE[idx];
+    const s32 a   = (s32)((ent >> 8) & 0xFFu);     // coefficient at frac = 0
+    const s32 b   = (s32)(ent & 0xFFu);            // coefficient at frac = 255
+    const s32 v   = a + (((b - a) * (s32)frac) >> 8);
+    return (u32)(v < 0 ? 0 : (v > 255 ? 255 : v));
 }
 
 // Primary decoder that translates raw PVR vertex data into the 'Vertex' struct.
@@ -1623,6 +1746,7 @@ void reset_vtx_state()
   tex_frame_reset(); // reset per-frame texture bump arena
   g_vertex_color_fix_cached = VERTEX_COLOR_FIX();
   g_offset_color_fix_cached = OFFSET_COLOR_FIX();
+  g_fog_cached              = FOG();
   g_split_screen_cached     = SPLIT_SCREEN();
   g_legacy_depth_cached     = LEGACY_DEPTH();
   // 1bb8c27 tracked nothing per vertex, so legacy takes the "skip tracking" path
@@ -4677,7 +4801,10 @@ static void as_setup_select_tev(bool first_peel)
 // ALWAYS): parks the whole Z buffer at depth W. Same position convention as
 // every other vertex this renderer submits (x = sx*W, z = -W), and the full
 // VCD is fed so the vertex stream never changes shape mid-frame.
-static void as_submit_zquad(float dcw, float dch, float W, bool offset_fix)
+// wide_vtx: the frame's VCD carries the CLR1 attribute (OFFSET_COLOR_FIX() or
+// FOG() is on), so every vertex submitted this frame — this quad included —
+// must supply it or the CP packet stream goes out of alignment.
+static void as_submit_zquad(float dcw, float dch, float W, bool wide_vtx)
 {
   const float xs[4] = {0.0f, dcw, 0.0f, dcw};
   const float ys[4] = {0.0f, 0.0f, dch, dch};
@@ -4686,7 +4813,7 @@ static void as_submit_zquad(float dcw, float dch, float W, bool offset_fix)
   {
     GX_Position3f32(xs[i] * W, ys[i] * W, -W);
     GX_Color1u32(0);
-    if (offset_fix)
+    if (wide_vtx)
       GX_Color1u32(0);
     GX_TexCoord2f32(0.0f, 0.0f);
   }
@@ -4708,7 +4835,7 @@ static void as_submit_zquad(float dcw, float dch, float W, bool offset_fix)
 //              already-drawn survives GEQUAL against later geometry), or
 //              vtx_max_Z for the opposite ("everything is at the far
 //              plane" — the same state a fresh frame's clear leaves it in).
-static void ClearDepthOnlyPass(float dcw, float dch, float atW, bool offset_fix)
+static void ClearDepthOnlyPass(float dcw, float dch, float atW, bool wide_vtx)
 {
   GX_SetColorUpdate(GX_FALSE);
   GX_SetAlphaUpdate(GX_FALSE);
@@ -4719,9 +4846,47 @@ static void ClearDepthOnlyPass(float dcw, float dch, float atW, bool offset_fix)
   GX_SetNumTexGens(1);
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
   GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
-  as_submit_zquad(dcw, dch, atW, offset_fix);
+  as_submit_zquad(dcw, dch, atW, wide_vtx);
   GX_SetColorUpdate(GX_TRUE);
   GX_SetAlphaUpdate(GX_TRUE);
+}
+
+// ── FOG(): the TEV stage that applies one polygon's fog mode ───────────────
+// stage is the (fixed for the whole frame) TEV stage index the fog blend runs
+// in — 1 normally, 2 when OFFSET_COLOR_FIX() owns stage 1. The coefficient
+// arrives as the CLR1 alpha of each vertex (GX_CC_RASA / GX_CA_RASA); the fog
+// colour is a konst, K2 = FOG_COL_RAM and K3 = FOG_COL_VERT, both loaded once
+// per frame in DoRender(). K0/K1 are left alone: AUTOSORT()'s select pass owns
+// those.
+//
+// Not called for mode 2 (No Fog) — that polygon simply drops the stage from
+// the stage count instead, so it keeps the legacy pipeline exactly.
+static void FogSetStage(u8 stage, int mode)
+{
+  // Fog colour: per-vertex mode blends toward FOG_COL_VERT, both LUT modes
+  // toward FOG_COL_RAM.
+  GX_SetTevKColorSel(stage, (mode == 1) ? GX_TEV_KCSEL_K3 : GX_TEV_KCSEL_K2);
+  GX_SetTevOrder(stage, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR1A1);
+
+  if (mode == 3)
+  {
+    // LUT Mode 2: the polygon's own colour is discarded — the pixel becomes
+    // the fog colour with the fog coefficient as its alpha, and the game's
+    // own blend equation composites it.
+    GX_SetTevColorIn(stage, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_KONST);
+    GX_SetTevAlphaIn(stage, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+  }
+  else
+  {
+    // Modes 0 and 1: colour = lerp(previous stage, fog colour, coefficient).
+    // TEV computes D + (1-C)*A + C*B, so A=CPREV, B=KONST, C=RASA, D=ZERO is
+    // the lerp verbatim. Alpha passes straight through — PVR fog never
+    // touches the pixel's alpha in these modes.
+    GX_SetTevColorIn(stage, GX_CC_CPREV, GX_CC_KONST, GX_CC_RASA, GX_CC_ZERO);
+    GX_SetTevAlphaIn(stage, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_APREV);
+  }
+  GX_SetTevColorOp(stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+  GX_SetTevAlphaOp(stage, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
 }
 
 // ── POLY_OFFSET(): depth bias for co-planar PT-list decals ─────────────────
@@ -5037,8 +5202,24 @@ void DoRender()
   const bool offset_fix = OFFSET_COLOR_FIX();
   // 2D sprite seam fix — read once per frame, same rationale as offset_fix.
   const bool seam_fix = SEAM_FIX();
+  // FOG(): per-polygon PVR fog (see the macro doc at the top of the file).
+  // Read once per frame like the presets above — the CLR1 vertex attribute it
+  // needs is a VCD decision, and the VCD must not change mid-stream.
+  const bool fog_on = FOG();
+  if (fog_on)
+    FogFrameSetup();
+  // CLR1 in the vertex format: the offset colour needs its RGB, fog needs its
+  // alpha. Either preset alone is enough to widen the vertex.
+  const bool emit_clr1 = offset_fix || fog_on;
+  // TEV stages that are live for EVERY polygon this frame, before the
+  // per-polygon fog stage is appended on top. With fog on, the offset stage is
+  // pinned on rather than toggled per polygon, so the fog stage keeps one
+  // fixed index all frame instead of sliding between 1 and 2 (polygons without
+  // an offset colour carry spc.rgb == 0, so the pinned stage adds nothing).
+  const int tev_base  = (offset_fix && fog_on) ? 2 : 1;
+  const u8  fog_stage = (u8)tev_base; // GX_TEVSTAGE0..15 are 0..15
 
-  GX_SetNumChans(offset_fix ? 2 : 1);
+  GX_SetNumChans(emit_clr1 ? 2 : 1);
   GX_SetNumTexGens(1);
 
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
@@ -5048,7 +5229,7 @@ void DoRender()
   GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
   GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
 
-  if (offset_fix)
+  if (emit_clr1)
   {
     // 28 bytes/vertex: POS+CLR0+CLR1+TEX0. Every vertex this frame submits
     // CLR1 (spc, 0 when unused) so the VCD never changes mid-stream.
@@ -5056,6 +5237,23 @@ void DoRender()
     GX_SetVtxDesc(GX_VA_CLR1, GX_DIRECT);
     // Channel 1: plain vertex color, no lighting.
     GX_SetChanCtrl(GX_COLOR1A1, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX, 0, GX_DF_NONE, GX_AF_NONE);
+  }
+
+  if (fog_on)
+  {
+    // Fog colours as TEV konsts, picked per polygon by FogSetStage(): K2 for
+    // the LUT modes, K3 for per-vertex fog. Alpha is unused (the fog stage
+    // only ever selects KONST as a colour input).
+    GXColor kfog_ram  = { (u8)(s_fog_col_ram  >> 16), (u8)(s_fog_col_ram  >> 8),
+                          (u8)s_fog_col_ram,  0xFF };
+    GXColor kfog_vert = { (u8)(s_fog_col_vert >> 16), (u8)(s_fog_col_vert >> 8),
+                          (u8)s_fog_col_vert, 0xFF };
+    GX_SetTevKColor(GX_KCOLOR2, kfog_ram);
+    GX_SetTevKColor(GX_KCOLOR3, kfog_vert);
+  }
+
+  if (offset_fix)
+  {
     // TEV stage 1 implements the PVR offset term: PIX = stage0 + OffsetCol.
     //   color = CPREV + RASC(COLOR1A1)   (a=RASC, b=0, c=0, d=CPREV)
     //   alpha = APREV                    (offset alpha is unused on real PVR)
@@ -5068,7 +5266,7 @@ void DoRender()
     GX_SetTevAlphaIn(GX_TEVSTAGE1, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_APREV);
     GX_SetTevAlphaOp(GX_TEVSTAGE1, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
   }
-  GX_SetNumTevStages(1);
+  GX_SetNumTevStages(tev_base);
 
   GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
 
@@ -5419,7 +5617,15 @@ void DoRender()
   GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
 
   int last_textured = -1;  // track texture state to skip redundant GX calls
-  int last_tev_stages = 1; // offset_fix only: 2 while drawing offset-color polys
+  int last_tev_stages = tev_base; // offset_fix only: 2 while drawing offset-color
+                                  // polys. With fog on, tev_base is already the
+                                  // pinned base and the fog stage adds one more.
+  // FOG(): mode currently programmed into the fog TEV stage (-1 = unknown, so
+  // the next fogged strip reprograms it) and the mode the strip being submitted
+  // is drawn with. Both are only read when fog_on; mode 2 = No Fog, which is
+  // also the right neutral value for a frame that never sets one.
+  int last_fog_mode  = -1;
+  int strip_fog_mode = 2;
   int last_alpha_fmt = -1; // -1 = unset
   int last_shad_instr = -1; // -1 = unset; tracks the GX op currently set on TEVSTAGE0 for textured polys
   const bool decal_alpha_fix = DECAL_ALPHA_FIX(); // read once per frame, not per polygon
@@ -5569,19 +5775,38 @@ void DoRender()
     // last_tev_stages in sync so the main loop below (which only reissues
     // GX_SetNumTevStages on a change) doesn't skip re-applying it for the
     // first real polygon.
-    if (offset_fix)
+    // FOG(): the background polygon carries its own TSP, so it picks its own
+    // fog mode like any other strip — and it is the one that matters most,
+    // being the sky/horizon the scene fades into. Owns the stage count here
+    // for the same reason the main loop's fog branch does.
+    if (fog_on)
+    {
+      last_fog_mode = (int)bg_tsp.FogCtrl;
+      if (last_fog_mode != 2)
+        FogSetStage(fog_stage, last_fog_mode);
+      last_tev_stages = tev_base + ((last_fog_mode == 2) ? 0 : 1);
+      GX_SetNumTevStages(last_tev_stages);
+    }
+    else if (offset_fix)
     {
       last_tev_stages = (bg_isp.Texture && bg_isp.Offset) ? 2 : 1;
       GX_SetNumTevStages(last_tev_stages);
     }
+
+    const bool bg_fog_lut = fog_on && (bg_tsp.FogCtrl == 0 || bg_tsp.FogCtrl == 3);
 
     GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, 4);
     for (int i = 0; i < 4; i++)
     {
       GX_Position3f32(bgQuad[i].x, bgQuad[i].y, -bgQuad[i].z);
       GX_Color1u32(HOST_TO_LE32(bgQuad[i].col));
-      if (offset_fix)
-        GX_Color1u32(HOST_TO_LE32(bgQuad[i].spc));
+      if (emit_clr1)
+      {
+        u32 spc = bgQuad[i].spc;
+        if (bg_fog_lut)
+          spc = (spc & 0x00FFFFFFu) | (FogTableLookup(bgQuad[i].z) << 24);
+        GX_Color1u32(HOST_TO_LE32(spc));
+      }
       GX_TexCoord2f32(bgQuad[i].u, bgQuad[i].v);
     }
     GX_End();
@@ -5772,6 +5997,11 @@ void DoRender()
     }
 
     const int seg_as = segs[seg].as_pass;
+    // FOG(): forget which mode the fog stage holds. Segment starts reprogram
+    // TEV stages wholesale (AUTOSORT()'s select pass in particular reuses the
+    // very stage indices the fog blend lives in), so the first fogged strip of
+    // every segment must rebuild it from scratch rather than trust the cache.
+    last_fog_mode = -1;
     if (seg_as == 1)
     {
       // ── AUTOSORT select pass k: leave the farthest not-yet-peeled TR
@@ -5815,7 +6045,7 @@ void DoRender()
       GX_SetNumTexGens(1);
       GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
       GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
-      as_submit_zquad(dc_width, dc_height, vtx_min_Z * 1.0005f, offset_fix);
+      as_submit_zquad(dc_width, dc_height, vtx_min_Z * 1.0005f, emit_clr1);
 
       // 3. Select pipeline: TEV depth-compare kill + minimum-Z walk.
       as_setup_select_tev(first_peel);
@@ -5881,7 +6111,7 @@ void DoRender()
       GX_SetNumTexGens(1);
       GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
       GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
-      as_submit_zquad(dc_width, dc_height, vtx_max_Z * 0.9995f, offset_fix);
+      as_submit_zquad(dc_width, dc_height, vtx_max_Z * 0.9995f, emit_clr1);
       GX_SetColorUpdate(GX_TRUE);
       GX_SetAlphaUpdate(GX_TRUE);
       GX_SetZMode(GX_TRUE, GX_GEQUAL, GX_TRUE);
@@ -6170,7 +6400,7 @@ void DoRender()
           if (drawVTX[i].z < scene_near_W) { needs_rescue = true; break; }
         if (needs_rescue)
         {
-          ClearDepthOnlyPass(dc_width, dc_height, vtx_max_Z, offset_fix);
+          ClearDepthOnlyPass(dc_width, dc_height, vtx_max_Z, emit_clr1);
           hud_zcleared_this_frame = true;
           // Force full state reissue for this strip: ClearDepthOnlyPass
           // reprogrammed TEV stages/texgens/alpha-compare out from under it.
@@ -6271,10 +6501,34 @@ void DoRender()
           last_textured = is_textured;
         }
 
+        // FOG(): pick up this polygon's TSP.FogCtrl and point the fog TEV
+        // stage at it. The stage is appended after the frame's pinned base
+        // stages, so a No-Fog polygon (mode 2) simply drops back to the base
+        // count and rasterizes with the legacy pipeline.
+        //
+        // With fog on this also OWNS the stage count, which is why the
+        // offset_fix branch below is an else: stage 1 stays pinned for the
+        // whole frame there (see tev_base) so the fog stage index never moves.
+        if (fog_on)
+        {
+          strip_fog_mode = (int)stripMod->tsp.FogCtrl;
+          if (strip_fog_mode != last_fog_mode)
+          {
+            if (strip_fog_mode != 2)
+              FogSetStage(fog_stage, strip_fog_mode);
+            last_fog_mode = strip_fog_mode;
+          }
+          const int tev_stages = tev_base + ((strip_fog_mode == 2) ? 0 : 1);
+          if (tev_stages != last_tev_stages)
+          {
+            GX_SetNumTevStages(tev_stages);
+            last_tev_stages = tev_stages;
+          }
+        }
         // Enable TEV stage 1 (offset color add, configured once above) only
         // for textured polys that actually carry an offset color, so
         // everything else keeps single-stage fill rate.
-        if (offset_fix)
+        else if (offset_fix)
         {
           int tev_stages = (is_textured && stripMod->pcw.Offset) ? 2 : 1;
           if (tev_stages != last_tev_stages)
@@ -6555,11 +6809,34 @@ void DoRender()
           { sv = (vspan - 2.0f * g_seam_half_v) / vspan; ov = vmin + g_seam_half_v - sv * vmin; }
         }
 
+        // FOG(): only the two LUT modes have to be evaluated here — per-vertex
+        // fog (mode 1) already carries its coefficient in the offset colour's
+        // alpha, exactly where the fog TEV stage reads it from, and No Fog
+        // (mode 2) has no stage to feed. Hoisted out of the loop so the
+        // ordinary path keeps its branch-free inner loop.
+        const bool fog_lut = (strip_fog_mode == 0 || strip_fog_mode == 3);
+
         GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, count);
-        if (offset_fix)
+        if (emit_clr1)
         {
           // VCD carries CLR1 this frame: every vertex must submit it, in
           // attribute order POS, CLR0, CLR1, TEX0.
+          if (fog_lut)
+          {
+            // Overwrite CLR1's alpha with the table's coefficient for this
+            // vertex's depth. The offset colour's own alpha is unused by the
+            // offset TEV stage (it passes APREV through), so nothing is lost.
+            while (count--)
+            {
+              GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
+              GX_Color1u32(HOST_TO_LE32(drawVTX->col | alpha_or));
+              GX_Color1u32(HOST_TO_LE32((drawVTX->spc & 0x00FFFFFFu)
+                                        | (FogTableLookup(drawVTX->z) << 24)));
+              GX_TexCoord2f32(drawVTX->u * su + ou, drawVTX->v * sv + ov);
+              drawVTX++;
+            }
+          }
+          else
           while (count--)
           {
             GX_Position3f32(drawVTX->x, drawVTX->y, -drawVTX->z);
@@ -7403,7 +7680,8 @@ struct VertexDecoder
   curMod->tcw = pp->tcw;               \
   if (g_split_screen_cached || g_rtt_keep_cached || SCOPE_DEBUG_LOG) \
     listTileClip[curMod - listModes] = ta_tileclip; \
-  curPolyOffsMask = (g_offset_color_fix_cached && pp->pcw.Offset) ? 0xFFFFFFFFu : 0u;
+  /* FOG(): with the offset colour dropped, keep its ALPHA anyway - that is the per-vertex fog coefficient. */ \
+  curPolyOffsMask = pp->pcw.Offset ? (g_offset_color_fix_cached ? 0xFFFFFFFFu : (g_fog_cached ? 0xFF000000u : 0u)) : 0u;
 
   __forceinline static void fastcall AppendPolyParam0(TA_PolyParam0 *pp)
   {

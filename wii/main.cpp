@@ -258,6 +258,12 @@ extern "C" {
   int get_seam_fix_preset() { return g_seam_fix_preset; }
 }
 
+int g_fog_preset = 0; // 0=off (legacy: TSP.FogCtrl decoded but never applied, so nothing is ever fogged), 1=on (per-polygon PVR2 fog — LUT / per-vertex / LUT mode 2 — evaluated per vertex on the CPU and blended by an extra TEV stage; see gxRend.cpp FOG()). Costs 4 bytes/vertex and one TEV stage on fogged polys only, and it recolours every fogged polygon in the scene, so it stays per-game.
+
+extern "C" {
+  int get_fog_preset() { return g_fog_preset; }
+}
+
 int g_fixed_depth_preset = 0; // 0=off (per-vertex min/max W tracking, legacy), 1=wide fixed planes [0.0001..100000] (safe, coarse Z), 2=tight fixed planes [0.1..25000] (finer Z, extreme near/far geometry clips)
 
 int g_legacy_depth_preset = 0; // 0=off, 1=reproduce the 1bb8c27 depth pipeline verbatim: fixed planes NEAR=0.001/FAR=10000*1.001, vert_base 1/W clamp at 0.001 (not 0.0001), and no per-vertex tracking or margin/HUD vertex fixups. Overrides fixed_depth. Buggy Heat: logo + VMU screen + gameplay were all correct there.
@@ -1113,7 +1119,8 @@ void displayAccuracyMenu()
 #define OPT_POLY_OFFSET 57    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_LEGACY_DEPTH 58   // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_YUV_TWIDDLE_FIX 59 // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
-#define OPT_ROW_COUNT   60
+#define OPT_FOG         60     // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
+#define OPT_ROW_COUNT   61
 
 // Options are split across six themed pages so no single page scrolls off
 // screen and related settings are grouped together.
@@ -1158,6 +1165,7 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_VERTEX_COLOR_FIX,
   OPT_DECAL_ALPHA,
   OPT_SEAM_FIX,
+  OPT_FOG,
   OPT_BG_POLY,
   OPT_RGB565_OPAQUE_ALPHA,
   OPT_JOJO_FIX,
@@ -1519,6 +1527,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (DEFAULT)      >]"); break;
     }
     printf(" fix black lines between 2D tiles");
+    printf("\n");
+
+    // --- Row: PVR fog ---
+    printf("%s FOG            : ", (selectedRow == OPT_FOG) ? ">" : " ");
+    switch (g_fog_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (PER POLY)     >]"); break;
+    }
+    printf(" distance haze (racers/outdoors)");
     printf("\n");
 
     // --- Row: Background polygon rendering ---
@@ -1931,6 +1948,7 @@ bool displayOptionsMenu()
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
+        case OPT_FOG:       g_fog_preset             = (g_fog_preset             + 1) % 2; break;
         case OPT_YUV_TWIDDLE_FIX: g_yuv_twiddle_fix_preset = (g_yuv_twiddle_fix_preset + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 2) % 3; break;
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
@@ -1997,6 +2015,7 @@ bool displayOptionsMenu()
         case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
+        case OPT_FOG:       g_fog_preset             = (g_fog_preset             + 1) % 2; break;
         case OPT_YUV_TWIDDLE_FIX: g_yuv_twiddle_fix_preset = (g_yuv_twiddle_fix_preset + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 1) % 3; break;
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
