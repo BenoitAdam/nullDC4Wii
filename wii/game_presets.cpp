@@ -209,7 +209,9 @@
                                 the TA list, so the display render that follows
                                 draws the whole accumulated list -- needed by a
                                 game that renders one list twice (Silent Scope's
-                                sniper scope). Pair with split_screen=on;
+                                sniper scope). The shared list is split by
+                                user tile clip: clipped strips go to the
+                                texture, unclipped ones to the screen;
                                 overlay does not resolve a texture but carries
                                 the pass's geometry into the next display frame
                                 and draws it last, flat on top (near-plane

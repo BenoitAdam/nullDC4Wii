@@ -285,10 +285,19 @@ extern "C" int get_render_to_texture_preset();
 // disc never reaches the display — the exact "global view, no crosshair" that
 // render_to_texture=on produced.
 //
+// The two renders are NOT meant to draw the same thing, and the game says which
+// is which: the half destined for the texture carries a mode-2 (INSIDE) user
+// tile clip confining it to the target window; the on-screen half (HUD, reticle,
+// the disc itself) carries none. So this mode also SPLITS the shared list on
+// that flag — the RTT render draws only the tile-clipped strips, the display
+// render draws everything except the tile-clipped ones it already consumed.
+// Without the split the magnified half lands in the screen's top-left corner and
+// Z-fights the real scene (same W values, different XY — unwinnable), which is
+// precisely what the tile clip was there to prevent.
+//
 // Kept separate from mode 1 because a game that DOES re-init the TA between its
 // RTT pass and its display pass relies on the reset; mode 1 is untouched.
-// Companion: split_screen=on, so the magnified half stays inside its tile clip
-// instead of splattering across the whole screen.
+// split_screen is NOT needed here: this mode reads listTileClip[] itself.
 #define RTT_KEEP_LIST() (get_render_to_texture_preset() == 3)
 
 // render_to_texture=2 (overlay / "carry"): for a game whose scope, mirror or
@@ -1259,6 +1268,12 @@ VertexList *carry_trans_lst = 0; // carried pass's own TR boundary (0 = none)
 // window 0..255 x 0..255, geometry spanning x=-390..24188), so replaying it
 // without the window splatters the zoomed view over the whole screen.
 // carry_clip_w == 0 means the pass declared no usable window -> draw unclipped.
+// RTT_KEEP_LIST(): where the RTT render stopped walking the shared list, plus a
+// per-frame cache of the preset (glob_param_bdc needs it to decide whether to
+// store listTileClip[], which is what splits the list — see the macro doc).
+VertexList *rtt_lst_end = 0;
+bool g_rtt_keep_cached = false;
+
 u32 carry_clip_x = 0, carry_clip_y = 0;
 u32 carry_clip_w = 0, carry_clip_h = 0;
 VertexList *carry_frame_lst = lists;      // display frame's first strip
@@ -1577,6 +1592,8 @@ void reset_vtx_state()
   // here like everything else.
   carry_lst_end   = 0;
   carry_trans_lst = 0;
+  rtt_lst_end       = 0;
+  g_rtt_keep_cached = RTT_KEEP_LIST();
   carry_clip_x    = 0;
   carry_clip_y    = 0;
   carry_clip_w    = 0;
@@ -5348,6 +5365,11 @@ void DoRender()
   // RTT_CARRY_OVERLAY(): the depth every carried vertex is re-parked to.
   const float clamp_carry_W = scene_near_W * 1.002f;
 
+  // RTT_KEEP_LIST(): read once per frame; last_clip_mod tracks the param in
+  // effect for the current strip (strips without a header reuse the previous).
+  const bool rtt_keep = RTT_KEEP_LIST();
+  const PolyParam *last_clip_mod = 0;
+
   // POLY_OFFSET() / SUBPASS_ZCLEAR(): read once per frame, same rationale as
   // every other preset above.
   const int  poly_offset_tier = POLY_OFFSET();
@@ -6021,6 +6043,31 @@ void DoRender()
         }
       }
 
+      // ── RTT_KEEP_LIST(): split the shared list by user tile clip ──────────
+      // The two renders of one list are not meant to draw the same thing. The
+      // game marks the half that belongs in the texture with a mode-2 (INSIDE)
+      // user tile clip confining it to the target window; the rest — HUD,
+      // reticle, the disc that samples the texture — carries no clip and
+      // belongs on screen. Without this split the texture render also bakes in
+      // the on-screen overlay, and the display render paints the magnified
+      // half into the screen's top-left corner, where it Z-fights the real
+      // scene (identical W values, different XY: an unwinnable fight, and
+      // exactly what the game encoded the tile clip to prevent).
+      //   RTT pass      -> draw ONLY tile-clipped strips.
+      //   display pass  -> draw everything EXCEPT the tile-clipped strips the
+      //                    RTT pass already consumed (strips submitted after
+      //                    it are the new half and always draw).
+      if (rtt_keep && stripMod)
+        last_clip_mod = stripMod;
+      bool strip_skip = false;
+      if (rtt_keep && last_clip_mod)
+      {
+        const bool tile_clipped =
+            ((listTileClip[last_clip_mod - listModes] >> 30) & 3) == 2;
+        strip_skip = s_rtt_pass ? !tile_clipped
+                                : (tile_clipped && drawLST < rtt_lst_end);
+      }
+
       // SUBPASS_ZCLEAR(): the FIRST time this frame a strip actually needs
       // hud_pass rescue, re-park the whole Z buffer at the far plane before
       // any of its state (texture/TEV/blend) is set up below — a clean depth
@@ -6363,7 +6410,14 @@ void DoRender()
       if (seg_is_pt && poly_offset_tier > 0 && count)
         ApplyPolyOffset(drawVTX, count, poly_offset_tier);
 
-      if (count)
+      if (strip_skip)
+      {
+        // Not for this render (see the RTT_KEEP_LIST() split above). State was
+        // still applied, so the next drawn strip inherits a correct pipeline;
+        // only the vertices are withheld, and the cursor advances past them.
+        drawVTX += count;
+      }
+      else if (count)
       {
         // For ARGB1555/4444 textures the DC game may leave vertex alpha = 0,
         // expecting the hardware to ignore it. Force alpha = 0xFF so GX_MODULATE
@@ -6484,7 +6538,9 @@ void DoRender()
   // another. Silent Scope does exactly that (see the macro doc at the top of
   // the file). Resetting here after an RTT pass throws away the first half of
   // that list, which is why its scope disc never reached the screen.
-  if (!(s_rtt_pass && RTT_KEEP_LIST()))
+  if (s_rtt_pass && RTT_KEEP_LIST())
+    rtt_lst_end = curLST;  // everything up to here has been offered to the texture
+  else
     reset_vtx_state();
 
   // ASYNC_RENDER() (display frames only): skip the blocking GX_DrawDone() —
@@ -7242,7 +7298,7 @@ struct VertexDecoder
   curMod->isp = pp->isp;               \
   curMod->tsp = pp->tsp;               \
   curMod->tcw = pp->tcw;               \
-  if (g_split_screen_cached || SCOPE_DEBUG_LOG) \
+  if (g_split_screen_cached || g_rtt_keep_cached || SCOPE_DEBUG_LOG) \
     listTileClip[curMod - listModes] = ta_tileclip; \
   curPolyOffsMask = (g_offset_color_fix_cached && pp->pcw.Offset) ? 0xFFFFFFFFu : 0u;
 
