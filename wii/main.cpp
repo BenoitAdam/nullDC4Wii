@@ -149,6 +149,34 @@ extern "C" {
   int get_canvas_width_preset() { return g_canvas_width_preset; }
 }
 
+// PVR vertical (Y) scaler: SCALER_CTL.vscalefactor (bits 15-0), the "Y" half of
+// the register whose "X" half (hscale) g_x_scaler_preset already handles. 6.10
+// fixed point, 0x400 = 1.0. Above 1.0 the CORE renders the scene that many
+// times TALLER and the video scaler shrinks it back down on framebuffer write
+// (vertical SSAA / flicker filter); below 1.0 it renders shorter and the scaler
+// stretches it. Either way the projected canvas height has to follow or only a
+// slice of the scene reaches the screen - the vertical twin of the Omicron /
+// Wacky Races "left half only" bug. 0=off (legacy, factor ignored), 1=honor it.
+int g_y_scaler_preset = 0;
+
+extern "C" {
+  int get_y_scaler_preset() { return g_y_scaler_preset; }
+}
+
+// PVR horizontal (H) scaler at video output: VO_CONTROL.pixel_double (bit 8).
+// Set by the low-res video modes - the framebuffer holds a HALF-width (320)
+// image and the video DAC emits every pixel twice to fill the 640-pixel line,
+// so the scene is drawn in a 320-wide screen space. With the bit ignored that
+// scene goes into a 640 canvas and fills only its left half. This is the
+// register-driven counterpart of the manual canvas_width override (which exists
+// for games like SF3 that render narrow WITHOUT setting the bit), so an
+// explicit canvas width wins over it. 0=off (legacy, bit ignored), 1=honor it.
+int g_h_scaler_preset = 0;
+
+extern "C" {
+  int get_h_scaler_preset() { return g_h_scaler_preset; }
+}
+
 int g_framebuffer_2d = 0; // 1 to activate 2D Framebuffer
 
 extern "C" {
@@ -1120,7 +1148,9 @@ void displayAccuracyMenu()
 #define OPT_LEGACY_DEPTH 58   // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_YUV_TWIDDLE_FIX 59 // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_FOG         60     // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
-#define OPT_ROW_COUNT   61
+#define OPT_Y_SCALER    61     // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
+#define OPT_H_SCALER    62     // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
+#define OPT_ROW_COUNT   63
 
 // Options are split across six themed pages so no single page scrolls off
 // screen and related settings are grouped together.
@@ -1186,6 +1216,8 @@ static const int OPT_PAGE2_ROWS[] = {
   OPT_AUTOSORT,
   OPT_HOKUTO_HACK,
   OPT_X_SCALER,
+  OPT_Y_SCALER,
+  OPT_H_SCALER,
   OPT_CANVAS_WIDTH,
   OPT_POLY_OFFSET
 };
@@ -1679,6 +1711,24 @@ bool displayOptionsMenu()
     printf(" ON for Omicron/Wacky Races");
     printf("\n");
 
+    // --- Row: PVR vertical Y-Scaler (SCALER_CTL.vscalefactor) ---
+    printf("%s Y SCALER       : ", (selectedRow == OPT_Y_SCALER) ? ">" : " ");
+    switch (g_y_scaler_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (VSCALEFACTOR) >]"); break;
+    }
+    printf(" vertical SSAA / flicker filter");
+    printf("\n");
+
+    // --- Row: PVR horizontal H-Scaler (VO_CONTROL.pixel_double) ---
+    printf("%s H SCALER       : ", (selectedRow == OPT_H_SCALER) ? ">" : " ");
+    switch (g_h_scaler_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (PIXEL DOUBLE) >]"); break;
+    }
+    printf(" 320-wide (pixel-doubled) modes");
+    printf("\n");
+
     // --- Row: Forced canvas width (240p scenes) ---
     printf("%s CANVAS WIDTH   : ", (selectedRow == OPT_CANVAS_WIDTH) ? ">" : " ");
     if (g_canvas_width_preset <= 0)
@@ -1957,6 +2007,8 @@ bool displayOptionsMenu()
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
         case OPT_BG_POLY:    g_bg_poly_preset        = (g_bg_poly_preset         + 1) % 2; break;
         case OPT_X_SCALER:   g_x_scaler_preset       = (g_x_scaler_preset        + 1) % 2; break;
+        case OPT_Y_SCALER:   g_y_scaler_preset       = (g_y_scaler_preset        + 1) % 2; break;
+        case OPT_H_SCALER:   g_h_scaler_preset       = (g_h_scaler_preset        + 1) % 2; break;
         case OPT_CANVAS_WIDTH:
           if (g_canvas_width_preset <= 0)        g_canvas_width_preset = 1280;
           else if (g_canvas_width_preset <= 320) g_canvas_width_preset = 0;
@@ -2024,6 +2076,8 @@ bool displayOptionsMenu()
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
         case OPT_BG_POLY:    g_bg_poly_preset        = (g_bg_poly_preset         + 1) % 2; break;
         case OPT_X_SCALER:   g_x_scaler_preset       = (g_x_scaler_preset        + 1) % 2; break;
+        case OPT_Y_SCALER:   g_y_scaler_preset       = (g_y_scaler_preset        + 1) % 2; break;
+        case OPT_H_SCALER:   g_h_scaler_preset       = (g_h_scaler_preset        + 1) % 2; break;
         case OPT_CANVAS_WIDTH:
           if (g_canvas_width_preset <= 0)         g_canvas_width_preset = 320;
           else if (g_canvas_width_preset >= 1280) g_canvas_width_preset = 0;
@@ -2841,6 +2895,8 @@ int main(int argc, wchar *argv[])
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("BG Polygon     : %s\n", g_bg_poly_preset ? "ON (CORRECT)" : "OFF (FASTER)");
     printf("X Scaler       : %s\n", g_x_scaler_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
+    printf("Y Scaler       : %s\n", g_y_scaler_preset ? "ON (VSCALEFACTOR)" : "OFF (LEGACY)");
+    printf("H Scaler       : %s\n", g_h_scaler_preset ? "ON (PIXEL DOUBLE)" : "OFF (LEGACY)");
     if (g_canvas_width_preset <= 0)
       printf("Canvas Width   : OFF (640, LEGACY)\n");
     else

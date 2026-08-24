@@ -374,6 +374,32 @@
                                 the whole scene maps to the screen; off
                                 (default, legacy) leaves the canvas at 640,
                                 showing only the left half in those games.
+        y_scaler=on         <- on/off, PVR vertical (Y) scaler support (see
+                                gxRend.cpp Y_SCALER()). The other half of the
+                                same register x_scaler reads: SCALER_CTL's
+                                vscalefactor field (6.10 fixed point, 0x400 =
+                                1.0). Above 1.0 the CORE renders the scene
+                                that many times TALLER and the video scaler
+                                shrinks it back down on framebuffer write
+                                (vertical SSAA / flicker filter); below 1.0
+                                it renders shorter and the scaler stretches.
+                                on scales the projected canvas height by the
+                                factor so the whole scene maps to the screen;
+                                off (default, legacy) ignores the factor and
+                                shows only a slice in those games.
+        h_scaler=on         <- on/off, PVR horizontal (H) scaler at video
+                                output (see gxRend.cpp H_SCALER()):
+                                VO_CONTROL.pixel_double. In the low-res video
+                                modes the framebuffer holds a HALF-width (320)
+                                image and the video DAC emits every pixel
+                                twice to fill the 640-pixel line, so the scene
+                                is drawn in a 320-wide screen space. on halves
+                                the canvas to match; off (default, legacy)
+                                projects it into a 640 canvas, where it fills
+                                only the left half. This is the register-
+                                driven counterpart of canvas_width below (for
+                                games that render narrow WITHOUT setting the
+                                bit), so an explicit canvas_width wins.
         canvas_width=384    <- integer, forced canvas width in 240p modes
                                 (see gxRend.cpp CANVAS_WIDTH()). Some low-res
                                 games draw their scene narrower than 640 and
@@ -453,6 +479,8 @@ extern int g_frameskip_preset;
 extern int g_texture_cache_preset;
 extern int g_ppz_write_preset;
 extern int g_x_scaler_preset;
+extern int g_y_scaler_preset;
+extern int g_h_scaler_preset;
 extern int g_canvas_width_preset;
 extern int g_4bpp_preset;
 extern int g_8bpp_preset;
@@ -526,6 +554,8 @@ struct GamePreset
     int tex_cache;
     int ppz_write;
     int x_scaler;
+    int y_scaler;
+    int h_scaler;
     int canvas_width;
     int bpp4;
     int bpp8;
@@ -813,6 +843,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "tex_cache"))  p->tex_cache  = parse_tex_cache(val);
     else if (key_eq(key, "ppz_write"))  p->ppz_write  = parse_bool(val);
     else if (key_eq(key, "x_scaler"))   p->x_scaler   = parse_bool(val);
+    else if (key_eq(key, "y_scaler"))   p->y_scaler   = parse_bool(val);
+    else if (key_eq(key, "h_scaler"))   p->h_scaler   = parse_bool(val);
     else if (key_eq(key, "canvas_width")) p->canvas_width = atoi(val);
     else if (key_eq(key, "4bpp"))       p->bpp4       = parse_bpp(val);
     else if (key_eq(key, "8bpp"))       p->bpp8       = parse_bpp(val);
@@ -881,6 +913,8 @@ static void preset_clear(GamePreset* cur)
     cur->players  = cur->controller                                  = -1;
     cur->ppz_write = -1;
     cur->x_scaler = -1;
+    cur->y_scaler = -1;
+    cur->h_scaler = -1;
     cur->canvas_width = -1;
     cur->framebuffer_2d = -1;
     cur->fmv_format = -1;
@@ -936,6 +970,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->tex_cache  >= 0) { g_texture_cache_preset  = p->tex_cache;  printf("  tex_cache  -> %d\n", p->tex_cache);  }
     if (p->ppz_write  >= 0) { g_ppz_write_preset      = p->ppz_write;  printf("  ppz_write  -> %d\n", p->ppz_write);  }
     if (p->x_scaler   >= 0) { g_x_scaler_preset       = p->x_scaler;   printf("  x_scaler   -> %d\n", p->x_scaler);   }
+    if (p->y_scaler   >= 0) { g_y_scaler_preset       = p->y_scaler;   printf("  y_scaler   -> %d\n", p->y_scaler);   }
+    if (p->h_scaler   >= 0) { g_h_scaler_preset       = p->h_scaler;   printf("  h_scaler   -> %d\n", p->h_scaler);   }
     if (p->canvas_width >= 0) { g_canvas_width_preset  = p->canvas_width; printf("  canvas_width -> %d\n", p->canvas_width); }
     if (p->bpp4       >= 0) { g_4bpp_preset           = p->bpp4;       printf("  4bpp       -> %d\n", p->bpp4);       }
     if (p->bpp8       >= 0) { g_8bpp_preset           = p->bpp8;       printf("  8bpp       -> %d\n", p->bpp8);       }

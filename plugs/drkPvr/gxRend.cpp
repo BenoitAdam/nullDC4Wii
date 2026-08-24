@@ -473,6 +473,30 @@ extern "C" int get_bg_poly_preset();
 extern "C" int get_canvas_width_preset();
 #define CANVAS_WIDTH() (get_canvas_width_preset())
 
+// PVR vertical (Y) scaler - SCALER_CTL.vscalefactor, bits 15-0, the "Y" half of
+// the "X & Y scaler control" register whose hscale bit X_SCALER() handles over
+// in SPG.cpp. 6.10 fixed point, 0x400 = 1.0. A factor above 1.0 means the CORE
+// renders the scene that many times TALLER and the video scaler shrinks it back
+// down on framebuffer write (vertical SSAA / flicker filter); below 1.0 it
+// renders shorter and the scaler stretches. Either way the projected canvas
+// height must follow or only a slice of the scene reaches the screen - the
+// vertical twin of the Omicron / Wacky Races "left half only" bug. 0 = off
+// (legacy: the factor is ignored and the canvas stays at the video-mode
+// height).
+extern "C" int get_y_scaler_preset();
+#define Y_SCALER() (get_y_scaler_preset() == 1)
+
+// PVR horizontal (H) scaler at video output - VO_CONTROL.pixel_double, bit 8.
+// Set by the low-res video modes: the framebuffer holds a HALF-width (320)
+// image and the video DAC emits every pixel twice to fill the 640-pixel line,
+// so the scene is submitted in a 320-wide screen space. With the bit ignored
+// that scene is projected into a 640 canvas and fills only its left half. This
+// is the register-driven counterpart of CANVAS_WIDTH() above (which exists for
+// games like SF3 that render narrow WITHOUT setting the bit), so an explicit
+// forced canvas width wins over it. 0 = off (legacy: bit ignored).
+extern "C" int get_h_scaler_preset();
+#define H_SCALER() (get_h_scaler_preset() == 1)
+
 // 6. NATIVE POLYGON OFFSET (GX depth bias). Real hardware note: GX has no
 //    glPolygonOffset-style register — no programmable shaders means there is
 //    no way to nudge a fragment's post-transform Z from the pixel pipeline.
@@ -5106,11 +5130,38 @@ void DoRender()
   // Forced canvas width (see CANVAS_WIDTH() above), only for 240p modes —
   // g_fb_scale_y == 0.5 identifies non-interlaced NTSC/PAL (set by
   // CalculateSync in SPG.cpp). Interlaced/VGA screens keep their canvas.
+  bool forced_canvas_w = false;
   {
     int forced_w = CANVAS_WIDTH();
     if (forced_w >= 320 && forced_w <= 1280 && g_fb_scale_y == 0.5f)
+    {
       dc_width = (float)forced_w;
+      forced_canvas_w = true;
+    }
   }
+  // Y SCALER (see Y_SCALER() above): the vertical twin of the hscale handling
+  // that CalculateSync() folds into g_fb_scale_x. Read straight from the
+  // register here instead of routing it through SetFbScale, so the 240p
+  // sentinel just above (g_fb_scale_y == 0.5) keeps meaning "video mode" and
+  // not "video mode times whatever the game scaled by". The factor is masked
+  // out of .full rather than read through the bitfield, so the big-endian
+  // layout can never bite again (see the SCALER_CTL_type note in regs.h).
+  if (Y_SCALER())
+  {
+    const float vsf = (float)(SCALER_CTL.full & 0xFFFF) / 1024.f;
+    // 0x400 (= 1.0) is the idle value every game programs, and anything
+    // outside a sane 1/4x..4x window is uninitialised garbage rather than a
+    // scale request - in both cases leave the canvas alone.
+    if (vsf >= 0.25f && vsf <= 4.0f && (vsf < 0.999f || vsf > 1.001f))
+      dc_height *= vsf;
+  }
+  // H SCALER (see H_SCALER() above): with VO_CONTROL.pixel_double set the
+  // framebuffer is half width and the DAC doubles every pixel on the way out,
+  // so the scene lives in a 320-wide screen space. An explicit CANVAS_WIDTH()
+  // wins - that preset is the manual override for the games that render narrow
+  // without ever setting this bit.
+  if (H_SCALER() && !forced_canvas_w && ((VO_CONTROL >> 8) & 1))
+    dc_width *= 0.5f;
   // NOTE (RTT canvas): this used to force dc_width/dc_height to the RTT target
   // size, on the assumption that an RTT pass submits geometry in its target's
   // own coordinate space. It does not. The PVR renders every pass in the SAME
