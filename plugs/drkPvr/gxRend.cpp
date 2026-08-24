@@ -152,6 +152,33 @@ extern "C" int get_hokuto_hack_preset();
 // battle to capture a [HOKUTO_STAGE] log the same way of stage 1 and 2
 #define HOKUTO_DEBUG_LOG 0
 
+// Multi-pass render debug ([SS] lines, see ss_dump_pass() just above
+// StartRender). Flip to 1, rebuild, play up to the scene, capture, flip back
+// to 0. Compile-time on purpose: the capture must not depend on getting a menu
+// preset right, and it is a printf storm if left on. Dumps a burst of
+// consecutive PVR render passes whenever a bit-24 (RTT) pass shows up, each
+// with its FB_W_* / clip registers and a per-strip line (screen bbox, depth,
+// texture, blend, user tile clip) — i.e. exactly which pass owns the scope
+// view, the HUD, and the crosshair, and where each lands on screen. Also emits
+// an unconditional [SS] alive heartbeat, so silence is distinguishable from
+// "the logger never ran".
+// Enabling it only ADDS the listTileClip[] store (normally split_screen-gated);
+// nothing about the actual rendering changes, so the capture is honest.
+// Off now that the Silent Scope capture is in and the pass structure is known
+// (see RTT_KEEP_LIST below). Flip to 1 and rebuild to re-arm it for the next
+// multi-pass game; nothing else needs changing.
+#define SCOPE_DEBUG_LOG 0
+
+// Where the [SS] output goes. InitRenderer() normally does
+// freopen("/ndclog.txt", "w", stdout) the moment the renderer starts, so EVERY
+// printf from gameplay onward disappears into a file on the SD card — which is
+// why nothing shows up in Dolphin's log window during the scene: the messages
+// you can see are the ones printed BEFORE the renderer inits (menu, presets).
+//   1 = skip that redirect while SCOPE_DEBUG_LOG is on, leaving stdout where
+//       libogc put it. Dolphin then shows [SS] live, which is how you test.
+//   0 = keep the redirect; read /ndclog.txt off the SD card afterwards.
+#define SCOPE_LOG_TO_CONSOLE 1
+
 // Offset (specular) color
 extern "C" int get_offset_color_preset();
 #define OFFSET_COLOR_FIX() (get_offset_color_preset() == 1)
@@ -227,8 +254,42 @@ extern "C" int get_autosort_preset();
 //               deliberately carried into the next display frame and drawn LAST
 //               as a flat overlay. This is the mode-0 accident made correct —
 //               see RTT_CARRY_OVERLAY().
+//   3 = keep    real RTT like 1, but the render does NOT consume the TA list —
+//               see RTT_KEEP_LIST().
 extern "C" int get_render_to_texture_preset();
-#define RENDER_TO_TEXTURE() (get_render_to_texture_preset() == 1)
+#define RENDER_TO_TEXTURE() (get_render_to_texture_preset() == 1 || \
+                             get_render_to_texture_preset() == 3)
+
+// render_to_texture=3 ("keep list"): on real hardware a render does NOT consume
+// the TA list. The ISP/TSP walk the tile arrays that the TA built; those stay
+// valid until TA_LIST_INIT. So a game can render ONE accumulated list twice
+// with different FB_W_SOF1 + FB_X_CLIP/FB_Y_CLIP — first into a texture, then
+// to the display — and the second render legitimately draws everything,
+// including the geometry the first one already consumed.
+//
+// Silent Scope's sniper scope is built exactly this way, and the [SS] capture
+// spells it out. One frame is:
+//   * ~477 strips submitted: translucent scene extras, then the scope disc
+//     (22 triangle wedges fanning out from screen centre 320,240 at W=1.6,
+//     textured from 554000 — the RTT target itself, i.e. last frame's image),
+//     then the 24x-magnified world confined by a mode-2 User Tile Clip to
+//     tiles 0..8 (the 288x288 corner the 256x256 texture is lifted from);
+//   * RENDER_START with FB_W_SOF1=01554000, XCLIP/YCLIP 0..255 -> the magnified
+//     world lands in the scope texture;
+//   * ~864 MORE strips submitted: the ordinary 1x world;
+//   * RENDER_START with FB_W_SOF1=00200000, XCLIP 0..639 -> the WHOLE list
+//     (both halves) goes to the screen: disc first at W=1.6, magnified corner
+//     next, normal world last and farther, so the disc survives the GEQUAL
+//     painter compare and the corner is overdrawn.
+// Resetting the vertex buffers after the RTT pass loses the first half, so the
+// disc never reaches the display — the exact "global view, no crosshair" that
+// render_to_texture=on produced.
+//
+// Kept separate from mode 1 because a game that DOES re-init the TA between its
+// RTT pass and its display pass relies on the reset; mode 1 is untouched.
+// Companion: split_screen=on, so the magnified half stays inside its tile clip
+// instead of splattering across the whole screen.
+#define RTT_KEEP_LIST() (get_render_to_texture_preset() == 3)
 
 // render_to_texture=2 (overlay / "carry"): for a game whose scope, mirror or
 // picture-in-picture pass we cannot render to a texture, draw that pass's
@@ -1192,6 +1253,14 @@ bool global_regd;
 // carry_lst_end == 0 means "nothing carried", the normal case.
 VertexList *carry_lst_end   = 0; // one past the last carried strip
 VertexList *carry_trans_lst = 0; // carried pass's own TR boundary (0 = none)
+// The clip WINDOW the carried pass was rendering into, in DC screen pixels,
+// from its FB_X_CLIP / FB_Y_CLIP. The pass submits ordinary full-screen-space
+// geometry and relies on this window to confine it (Silent Scope's scope pass:
+// window 0..255 x 0..255, geometry spanning x=-390..24188), so replaying it
+// without the window splatters the zoomed view over the whole screen.
+// carry_clip_w == 0 means the pass declared no usable window -> draw unclipped.
+u32 carry_clip_x = 0, carry_clip_y = 0;
+u32 carry_clip_w = 0, carry_clip_h = 0;
 VertexList *carry_frame_lst = lists;      // display frame's first strip
 Vertex     *carry_frame_vtx = vertices;   //  "        "     first vertex
 PolyParam  *carry_frame_mod = listModes;  //  "        "     first param
@@ -1508,6 +1577,10 @@ void reset_vtx_state()
   // here like everything else.
   carry_lst_end   = 0;
   carry_trans_lst = 0;
+  carry_clip_x    = 0;
+  carry_clip_y    = 0;
+  carry_clip_w    = 0;
+  carry_clip_h    = 0;
   carry_frame_lst = lists;
   carry_frame_vtx = vertices;
   carry_frame_mod = listModes;
@@ -4334,6 +4407,8 @@ static u16 fb2d_tex[FB2D_W * FB2D_H] ATTRIBUTE_ALIGN(32);
 static bool s_rtt_pass = false;
 static u32  s_rtt_w = 0;   // RTT target size, from FB_X_CLIP / FB_Y_CLIP
 static u32  s_rtt_h = 0;
+static u32  s_rtt_x = 0;   // ... and its ORIGIN: the clip is a window into the
+static u32  s_rtt_y = 0;   // normal screen space, not a canvas of its own
 
 // ── Per-strip user tile clip (listTileClip[]) ────────────────────────────────
 // DC-pixel → EFB-pixel mapping of the current DoRender() pass, stored by the
@@ -4669,9 +4744,18 @@ static void rtt_copy_efb_to_vram()
   u32 copy_w = (s_rtt_w + 3) & ~3u;
   u32 copy_h = (s_rtt_h + 3) & ~3u;
 
+  // Source rect: the clip WINDOW inside the EFB, mapped through the same
+  // DC-px -> EFB-px transform the viewport was set up with. The pass rendered
+  // in full screen space, so the texture's pixels live at the clip origin, not
+  // at the EFB corner (they coincide only when the game clips from 0,0).
+  u32 src_x = (u32)(s_rtt_x * s_clip_sx + s_clip_ox) & ~1u;
+  u32 src_y = (u32)(s_rtt_y * s_clip_sy + s_clip_oy) & ~1u;
+  if (src_x + copy_w > (u32)rmode->fbWidth)   src_x = 0; // rect must stay inside
+  if (src_y + copy_h > (u32)rmode->efbHeight) src_y = 0; // the EFB or GX faults
+
   // Grab the RTT pixels without clearing yet — the EFB is cleared as a whole
   // below so color AND depth start fresh everywhere, not just in this rect.
-  GX_SetTexCopySrc(0, 0, (u16)copy_w, (u16)copy_h);
+  GX_SetTexCopySrc((u16)src_x, (u16)src_y, (u16)copy_w, (u16)copy_h);
   GX_SetTexCopyDst((u16)copy_w, (u16)copy_h, GX_TF_RGB565, GX_FALSE);
   GX_CopyTex(fb2d_tex, GX_FALSE);
   GX_DrawDone(); // wait for the copy to land in main memory
@@ -4776,13 +4860,16 @@ void DoRender()
     if (forced_w >= 320 && forced_w <= 1280 && g_fb_scale_y == 0.5f)
       dc_width = (float)forced_w;
   }
-  if (s_rtt_pass)
-  {
-    // Render-to-texture: geometry was submitted in the RTT target's own
-    // coordinate space, so the canvas is the target size (no fb scale).
-    dc_width  = (float)s_rtt_w;
-    dc_height = (float)s_rtt_h;
-  }
+  // NOTE (RTT canvas): this used to force dc_width/dc_height to the RTT target
+  // size, on the assumption that an RTT pass submits geometry in its target's
+  // own coordinate space. It does not. The PVR renders every pass in the SAME
+  // screen space and FB_X_CLIP / FB_Y_CLIP merely restrict which pixels get
+  // written out — the clip is a WINDOW, not a canvas. Silent Scope settles it:
+  // its 256x256 scope pass (XCLIP=0..255 YCLIP=0..255) submits geometry
+  // spanning x=-390..24188 in ordinary 640-wide screen space. Squeezing that
+  // into a 256-wide canvas magnified the scene 2.5x and wrote the wrong pixels
+  // into the texture, which is why render_to_texture=on produced nothing
+  // usable. The canvas below is now the display canvas for RTT passes too.
 
   VIDEO_SetBlack(FALSE);
   // Set viewport to a centred 4:3 sub-region of the 16:9 framebuffer.
@@ -4791,10 +4878,14 @@ void DoRender()
   // In fullscreen mode use the whole width (stretched 16:9).
   if (s_rtt_pass)
   {
-    // 1:1 pixels into the EFB top-left corner; rtt_copy_efb_to_vram() reads
-    // exactly this rect back out.
-    GX_SetViewport(0, 0, (float)s_rtt_w, (float)s_rtt_h, 0, 1);
-    s_clip_sx = 1.f; s_clip_sy = 1.f;
+    // RTT: render the pass across the WHOLE EFB in ordinary DC screen space
+    // (see the canvas note above), full width regardless of the display aspect
+    // preset — the result is a texture, not a picture, so it must not inherit
+    // the 4:3 pillarbox. rtt_copy_efb_to_vram() then lifts the clip window out
+    // of the EFB, using exactly the s_clip_* mapping set here.
+    GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
+    s_clip_sx = (float)rmode->fbWidth / dc_width;
+    s_clip_sy = (float)rmode->efbHeight / dc_height;
     s_clip_ox = 0.f; s_clip_oy = 0.f;
   }
   else if (RATIO_FULL_WIDTH())
@@ -5254,6 +5345,9 @@ void DoRender()
   const int   hud_pass     = HUD_PASS();
   const float scene_near_W = vtx_min_Z;
 
+  // RTT_CARRY_OVERLAY(): the depth every carried vertex is re-parked to.
+  const float clamp_carry_W = scene_near_W * 1.002f;
+
   // POLY_OFFSET() / SUBPASS_ZCLEAR(): read once per frame, same rationale as
   // every other preset above.
   const int  poly_offset_tier = POLY_OFFSET();
@@ -5555,6 +5649,24 @@ void DoRender()
       last_src_blend = -1;
       last_dst_blend = -1;
       GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+
+      // Confine the carried pass to the window its own render was clipped to
+      // (FB_X_CLIP / FB_Y_CLIP at the drop), mapped DC px -> EFB px with the
+      // same transform apply_tile_clip uses. Without this a zoomed scope pass
+      // paints over the entire screen instead of sitting inside its circle.
+      if (carry_clip_w)
+      {
+        s32 sx = (s32)(carry_clip_x * s_clip_sx + s_clip_ox);
+        s32 sy = (s32)(carry_clip_y * s_clip_sy + s_clip_oy);
+        s32 sw = (s32)(carry_clip_w * s_clip_sx);
+        s32 sh = (s32)(carry_clip_h * s_clip_sy);
+        if (sx < 0) { sw += sx; sx = 0; }
+        if (sy < 0) { sh += sy; sy = 0; }
+        if (sx + sw > rmode->fbWidth)   sw = rmode->fbWidth   - sx;
+        if (sy + sh > rmode->efbHeight) sh = rmode->efbHeight - sy;
+        if (sw > 0 && sh > 0)
+          GX_SetScissor((u32)sx, (u32)sy, (u32)sw, (u32)sh);
+      }
     }
 
     const int seg_as = segs[seg].as_pass;
@@ -5946,7 +6058,9 @@ void DoRender()
       {
         // Honor the polygon's user tile clip (GX scissor). Cached inside
         // apply_tile_clip(), so params sharing the same clip cost one compare.
-        if (tileclip_on)
+        // Skipped on a carried overlay: that segment already owns the scissor
+        // (its pass's clip window), and a mode-0 strip clip would re-open it.
+        if (tileclip_on && !seg_overlay)
           apply_tile_clip(listTileClip[stripMod - listModes]);
 
         if (seg_as == 1)
@@ -6206,13 +6320,15 @@ void DoRender()
         // already in the EFB nor stamp depth that would hide what follows.
         // Blending still comes from the strip's own TSP, so a translucent
         // scope surround composites as it did in its own pass.
-        const float clamp_W = scene_near_W * 1.002f;
+        // Screen position is NOT touched: the carried pass submits ordinary
+        // full-screen-space coordinates, and the window it was meant to be
+        // confined to is applied as a GX scissor at segment start instead.
         for (int i = 0; i < count; i++)
         {
-          const float r = clamp_W / drawVTX[i].z;
+          const float r = clamp_carry_W / drawVTX[i].z;
           drawVTX[i].x *= r;
           drawVTX[i].y *= r;
-          drawVTX[i].z  = clamp_W;
+          drawVTX[i].z  = clamp_carry_W;
         }
         GX_SetZMode(GX_TRUE, GX_ALWAYS, GX_FALSE);
         hud_strip = true;  // reuse the per-strip Z-state restore below
@@ -6334,6 +6450,15 @@ void DoRender()
       last_alpha_fmt = 0;
     }
 
+    if (seg_overlay && carry_clip_w)
+    {
+      // Re-open the scissor: GX scissor state persists across frames, and this
+      // is the last segment, so leaving the scope window applied would clip
+      // the NEXT frame down to it.
+      GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+      s_tileclip_applied = 0; // apply_tile_clip's cache no longer matches
+    }
+
     if (seg_as == 2 && segs[seg].as_last)
     {
       // Last peel drawn: back to the frame's painter Z baseline for whatever
@@ -6352,7 +6477,15 @@ void DoRender()
   if (last_cull != GX_CULL_NONE)
     GX_SetCullMode(GX_CULL_NONE);
 
-  reset_vtx_state();
+  // RTT_KEEP_LIST(): a PVR render does NOT consume the TA list — the ISP/TSP
+  // just walk the tile arrays, which stay valid until TA_LIST_INIT. So a game
+  // may legitimately render the SAME accumulated list twice: once into a
+  // texture with one FB_W_SOF1 + clip window, then again to the display with
+  // another. Silent Scope does exactly that (see the macro doc at the top of
+  // the file). Resetting here after an RTT pass throws away the first half of
+  // that list, which is why its scope disc never reached the screen.
+  if (!(s_rtt_pass && RTT_KEEP_LIST()))
+    reset_vtx_state();
 
   // ASYNC_RENDER() (display frames only): skip the blocking GX_DrawDone() —
   // the queue + deferred wait happens after GX_CopyDisp below. RTT passes
@@ -6614,6 +6747,225 @@ void VBlank()
 }
 
 // ============================
+// SCOPE_DEBUG_LOG: per-render-pass dump ([SS] lines)
+// ============================
+//
+// Games that composite several PVR renders per frame (Silent Scope's sniper
+// scope: a bit-24 pass plus the display pass) can't be reasoned about from the
+// [PATH] one-liners alone — we need to know which pass owns which geometry.
+// This walks ONLY the strips submitted since the previous RENDER_START, so each
+// dump describes exactly one pass, and prints where every strip lands on screen.
+//
+// Triggered by the appearance of a bit-24 pass (plus one baseline burst at boot)
+// and rate limited in render passes, so it fires on the scope moment and stays
+// quiet the rest of the time. A heartbeat line runs unconditionally.
+#if SCOPE_DEBUG_LOG
+#define SS_BURST        9   // passes per burst — enough for 2-3 whole frames
+#define SS_QUIET_PASSES 250 // render passes of quiet between bursts
+#define SS_BOOT_PASSES  12  // always dump this many at startup (baseline)
+#define SS_HEARTBEAT    300 // proof-of-life line every N passes, always
+#define SS_MAX_STRIPS   48
+#define SS_MAX_EXTRA    24  // extra tile-clipped strips shown past the cap
+
+// Everything here is counted in RENDER PASSES, not frames. A frame counter is
+// the wrong clock for this: a scene that stalls, frame-skips, or never reaches
+// the display path stops advancing FrameCount, and the logger would go silent
+// exactly where we need it. Passes always tick.
+static u32 s_ss_pass_no     = 0; // every StartRender, ever
+static u32 s_ss_burst       = 0; // passes logged in the current burst
+static u32 s_ss_quiet_until = 0; // pass number the next burst may start at
+static u32 s_ss_seen_all    = 0; // passes since the last heartbeat
+static u32 s_ss_seen_b24    = 0; //  ... of which had FB_W_SOF1 bit 24 set
+// Last bit-24 render target seen, so a later pass sampling it can be spotted:
+// that strip is the one compositing the scope/mirror back onto the screen, and
+// it is the single most important line in the whole dump.
+static u32 s_ss_rtt_addr    = 0;
+static u32 s_ss_rtt_end     = 0;
+static const VertexList *s_ss_prev_lst = lists;     // cursors at the PREVIOUS
+static const Vertex     *s_ss_prev_vtx = vertices;  // RENDER_START — the start
+static const PolyParam  *s_ss_prev_mod = listModes; // of this pass's geometry
+
+static void ss_dump_pass()
+{
+  // DoRender/reset_vtx_state() rewound the buffers since last time: this pass
+  // starts at the origin again.
+  if (curLST < s_ss_prev_lst)
+  {
+    s_ss_prev_lst = lists;
+    s_ss_prev_vtx = vertices;
+    s_ss_prev_mod = listModes;
+  }
+
+  const bool b24 = (FB_W_SOF1 & 0x1000000) != 0;
+  s_ss_pass_no++;
+  s_ss_seen_all++;
+  if (b24)
+    s_ss_seen_b24++;
+
+  // Heartbeat: unconditional, cheap, and the single most useful line if the
+  // dump itself never appears — it proves StartRender is running and says how
+  // many of the passes carry bit 24, i.e. whether there is anything to capture.
+  if ((s_ss_pass_no % SS_HEARTBEAT) == 0)
+  {
+    printf("[SS] alive pass=%u frame=%u passes_since=%u bit24_since=%u rtt=%d\n",
+           s_ss_pass_no, (u32)FrameCount, s_ss_seen_all, s_ss_seen_b24,
+           get_render_to_texture_preset());
+    fflush(stdout);
+    s_ss_seen_all = 0;
+    s_ss_seen_b24 = 0;
+  }
+
+  // Burst trigger: finish one already running, otherwise start one at boot (for
+  // a baseline) or the moment a bit-24 pass shows up — which is precisely the
+  // scope/mirror moment we care about, and never during ordinary play.
+  bool want = (s_ss_burst != 0);
+  if (!want && s_ss_pass_no >= s_ss_quiet_until)
+    want = b24 || (s_ss_pass_no <= SS_BOOT_PASSES);
+
+  if (!want)
+  {
+    s_ss_prev_lst = curLST;   // keep the cursors tracking while quiet
+    s_ss_prev_vtx = curVTX;
+    s_ss_prev_mod = curMod;
+    return;
+  }
+
+  const u32 xclip = FB_X_CLIP.full;
+  const u32 yclip = FB_Y_CLIP.full;
+
+  printf("[SS] === pass=%u (burst %u/%d) frame=%u W_SOF1=%08X bit24=%d R_SOF1=%08X\n",
+         s_ss_pass_no, s_ss_burst + 1, SS_BURST, (u32)FrameCount,
+         (u32)FB_W_SOF1, b24 ? 1 : 0, (u32)FB_R_SOF1);
+  printf("[SS]     W_CTRL=%08X pack=%d stride=%u XCLIP=%u..%u YCLIP=%u..%u tclip=%08X\n",
+         (u32)FB_W_CTRL, (int)(FB_W_CTRL & 7),
+         (u32)((FB_W_LINESTRIDE & 0x1FF) * 8),
+         (u32)(xclip & 0x7FF), (u32)((xclip >> 16) & 0x7FF),
+         (u32)(yclip & 0x3FF), (u32)((yclip >> 16) & 0x3FF),
+         ta_tileclip);
+
+  const VertexList *l   = s_ss_prev_lst;
+  const Vertex     *vtx = s_ss_prev_vtx;
+  const PolyParam  *mod = s_ss_prev_mod;
+  const PolyParam  *cur = (mod > listModes) ? mod - 1 : mod;
+
+  printf("[SS]     strips=%d verts=%d TRat=%d PTat=%d minW=%.5f maxW=%.2f\n",
+         (int)(curLST - l), (int)(curVTX - vtx),
+         TransLST ? (int)(TransLST - lists) : -1,
+         PTLST    ? (int)(PTLST    - lists) : -1,
+         vtx_min_Z, vtx_max_Z);
+
+  // Remember this pass's RTT target so a LATER pass sampling it can be flagged.
+  if (b24)
+  {
+    u32 rw = ((xclip >> 16) & 0x7FF) + 1 - (xclip & 0x7FF);
+    u32 rh = ((yclip >> 16) & 0x3FF) + 1 - (yclip & 0x3FF);
+    u32 st = (FB_W_LINESTRIDE & 0x1FF) * 8;
+    if (st == 0) st = rw * 2;
+    s_ss_rtt_addr = FB_W_SOF1 & VRAM_MASK & ~3u;
+    s_ss_rtt_end  = s_ss_rtt_addr + st * rh;
+  }
+
+  u32 lt_count[8];
+  for (int i = 0; i < 8; i++) lt_count[i] = 0;
+  u32 tcmode_count[4] = { 0, 0, 0, 0 };
+  u32 rtt_sampler_count = 0;
+  u32 extra_printed = 0; // tile-clipped strips shown past the head cap
+
+  int idx = 0;
+  for (; l != curLST; l++, idx++)
+  {
+    s32 c = l->count;
+    if (c < 0)
+      cur = mod++;
+    c &= 0x7FFF;
+
+    const u32 tex_addr = (u32)((cur->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
+    const u32 tc_word  = listTileClip[cur - listModes];
+    lt_count[cur->pcw.ListType & 7]++;
+    tcmode_count[(tc_word >> 30) & 3]++;
+
+    // Is this strip sampling the last bit-24 render target? That strip is the
+    // one compositing the scope/mirror back onto the screen, so it is printed
+    // whatever its index — it is the whole point of the capture. Same for any
+    // strip carrying a real user tile clip (that is how a game confines a
+    // picture-in-picture), which the head cap was hiding.
+    const bool samples_rtt = cur->pcw.Texture && s_ss_rtt_end &&
+                             tex_addr >= s_ss_rtt_addr && tex_addr < s_ss_rtt_end;
+    if (samples_rtt)
+      rtt_sampler_count++;
+
+    // Tile-clipped strips can be hundreds per pass; a handful shows where the
+    // window is and the summary counts the rest. RTT samplers are never capped.
+    bool show_clip = ((tc_word >> 30) & 3) != 0 && extra_printed < SS_MAX_EXTRA;
+    if (show_clip)
+      extra_printed++;
+
+    if (idx < SS_MAX_STRIPS || samples_rtt || show_clip)
+    {
+      // Screen bbox: x,y are W-prescaled (screen x = x/W), same math the
+      // [HOKUTO_STAGE] dump uses. W is the raw view depth (larger = farther).
+      float minx = 1e30f, maxx = -1e30f, miny = 1e30f, maxy = -1e30f;
+      float minw = 1e30f, maxw = -1e30f;
+      for (s32 i = 0; i < c; i++)
+      {
+        const float z  = vtx[i].z;
+        const float iw = (z != 0.0f) ? 1.0f / z : 0.0f;
+        const float sx = vtx[i].x * iw, sy = vtx[i].y * iw;
+        if (sx < minx) minx = sx;
+        if (sx > maxx) maxx = sx;
+        if (sy < miny) miny = sy;
+        if (sy > maxy) maxy = sy;
+        if (z  < minw) minw = z;
+        if (z  > maxw) maxw = z;
+      }
+      const char *cls = (PTLST    && l >= PTLST)    ? "PT"
+                      : (TransLST && l >= TransLST) ? "TR" : "OP";
+      printf("[SS] %s#%03d %s lt=%d cnt=%2d tex=%d addr=%06X fmt=%d scan=%d st=%d %dx%d "
+             "src=%d dst=%d zw=%d dm=%d cull=%d uc=%d x=%.0f..%.0f y=%.0f..%.0f "
+             "W=%.5f..%.2f tc=%08X\n",
+             samples_rtt ? "**RTT** " : " ",
+             idx, cls, (int)cur->pcw.ListType, (int)c, (int)cur->pcw.Texture,
+             tex_addr,
+             (int)cur->tcw.NO_PAL.PixelFmt, (int)cur->tcw.NO_PAL.ScanOrder,
+             (int)cur->tcw.NO_PAL.StrideSel,
+             8 << cur->tsp.TexU, 8 << cur->tsp.TexV,
+             (int)cur->tsp.SrcInstr, (int)cur->tsp.DstInstr,
+             (int)cur->isp.ZWriteDis, (int)cur->isp.DepthMode, (int)cur->isp.CullMode,
+             (int)cur->pcw.User_Clip,
+             minx, maxx, miny, maxy, minw, maxw,
+             tc_word);
+    }
+    vtx += c;
+  }
+  if (idx > SS_MAX_STRIPS)
+    printf("[SS]  ... %d strips past the head cap (only RTT samplers and "
+           "tile-clipped strips among them were listed)\n", idx - SS_MAX_STRIPS);
+  printf("[SS]     SUMMARY lt: OP=%u TR=%u PT=%u other=%u | tileclip: off=%u m1=%u "
+         "INSIDE=%u OUTSIDE=%u | sampling RTT %06X: %u strips\n",
+         lt_count[0], lt_count[2], lt_count[3],
+         lt_count[1] + lt_count[4] + lt_count[5] + lt_count[6] + lt_count[7],
+         tcmode_count[0], tcmode_count[1], tcmode_count[2], tcmode_count[3],
+         s_ss_rtt_addr, rtt_sampler_count);
+
+  s_ss_prev_lst = curLST;
+  s_ss_prev_vtx = curVTX;
+  s_ss_prev_mod = curMod;
+
+  // stdout is a FILE on the SD card (InitRenderer freopens it to /ndclog.txt),
+  // so it is fully buffered — without this, everything logged since the last
+  // block boundary is lost if the console is powered off instead of exited
+  // cleanly, which is exactly how you leave a stuck scene.
+  fflush(stdout);
+
+  if (++s_ss_burst >= SS_BURST)
+  {
+    s_ss_burst = 0;
+    s_ss_quiet_until = s_ss_pass_no + SS_QUIET_PASSES;
+  }
+}
+#endif // SCOPE_DEBUG_LOG
+
+// ============================
 // START RENDERING
 // ============================
 
@@ -6621,6 +6973,10 @@ void StartRender()
 {
   u32 VtxCnt = curVTX - vertices;
   VertexCount += VtxCnt;
+
+#if SCOPE_DEBUG_LOG
+  ss_dump_pass();   // must run BEFORE any path below returns
+#endif
 
   if (RENDER_DELAY())
   {
@@ -6688,7 +7044,9 @@ void StartRender()
       if(DEBUG_MESSAGE()) printf("[PATH] RTT: FB_W_SOF1=%08X %ux%u packmode=%d stride=%d VtxCnt=%d\n",
         FB_W_SOF1, rtt_w, rtt_h, (int)(FB_W_CTRL & 7), (int)((FB_W_LINESTRIDE & 0x1FF) * 8), VtxCnt);
 
-      s_rtt_w = rtt_w;
+      s_rtt_x = xclip & 0x7FF;   // clip ORIGIN: the window's position in the
+      s_rtt_y = yclip & 0x3FF;   // pass's screen space (usually, but not
+      s_rtt_w = rtt_w;           // always, 0,0)
       s_rtt_h = rtt_h;
       s_rtt_pass = true;
       DoRender();
@@ -6707,6 +7065,24 @@ void StartRender()
 
       carry_lst_end   = curLST;
       carry_trans_lst = TransLST;   // may be 0: an all-opaque carried pass
+
+      // The window this pass was rendering into (same registers the real RTT
+      // path reads). Only trusted when it is a real sub-rect; a stale
+      // full-screen clip leaves carry_clip_w at 0 and nothing is scissored.
+      {
+        u32 cx = FB_X_CLIP.full;
+        u32 cy = FB_Y_CLIP.full;
+        u32 cw = ((cx >> 16) & 0x7FF) + 1 - (cx & 0x7FF);
+        u32 ch = ((cy >> 16) & 0x3FF) + 1 - (cy & 0x3FF);
+        if ((s32)cw >= 8 && cw <= 1280 && (s32)ch >= 8 && ch <= 1024)
+        {
+          carry_clip_x = cx & 0x7FF;
+          carry_clip_y = cy & 0x3FF;
+          carry_clip_w = cw;
+          carry_clip_h = ch;
+        }
+      }
+
       carry_frame_lst = curLST;     // the display frame starts here
       carry_frame_vtx = curVTX;
       carry_frame_mod = curMod;
@@ -6866,7 +7242,7 @@ struct VertexDecoder
   curMod->isp = pp->isp;               \
   curMod->tsp = pp->tsp;               \
   curMod->tcw = pp->tcw;               \
-  if (g_split_screen_cached)           \
+  if (g_split_screen_cached || SCOPE_DEBUG_LOG) \
     listTileClip[curMod - listModes] = ta_tileclip; \
   curPolyOffsMask = (g_offset_color_fix_cached && pp->pcw.Offset) ? 0xFFFFFFFFu : 0u;
 
@@ -7322,8 +7698,22 @@ bool InitRenderer()
 {
   // Diagnostic file logger
   printf("Log to file check ndclog.txt\n");
+#if SCOPE_DEBUG_LOG && SCOPE_LOG_TO_CONSOLE
+  // Deliberately NOT redirecting: the whole point of the [SS] capture is to read
+  // it live. Everything keeps going wherever libogc's stdout points (Dolphin log
+  // window / USB Gecko). Restore the redirect by setting SCOPE_LOG_TO_CONSOLE 0.
+  printf("[Init Renderer] Logging to console (ndclog.txt redirect skipped)\n");
+#else
   freopen("/ndclog.txt", "w", stdout);
   printf("[Init Renderer] Logging started\n");
+#endif
+#if SCOPE_DEBUG_LOG
+  // Unambiguous marker: if this line never appears, the build did not pick up
+  // SCOPE_DEBUG_LOG and there is no point looking for [SS] lines at all.
+  printf("[SS] scope pass logger ARMED (burst=%d, quiet=%d passes, heartbeat=%d)\n",
+         SS_BURST, SS_QUIET_PASSES, SS_HEARTBEAT);
+  fflush(stdout);
+#endif
   // Obtain the preferred video mode from the system
   // This will correspond to the settings in the Wii menu
   rmode = VIDEO_GetPreferredMode(NULL);

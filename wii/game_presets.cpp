@@ -196,7 +196,7 @@
                                 interleaved translucent geometry). Overrides
                                 trans_sort; hokuto_hack overrides it. Best with
                                 punch_through=on. 0 (default): off.
-        render_to_texture=on <- on/off/overlay, render-to-texture support (see
+        render_to_texture=on <- on/off/overlay/keep, render-to-texture support (see
                                 gxRend.cpp RENDER_TO_TEXTURE()). Frames whose
                                 write address (FB_W_SOF1) has bit 24 set target
                                 the 64-bit texture area — mirrors, TV screens,
@@ -205,6 +205,11 @@
                                 emulated VRAM at FB_W_SOF1 so the game can bind
                                 the result as a texture, at the cost of an EFB
                                 copy + CPU convert per RTT frame;
+                                keep is on PLUS the render does not consume
+                                the TA list, so the display render that follows
+                                draws the whole accumulated list -- needed by a
+                                game that renders one list twice (Silent Scope's
+                                sniper scope). Pair with split_screen=on;
                                 overlay does not resolve a texture but carries
                                 the pass's geometry into the next display frame
                                 and draws it last, flat on top (near-plane
@@ -644,6 +649,7 @@ static int parse_bool(const char* v)
 static int parse_rtt(const char* v)
 {
     if (key_eq(v, "overlay") || key_eq(v, "carry") || strcmp(v, "2") == 0) return 2;
+    if (key_eq(v, "keep")    || key_eq(v, "keep_list") || strcmp(v, "3") == 0) return 3;
     return parse_bool(v);
 }
 
