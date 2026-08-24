@@ -278,9 +278,9 @@ void UpdateFishingRodState(u32 port)
 
     if (wiiButtons & WPAD_BUTTON_PLUS)  kcode[port] &= ~key_CONT_START;
 
-    // Exit combination
+    // Exit combination -- back to the file browser
     if ((wiiButtons & WPAD_BUTTON_MINUS) && (wiiButtons & WPAD_BUTTON_PLUS))
-        exit(0);
+        RequestExitToMenu();
 
     // Save previous accelerometer values for next frame
     prev_acc_x[port] = ax;

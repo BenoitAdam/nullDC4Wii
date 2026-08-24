@@ -3000,7 +3000,13 @@ void ngen_mainloop()
 			/*
 			create stack frame, push regsters, etc ..
 			*/
-			u32 stac_alloc_size=8+20*4;
+			// 8 bytes of header + 20 GPR slots (19 used) + 18 FPR slots.
+			// The FPR area is new: the mainloop used to be a one-way trip
+			// (nothing ever returned from loop_code), so clobbering the
+			// ABI-preserved f14..f31 was invisible. The exit-to-menu path
+			// below DOES return to C, and the FPU_PIN preset parks
+			// fr[0..15] in f14..f29, so they have to be saved now.
+			u32 stac_alloc_size=8+20*4+18*8;
 			ppc_mfspr(ppc_r0,ppc_spr_lr);
 			ppc_addi(ppc_sp,ppc_sp,-stac_alloc_size);
 			
@@ -3012,6 +3018,15 @@ void ngen_mainloop()
 			for (int i=0;i<19;i++)
 			{
 				ppc_stw(ppc_r13+i,ppc_sp,stac_alloc_size-4-i*4);
+			}
+
+			//store fprs f14..f31 (18 preserved regs per ABI)
+			// Layout: sp+[8 + i*8] = f14+i, i.e. sp+8 .. sp+151. The lowest
+			// GPR slot is sp+[stac_alloc_size-4-18*4] = sp+156, so the two
+			// areas do not overlap.
+			for (int i=0;i<18;i++)
+			{
+				ppc_stfd(ppc_f14+i,ppc_sp,8+i*8);
 			}
 
 			/*
@@ -3072,46 +3087,64 @@ void ngen_mainloop()
 			}
 			no_intr->MarkLabel();
 			ppc_sh_load(ppc_next_pc,reg_nextpc);
+
+			// ---------------------------------------------------------------
+			// EXIT CHECK  (once per timeslice, right after UpdateSystem)
 			//
-			ppc_jump(loop_no_update);
-			//right
+			// sh4_int_bCpuRun is cleared by Sh4_int_Stop(), which is what
+			// RequestExitToMenu() (dc/dc.cpp) calls when the in-game exit
+			// combination is held. Until now the JIT mainloop had no exit
+			// path at all -- the combo had to call exit(0) -- so it is added
+			// here: still running -> jump back into the dispatch loop,
+			// stopped -> fall through to the epilogue and return to C.
+			//
+			// This is the only spot where an exit is safe: the pinned SH4
+			// GPRs/FPRs are live in r14..r28 / f14..f29 and can be flushed to
+			// the context, and next_pc has already been written back at
+			// loop_do_update_write above (UpdateSystem_handle_event may have
+			// changed it, hence the reload into r3 just above -- the memory
+			// copy is the authoritative one either way).
+			//
+			// rarg1 (r4) is dead here, so it is free as the scratch for the
+			// flag load; r3 holds next_pc and is deliberately left alone.
+			// ---------------------------------------------------------------
+			ppc_lip(ppc_rarg1,(void*)&sh4_int_bCpuRun);
+			ppc_lbz(ppc_rarg1,ppc_rarg1,0);
+			ppc_cmpi(ppc_cr0,ppc_rarg1,0,0);		// bCpuRun == 0 ?
+			ppc_label* do_exit=ppc_CreateLabel();
+			ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq do_exit
+			ppc_jump(loop_no_update);			// still running: keep going
 
-      /*
-      Claude AI says it's dead end after looking in dump dynarec_XXX.bin
-			ppc_lbz(ppc_rarg0,ppc_rarg0,ppc_addr_high(ppc_rarg0,(void*)&sh4_int_bCpuRun));
-			ppc_sh_load(ppc_next_pc,reg_nextpc);
-
-			ppc_cmpi(ppc_cr0,ppc_rarg0,1,0);	//set flags
-
-			//does this even work ?
-			//ppc_bcx(BO_TRUE,BI_CR0_EQ,ppc_jdiff(loop_no_update),0,0);
-			
-
-			//write back registers and stuff ...
-
-			//cleanup
-			
-			Clean up the stack frame and return ...
-			
-
-			//restore link register
-			ppc_lwz(ppc_r0,ppc_sp,stac_alloc_size+4);
-			ppc_mtlr(ppc_r0);
-
-			//restore gprs 13 .. 31
-			for (int i=0;i<19;i++)
+			do_exit->MarkLabel();
 			{
-				ppc_lwz(ppc_r13+i,ppc_sp,stac_alloc_size-4-i*4);
+				// Write the pinned register files back into Sh4cntx before
+				// the PPC registers holding them are restored. No-ops when
+				// the static-GPR / FPU_PIN allocators are off.
+				reg_flush_all();
+				reg_flush_all_fpu();
+
+				//restore fprs f14..f31
+				for (int i=0;i<18;i++)
+				{
+					ppc_lfd(ppc_f14+i,ppc_sp,8+i*8);
+				}
+
+				//restore link register
+				ppc_lwz(ppc_r0,ppc_sp,stac_alloc_size+4);
+				ppc_mtlr(ppc_r0);
+
+				//restore gprs 13 .. 31
+				for (int i=0;i<19;i++)
+				{
+					ppc_lwz(ppc_r13+i,ppc_sp,stac_alloc_size-4-i*4);
+				}
+
+				//destroy stack frame
+				ppc_addi(ppc_sp,ppc_sp,stac_alloc_size);
+
+				//return to recSh4_Run()
+				ppc_bclrx(BO_ALWAYS,BI_CR0_EQ,0);  // blr
 			}
-
-			
-
-			//destroy stack frame
-			ppc_addi(ppc_sp,ppc_sp,stac_alloc_size);
-
-			//return
-			ppc_bclrx(BO_ALWAYS,BI_CR0_EQ,0);  // blr
-      */
 
 		} //that was mainloop
 
@@ -3171,6 +3204,23 @@ void ngen_mainloop()
 	}
 
 	loop_code();
+}
+
+// Called from recSh4_Init(). recSh4_Init() memsets the whole code cache, so
+// leaving loop_code pointing into it would send the next run straight into
+// zeroed memory. Clearing it here makes ngen_mainloop() re-emit the prologue,
+// dispatch loop and stubs from scratch -- which is also what picks up a
+// different accuracy preset, since the timeslice is baked in at emit time.
+void ngen_ResetMainloop()
+{
+	loop_code                    = 0;
+	loop_no_update               = 0;
+	loop_do_update_write         = 0;
+	ngen_FailedToFindBlock       = 0;
+	ngen_LinkBlock_Static_stub   = 0;
+	ngen_LinkBlock_Dynamic_1st_stub = 0;
+	ngen_LinkBlock_Dynamic_2nd_stub = 0;
+	ngen_BlockCheckFail_stub     = 0;
 }
 
 void ngen_GetFeatures(ngen_features* dst)

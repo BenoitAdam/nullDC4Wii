@@ -176,6 +176,16 @@ extern "C" int get_player_count();
 // ----------------------------------------------------------------------------
 void mcfg_CreateDevices()
 {
+	// Start from a clean slate. This runs more than once per session --
+	// plugins_Load() calls it from both main___() and Init_DC(), and again for
+	// every game launched from the file browser after the in-game exit combo.
+	// Without this each pass overwrote MapleDevices[][] and leaked what was
+	// there: a VMU is a 128 KB object holding an open save-file handle, so the
+	// FAT file-handle pool ran dry after a few rounds. Destroying first also
+	// means a newly picked game's controller type replaces the old devices
+	// instead of stacking on top of them.
+	mcfg_DestroyDevices();
+
 	MapleDeviceType ctrlType = mcfg_GetControllerDeviceType();
 	bool isStandard = (ctrlType == MDT_SegaController);
 

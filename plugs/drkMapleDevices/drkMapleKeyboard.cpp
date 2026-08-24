@@ -143,9 +143,9 @@ static void FillWiimoteFallback(u32 port, DC_KeyboardReport *report)
     if ((held & WPAD_BUTTON_1)     && keyIdx < 6)
         report->keys[keyIdx++] = HID_KEY_SPACE;
 
-    // Exit: MINUS + PLUS
+    // Exit: MINUS + PLUS -- back to the file browser
     if ((held & WPAD_BUTTON_MINUS) && (held & WPAD_BUTTON_PLUS))
-        exit(0);
+        RequestExitToMenu();
 }
 
 /**

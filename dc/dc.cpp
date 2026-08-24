@@ -10,6 +10,7 @@
 #include "mem/sh4_internal_reg.h"
 #include "aica/aica_if.h"
 #include "maple/maple_if.h"
+#include "plugins/plugin_manager.h"
 #include "dc.h"
 #include "config/config.h"
 #include <string.h>
@@ -36,6 +37,11 @@ static inline void arm_Reset(bool manual) { armReset(manual); }
 static bool dc_inited = false;
 static bool dc_reseted = false;
 static bool dc_running = false;
+
+// Set by the in-game exit combination (see RequestExitToMenu below). Volatile
+// because it is written from maple polling deep inside the SH4 run loop and
+// read again once that loop has unwound.
+static volatile bool dc_exit_to_menu = false;
 
 // Emulator thread states
 enum emu_thread_state_t
@@ -317,6 +323,77 @@ void Term_DC()
 	dc_running = false;
 	
 	printf("Dreamcast emulator terminated\n");
+}
+
+// ---------------------------------------------------------------------------
+// Return-to-file-browser support
+//
+// The in-game exit combination used to call exit(0), which dropped straight
+// back to the Homebrew Channel. It now unwinds the emulator instead, so
+// wii/main.cpp can show the file browser again and launch another game
+// without a reboot.
+//
+// The whole point is that RequestExitToMenu() runs on the emulation thread,
+// from inside maple polling, with the SH4 mid-block. It therefore does the
+// absolute minimum: raise a flag and clear sh4_int_bCpuRun. Both the
+// interpreter loop and the dynarec mainloop test that flag once per
+// timeslice and return normally, so the unwind happens through
+// Run() -> Start_DC() -> RunDC() -> main___() -> EmuMain() -> main().
+// ---------------------------------------------------------------------------
+
+void RequestExitToMenu(void)
+{
+	if (dc_exit_to_menu)
+		return;   // already asked for; don't spam the log while the combo is held
+
+	printf("Exit combination pressed - returning to the file browser\n");
+	dc_exit_to_menu = true;
+
+	if (sh4_cpu.IsCpuRunning())
+		sh4_cpu.Stop();
+}
+
+bool ExitToMenuRequested(void)
+{
+	return dc_exit_to_menu;
+}
+
+void ClearExitToMenu(void)
+{
+	dc_exit_to_menu = false;
+}
+
+/**
+ * Swap the disc for a newly picked game, without a Term/Init round trip.
+ *
+ * Term_DC() would tear down the renderer plugin too, and InitRenderer() is
+ * not re-entrant (GX_Init, SYS_AllocateFramebuffer, the MEM2 depth-peel
+ * buffers -- all one-shot allocations that would leak on every relaunch).
+ * So the core stays initialised and only the two things that are actually
+ * per-game are redone here:
+ *
+ *   - the GD-ROM image: libGDR_Term()/libGDR_Init() re-runs InitDrive(),
+ *     which re-reads the path through os_GetFile() -> selectedFilePath,
+ *     already updated by the file browser.
+ *   - dc_reseted is cleared so the next Start_DC() performs a full hard
+ *     reset (RAM wiped, BIOS reloaded, JIT cache dropped, every peripheral
+ *     reset) before the new game runs.
+ */
+void ReloadDisc_DC(void)
+{
+	if (!dc_inited)
+		return;   // nothing running yet -- the normal boot path handles it
+
+	printf("Loading the newly selected disc...\n");
+
+	libGDR_Term();
+
+	gdr_init_params gdr_info;
+	if (libGDR_Init(&gdr_info) != rv_ok)
+		printf("WARNING: failed to open the selected image\n");
+
+	// Force Start_DC() to hard-reset the machine before running the new game.
+	dc_reseted = false;
 }
 
 /**

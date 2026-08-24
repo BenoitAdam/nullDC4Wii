@@ -70,6 +70,19 @@ int RunDC()
 		printf("[nullDC.cpp] Using Interpreter\n");
 	}
 
+	// Second and later runs: the user came back to the file browser with the
+	// exit combination and launched another game. Start_DC() skips Init_DC()
+	// because the core is still initialised, so the back-end selected just
+	// above would never get its Init() -- and the user is free to switch core
+	// between games. Both Sh4_int_Init() and recSh4_Init() are idempotent, and
+	// recSh4_Init() is also what drops the stale JIT mainloop. IsDCInited() is
+	// false on the first run, so nothing changes there.
+	if (IsDCInited())
+	{
+		printf("[nullDC.cpp] Re-entry: re-initialising the SH4 back-end\n");
+		sh4_cpu.Init();
+	}
+
 	// -----------------------------------------------------------------------
 	// ELF boot: patch SH4 context AFTER the CPU back-end is chosen but
 	// BEFORE Start_DC() begins executing instructions.
@@ -235,20 +248,33 @@ int EmuMain(int argc, char* argv[])
 	printf("[nullDC] EmuMain: start\n");
 	printf(VER_FULLNAME " starting up ..\n");
 
-	printf("[nullDC] EmuMain: _vmem_reserve()...\n");
-	if (!_vmem_reserve())
+	// _vmem_reserve() permanently bumps the Wii MEM2 arena (~26 MB for
+	// ARAM+VRAM+RAM), so it must run exactly once per session. EmuMain() is
+	// re-entered when the exit combination sends the user back to the file
+	// browser and they pick another game -- the guest memory blocks are
+	// still there and still mapped, so skip it.
+	static bool vmem_reserved = false;
+	if (!vmem_reserved)
 	{
-		msgboxf("Unable to reserve nullDC memory ...",MBX_OK | MBX_ICONERROR);
-		return -5;
+		printf("[nullDC] EmuMain: _vmem_reserve()...\n");
+		if (!_vmem_reserve())
+		{
+			msgboxf("Unable to reserve nullDC memory ...",MBX_OK | MBX_ICONERROR);
+			return -5;
+		}
+		vmem_reserved = true;
+		printf("[nullDC] EmuMain: _vmem_reserve OK\n");
 	}
-	printf("[nullDC] EmuMain: _vmem_reserve OK\n");
 
 	printf("[nullDC] EmuMain: calling main___()...\n");
 	int rv=main___(argc,argv);
 	printf("[nullDC] EmuMain: main___() returned rv=%d\n", rv);
 
 #ifndef _ANDROID
-	_vmem_release();
+	// Only on a real exit -- a return to the file browser keeps the guest
+	// memory (and everything mapped into it) alive for the next game.
+	if (!ExitToMenuRequested())
+		_vmem_release();
 #endif
 
 	return rv;

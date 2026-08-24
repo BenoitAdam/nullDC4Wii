@@ -200,9 +200,9 @@ void UpdateMaracasState(u32 port)
     if (anyButtons & WPAD_BUTTON_LEFT)  kcode[port] &= ~key_CONT_DPAD_LEFT;
     if (anyButtons & WPAD_BUTTON_RIGHT) kcode[port] &= ~key_CONT_DPAD_RIGHT;
 
-    // Exit: MINUS + PLUS on either maraca Wiimote
+    // Exit: MINUS + PLUS on either maraca Wiimote -- back to the file browser
     if (((wiiL | wiiR) & WPAD_BUTTON_MINUS) && ((wiiL | wiiR) & WPAD_BUTTON_PLUS))
-        exit(0);
+        RequestExitToMenu();
 }
 
 /**

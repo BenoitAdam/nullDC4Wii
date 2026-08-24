@@ -306,19 +306,23 @@ static void MapTriggers(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckBut
 }
 
 /**
- * Checks for exit combination and exits if detected
+ * Checks for the exit combination and, if held, asks the emulator to unwind
+ * back to the Wii file browser (it used to call exit(0) and drop straight
+ * back to the Homebrew Channel). RequestExitToMenu() only raises a flag and
+ * stops the SH4 -- see dc/dc.cpp.
  * @param wiiButtons Wii Remote button state
  * @param gcButtons GameCube controller button state
  * @param classicButtons Classic Controller button state (0 if not attached)
  */
 static inline void CheckExitCombination(u32 wiiButtons, u32 gcButtons, u32 classicButtons)
 {
-    // Exit on: MINUS+PLUS (Wiimote or Classic Controller) or R+L+Z (GameCube)
+    // Back to the file list on: MINUS+PLUS (Wiimote or Classic Controller)
+    // or R+L+Z (GameCube)
     if ((wiiButtons & WPAD_BUTTON_MINUS && wiiButtons & WPAD_BUTTON_PLUS) ||
         ((classicButtons & WPAD_CLASSIC_BUTTON_MINUS) && (classicButtons & WPAD_CLASSIC_BUTTON_PLUS)) ||
         (gcButtons & PAD_TRIGGER_R && gcButtons & PAD_TRIGGER_L && gcButtons & PAD_TRIGGER_Z))
     {
-        exit(0);
+        RequestExitToMenu();
     }
 }
 
@@ -508,10 +512,14 @@ void UpdateInputState(u32 port)
             expStickY = ((s32)WiiDRC_lStickY() * 7) / 4;
         }
 
-        // Exit combo: MINUS+PLUS (same as Wiimote); GamePad power button
-        // (shutdown request from IOS) also exits.
-        if (((drc & WIIDRC_BUTTON_MINUS) && (drc & WIIDRC_BUTTON_PLUS)) ||
-            WiiDRC_ShutdownRequested())
+        // Exit combo: MINUS+PLUS (same as Wiimote) returns to the file
+        // browser. The GamePad power button is a real shutdown request from
+        // IOS, so that one still quits the application outright.
+        if ((drc & WIIDRC_BUTTON_MINUS) && (drc & WIIDRC_BUTTON_PLUS))
+        {
+            RequestExitToMenu();
+        }
+        else if (WiiDRC_ShutdownRequested())
         {
             exit(0);
         }

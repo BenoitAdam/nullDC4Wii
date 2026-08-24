@@ -564,6 +564,11 @@ void recSh4_Init()
 
 	Sh4_int_Init();
 	bm_Init();
+	// bm_Init() only (re)seeds the lookup cache; the per-bucket block lists
+	// can still hold entries from a previous game, all pointing into the
+	// code cache this function is about to wipe. Clear them here so the
+	// block manager and the cache are consistent from this point on.
+	bm_Reset();
 
 #ifdef ENABLE_PERF_MONITORING
 	perf_blocks_compiled   = 0;
@@ -608,6 +613,12 @@ void recSh4_Init()
 	LastAddr     = 0;
 	LastAddr_min = 0;
 	emit_ptr     = 0;
+
+	// The cache was just wiped, so any mainloop emitted by a previous run
+	// is gone with it. Drop the stale entry points; ngen_mainloop() then
+	// re-emits them, picking up this game's accuracy preset (the timeslice
+	// is baked into the generated dispatch loop).
+	ngen_ResetMainloop();
 
 	printf("recSh4: initialization complete (cache=%u KB)\n",
 	       CODE_SIZE / 1024);

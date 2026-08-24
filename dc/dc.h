@@ -75,6 +75,41 @@ void Stop_DC();
 void LoadBiosFiles();
 
 /**
+ * Request that emulation stop and control return to the Wii file browser.
+ *
+ * This is what the in-game exit combination (Wiimote MINUS+PLUS,
+ * GameCube L+R+Z) now does instead of exit(0). It is called from inside
+ * maple polling -- i.e. from the SH4's own execution -- so it must not
+ * tear anything down itself. It only raises a flag and asks the CPU to
+ * stop; the run loop then unwinds normally back to wii/main.cpp, which
+ * shows the file browser again.
+ */
+void RequestExitToMenu(void);
+
+/**
+ * True if RequestExitToMenu() was called and has not been consumed yet.
+ * wii/main.cpp checks this after EmuMain() returns to tell "the user asked
+ * for the menu" apart from "emulation ended by itself".
+ */
+bool ExitToMenuRequested(void);
+
+/**
+ * Clear the exit-to-menu flag. Call before (re)entering emulation.
+ */
+void ClearExitToMenu(void);
+
+/**
+ * Re-open the GD-ROM image for a newly selected game and arm a full hard
+ * reset for the next Start_DC().
+ *
+ * Used when the file browser was re-entered mid-session: the emulator core
+ * stays initialised (no Term_DC()/Init_DC() round trip, which would re-run
+ * one-time GX / arena allocations), but the disc image and the whole machine
+ * state must be swapped out for the newly picked game.
+ */
+void ReloadDisc_DC(void);
+
+/**
  * Check if the Dreamcast emulator is initialized
  * 
  * @return true if initialized, false otherwise

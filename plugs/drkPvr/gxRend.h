@@ -9,6 +9,12 @@ bool InitRenderer();
 void TermRenderer();
 void ResetRenderer(bool Manual);
 
+// Return-to-file-browser support: settle GX before the console-mode file
+// browser takes VI over, and re-establish the emulator's video mode when it
+// hands VI back. Neither touches the one-shot GX/framebuffer setup.
+void SuspendRendererVideo();
+void RestoreRendererVideo();
+
 bool ThreadStart();
 void ThreadEnd();
 void VBlank();

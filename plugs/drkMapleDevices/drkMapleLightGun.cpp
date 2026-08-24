@@ -196,9 +196,9 @@ void UpdateLightGunState(u32 port)
     if (wiiButtons & WPAD_BUTTON_LEFT)  kcode[port] &= ~key_CONT_DPAD_LEFT;
     if (wiiButtons & WPAD_BUTTON_RIGHT) kcode[port] &= ~key_CONT_DPAD_RIGHT;
 
-    // Exit combination: MINUS + PLUS simultaneously
+    // Exit combination: MINUS + PLUS simultaneously -- back to the file browser
     if ((wiiButtons & WPAD_BUTTON_MINUS) && (wiiButtons & WPAD_BUTTON_PLUS))
-        exit(0);
+        RequestExitToMenu();
 }
 
 /**

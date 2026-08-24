@@ -8131,6 +8131,68 @@ void SetFpsText(char *text)
 // Initialize the Wii Video and GX subsystem.
 // ============================
 
+// ============================================================================
+// stdout juggling  (return-to-file-browser support)
+//
+// InitRenderer() below does freopen("/ndclog.txt","w",stdout), so every printf
+// from gameplay onward lands on the SD card instead of the screen. That is the
+// point while a game is running -- but the file browser in wii/main.cpp draws
+// itself with printf through libogc's console device, so if stdout is still
+// aimed at the log file when the exit combination brings us back there, the
+// menus are invisible.
+//
+// newlib has no "undo freopen", so the console-bound FILE state is snapshotted
+// before the first redirect and put back verbatim afterwards. The snapshot
+// carries the console fd and newlib's write hooks, which is exactly what has
+// to come back. fclose() in between releases the log file and its buffer; the
+// console's own buffer was allocated before the snapshot and is still live, so
+// the restored struct points at something valid.
+// ============================================================================
+
+static FILE s_stdout_console;         // stdout as libogc left it
+static bool s_stdout_saved     = false;
+static bool s_stdout_redirected = false;
+
+// Aim printf at /ndclog.txt. Appends on every call after the first so a second
+// game's log does not wipe the first one's.
+static void gx_log_to_file()
+{
+  if (s_stdout_redirected)
+    return;
+
+  if (!s_stdout_saved)
+  {
+    fflush(stdout);                   // no half-written console line in the copy
+    s_stdout_console = *stdout;
+    s_stdout_saved   = true;
+    freopen("/ndclog.txt", "w", stdout);
+  }
+  else
+  {
+    freopen("/ndclog.txt", "a", stdout);
+  }
+
+  s_stdout_redirected = true;
+}
+
+// Aim printf back at the console so the file browser can draw itself.
+void GxLogToConsole()
+{
+  if (!s_stdout_redirected || !s_stdout_saved)
+    return;
+
+  fflush(stdout);
+  fclose(stdout);                     // flush + close the log fd, free its buffer
+  *stdout = s_stdout_console;         // and hand the console FILE state back
+  s_stdout_redirected = false;
+}
+
+// Re-arm the file log when emulation resumes.
+void GxLogToFile()
+{
+  gx_log_to_file();
+}
+
 bool InitRenderer()
 {
   // Diagnostic file logger
@@ -8141,7 +8203,7 @@ bool InitRenderer()
   // window / USB Gecko). Restore the redirect by setting SCOPE_LOG_TO_CONSOLE 0.
   printf("[Init Renderer] Logging to console (ndclog.txt redirect skipped)\n");
 #else
-  freopen("/ndclog.txt", "w", stdout);
+  gx_log_to_file();   // snapshots the console stdout first, so it can be restored
   printf("[Init Renderer] Logging started\n");
 #endif
 #if SCOPE_DEBUG_LOG
@@ -8259,6 +8321,59 @@ void TermRenderer()
 {
   gx_sync_pending(); // don't tear down with a queued async frame in flight
   TileAccel.Term();
+}
+
+// ============================================================================
+// SUSPEND / RESTORE VIDEO  (return-to-file-browser support)
+//
+// The in-game exit combination no longer quits: it unwinds emulation and hands
+// control back to the console-mode file browser in wii/main.cpp, which then
+// re-points VI at its own text framebuffer. GX itself is left completely
+// alone -- InitRenderer() is a one-shot (GX_Init, SYS_AllocateFramebuffer,
+// the MEM2 depth-peel buffers) and must not run twice -- so all that has to
+// happen across that round trip is settling the pipe on the way out and
+// re-establishing the emulator's video mode on the way back in.
+// ============================================================================
+
+// Called just before the file browser takes VI over.
+void SuspendRendererVideo()
+{
+  // Always first, and safe on its own: printf has to reach the screen again
+  // for the browser to be visible, even if the renderer never got going.
+  GxLogToConsole();
+
+  if (!frameBuffer[0])
+    return;           // InitRenderer() never ran -- GX is not up, leave it alone
+
+  gx_sync_pending();  // present/consume the queued async frame, if any
+  GX_DrawDone();      // and make sure the GPU is idle before VI is re-pointed
+}
+
+// Called just before emulation resumes, after the file browser is done with VI.
+void RestoreRendererVideo()
+{
+  if (!frameBuffer[0])
+    return;           // InitRenderer() has not run yet -- nothing to restore
+
+  // Same sequence InitRenderer() uses, minus the one-shot allocations.
+  VIDEO_Configure(rmode);
+  VIDEO_SetNextFramebuffer(frameBuffer[fb]);
+  // InitRenderer() passes TRUE here (which is evidently a no-op at that point,
+  // since the emulator does display); FALSE is used on the way back so a
+  // resumed game can never come up on a blanked screen.
+  VIDEO_SetBlack(FALSE);
+  VIDEO_Flush();
+  VIDEO_WaitVSync();
+  if (rmode->viTVMode & VI_NON_INTERLACE)
+    VIDEO_WaitVSync();
+
+  // Texture filtering tier is per-game, and the next game may not be the one
+  // InitRenderer() latched this for.
+  ApplyGraphismPreset();
+
+  GxLogToFile();      // back to /ndclog.txt for the duration of the next game
+
+  printf("[gxRend] video restored for the next game\n");
 }
 
 // ============================

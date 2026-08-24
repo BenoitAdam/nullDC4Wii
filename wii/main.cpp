@@ -35,6 +35,17 @@ int SS_ConnectedCount(void);
 // *** GAME PRESETS ***
 #include "wii/game_presets.h"
 
+// Return-to-file-browser support: RequestExitToMenu() / ExitToMenuRequested()
+// / ClearExitToMenu() / ReloadDisc_DC(). The in-game exit combination unwinds
+// emulation back into main()'s session loop instead of calling exit(0).
+#include "dc/dc.h"
+
+// Settle GX / hand VI back and forth between the console-mode browser and the
+// emulator (plugs/drkPvr/gxRend.cpp). Declared here rather than pulling in
+// gxRend.h, which drags the whole PVR plugin interface along with it.
+void SuspendRendererVideo();
+void RestoreRendererVideo();
+
 // *** ARM7DI CORE SELF-TEST ***
 #include "plugs/vbaARM/arm7.h"
 
@@ -2361,7 +2372,7 @@ static void printFileBrowserFooter(int page, int totalPages)
     ? "[SD CARD]  (2: Switch to USB)"
     : "[USB]      (2: Switch to SD)");
   printf("A: Select | B: Back | 1: BIOS | (-) + (+): Exit\n");
-  printf("INGAME: Press (-) and (+) simultaneously to Exit\n");
+  printf("INGAME: Press (-) and (+) simultaneously to return here\n");
 }
 
 int displayMenuAndSelectFile()
@@ -2647,6 +2658,27 @@ int main(int argc, wchar *argv[])
   // ---------------------------------------------------------------------------
   checkBiosFiles();
 
+  // ---------------------------------------------------------------------------
+  // Session loop: file browser -> options -> controls -> emulation, repeat.
+  //
+  // The in-game exit combination (Wiimote MINUS+PLUS, GameCube L+R+Z) used to
+  // call exit(0) and drop straight back to the Homebrew Channel. It now asks
+  // the emulator to unwind (RequestExitToMenu(), dc/dc.cpp) and lands back
+  // here, so another game can be launched without leaving the application.
+  //
+  // The emulator core is NOT torn down between games -- InitRenderer() and
+  // _vmem_reserve() are one-shot allocators that would leak on every relaunch.
+  // Instead ReloadDisc_DC() swaps the disc image and arms a full hard reset,
+  // and the video mode is handed back and forth between the console-mode
+  // browser and GX.
+  // ---------------------------------------------------------------------------
+  int  emu_rv       = 0;
+  bool first_launch = true;
+
+  for (;;)
+  {
+  // Rescan every time round: the user may have swapped cards, and a second
+  // pass starts in whatever folder the previous one ended in.
   listFilesInDirectory(currentPath);
 
   // ---------------------------------------------------------------------------
@@ -2863,8 +2895,65 @@ int main(int argc, wchar *argv[])
       printf("               (Keyboard: connect USB keyboard for best experience)\n");
   }
 
-  int rv = EmuMain(argc, argv);
-  return rv;
+    // -------------------------------------------------------------------------
+    // Hand control over to the emulator.
+    // -------------------------------------------------------------------------
+    if (!first_launch)
+    {
+      // Second and later games: swap the disc image for the one just picked
+      // and arm a full hard reset, then give VI back to GX and un-mute.
+      ReloadDisc_DC();
+      RestoreRendererVideo();
+      ASND_Pause(0);
+    }
+    first_launch = false;
+
+    ClearExitToMenu();
+    emu_rv = EmuMain(argc, argv);
+
+    if (!ExitToMenuRequested())
+      break;   // emulation ended on its own (or failed) -- leave for real
+
+    // -------------------------------------------------------------------------
+    // The exit combination was pressed: take the screen back for the browser.
+    // -------------------------------------------------------------------------
+    ClearExitToMenu();
+
+    ASND_Pause(1);            // silence whatever the AICA left in the queue
+    SuspendRendererVideo();   // settle the GX pipe before VI is re-pointed
+
+    VIDEO_Configure(rmode);
+    VIDEO_SetNextFramebuffer(xfb[fb]);
+    VIDEO_SetBlack(false);
+    VIDEO_Flush();
+    VIDEO_WaitVSync();
+    if (rmode->viTVMode & VI_NON_INTERLACE)
+      VIDEO_WaitVSync();
+
+    console_init(xfb[fb], 20, 20, rmode->fbWidth, rmode->xfbHeight,
+                 rmode->fbWidth * VI_DISPLAY_PIX_SZ);
+    printf("\x1b[2J\x1b[H");   // clear the console for the browser
+
+    // Wait for the combo to be let go before handing control to the browser.
+    // The browser reads MINUS+PLUS *held* as "quit the application", so coming
+    // back with the buttons still down would exit immediately -- the exact
+    // opposite of what was asked for. Bounded so a stuck/absent pad can never
+    // hang here.
+    for (int guard = 0; guard < 600; guard++)
+    {
+      WPAD_ScanPads();
+      PAD_ScanPads();
+      u32 held = WPAD_ButtonsHeld(0) | CLASSIC_ToWPAD(WPAD_ButtonsHeld(0))
+               | DRC_ButtonsHeldWPAD() | SS_ButtonsHeldWPAD();
+      u32 gc   = PAD_ButtonsHeld(0);
+      if (!(held & (WPAD_BUTTON_MINUS | WPAD_BUTTON_PLUS)) &&
+          !(gc & (PAD_TRIGGER_L | PAD_TRIGGER_R | PAD_TRIGGER_Z)))
+        break;
+      VIDEO_WaitVSync();
+    }
+  }
+
+  return emu_rv;
 }
 
 // ============================================================================

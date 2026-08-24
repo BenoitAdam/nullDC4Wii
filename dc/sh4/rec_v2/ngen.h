@@ -50,6 +50,11 @@ void ngen_ResetBlocks();
 extern void (*ngen_FailedToFindBlock)();
 //the dynarec mainloop
 void ngen_mainloop();
+//Drop the emitted mainloop so the next ngen_mainloop() regenerates it.
+//Needed when a second game is launched from the file browser without a full
+//Term/Init cycle: the code cache is wiped under it, and the accuracy preset
+//(which is baked into the mainloop's timeslice at emit time) may have changed.
+void ngen_ResetMainloop();
 //ngen features
 struct ngen_features
 {
