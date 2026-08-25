@@ -213,6 +213,55 @@ extern "C" {
   int get_blend_mode_preset() { return g_blend_mode_preset; }
 }
 
+// ARGB8888 palettes (PAL_RAM_CTRL fmt 3) -> GX RGB5A3. 0=off (legacy: every
+// entry crushed to A3+RGB444, i.e. 12-bit colour, truncated), 1=on (opaque
+// entries take RGB5A3's bit15 RGB555 encoding instead: 15-bit colour, and the
+// translucent ones get rounded). Alpha behaviour is identical either way - see
+// PalARGB8888_to_RGB5A3() in gxRend.cpp. Fixes the coloured speckle over
+// dithered 256-colour photographic art (Alone in the Dark: The New Nightmare's
+// pre-rendered backgrounds). Works with any 4BPP/8BPP preset.
+int g_pal8888_hq_preset = 0;
+
+extern "C" {
+  int get_pal8888_hq_preset() { return g_pal8888_hq_preset; }
+}
+
+// CI4/CI8 index-only decodes: drop PalSelect from the texture-cache shape key
+// so one texture drawn with several palette banks decodes ONCE instead of once
+// per bank. 0=off (legacy: re-decode per bank), 1=on. The bank itself still
+// comes from the TLUT, which is uploaded before every draw either way.
+// Alone in the Dark re-decodes a 1024x1024 8BPP background twice a frame
+// without this. See tex_shape_key() in gxRend.cpp.
+int g_pal_bank_cache_preset = 0;
+
+extern "C" {
+  int get_pal_bank_cache_preset() { return g_pal_bank_cache_preset; }
+}
+
+// Force GX_NEAR on CI4/CI8 textures whatever the global GRAPHICS preset says.
+// Bilinear on an index-only format averages palette INDICES, and the midpoint
+// of two indices is an unrelated colour, so every pixel between two different
+// indices comes out wrong. 0=off (follow the global filter), 1=on.
+// Alone in the Dark's 1024x1024 8BPP background is the case this exists for.
+int g_ci_point_filter_preset = 0;
+
+extern "C" {
+  int get_ci_point_filter_preset() { return g_ci_point_filter_preset; }
+}
+
+// Splits 64-bit (fmov pair) accesses to directly-mapped RAM/VRAM into two
+// 32-bit halves instead of one raw 64-bit access - see the [FMOV64] note in
+// dc/mem/_vmem.cpp. NOT a fix: SH4 defines fmov.d as two 32-bit transfers and
+// the legacy raw big-endian u64 access already produces exactly that layout,
+// so turning this ON deviates from the hardware. It exists purely as an A/B
+// switch, left over from a disproven theory about the Alone in the Dark
+// background speckle. 0=off (legacy, believed correct), 1=on.
+int g_fmov64_fix_preset = 0;
+
+extern "C" {
+  int get_fmov64_fix_preset() { return g_fmov64_fix_preset; }
+}
+
 int g_rgb565_opaque_alpha_preset = 0; // 1=force opaque for fmt0(ARGB1555)+fmt1(RGB565), 0=only fmt0 (Fixes POD 2)
 
 extern "C" {
@@ -1150,7 +1199,11 @@ void displayAccuracyMenu()
 #define OPT_FOG         60     // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_Y_SCALER    61     // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_H_SCALER    62     // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
-#define OPT_ROW_COUNT   63
+#define OPT_PAL8888_HQ  63     // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
+#define OPT_PAL_BANK_CACHE 64  // shown on Page 1 (GENERAL), see OPT_PAGE0_ROWS
+#define OPT_CI_POINT_FILTER 65 // shown on Page 1 (GENERAL), see OPT_PAGE0_ROWS
+#define OPT_FMOV64_FIX  66     // shown on Page 5 (CORE), see OPT_PAGE4_ROWS
+#define OPT_ROW_COUNT   67
 
 // Options are split across six themed pages so no single page scrolls off
 // screen and related settings are grouped together.
@@ -1176,6 +1229,8 @@ static const int OPT_PAGE0_ROWS[] = {
   OPT_TEX_CACHE,
   OPT_4BPP,
   OPT_8BPP,
+  OPT_PAL_BANK_CACHE,
+  OPT_CI_POINT_FILTER,
   OPT_FRAMESKIP,
   OPT_FRAMEBUFFER_2D,
   OPT_ADV_ALPHA,
@@ -1198,6 +1253,7 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_FOG,
   OPT_BG_POLY,
   OPT_RGB565_OPAQUE_ALPHA,
+  OPT_PAL8888_HQ,
   OPT_JOJO_FIX,
   OPT_OFFSET_COLOR
 };
@@ -1237,6 +1293,7 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_ASYNC_RENDER,
   OPT_RENDER_DELAY,
   OPT_TMEM_CACHE,
+  OPT_FMOV64_FIX,
   OPT_SH4_CLOCK,
   OPT_ARM7_SPEED,
   OPT_JIT_SBP,
@@ -1427,6 +1484,24 @@ bool displayOptionsMenu()
     }
     printf("\n");
 
+    // --- Row: Palette-bank texture cache ---
+    printf("%s PAL BANK CACHE : ", (selectedRow == OPT_PAL_BANK_CACHE) ? ">" : " ");
+    switch (g_pal_bank_cache_preset) {
+      case 0: printf("[< OFF (PER BANK)    >]"); break;
+      case 1: printf("[< ON (1 DECODE)     >]"); break;
+    }
+    printf(" CI4/CI8 multi-palette");
+    printf("\n");
+
+    // --- Row: point filter for index-only textures ---
+    printf("%s CI POINT FILTER: ", (selectedRow == OPT_CI_POINT_FILTER) ? ">" : " ");
+    switch (g_ci_point_filter_preset) {
+      case 0: printf("[< OFF (GLOBAL FILT) >]"); break;
+      case 1: printf("[< ON (NEAREST)      >]"); break;
+    }
+    printf(" no bilinear on CI4/CI8");
+    printf("\n");
+
     // --- Row: Frameskipping ---
     printf("%s FRAMESKIPPING  : ", (selectedRow == OPT_FRAMESKIP) ? ">" : " ");
     switch (g_frameskip_preset) {
@@ -1586,6 +1661,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (FMT0+FMT1)    >]"); break;
     }
     printf(" OFF for POD2");
+    printf("\n");
+
+    // --- Row: ARGB8888 palette precision ---
+    printf("%s PAL 8888 HQ    : ", (selectedRow == OPT_PAL8888_HQ) ? ">" : " ");
+    switch (g_pal8888_hq_preset) {
+      case 0: printf("[< OFF (RGB444)      >]"); break;
+      case 1: printf("[< ON (RGB555)       >]"); break;
+    }
+    printf(" 4/8BPP dither speckle");
     printf("\n");
 
     // --- Row: Jojo Fix ---
@@ -1824,6 +1908,15 @@ bool displayOptionsMenu()
     printf(" keep GPU texture cache warm");
     printf("\n");
 
+    // --- Row: 64-bit (fmov) memory access endianness ---
+    printf("%s FMOV64 FIX     : ", (selectedRow == OPT_FMOV64_FIX) ? ">" : " ");
+    switch (g_fmov64_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (SPLIT 2x32)   >]"); break;
+    }
+    printf(" 64-bit RAM/VRAM byte order");
+    printf("\n");
+
     // --- Row: SH4 underclock (effective CPU clock; see plugin_types.h) ---
     printf("%s SH4 CLOCK      : ", (selectedRow == OPT_SH4_CLOCK) ? ">" : " ");
     if (g_sh4_clock_preset >= 200)
@@ -1990,6 +2083,10 @@ bool displayOptionsMenu()
         case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
+        case OPT_PAL8888_HQ: g_pal8888_hq_preset = (g_pal8888_hq_preset + 1) % 2; break;
+        case OPT_PAL_BANK_CACHE: g_pal_bank_cache_preset = (g_pal_bank_cache_preset + 1) % 2; break;
+        case OPT_CI_POINT_FILTER: g_ci_point_filter_preset = (g_ci_point_filter_preset + 1) % 2; break;
+        case OPT_FMOV64_FIX: g_fmov64_fix_preset = (g_fmov64_fix_preset + 1) % 2; break;
         case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
         case OPT_PUNCH_THROUGH: g_punch_through_preset = (g_punch_through_preset + 1) % 2; break;
         case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
@@ -2059,6 +2156,10 @@ bool displayOptionsMenu()
         case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
+        case OPT_PAL8888_HQ: g_pal8888_hq_preset = (g_pal8888_hq_preset + 1) % 2; break;
+        case OPT_PAL_BANK_CACHE: g_pal_bank_cache_preset = (g_pal_bank_cache_preset + 1) % 2; break;
+        case OPT_CI_POINT_FILTER: g_ci_point_filter_preset = (g_ci_point_filter_preset + 1) % 2; break;
+        case OPT_FMOV64_FIX: g_fmov64_fix_preset = (g_fmov64_fix_preset + 1) % 2; break;
         case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
         case OPT_PUNCH_THROUGH: g_punch_through_preset = (g_punch_through_preset + 1) % 2; break;
         case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
@@ -2851,6 +2952,10 @@ int main(int argc, wchar *argv[])
     printf("Vertex Color Fix: %s\n", g_vertex_color_fix_preset ? "ON" : "OFF");
     printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("RGB565 Opq Alpha: %s\n", g_rgb565_opaque_alpha_preset ? "ON (FMT0+FMT1)" : "OFF (FMT0 ONLY)");
+    printf("Pal 8888 HQ    : %s\n", g_pal8888_hq_preset ? "ON (RGB555)" : "OFF (RGB444)");
+    printf("Pal Bank Cache : %s\n", g_pal_bank_cache_preset ? "ON (1 DECODE)" : "OFF (PER BANK)");
+    printf("CI Point Filter: %s\n", g_ci_point_filter_preset ? "ON (NEAREST)" : "OFF (GLOBAL)");
+    printf("FMOV64 Fix     : %s\n", g_fmov64_fix_preset ? "ON (SPLIT 2x32)" : "OFF (LEGACY)");
     printf("Blend FPS Boost: %s\n", g_blend_fps_boost_preset ? "ON (FASTER)" : "OFF (CORRECT)");
     printf("Punch Through  : %s\n", g_punch_through_preset ? "ON (CORRECT)" : "OFF (FASTER?)");
     printf("Offset Color   : %s\n", g_offset_color_preset ? "ON (SPECULAR)" : "OFF (LEGACY)");

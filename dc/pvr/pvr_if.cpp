@@ -287,6 +287,13 @@ u32 FASTCALL pvr_read_area1_32(u32 addr)
     return *(u32*)&vram[addr];
 }
 
+// [AITD] VRAM write census - see the note in dc/mem/_vmem.cpp. Counters only.
+u32 g_aitd_vw_a32 = 0, g_aitd_vw_a16 = 0;
+u32 g_aitd_vw_ta  = 0, g_aitd_vw_sq  = 0;
+u32 g_aitd_vw_ta_lo = 0xFFFFFFFFu, g_aitd_vw_ta_hi = 0;
+u32 g_aitd_vw_sq_lo = 0xFFFFFFFFu, g_aitd_vw_sq_hi = 0;
+u32 g_aitd_vw_a32_lo = 0xFFFFFFFFu, g_aitd_vw_a32_hi = 0;
+
 void FASTCALL pvr_write_area1_8(u32 addr, u8 data)
 {
     printf("Warning: 8-bit VRAM writes are not supported by hardware\n");
@@ -294,12 +301,20 @@ void FASTCALL pvr_write_area1_8(u32 addr, u8 data)
 
 void FASTCALL pvr_write_area1_16(u32 addr, u16 data)
 {
+    if (1) g_aitd_vw_a16++; // [AITD] census
     addr = vramlock_ConvOffset32toOffset64(addr);
     *host_ptr_xor((u16*)&vram[addr]) = data;
 }
 
 void FASTCALL pvr_write_area1_32(u32 addr, u32 data)
 {
+    if (1) // [AITD] census
+    {
+        g_aitd_vw_a32++;
+        u32 a = addr & VRAM_MASK;
+        if (a < g_aitd_vw_a32_lo) g_aitd_vw_a32_lo = a;
+        if (a > g_aitd_vw_a32_hi) g_aitd_vw_a32_hi = a;
+    }
     addr = vramlock_ConvOffset32toOffset64(addr);
     *(u32*)&vram[addr] = data;
 }
@@ -333,6 +348,12 @@ void FASTCALL TAWrite(u32 address, u32* data, u32 count)
         //   OLD (linear, wrong): memcpy(&vram.data[address & VRAM_MASK], data, count*32);
         u32 off    = address & VRAM_MASK;
         u32 words  = count * 8;                   // 8 u32 per 32-byte block
+        if (1) // [AITD] census
+        {
+            g_aitd_vw_ta += words;
+            if (off < g_aitd_vw_ta_lo) g_aitd_vw_ta_lo = off;
+            if (off + words * 4 > g_aitd_vw_ta_hi) g_aitd_vw_ta_hi = off + words * 4;
+        }
         for (u32 i = 0; i < words; i++, off += 4)
             pvr_write_area1_32(off, data[i]);
     }
@@ -367,6 +388,12 @@ void FASTCALL TAWriteSQ(u32 address, u32* data)
         // recompiler, so it explains a failure that reproduces on both cores.
         //   OLD (linear, wrong): memcpy(&vram.data[address & VRAM_MASK], data, 32);
         u32 off = address & VRAM_MASK;          // 32-bit VRAM offset
+        if (1) // [AITD] census
+        {
+            g_aitd_vw_sq += 8;
+            if (off < g_aitd_vw_sq_lo) g_aitd_vw_sq_lo = off;
+            if (off + 32 > g_aitd_vw_sq_hi) g_aitd_vw_sq_hi = off + 32;
+        }
         for (int i = 0; i < 8; i++, off += 4)   // 8 * 4 = 32 bytes
             pvr_write_area1_32(off, data[i]);   // applies the 32->64 interleave
     }

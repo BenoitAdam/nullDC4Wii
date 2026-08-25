@@ -229,6 +229,47 @@
                                 quality but takes 2 texture cycles/texel on
                                 Hollywood, halving texture fill rate (-40% FPS
                                 in Test Drive 6).
+        fmov64_fix=on       <- on/off (default off). DIAGNOSTIC SWITCH, NOT A FIX.
+                                Splits 64-bit (fmov pair) accesses to directly-
+                                mapped RAM/VRAM into two 32-bit halves instead
+                                of one raw 64-bit access. SH4 defines fmov.d as
+                                two 32-bit transfers and the legacy code already
+                                produces that layout on a big-endian host, so
+                                turning this on deviates from the hardware.
+                                Left over from a disproven theory about the
+                                Alone in the Dark background speckle; kept only
+                                so the two behaviours can be compared.
+        ci_point_filter=on  <- on/off (default off). Forces GX_NEAR on CI4/CI8
+                                textures whatever the global graphics preset
+                                says. A bilinear tap averages four neighbouring
+                                texels, but for an index format the texel IS a
+                                palette index, and the average of index 10 and
+                                index 200 is index 105 - an unrelated colour.
+                                Every pixel straddling two different indices
+                                comes out wrong, which on photographic
+                                256-colour art is full-frame speckle that tracks
+                                image detail (Alone in the Dark backgrounds).
+        pal_bank_cache=on   <- on/off (default off). CI4/CI8 index-only presets
+                                only. Drops PalSelect from the texture-cache
+                                shape key, so a texture drawn with several
+                                palette banks decodes ONCE instead of once per
+                                bank (the bank comes from the TLUT, which is
+                                uploaded before every draw either way). Alone in
+                                the Dark re-decodes a 1024x1024 8BPP background
+                                twice every frame without this - 2 MB of
+                                twiddled decode for one unchanging image.
+        pal8888_hq=on       <- on/off (default off). ARGB8888 palettes only
+                                (PAL_RAM_CTRL fmt 3), any 4BPP/8BPP preset.
+                                GX RGB5A3 can encode either opaque RGB555 or
+                                A3+RGB444; the legacy conversion always picks
+                                the second, so opaque palette entries lose a bit
+                                per channel and are truncated, not rounded. On
+                                dithered 256-colour photographic art the dither
+                                then stops averaging out and shows up as
+                                coloured speckle - worst in dark scenes. On
+                                routes opaque entries through the 555 form
+                                instead (alpha is unchanged either way). Alone
+                                in the Dark: The New Nightmare backgrounds.
         yuv_twiddle_fix=on  <- on/off (default off). Fixes TWIDDLED YUV422
                                 textures (static YUV art, not FMV): the legacy
                                 decoder swapped the two u16 halves of each source
@@ -491,6 +532,10 @@ extern int g_render_delay_preset;
 extern int g_vertex_color_fix_preset;
 extern int g_blend_mode_preset;
 extern int g_rgb565_opaque_alpha_preset;
+extern int g_pal8888_hq_preset;
+extern int g_pal_bank_cache_preset;
+extern int g_ci_point_filter_preset;
+extern int g_fmov64_fix_preset;
 extern int g_blend_fps_boost_preset;
 extern int g_show_fps_overlay;
 extern int g_punch_through_preset;
@@ -570,6 +615,10 @@ struct GamePreset
     int fmv_format;
     int blend_mode;
     int rgb565_opaque_alpha;
+    int pal8888_hq;
+    int pal_bank_cache;
+    int ci_point_filter;
+    int fmov64_fix;
     int blend_fps_boost;
     int punch_through;
     int offset_color;
@@ -859,6 +908,10 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "fmv_format"))     p->fmv_format     = parse_fmv_format(val);
     else if (key_eq(key, "blend_mode"))     p->blend_mode     = parse_bool(val);
     else if (key_eq(key, "rgb565_opaque_alpha")) p->rgb565_opaque_alpha = parse_bool(val);
+    else if (key_eq(key, "pal8888_hq"))     p->pal8888_hq     = parse_bool(val);
+    else if (key_eq(key, "pal_bank_cache")) p->pal_bank_cache = parse_bool(val);
+    else if (key_eq(key, "ci_point_filter")) p->ci_point_filter = parse_bool(val);
+    else if (key_eq(key, "fmov64_fix"))     p->fmov64_fix     = parse_bool(val);
     else if (key_eq(key, "fps_boost"))      p->blend_fps_boost = parse_bool(val);
     else if (key_eq(key, "punch_through"))  p->punch_through  = parse_bool(val);
     else if (key_eq(key, "offset_color"))   p->offset_color   = parse_bool(val);
@@ -896,7 +949,10 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "fpu_pin"))        p->fpu_pin        = parse_bool(val);
     else if (key_eq(key, "jit_align"))      p->jit_align      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
-    else printf("[game_presets] Unknown key: '%s'\n", key);
+    // Loud on purpose: a typo'd key (is_depth_func for isp_depth_func) is
+    // silently ignored and the preset keeps its default, which looks exactly
+    // like "the fix did not work" from the outside. Make it greppable.
+    else printf("[game_presets] *** UNKNOWN KEY '%s' - IGNORED, preset keeps its default ***\n", key);
 }
 
 // Mark every field of a preset slot as "not set"
@@ -920,6 +976,10 @@ static void preset_clear(GamePreset* cur)
     cur->fmv_format = -1;
     cur->blend_mode = -1;
     cur->rgb565_opaque_alpha = -1;
+    cur->pal8888_hq = -1;
+    cur->pal_bank_cache = -1;
+    cur->ci_point_filter = -1;
+    cur->fmov64_fix = -1;
     cur->blend_fps_boost = -1;
     cur->punch_through = -1;
     cur->offset_color = -1;
@@ -986,6 +1046,10 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->fmv_format     >= 0) { g_fmv_format_preset = p->fmv_format;     printf("  fmv_format     -> %d\n", p->fmv_format);     }
     if (p->blend_mode     >= 0) { g_blend_mode_preset = p->blend_mode;     printf("  blend_mode     -> %d\n", p->blend_mode);     }
     if (p->rgb565_opaque_alpha >= 0) { g_rgb565_opaque_alpha_preset = p->rgb565_opaque_alpha; printf("  rgb565_opaque_alpha -> %d\n", p->rgb565_opaque_alpha); }
+    if (p->pal8888_hq     >= 0) { g_pal8888_hq_preset    = p->pal8888_hq;      printf("  pal8888_hq     -> %d\n", p->pal8888_hq);     }
+    if (p->pal_bank_cache >= 0) { g_pal_bank_cache_preset = p->pal_bank_cache; printf("  pal_bank_cache -> %d\n", p->pal_bank_cache); }
+    if (p->ci_point_filter >= 0) { g_ci_point_filter_preset = p->ci_point_filter; printf("  ci_point_filter -> %d\n", p->ci_point_filter); }
+    if (p->fmov64_fix     >= 0) { g_fmov64_fix_preset    = p->fmov64_fix;      printf("  fmov64_fix     -> %d\n", p->fmov64_fix);     }
     if (p->blend_fps_boost >= 0) { g_blend_fps_boost_preset = p->blend_fps_boost; printf("  blend_fps_boost -> %d\n", p->blend_fps_boost); }
     if (p->punch_through  >= 0) { g_punch_through_preset = p->punch_through;   printf("  punch_through  -> %d\n", p->punch_through);  }
     if (p->offset_color   >= 0) { g_offset_color_preset  = p->offset_color;    printf("  offset_color   -> %d\n", p->offset_color);   }

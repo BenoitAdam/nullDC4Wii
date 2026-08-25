@@ -80,6 +80,24 @@ extern "C" int get_8bpp_preset();
 #define TEXTURE_8BPP_CI8() (get_8bpp_preset() == 3)      // CI8 (supposed to be accurate)
 #define TEXTURE_8BPP_RGB565() (get_8bpp_preset() == 4) // RGB565
 
+// ARGB8888 palette entries -> GX RGB5A3 at full precision (see
+// PalARGB8888_to_RGB5A3 below). Applies whichever 4BPP/8BPP preset is active,
+// since all of them have to fold a 32-bit DC palette entry into a 16-bit GX one.
+extern "C" int get_pal8888_hq_preset();
+#define PAL8888_HQ() (get_pal8888_hq_preset() == 1)
+
+// Keep ONE decoded buffer for a CI4/CI8 texture that is drawn with several
+// palette banks, instead of re-decoding it per bank (see tex_shape_key).
+extern "C" int get_pal_bank_cache_preset();
+#define PAL_BANK_CACHE() (get_pal_bank_cache_preset() == 1)
+
+// Sample CI4/CI8 textures with GX_NEAR whatever the global graphics preset
+// says. A bilinear tap on an index-only format blends PALETTE INDICES, and
+// the midpoint of two indices is an unrelated third colour - see the filter
+// override next to GX_InitTexObjLOD().
+extern "C" int get_ci_point_filter_preset();
+#define CI_POINT_FILTER() (get_ci_point_filter_preset() == 1)
+
 // Jojo's Bizarre Adventure texture-cache fix: TLUT-reupload-skip + CACHE_FAST
 extern "C" int get_jojo_fix_preset();
 #define JOJO_FIX() (get_jojo_fix_preset() != 0)
@@ -1288,7 +1306,21 @@ static void tex_cache_init()
 static INLINE u32 tex_shape_key(PolyParam *mod, u32 pixel_fmt)
 {
   u32 key = (mod->tcw.full & ~0x1FFFFFu) ^ (mod->tsp.full & 0x3Fu);
-  if (!JOJO_FIX()) return key;
+
+  // PalSelect (TCW bits 21-26) says which palette bank to SAMPLE, not what the
+  // decoded buffer looks like: for the index-only presets (CI4/CI8) that buffer
+  // holds palette indices, byte-for-byte identical whichever bank is bound, and
+  // the bank is carried separately by the TLUT that is uploaded fresh before
+  // every draw. Leaving those bits in the key makes a texture drawn twice with
+  // two banks miss the cache and decode twice - Alone in the Dark blits its
+  // 1024x1024 8BPP background once per bank each frame, which is 2 MB of
+  // twiddled decode per frame for one unchanging image.
+  //
+  // This drop used to sit behind JOJO_FIX(), which is unrelated (that preset
+  // skips redundant GX_LoadTlut calls). PAL_BANK_CACHE() gives it its own
+  // switch; JOJO_FIX() still implies it so the old behaviour is unchanged for
+  // anyone relying on it.
+  if (!PAL_BANK_CACHE() && !JOJO_FIX()) return key;
   bool index_only = (pixel_fmt == 5) ? (TEXTURE_4BPP_CI4_FAST() || TEXTURE_4BPP_CI4())
                   : (pixel_fmt == 6) ? (TEXTURE_8BPP_CI8_FAST() || TEXTURE_8BPP_CI8())
                   : false;
@@ -1736,6 +1768,8 @@ static u32 bg_lerp_color(u32 c0, u32 c1, u32 c2, f32 w0, f32 w1, f32 w2, bool fo
   return out;
 }
 
+static void AitdFrameStart(); // [AITD] defined with the diagnostics block below
+
 // Resets internal pointers for the next frame's vertex list.
 void reset_vtx_state()
 {
@@ -1768,6 +1802,7 @@ void reset_vtx_state()
   vtx_min_Z = 131072;
   vtx_max_Z = 0;
   tex_frame_reset(); // reset per-frame texture bump arena
+  if (1) AitdFrameStart(); // [AITD] per-frame diagnostics
   g_vertex_color_fix_cached = VERTEX_COLOR_FIX();
   g_offset_color_fix_cached = OFFSET_COLOR_FIX();
   g_fog_cached              = FOG();
@@ -2948,6 +2983,63 @@ static INLINE u16 RGB5A3_Encode(u32 a, u32 r, u32 g, u32 b)
   return (u16)(((a >> 5) << 12) | ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
 }
 
+// ----------------------------------------------------------------------------
+// DC ARGB8888 palette entry -> GX RGB5A3.
+//
+// RGB5A3 is a two-encoding format: bit15=1 means "opaque RGB555" (5 bits per
+// channel, no alpha), bit15=0 means "A3 + RGB444" (3 bits alpha, 4 bits per
+// channel). The legacy conversion always emits the second form, so EVERY 8888
+// palette entry - including the fully opaque ones that are the overwhelming
+// majority - is crushed to 12-bit colour with a 17-unit quantisation step, and
+// truncated rather than rounded, which also drags the whole image darker.
+//
+// That is invisible on flat UI art but wrecks 256-colour photographic textures.
+// Those palettes are *dithered*, and the dither only reads as a smooth gradient
+// while the entries keep their exact values. Crush them to 4 bits/channel and
+// dither partners that were ~8 units apart land on different 17-unit steps (or
+// collapse together, or shift hue when the three channels round in different
+// directions), so the pattern stops averaging out and reads as coloured
+// speckle - worst in dark scenes, where 17 units is a large fraction of the
+// whole tone range. Alone in the Dark: The New Nightmare draws its pre-rendered
+// backgrounds as a 1024x1024 8BPP texture with an ARGB8888 palette, which is
+// exactly this case.
+//
+// PAL8888_HQ() sends opaque entries through the 555 encoding instead: 5 bits
+// per channel, 8-unit steps, no hue shift. The alpha threshold (0xE0) is the
+// one RGB5A3_Encode already uses, and it is deliberately alpha-neutral - the
+// legacy path maps every a >= 0xE0 to A3=7, which GX expands to 255, the same
+// alpha the 555 encoding implies. Entries below the threshold still need the
+// A3 form to carry their alpha, and only gain rounding.
+//
+// Both encodings round to the channel value whose GX *reconstruction* is
+// nearest, not by truncating and not by (v + half) >> shift. GX expands a
+// 5-bit channel as (n<<3)|(n>>2) and a 4-bit one as n*17, so the steps are
+// 8.226 and 17 units wide - a plain shift is tuned for steps of 8 and 16 and
+// picks the wrong level for 136 of the 256 possible inputs (it is actually
+// worse than truncation at 4 bits). The multiply-shift constants below are
+// exact: they match nearest-reconstruction for all 256 inputs, land in range
+// without a clamp, and cost one multiply, so the per-pixel RGB565 presets can
+// call this once per texel without a divide.
+// ----------------------------------------------------------------------------
+static INLINE u32 Round8to5(u32 v) { return (v * 993u + 4096u) >> 13; } // 0..31
+static INLINE u32 Round8to4(u32 v) { return (v * 482u + 4096u) >> 13; } // 0..15
+
+static INLINE u16 PalARGB8888_to_RGB5A3(u32 pe)
+{
+  u32 a = (pe >> 24) & 0xFF, r = (pe >> 16) & 0xFF,
+      g = (pe >>  8) & 0xFF, b =  pe        & 0xFF;
+
+  if (!PAL8888_HQ()) // legacy: always A3+RGB444, truncated
+    return (u16)(((a >> 5) << 12) | ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+
+  if (a >= 0xE0) // effectively opaque -> RGB555, 5 bits/channel
+    return (u16)(0x8000 | (Round8to5(r) << 10) | (Round8to5(g) << 5) | Round8to5(b));
+
+  // Translucent: A3+RGB444 is the only encoding that carries alpha.
+  return (u16)(((a >> 5) << 12)
+             | (Round8to4(r) << 8) | (Round8to4(g) << 4) | Round8to4(b));
+}
+
 // Box-filters `base` (square, GX-tiled 16bpp, width w) into successive mip
 // levels written directly after it. Returns the number of levels generated
 // (0 for w <= 4). Caller must have allocated MipChainExtraBytes16(w) bytes
@@ -3019,8 +3111,844 @@ static inline void SeamFixStashTexSize(const GXTexObj *tex)
   g_seam_half_v = h ? 0.5f / (f32)h : 0.0f;
 }
 
+
+// ============================================================================
+// [AITD] TEMPORARY DIAGNOSTICS - Alone in the Dark background corruption hunt.
+//
+// Every block below is wrapped in `if (1)`. Flip one to `if (0)` to silence
+// just that block, or delete this whole section once it has done its job.
+// Output goes to /ndclog.txt (printf is freopened to SD at init) and every
+// block fflushes, so nothing is lost if the game hangs or is powered off.
+//
+// Volume is bounded on purpose: each distinct texture is reported ONCE, the
+// decoder self-check runs ONCE, overlaps are capped, and frame summaries only
+// print on a handful of frames. Writing to SD is slow enough to change the
+// timing being measured if it runs every frame.
+// ============================================================================
+#define AITD_MAX_TEX      48   // distinct textures reported, then it stops
+#define AITD_MAX_OVERLAP   8   // cache-slot overlaps reported, then it stops
+#define AITD_MAX_RANGES  256   // decoded extents tracked per frame
+
+static u32 g_aitd_frame = 0;
+
+// Per-frame counters, cleared by AitdFrameStart().
+static u32 g_aitd_decodes  = 0;  // textures actually decoded this frame
+static u32 g_aitd_hits     = 0;  // textured strips served from a cache
+static u32 g_aitd_striptex = 0;  // textured strips submitted this frame
+// Blend census over textured strips: [SrcInstr][DstInstr], PVR TSP encoding.
+static u16 g_aitd_blend[8][8];
+
+// Distinct textures already reported, so each prints exactly once.
+static u32 g_aitd_seen_key[AITD_MAX_TEX];
+static u32 g_aitd_seen_addr[AITD_MAX_TEX];
+static u32 g_aitd_seen_n = 0;
+
+// Decoded-buffer extents claimed this frame, for the slot-overlap test.
+static u32 g_aitd_rng_lo[AITD_MAX_RANGES], g_aitd_rng_hi[AITD_MAX_RANGES];
+static u32 g_aitd_rng_addr[AITD_MAX_RANGES];
+static u32 g_aitd_rng_n = 0;
+static u32 g_aitd_overlaps = 0;
+
+static bool g_aitd_selfcheck_done = false;
+
+#define AITD_MAX_COVER 96      // strips dumped per coverage frame, then it stops
+static u32 g_aitd_cover_n = 0;
+
+// Multi-bank draw tracking: addr -> the distinct PalSelect values it is drawn
+// with. Reported the moment a second one shows up.
+#define AITD_MAX_BANKTRK 24
+#define AITD_BANKS_PER    4
+static u32 g_aitd_bt_addr[AITD_MAX_BANKTRK];
+static u8  g_aitd_bt_sel[AITD_MAX_BANKTRK][AITD_BANKS_PER];
+static u8  g_aitd_bt_cnt[AITD_MAX_BANKTRK];
+static u32 g_aitd_bt_n = 0;
+
+static const char *AitdFmtName(u32 gxfmt)
+{
+  switch (gxfmt)
+  {
+    case GX_TF_I4:     return "I4";
+    case GX_TF_I8:     return "I8";
+    case GX_TF_IA4:    return "IA4";
+    case GX_TF_IA8:    return "IA8";
+    case GX_TF_RGB565: return "RGB565";
+    case GX_TF_RGB5A3: return "RGB5A3";
+    case GX_TF_RGBA8:  return "RGBA8";
+    case GX_TF_CI4:    return "CI4";
+    case GX_TF_CI8:    return "CI8";
+    case GX_TF_CMPR:   return "CMPR";
+    default:           return "?";
+  }
+}
+
+static const char *AitdPvrFmtName(u32 f)
+{
+  switch (f)
+  {
+    case 0:  return "ARGB1555";
+    case 1:  return "RGB565";
+    case 2:  return "ARGB4444";
+    case 3:  return "YUV422";
+    case 4:  return "BUMPMAP";
+    case 5:  return "PAL4BPP";
+    case 6:  return "PAL8BPP";
+    default: return "RESERVED";
+  }
+}
+
+static const char *AitdDepthName(u32 d)
+{
+  switch (d)
+  {
+    case 0:  return "Never";
+    case 1:  return "Less";
+    case 2:  return "Equal";
+    case 3:  return "LessEqual";
+    case 4:  return "Greater";
+    case 5:  return "NotEqual";
+    case 6:  return "GreaterEqual";
+    default: return "Always";
+  }
+}
+
+static const char *AitdBlendName(u32 b)
+{
+  switch (b)
+  {
+    case 0:  return "Zero";
+    case 1:  return "One";
+    case 2:  return "OtherColor";
+    case 3:  return "InvOtherColor";
+    case 4:  return "SrcAlpha";
+    case 5:  return "InvSrcAlpha";
+    case 6:  return "DstAlpha";
+    default: return "InvDstAlpha";
+  }
+}
+
+static const char *AitdPalFmtName(u32 f)
+{
+  switch (f)
+  {
+    case 0:  return "ARGB1555";
+    case 1:  return "RGB565";
+    case 2:  return "ARGB4444";
+    default: return "ARGB8888";
+  }
+}
+
+// Bytes the decoder actually WROTE for this format (the allocation can be
+// larger). This is the extent that matters for the overlap test - it is what
+// one texture would stomp of another.
+static u32 AitdWrittenBytes(u32 gxfmt, u32 w, u32 h)
+{
+  if (gxfmt == GX_TF_CI4 || gxfmt == GX_TF_I4 || gxfmt == GX_TF_CMPR) return w * h / 2;
+  if (gxfmt == GX_TF_CI8 || gxfmt == GX_TF_I8)                        return w * h;
+  if (gxfmt == GX_TF_RGBA8)                                           return w * h * 4;
+  return w * h * 2;
+}
+
+// Records that `tex_addr` was drawn with palette selector `sel`, and prints a
+// report the first time a given texture is seen with a SECOND distinct
+// selector. Two draws of one index texture through two palettes is the shape
+// of a background-plus-lighting blit, and whether the two palettes actually
+// differ decides whether any per-pixel fight between those passes would be
+// visible at all.
+static void AitdTrackBank(u32 tex_addr, u32 pixel_fmt, u32 sel)
+{
+  if (pixel_fmt != 5 && pixel_fmt != 6) return;
+
+  u32 i = 0;
+  for (; i < g_aitd_bt_n; i++)
+    if (g_aitd_bt_addr[i] == tex_addr) break;
+  if (i == g_aitd_bt_n)
+  {
+    if (g_aitd_bt_n >= AITD_MAX_BANKTRK) return;
+    g_aitd_bt_addr[g_aitd_bt_n] = tex_addr;
+    g_aitd_bt_cnt[g_aitd_bt_n]  = 0;
+    g_aitd_bt_n++;
+  }
+
+  for (u32 k = 0; k < g_aitd_bt_cnt[i]; k++)
+    if (g_aitd_bt_sel[i][k] == (u8)sel) return; // already seen this selector
+  if (g_aitd_bt_cnt[i] >= AITD_BANKS_PER) return;
+  g_aitd_bt_sel[i][g_aitd_bt_cnt[i]++] = (u8)sel;
+
+  if (g_aitd_bt_cnt[i] < 2) return; // first selector for this texture: nothing to say
+
+  u32 base_a = (pixel_fmt == 6) ? ((u32)g_aitd_bt_sel[i][0] >> 4) << 8
+                                : (u32)g_aitd_bt_sel[i][0] << 4;
+  u32 base_b = (pixel_fmt == 6) ? (sel >> 4) << 8 : sel << 4;
+  u32 n      = (pixel_fmt == 6) ? 256u : 16u;
+  u32 *pa    = PALETTE_RAM + base_a;
+  u32 *pb    = PALETTE_RAM + base_b;
+
+  u32 ndiff = 0, maxd = 0;
+  for (u32 e = 0; e < n; e++)
+  {
+    if (pa[e] == pb[e]) continue;
+    ndiff++;
+    s32 dr = (s32)((pa[e] >> 16) & 0xFF) - (s32)((pb[e] >> 16) & 0xFF);
+    s32 dg = (s32)((pa[e] >>  8) & 0xFF) - (s32)((pb[e] >>  8) & 0xFF);
+    s32 db = (s32)( pa[e]        & 0xFF) - (s32)( pb[e]        & 0xFF);
+    s32 da = (s32)((pa[e] >> 24) & 0xFF) - (s32)((pb[e] >> 24) & 0xFF);
+    if (dr < 0) dr = -dr; if (dg < 0) dg = -dg;
+    if (db < 0) db = -db; if (da < 0) da = -da;
+    s32 d = dr > dg ? dr : dg; if (db > d) d = db; if (da > d) d = da;
+    if ((u32)d > maxd) maxd = (u32)d;
+  }
+
+  printf("[AITD] *** MULTI-BANK DRAW *** tex@%08X f=%u drawn with selectors "
+         "%02X and %02X (bases %u/%u)\n",
+         tex_addr, pixel_fmt, (u32)g_aitd_bt_sel[i][0], sel, base_a, base_b);
+  printf("[AITD]   palettes differ in %u/%u entries, max channel delta=%u%s\n",
+         ndiff, n, maxd,
+         ndiff ? "" : "  <- IDENTICAL: the two passes paint the same colours");
+  printf("[AITD]   sel%02X mid: %08X %08X %08X %08X | sel%02X mid: %08X %08X %08X %08X\n",
+         (u32)g_aitd_bt_sel[i][0], pa[n / 2 + 0], pa[n / 2 + 1], pa[n / 2 + 2], pa[n / 2 + 3],
+         sel,                      pb[n / 2 + 0], pb[n / 2 + 1], pb[n / 2 + 2], pb[n / 2 + 3]);
+  fflush(stdout);
+}
+
+// ---------------------------------------------------------------------------
+// Decoder self-check. Re-derives the texture through the most literal reading
+// of the format possible - twop() per pixel, no cached axis tables, no inlined
+// tile math - and compares that against what the shipped decoder just wrote
+// into the GX-tiled buffer.
+//
+// If the two agree, the untwiddle and the GX tile layout are provably NOT the
+// problem and the corruption is downstream (sampling, TLUT, cache aliasing).
+// If they disagree, it is right here. Samples every 4th texel on each axis -
+// far more than enough to catch any scrambling - and runs exactly once.
+//
+// Source offsets below 4 are skipped: the cache sentinel (0xDEADBEEF) is
+// written into the first VRAM word of every non-VQ texture, so those bytes
+// legitimately differ from whatever the decoder read on an earlier frame.
+// ---------------------------------------------------------------------------
+static void AitdSelfCheckCI8(const u8 *src, const u8 *tiled, u32 w, u32 h)
+{
+  u32 checked = 0, bad = 0;
+  u32 first_x = 0, first_y = 0, first_ref = 0, first_got = 0;
+  u32 tiles_x = w / 8;
+
+  for (u32 y = 0; y < h; y += 4)
+  {
+    for (u32 x = 0; x < w; x += 4)
+    {
+      u32 soff = twop(x, y, w, h) ^ 3;                      // literal, per-pixel
+      if (soff < 4) continue;                               // sentinel word
+      u32 ref = src[soff];
+      u32 off = (y / 4) * tiles_x * 32 + (y % 4) * 8
+              + (x / 8) * 32 + (x % 8);                     // GX CI8 8x4 tile
+      u32 got = tiled[off];
+      checked++;
+      if (ref != got)
+      {
+        if (!bad) { first_x = x; first_y = y; first_ref = ref; first_got = got; }
+        bad++;
+      }
+    }
+  }
+
+  printf("[AITD] SELFCHECK CI8 %ux%u: checked=%u mismatch=%u -> %s\n",
+         w, h, checked, bad, bad ? "*** DECODE IS WRONG ***" : "decode OK");
+  if (bad)
+    printf("[AITD]   first mismatch at (%u,%u): reference idx=%u, buffer idx=%u\n",
+           first_x, first_y, first_ref, first_got);
+  fflush(stdout);
+}
+
+
+// ---------------------------------------------------------------------------
+// [AITD] Decoded-texture dump.
+//
+// Every theory so far has been about the texture pipeline, and each one died:
+// the untwiddle is verified byte-correct against a literal reference decode,
+// the palette is a normal all-opaque image palette, and switching 8bpp from
+// ci8_fast (index format + TLUT) to rgb565 (palette baked into real colours,
+// different decode loop, no TLUT, filtering then mathematically correct)
+// changes nothing. Those two paths share only the SOURCE DATA in params.vram
+// and everything DOWNSTREAM of the texture.
+//
+// So stop guessing and write the decoded image to the SD card. Open it on a PC:
+//   * clean forest scene  -> the texture pipeline is fine end to end, and the
+//                            corruption is downstream (sampling, UVs, TEV,
+//                            blending, EFB/XFB copy).
+//   * speckled            -> the corruption is upstream, in what the game
+//                            uploaded into emulated VRAM, and the whole
+//                            renderer is innocent.
+//
+// One 24-bit BMP, written once, ~3 MB for 1024x1024. Bottom-up BGR rows, and
+// every header field emitted little-endian by hand because this is a
+// big-endian host.
+// ---------------------------------------------------------------------------
+// Bump this string whenever this block changes. It prints once, at the first
+// texture report, so a log immediately says which diagnostics the running
+// build actually contains - a missing feature otherwise looks exactly like a
+// feature that ran and found nothing.
+#define AITD_BUILD_TAG "selfcheck+cover+vtx+bmpdump-v6-allxor"
+
+// [AITD] VRAM write census counters (dc/mem/_vmem.cpp, dc/pvr/pvr_if.cpp).
+extern u32 g_aitd_vw_blk[4], g_aitd_vw_blk_lo, g_aitd_vw_blk_hi;
+extern u32 g_aitd_vw_a32, g_aitd_vw_a16, g_aitd_vw_ta, g_aitd_vw_sq;
+extern u32 g_aitd_vw_ta_lo, g_aitd_vw_ta_hi;
+extern u32 g_aitd_vw_sq_lo, g_aitd_vw_sq_hi;
+extern u32 g_aitd_vw_a32_lo, g_aitd_vw_a32_hi;
+
+#define AITD_MAX_DUMPS 4
+static u32 g_aitd_dump_n = 0;
+static u32 g_aitd_dump_addr[AITD_MAX_DUMPS]; // one file per distinct texture
+
+static void AitdPutLE16(FILE *f, u32 v)
+{
+  fputc((int)( v        & 0xFF), f);
+  fputc((int)((v >>  8) & 0xFF), f);
+}
+
+static void AitdPutLE32(FILE *f, u32 v)
+{
+  fputc((int)( v        & 0xFF), f);
+  fputc((int)((v >>  8) & 0xFF), f);
+  fputc((int)((v >> 16) & 0xFF), f);
+  fputc((int)((v >> 24) & 0xFF), f);
+}
+
+// One decoded texel -> 8-bit R,G,B, reading the GX-tiled buffer the same way
+// the GP will.
+static void AitdTexelRGB(const u8 *buf, u32 gxfmt, u32 w, u32 x, u32 y,
+                         const u32 *pal, u32 pal_fmt, u8 *r, u8 *g, u8 *b)
+{
+  if (gxfmt == GX_TF_CI8)
+  {
+    u32 tiles_x = w / 8;
+    u32 off = (y / 4) * tiles_x * 32 + (y % 4) * 8 + (x / 8) * 32 + (x % 8);
+    u32 pe  = pal[buf[off]];
+    switch (pal_fmt)
+    {
+      case 1: { u16 p = (u16)(pe & 0xFFFF);                          // RGB565
+                *r = (u8)(((p >> 11) & 31) << 3);
+                *g = (u8)(((p >>  5) & 63) << 2);
+                *b = (u8)(( p        & 31) << 3); break; }
+      case 2: { u16 p = (u16)(pe & 0xFFFF);                          // ARGB4444
+                *r = (u8)(((p >> 8) & 15) * 17);
+                *g = (u8)(((p >> 4) & 15) * 17);
+                *b = (u8)(( p       & 15) * 17); break; }
+      case 3: { *r = (u8)((pe >> 16) & 0xFF);                        // ARGB8888
+                *g = (u8)((pe >>  8) & 0xFF);
+                *b = (u8)( pe        & 0xFF); break; }
+      default:{ u16 p = (u16)(pe & 0xFFFF);                          // ARGB1555
+                *r = (u8)(((p >> 10) & 31) << 3);
+                *g = (u8)(((p >>  5) & 31) << 3);
+                *b = (u8)(( p        & 31) << 3); break; }
+    }
+    return;
+  }
+
+  // 16bpp GX-tiled (4x4 tiles) - RGB565 or RGB5A3.
+  const u16 *p16 = (const u16 *)buf;
+  u16 p = p16[GX_TexOffs(x, y, w)];
+  if (gxfmt == GX_TF_RGB565)
+  {
+    *r = (u8)(((p >> 11) & 31) << 3);
+    *g = (u8)(((p >>  5) & 63) << 2);
+    *b = (u8)(( p        & 31) << 3);
+  }
+  else
+  {
+    u32 a, rr, gg, bb;
+    RGB5A3_Decode(p, &a, &rr, &gg, &bb);
+    *r = (u8)rr; *g = (u8)gg; *b = (u8)bb;
+  }
+}
+
+static void AitdDumpTextureBMP(PolyParam *mod, const u8 *buf, u32 gxfmt,
+                               u32 w, u32 h)
+{
+  char path[32];
+  sprintf(path, "/aitd_tex%u.bmp", g_aitd_dump_n);
+  FILE *f = fopen(path, "wb");
+  if (!f)
+  {
+    printf("[AITD] DUMP failed: cannot open %s\n", path);
+    fflush(stdout);
+    return;
+  }
+
+  u32 row_bytes = w * 3;                       // 3 bytes/px
+  u32 pad       = (4 - (row_bytes & 3)) & 3;   // BMP rows are 4-byte aligned
+  u32 img_bytes = (row_bytes + pad) * h;
+
+  fputc('B', f); fputc('M', f);
+  AitdPutLE32(f, 54 + img_bytes);  // file size
+  AitdPutLE32(f, 0);               // reserved
+  AitdPutLE32(f, 54);              // pixel data offset
+  AitdPutLE32(f, 40);              // DIB header size
+  AitdPutLE32(f, w);
+  AitdPutLE32(f, h);
+  AitdPutLE16(f, 1);               // planes
+  AitdPutLE16(f, 24);              // bits per pixel
+  AitdPutLE32(f, 0);               // BI_RGB, no compression
+  AitdPutLE32(f, img_bytes);
+  AitdPutLE32(f, 2835);            // 72 DPI
+  AitdPutLE32(f, 2835);
+  AitdPutLE32(f, 0);
+  AitdPutLE32(f, 0);
+
+  u32  pixel_fmt = mod->tcw.NO_PAL.PixelFmt;
+  u32  pal_fmt   = PAL_RAM_CTRL & 3;
+  u32  pal_base  = (pixel_fmt == 5) ? ((u32)mod->tcw.PAL.PalSelect << 4)
+                                    : (((u32)mod->tcw.PAL.PalSelect >> 4) << 8);
+  const u32 *pal = PALETTE_RAM + pal_base;
+
+  static u8 row[1024 * 3 + 4];
+  for (u32 yy = 0; yy < h; yy++)
+  {
+    u32 y = h - 1 - yy;              // BMP stores rows bottom-up
+    u8 *o = row;
+    for (u32 x = 0; x < w; x++)
+    {
+      u8 r, g, b;
+      AitdTexelRGB(buf, gxfmt, w, x, y, pal, pal_fmt, &r, &g, &b);
+      *o++ = b; *o++ = g; *o++ = r;  // BMP is BGR
+    }
+    for (u32 i = 0; i < pad; i++) *o++ = 0;
+    fwrite(row, 1, row_bytes + pad, f);
+  }
+
+  fclose(f);
+  printf("[AITD] DUMP wrote %s : %ux%u 24bpp GX=%s tex@%08X palsel=%02X "
+         "(%u bytes)\n",
+         path, w, h, AitdFmtName(gxfmt),
+         (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK,
+         (u32)mod->tcw.PAL.PalSelect, 54 + img_bytes);
+  printf("[AITD]   open it on a PC. Clean image -> the texture pipeline is fine "
+         "and the fault is downstream. Speckled -> emulated VRAM already holds "
+         "the corruption and the renderer is innocent.\n");
+  fflush(stdout);
+}
+
+
+// ---------------------------------------------------------------------------
+// [AITD] Byte-order variant dump - the test that proves or kills the [FMOV64]
+// theory without touching the emulator's memory paths at all.
+//
+// The decoders read a twiddled 8BPP texel as `src[morton_offset ^ 3]`. The ^3
+// is the 32-bit big-endian correction: the DC byte at offset N lives at host
+// index N^3, because each aligned 4-byte group is stored as one host-endian
+// word.
+//
+// If a game uploaded this texture with 64-bit fmov pairs, and 64-bit block
+// accesses transpose their two 32-bit halves on a big-endian host (see the
+// [FMOV64] note in dc/mem/_vmem.cpp), then every 8-byte group in VRAM has its
+// two 4-byte halves the wrong way round. Undoing that is exactly one extra XOR
+// of bit 2 on the byte offset - i.e. reading `src[morton_offset ^ 7]` instead
+// of `^ 3`.
+//
+// So: dump the same texture decoded with ^7. No emulator change, no risk, and
+// the answer is a picture:
+//   * ^7 image CLEAN   -> proven. 64-bit writes are transposing halves, and the
+//                         fix belongs in whichever paths do 64-bit stores
+//                         (_vmem block path, and the JIT's own codegen).
+//   * ^7 image WORSE   -> theory dead, and the speckle is in the data the game
+//                         actually wrote.
+//
+// CI8 only: it re-decodes straight from VRAM, so it needs the index format.
+// ---------------------------------------------------------------------------
+static void AitdDumpVariantBMP(PolyParam *mod, u32 w, u32 h, u32 src_addr,
+                               u32 xor_mask)
+{
+  char path[40];
+  sprintf(path, "/aitd_tex%u_x%u.bmp", g_aitd_dump_n, xor_mask);
+  FILE *f = fopen(path, "wb");
+  if (!f)
+  {
+    printf("[AITD] VARIANT dump failed: cannot open %s\n", path);
+    fflush(stdout);
+    return;
+  }
+
+  u32 row_bytes = w * 3;
+  u32 pad       = (4 - (row_bytes & 3)) & 3;
+  u32 img_bytes = (row_bytes + pad) * h;
+
+  fputc('B', f); fputc('M', f);
+  AitdPutLE32(f, 54 + img_bytes);
+  AitdPutLE32(f, 0);
+  AitdPutLE32(f, 54);
+  AitdPutLE32(f, 40);
+  AitdPutLE32(f, w);
+  AitdPutLE32(f, h);
+  AitdPutLE16(f, 1);
+  AitdPutLE16(f, 24);
+  AitdPutLE32(f, 0);
+  AitdPutLE32(f, img_bytes);
+  AitdPutLE32(f, 2835);
+  AitdPutLE32(f, 2835);
+  AitdPutLE32(f, 0);
+  AitdPutLE32(f, 0);
+
+  const u8 *src     = (const u8 *)&params.vram[src_addr];
+  u32       pal_fmt = PAL_RAM_CTRL & 3;
+  u32       pal_base = ((u32)mod->tcw.PAL.PalSelect >> 4) << 8;
+  const u32 *pal    = PALETTE_RAM + pal_base;
+
+  const u32 *table_x, *table_y;
+  get_twiddle_axis_tables(w, h, &table_x, &table_y);
+
+  static u8 row[1024 * 3 + 4];
+  for (u32 yy = 0; yy < h; yy++)
+  {
+    u32 y  = h - 1 - yy;          // BMP rows are bottom-up
+    u32 ty = table_y[y];
+    u8 *o  = row;
+    for (u32 x = 0; x < w; x++)
+    {
+      u8  idx = src[(ty | table_x[x]) ^ xor_mask];
+      u32 pe  = pal[idx];
+      u8  r, g, b;
+      switch (pal_fmt)
+      {
+        case 1: { u16 p = (u16)(pe & 0xFFFF);
+                  r = (u8)(((p >> 11) & 31) << 3);
+                  g = (u8)(((p >>  5) & 63) << 2);
+                  b = (u8)(( p        & 31) << 3); break; }
+        case 2: { u16 p = (u16)(pe & 0xFFFF);
+                  r = (u8)(((p >> 8) & 15) * 17);
+                  g = (u8)(((p >> 4) & 15) * 17);
+                  b = (u8)(( p       & 15) * 17); break; }
+        case 3: { r = (u8)((pe >> 16) & 0xFF);
+                  g = (u8)((pe >>  8) & 0xFF);
+                  b = (u8)( pe        & 0xFF); break; }
+        default:{ u16 p = (u16)(pe & 0xFFFF);
+                  r = (u8)(((p >> 10) & 31) << 3);
+                  g = (u8)(((p >>  5) & 31) << 3);
+                  b = (u8)(( p        & 31) << 3); break; }
+      }
+      *o++ = b; *o++ = g; *o++ = r;   // BMP is BGR
+    }
+    for (u32 i = 0; i < pad; i++) *o++ = 0;
+    fwrite(row, 1, row_bytes + pad, f);
+  }
+
+  fclose(f);
+  printf("[AITD] VARIANT wrote %s : %ux%u decoded with src[offset ^ %u]\n",
+         path, w, h, xor_mask);
+  fflush(stdout);
+}
+
+// ---------------------------------------------------------------------------
+// Per-decode report. Called once the texture has been decoded and the GXTexObj
+// built, so every value logged is one the GP will actually use.
+// ---------------------------------------------------------------------------
+static void AitdReportTexture(PolyParam *mod, u32 orig_addr, u32 read_addr,
+                              u32 w, u32 h, u32 gxfmt, const void *dst,
+                              u32 alloc_bytes, bool has_pal, GXTexObj *tex)
+{
+  u32 pixel_fmt = mod->tcw.NO_PAL.PixelFmt;
+  u32 written   = AitdWrittenBytes(gxfmt, w, h);
+
+  if (1)
+  {
+    static bool banner = false;
+    if (!banner)
+    {
+      banner = true;
+      printf("[AITD] build tag: %s\n", AITD_BUILD_TAG);
+      printf("[AITD]   if a diagnostic you expect is missing from this log, "
+             "check this tag before believing the result.\n");
+      fflush(stdout);
+    }
+  }
+
+  // ---- slot-overlap test -------------------------------------------------
+  // The corruption signature worth ruling out first. CACHE_VERY_FAST puts a
+  // decoded texture at vram_buffer[tex_addr*2], which only stays collision-free
+  // while every texture decodes to at most 2 bytes per byte of DC VRAM it
+  // occupies. A 1024x1024 8BPP texture is 1 MB of DC VRAM, so ANY other texture
+  // living in the 1 MB of VRAM after it lands its slot INSIDE this one's
+  // decoded output, and the two then overwrite each other every single frame.
+  if (1)
+  {
+    u32 lo = (u32)dst, hi = lo + written;
+    for (u32 i = 0; i < g_aitd_rng_n; i++)
+    {
+      if (lo < g_aitd_rng_hi[i] && g_aitd_rng_lo[i] < hi)
+      {
+        if (g_aitd_overlaps < AITD_MAX_OVERLAP)
+        {
+          printf("[AITD] *** SLOT OVERLAP *** frame=%u  tex@%08X [%08X,%08X) "
+                 "collides with tex@%08X [%08X,%08X)\n",
+                 g_aitd_frame, orig_addr, lo, hi,
+                 g_aitd_rng_addr[i], g_aitd_rng_lo[i], g_aitd_rng_hi[i]);
+          fflush(stdout);
+        }
+        g_aitd_overlaps++;
+        break;
+      }
+    }
+    if (g_aitd_rng_n < AITD_MAX_RANGES)
+    {
+      g_aitd_rng_lo[g_aitd_rng_n]   = lo;
+      g_aitd_rng_hi[g_aitd_rng_n]   = hi;
+      g_aitd_rng_addr[g_aitd_rng_n] = orig_addr;
+      g_aitd_rng_n++;
+    }
+  }
+
+  // ---- one line per distinct texture -------------------------------------
+  if (1)
+  {
+    u32 key = tex_shape_key(mod, pixel_fmt);
+    for (u32 i = 0; i < g_aitd_seen_n; i++)
+      if (g_aitd_seen_key[i] == key && g_aitd_seen_addr[i] == orig_addr)
+        return; // already reported
+    if (g_aitd_seen_n >= AITD_MAX_TEX)
+      return;
+    g_aitd_seen_key[g_aitd_seen_n]  = key;
+    g_aitd_seen_addr[g_aitd_seen_n] = orig_addr;
+    g_aitd_seen_n++;
+
+    printf("[AITD] TEX#%02u f=%u(%s) %ux%u vq=%u mip=%u addr=%08X read=%08X "
+           "tcw=%08X tsp=%08X isp=%08X\n",
+           g_aitd_seen_n - 1, pixel_fmt, AitdPvrFmtName(pixel_fmt), w, h,
+           (u32)mod->tcw.NO_PAL.VQ_Comp, (u32)mod->tcw.NO_PAL.MipMapped,
+           orig_addr, read_addr, mod->tcw.full, mod->tsp.full, mod->isp.full);
+    printf("[AITD]      -> GX=%s dst=%08X wrote=%u alloc=%u tlut=%u | presets "
+           "8bpp=%d 4bpp=%d cache=%d gfx=%d pal8888hq=%d mip=%d\n",
+           AitdFmtName(gxfmt), (u32)dst, written, alloc_bytes, has_pal ? 1u : 0u,
+           get_8bpp_preset(), get_4bpp_preset(), get_texture_cache_preset(),
+           get_graphism_preset(), get_pal8888_hq_preset(), get_mipmap_preset());
+
+    // What GX actually accepted, read back off the built texture object - the
+    // check that the requested shape survived GX_InitTexObj/GX_InitTexObjCI.
+    printf("[AITD]      GXTexObj readback: %ux%u fmt=%u(%s)\n",
+           (u32)GX_GetTexObjWidth(tex), (u32)GX_GetTexObjHeight(tex),
+           (u32)GX_GetTexObjFmt(tex), AitdFmtName(GX_GetTexObjFmt(tex)));
+
+    // [AITD] Who has written VRAM so far, and over what address range? The
+    // backdrop lives at 004F7880..005F7880, so whichever path's range covers
+    // that is the one that uploaded it - and that path's layout convention is
+    // where the speckle comes from. The four paths do NOT agree with each
+    // other: the 0x04 block window is linear, while the 0x05 handlers, the TA
+    // direct-texture path and the store queue all go through
+    // vramlock_ConvOffset32toOffset64.
+    printf("[AITD]      VRAM writes so far: blk8=%u blk16=%u blk32=%u blk64=%u "
+           "[%08X..%08X] | a32=%u [%08X..%08X] a16=%u | TA=%u [%08X..%08X] "
+           "SQ=%u [%08X..%08X]\n",
+           g_aitd_vw_blk[0], g_aitd_vw_blk[1], g_aitd_vw_blk[2], g_aitd_vw_blk[3],
+           g_aitd_vw_blk_lo, g_aitd_vw_blk_hi,
+           g_aitd_vw_a32, g_aitd_vw_a32_lo, g_aitd_vw_a32_hi, g_aitd_vw_a16,
+           g_aitd_vw_ta, g_aitd_vw_ta_lo, g_aitd_vw_ta_hi,
+           g_aitd_vw_sq, g_aitd_vw_sq_lo, g_aitd_vw_sq_hi);
+
+    // What the polygon asked the PVR for.
+    printf("[AITD]      ISP depth=%s(%u) zwrite=%s cull=%u | TSP shad=%u "
+           "src=%s dst=%s usealpha=%u ignoretexa=%u filt=%u\n",
+           AitdDepthName(mod->isp.DepthMode), (u32)mod->isp.DepthMode,
+           mod->isp.ZWriteDis ? "OFF" : "ON", (u32)mod->isp.CullMode,
+           (u32)mod->tsp.ShadInstr,
+           AitdBlendName(mod->tsp.SrcInstr), AitdBlendName(mod->tsp.DstInstr),
+           (u32)mod->tsp.UseAlpha, (u32)mod->tsp.IgnoreTexA,
+           (u32)mod->tsp.FilterMode);
+
+    // What the renderer will actually hand GX for it. With ppz_write off AND
+    // isp_depth_func 0 the per-polygon Z block in the draw loop is skipped
+    // entirely, so every polygon keeps the frame-wide
+    // GX_SetZMode(GX_TRUE, GX_GEQUAL, GX_TRUE) - GEQUAL with Z-write ON -
+    // no matter what it asked for. Two full-screen background passes both
+    // forced to write Z at the same depth Z-fight per pixel.
+    if (1)
+    {
+      bool ppz  = PER_POLYGON_Z_WRITE();
+      int  idf  = ISP_DEPTH_FUNC();
+      bool zw   = (ppz || idf) ? (ppz ? !mod->isp.ZWriteDis : true) : true;
+      u32  func = ((ppz || idf) && idf == 2) ? (u32)mod->isp.DepthMode : 6 /*GEQUAL*/;
+      bool mismatch = (func != (u32)mod->isp.DepthMode)
+                   || (zw == (bool)mod->isp.ZWriteDis);
+      printf("[AITD]      Z APPLIED: ppz_write=%u isp_depth_func=%d -> GX func=%s "
+             "zwrite=%s%s\n",
+             ppz ? 1u : 0u, idf, AitdDepthName(func), zw ? "ON" : "OFF",
+             mismatch ? "   *** MISMATCH vs what the poly asked for ***" : "");
+    }
+
+    if (pixel_fmt == 5 || pixel_fmt == 6)
+    {
+      u32  pal_fmt  = PAL_RAM_CTRL & 3;
+      u32  pal_sel  = mod->tcw.PAL.PalSelect;
+      u32  pal_base = (pixel_fmt == 5) ? (pal_sel << 4) : ((pal_sel >> 4) << 8);
+      u32 *pal      = PALETTE_RAM + pal_base;
+      printf("[AITD]      PAL fmt=%u(%s) sel=%02X base=%u | PAL_RAM_CTRL=%08X |"
+             " entries %08X %08X %08X %08X %08X %08X %08X %08X\n",
+             pal_fmt, AitdPalFmtName(pal_fmt), pal_sel, pal_base,
+             (u32)PAL_RAM_CTRL,
+             pal[0], pal[1], pal[2], pal[3], pal[4], pal[5], pal[6], pal[7]);
+
+      // All four 8BPP banks against bank 0. The earlier version compared the
+      // SELECTED bank against bank 0, which is a self-comparison whenever bank
+      // 0 is the selected one - it printed "0/256 differ" and said nothing.
+      // Palette RAM is 1024 u32 entries = 4 banks of 256, so all four are
+      // always readable here regardless of which one this draw uses.
+      if (pixel_fmt == 6)
+      {
+        for (u32 b = 0; b < 4; b++)
+        {
+          u32 *pb = PALETTE_RAM + b * 256;
+          u32 *b0 = PALETTE_RAM;
+          u32  ndiff = 0, maxd = 0, amin = 255, amax = 0;
+          for (u32 i = 0; i < 256; i++)
+          {
+            u32 a = (pb[i] >> 24) & 0xFF;
+            if (a < amin) amin = a;
+            if (a > amax) amax = a;
+            if (pb[i] == b0[i]) continue;
+            ndiff++;
+            s32 dr = (s32)((pb[i] >> 16) & 0xFF) - (s32)((b0[i] >> 16) & 0xFF);
+            s32 dg = (s32)((pb[i] >>  8) & 0xFF) - (s32)((b0[i] >>  8) & 0xFF);
+            s32 db = (s32)( pb[i]        & 0xFF) - (s32)( b0[i]        & 0xFF);
+            if (dr < 0) dr = -dr; if (dg < 0) dg = -dg; if (db < 0) db = -db;
+            s32 d = dr > dg ? dr : dg; if (db > d) d = db;
+            if ((u32)d > maxd) maxd = (u32)d;
+          }
+          printf("[AITD]      bank%u%s: vs bank0 %u/256 differ (max delta %u), "
+                 "alpha %u..%u, mid %08X %08X %08X %08X\n",
+                 b, (b == (pal_base >> 8)) ? "*" : " ", ndiff, maxd, amin, amax,
+                 pb[128], pb[129], pb[130], pb[131]);
+        }
+      }
+    }
+    fflush(stdout);
+  }
+}
+
+// One line per rasterised strip on a coverage frame: where it lands on screen,
+// what W (depth) range it spans, which texture and blend it uses, and the depth
+// state it asked for. Called from the draw loop, where the post-transform
+// vertices are in hand.
+static PolyParam *g_aitd_last_mod = 0; // last state actually applied
+
+static void AitdCoverStrip(PolyParam *mod, const Vertex *vtx, int count,
+                           bool in_trans)
+{
+  // stripMod is only non-NULL when a strip CHANGES render state; every strip
+  // after it inherits that state. Carrying it forward is what turns "<no
+  // state>" into a real line - the first census had it on 93 of 96 rows.
+  bool own_state = (mod != 0);
+  if (mod) g_aitd_last_mod = mod;
+  else     mod = g_aitd_last_mod;
+
+  // A paletted strip is the one under investigation: never let the row cap
+  // hide it (the first census truncated before the second palette bank).
+  bool is_pal = mod && (mod->tcw.NO_PAL.PixelFmt == 5 || mod->tcw.NO_PAL.PixelFmt == 6);
+  if (g_aitd_cover_n >= AITD_MAX_COVER && !is_pal) return;
+
+  float bx0 = 1e9f, bx1 = -1e9f, by0 = 1e9f, by1 = -1e9f;
+  float wmin = 1e30f, wmax = -1e30f;
+  int   used = 0;
+  for (int i = 0; i < count; i++)
+  {
+    const float z = vtx[i].z;
+    if (z <= 0.0f) continue;
+    const float iw = 1.0f / z;
+    const float sx = vtx[i].x * iw, sy = vtx[i].y * iw;
+    if (sx < bx0) bx0 = sx;
+    if (sx > bx1) bx1 = sx;
+    if (sy < by0) by0 = sy;
+    if (sy > by1) by1 = sy;
+    if (z < wmin) wmin = z;
+    if (z > wmax) wmax = z;
+    used++;
+  }
+  if (!used) return;
+  g_aitd_cover_n++;
+
+  if (!mod)
+  {
+    printf("[AITD] CVR %02u  (%4.0f,%4.0f)-(%4.0f,%4.0f) v=%d W=%.4f..%.4f"
+           "  <no state yet>\n",
+           g_aitd_cover_n - 1, bx0, by0, bx1, by1, count, wmin, wmax);
+    return;
+  }
+
+  u32 tex_addr = (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
+  printf("[AITD] CVR %02u%s (%4.0f,%4.0f)-(%4.0f,%4.0f) v=%-4d W=%.4f..%.4f "
+         "%s tex=%08X f=%u sel=%02X %ux%u %s/%s depth=%s zw=%s cull=%u shad=%u "
+         "usealpha=%u filt=%u\n",
+         g_aitd_cover_n - 1, own_state ? " " : "^",
+         bx0, by0, bx1, by1, count, wmin, wmax,
+         in_trans ? "TR" : "OP",
+         mod->pcw.Texture ? tex_addr : 0u,
+         (u32)mod->tcw.NO_PAL.PixelFmt, (u32)mod->tcw.PAL.PalSelect,
+         8u << mod->tsp.TexU, 8u << mod->tsp.TexV,
+         AitdBlendName(mod->tsp.SrcInstr), AitdBlendName(mod->tsp.DstInstr),
+         AitdDepthName(mod->isp.DepthMode), mod->isp.ZWriteDis ? "OFF" : "ON",
+         (u32)mod->isp.CullMode, (u32)mod->tsp.ShadInstr,
+         (u32)mod->tsp.UseAlpha, (u32)mod->tsp.FilterMode);
+
+  // For a big paletted strip - i.e. the backdrop - print the vertices too.
+  // TEV does texture*vertex_colour under shad=Modulate, and the UVs decide
+  // which texels a 1024x1024 texture actually lands on when it is stretched
+  // over a 640x480 screen. If the BMP dump comes back clean, this is the next
+  // place the corruption can be hiding, and it costs one line to have it
+  // already in the log.
+  if (is_pal && count <= 8 && (bx1 - bx0) > 320.0f && (by1 - by0) > 240.0f)
+    for (int i = 0; i < count; i++)
+      printf("[AITD]        v%d uv=(%.5f,%.5f) col=%08X spc=%08X xyz=(%.2f,%.2f,%.4f)\n",
+             i, vtx[i].u, vtx[i].v, vtx[i].col, vtx[i].spc,
+             vtx[i].x, vtx[i].y, vtx[i].z);
+}
+
+// Called once per frame from reset_vtx_state().
+static void AitdFrameStart()
+{
+  if (1)
+  {
+    // Periodic, not just during boot: gameplay starts thousands of frames in
+    // (the first capture was at frame 2658), so fixed early frame numbers
+    // never see the scene that matters. Still rare enough not to change the
+    // timing being measured.
+    bool report = (g_aitd_frame == 2 || (g_aitd_frame % 600) == 0);
+    if (report)
+    {
+      printf("[AITD] FRAME %u: textured strips=%u  decodes=%u  cache hits=%u  "
+             "distinct slots=%u  overlaps=%u\n",
+             g_aitd_frame, g_aitd_striptex, g_aitd_decodes, g_aitd_hits,
+             g_aitd_rng_n, g_aitd_overlaps);
+      printf("[AITD]   blend census (SrcInstr,DstInstr)xcount:");
+      for (u32 s = 0; s < 8; s++)
+        for (u32 d = 0; d < 8; d++)
+          if (g_aitd_blend[s][d])
+            printf(" (%u,%u)x%u", s, d, (u32)g_aitd_blend[s][d]);
+      printf("\n");
+      fflush(stdout);
+    }
+  }
+
+  g_aitd_frame++;
+  g_aitd_decodes = g_aitd_hits = g_aitd_striptex = 0;
+  g_aitd_rng_n   = 0;
+  g_aitd_cover_n = 0;
+  g_aitd_last_mod = 0;
+  if ((g_aitd_frame % 600) == 1)
+  {
+    printf("[AITD] ---- coverage frame %u: every rasterised strip, in draw "
+           "order ----\n", g_aitd_frame);
+    fflush(stdout);
+  }
+  memset(g_aitd_blend, 0, sizeof(g_aitd_blend));
+}
+
 static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 {
+  // [AITD] per-strip census (two increments, safe on the hot path) plus the
+  // multi-bank tracker, which has to run before any cache path returns early.
+  if (1)
+  {
+    g_aitd_striptex++;
+    g_aitd_blend[mod->tsp.SrcInstr & 7][mod->tsp.DstInstr & 7]++;
+    AitdTrackBank((mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK,
+                  mod->tcw.NO_PAL.PixelFmt, mod->tcw.PAL.PalSelect);
+  }
+
   // decal_alpha_fix off: keep the original unconditional GX_MODULATE here so this
   // path costs exactly what it did before the fix existed. On: the caller sets
   // TEVSTAGE0's op itself based on TSP.ShadInstr right after this returns.
@@ -3229,7 +4157,10 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     static u32 s_last_tlut_checksum = 0xFFFFFFFFu;
     if (JOJO_FIX())
     {
-      u32 checksum = pal_fmt ^ (n_entries << 16) ^ pal_base;
+      // PAL8888_HQ() changes the bytes this loop would produce from an
+      // unchanged source palette, so it has to be part of the key or toggling
+      // it mid-run would leave the previously converted TLUT loaded.
+      u32 checksum = pal_fmt ^ (n_entries << 16) ^ pal_base ^ (PAL8888_HQ() ? 0x5A3u : 0u);
       for (u32 i = 0; i < n_entries; i++)
         checksum = checksum * 31u + pal[i];
       need_reupload = (checksum != s_last_tlut_checksum);
@@ -3252,11 +4183,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         {
           case 1:  px = (u16)(pe & 0xFFFF); break;                   // RGB565  -> RGB565
           case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;         // ARGB4444-> RGB5A3
-          case 3:  {                                                  // ARGB8888-> RGB5A3
-            u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-            px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-            break;
-          }
+          case 3:  px = PalARGB8888_to_RGB5A3(pe); break;             // ARGB8888-> RGB5A3
           default: px = ABGR1555((u16)(pe & 0xFFFF)); break;         // ARGB1555-> RGB5A3
         }
         tlut[i] = px;
@@ -3276,6 +4203,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
   if (already_decoded_this_frame)
   {
+    if (1) g_aitd_hits++; // [AITD]
     GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
     if (SEAM_FIX())
       SeamFixStashTexSize(&pbuff->tex);
@@ -3716,12 +4644,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
             for (u32 i = 0; i < 16; i++) gx_pal[i] = ABGR4444((u16)(pal[i] & 0xFFFF));
             break;
           case 3: // ARGB8888 -> RGB5A3
-            for (u32 i = 0; i < 16; i++)
-            {
-              u32 pe = pal[i];
-              u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-              gx_pal[i] = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-            }
+            for (u32 i = 0; i < 16; i++) gx_pal[i] = PalARGB8888_to_RGB5A3(pal[i]);
             break;
           default: // ARGB1555 -> RGB5A3
             for (u32 i = 0; i < 16; i++) gx_pal[i] = ABGR1555((u16)(pal[i] & 0xFFFF));
@@ -3904,9 +4827,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
                           u32 tw_nibble = ty | table_x[x];
                           u8  raw = src[(tw_nibble >> 1) ^ 1];
                           u8  idx = (tw_nibble & 1) ? (raw & 0xF) : (raw >> 4);
-                          u32 pe  = pal[idx];
-                          u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-                          dst[GX_TexOffs(x, y, w)] = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+                          dst[GX_TexOffs(x, y, w)] = PalARGB8888_to_RGB5A3(pal[idx]);
                       }
                   }
                   break;
@@ -3979,12 +4900,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
             for (u32 i = 0; i < 256; i++) gx_pal[i] = ABGR4444((u16)(pal[i] & 0xFFFF));
             break;
           case 3: // ARGB8888 -> RGB5A3
-            for (u32 i = 0; i < 256; i++)
-            {
-              u32 pe = pal[i];
-              u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-              gx_pal[i] = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-            }
+            for (u32 i = 0; i < 256; i++) gx_pal[i] = PalARGB8888_to_RGB5A3(pal[i]);
             break;
           default: // ARGB1555 -> RGB5A3
             for (u32 i = 0; i < 256; i++) gx_pal[i] = ABGR1555((u16)(pal[i] & 0xFFFF));
@@ -4133,12 +5049,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
               {
                 case 1:  px = (u16)(pe & 0xFFFF); break;                    // RGB565  → RGB565
                 case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;          // ARGB4444→ RGB5A3
-                case 3:                                                      // ARGB8888→ RGB5A3
-                {
-                  u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-                  px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-                  break;
-                }
+                case 3:  px = PalARGB8888_to_RGB5A3(pe); break;              // ARGB8888→ RGB5A3
                 default: px = ABGR1555((u16)(pe & 0xFFFF)); break;          // ARGB1555→ RGB5A3
               }
               dst[GX_TexOffs(x, y, w)] = px;
@@ -4218,6 +5129,31 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
                     mip_levels ? GX_TRUE : GX_FALSE);
     }
 
+    // CI_POINT_FILTER(): index-only formats must not be filtered.
+    //
+    // min_filt/mag_filt come from the GLOBAL graphics preset, so every texture
+    // in the game gets the same filter regardless of format - and at preset 1+
+    // that filter is GX_LINEAR. A bilinear tap needs four neighbouring texels
+    // and a weighted average of them; for CI4/CI8 the "texel" is a palette
+    // INDEX, and the average of index 10 and index 200 is index 105, which
+    // points at an unrelated colour. Every pixel that straddles two different
+    // indices therefore lands on a colour that is in no sense between its
+    // neighbours. On a photographic 256-colour background - where adjacent
+    // texels differ by design - that is a full-frame speckle that tracks image
+    // detail exactly: dense over foliage and rock, clean over flat sky, and
+    // completely absent from the RGB565/ARGB1555 textures in the same scene.
+    //
+    // Nearest sampling has no such midpoint, so it is the only safe filter for
+    // an index-only format. The other way out is to stop using an index format
+    // at all (8bpp=optimized / 8bpp=rgb565 bake the palette into real colours
+    // and filter correctly, at 2 bytes per texel instead of 1).
+    u8 ci_min_filt = min_filt, ci_mag_filt = mag_filt;
+    if (CI_POINT_FILTER() && (FMT == GX_TF_CI4 || FMT == GX_TF_CI8))
+    {
+      ci_min_filt = GX_NEAR;
+      ci_mag_filt = GX_NEAR;
+    }
+
     if (mip_levels)
     {
       // MIPMAP_FAST uses GX_LIN_MIP_NEAR: bilinear from the nearest mip level,
@@ -4225,19 +5161,85 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       // GX_LIN_MIP_LIN, which takes two cycles per texel and halves texture
       // fill rate. maxlod clamps to the smallest level we produced (4x4).
       u8 mip_min_filt;
-      if (min_filt == GX_NEAR)
+      if (ci_min_filt == GX_NEAR)
         mip_min_filt = GX_NEAR_MIP_NEAR;
       else
         mip_min_filt = MIPMAP_TRILINEAR() ? GX_LIN_MIP_LIN : GX_LIN_MIP_NEAR;
-      GX_InitTexObjLOD(&pbuff->tex, mip_min_filt, mag_filt,
+      GX_InitTexObjLOD(&pbuff->tex, mip_min_filt, ci_mag_filt,
                     0.0f, (f32)mip_levels, lod_bias,
                     bias_clamp, edge_lod, aniso);
     }
     else
     {
-      GX_InitTexObjLOD(&pbuff->tex, min_filt, mag_filt,
+      GX_InitTexObjLOD(&pbuff->tex, ci_min_filt, ci_mag_filt,
                     0.0f, 10.0f, lod_bias,
                     bias_clamp, edge_lod, aniso);
+    }
+
+    // [AITD] report this decode, and cross-check the CI8 untwiddle once.
+    // Placed ahead of the sentinel write below so the self-check reads the
+    // texture data the decoder actually saw.
+    if (1)
+    {
+      g_aitd_decodes++;
+      const u32 pixel_fmt_dc = mod->tcw.NO_PAL.PixelFmt; // 5=PAL4BPP 6=PAL8BPP
+      AitdReportTexture(mod, orig_tex_addr, tex_addr, w, h, FMT, gx_pixels,
+                        decode_bytes, pbuff->has_pal, &pbuff->tex);
+      if (!g_aitd_selfcheck_done && FMT == GX_TF_CI8 && w >= 256 && h >= 256)
+      {
+        g_aitd_selfcheck_done = true;
+        AitdSelfCheckCI8((const u8 *)&params.vram[tex_addr],
+                         (const u8 *)gx_pixels, w, h);
+      }
+      // Dump the big PALETTED layers as BMPs - those are the scene backdrop
+      // (1024x1024, tex@004F7880) and its additive second layer (1024x512,
+      // tex@005F7880), which is what this whole investigation is about.
+      //
+      // Paletted-only on purpose: the first version took any big texture and
+      // the intro FMV ate every slot before gameplay ever started. FMV frames
+      // are YUV422 (PixelFmt 3) and UI art here is ARGB1555 (PixelFmt 0), so
+      // restricting to PixelFmt 5/6 skips both. The format test is on the DC
+      // side, not the GX side, because whichever 8bpp preset is active the
+      // source is still a palette texture - it may reach GX as CI8, or as
+      // RGB565/RGB5A3 with the palette already baked in, and the dumper reads
+      // both.
+      //
+      // Keyed by address so one texture cannot claim two slots, and so a
+      // second room's backdrop gets its own file instead of being skipped.
+      if (g_aitd_dump_n < AITD_MAX_DUMPS && w >= 512 && h >= 256
+          && (pixel_fmt_dc == 5 || pixel_fmt_dc == 6)
+          && (FMT == GX_TF_CI8 || FMT == GX_TF_RGB565 || FMT == GX_TF_RGB5A3))
+      {
+        bool already = false;
+        for (u32 i = 0; i < g_aitd_dump_n; i++)
+          if (g_aitd_dump_addr[i] == orig_tex_addr) { already = true; break; }
+        if (!already)
+        {
+          g_aitd_dump_addr[g_aitd_dump_n] = orig_tex_addr;
+          AitdDumpTextureBMP(mod, (const u8 *)gx_pixels, FMT, w, h);
+          // EXHAUSTIVE byte-order sweep, first big paletted texture only.
+          //
+          // ^3 (the shipped decode) and ^7 (the 64-bit-half-swap hypothesis)
+          // are both wrong, and every addressing convention checked in the
+          // code so far looks correct - the block path, the JIT's legacy
+          // shapes and its fastmem shapes all apply the documented
+          // addr^(4-sz) swizzle. So stop reasoning about it and try all eight
+          // possible sub-8-byte byte permutations at once.
+          //
+          // If one comes out clean, the data IS just permuted and that XOR
+          // names the permutation exactly. If NONE is clean, this whole class
+          // is dead: the bytes are not misplaced, they are wrong - which points
+          // at the SH4 side producing bad decompressed output rather than at
+          // anything in the memory or texture path.
+          //
+          // ~3 MB per file, 8 files, written once. Expect a long pause.
+          if (pixel_fmt_dc == 6 && !mod->tcw.NO_PAL.MipMapped
+              && g_aitd_dump_n == 0)
+            for (u32 m = 0; m < 8; m++)
+              AitdDumpVariantBMP(mod, w, h, tex_addr, m);
+          g_aitd_dump_n++;
+        }
+      }
     }
 
     // Write sentinel.
@@ -4277,6 +5279,11 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     // draw that samples this texture, and frames with no decodes pay nothing.
     if (TMEM_CACHE())
       GX_InvalidateTexAll();
+  }
+
+  else if (1)
+  {
+    g_aitd_hits++; // [AITD] served from the cross-frame cache
   }
 
   GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
@@ -6794,6 +7801,10 @@ void DoRender()
       // never fight over the same vertices in the common case.
       if (seg_is_pt && poly_offset_tier > 0 && count)
         ApplyPolyOffset(drawVTX, count, poly_offset_tier);
+
+      // [AITD] screen-coverage census (see AitdCoverStrip).
+      if (1 && count && !strip_skip && (g_aitd_frame % 600) == 1)
+        AitdCoverStrip(stripMod, drawVTX, count, in_trans_list);
 
 #if RTT_DEBUG_LOG
       if (s_rtt_pass && count)

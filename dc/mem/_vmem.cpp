@@ -35,6 +35,63 @@
 static _vmem_handler     _vmem_lrp;   // next free handler slot
 
 static _vmem_ReadMem8FP*  _vmem_RF8  [HANDLER_COUNT];
+// ---------------------------------------------------------------------------
+// [FMOV64] 64-bit block accesses on a big-endian host.
+//
+// Every buffer this file hands out (main RAM, the VRAM 64-bit window at
+// 0x04xxxxxx) stores each aligned 4-byte group of DC address space as one
+// HOST-endian u32 at the same offset. That is the convention the whole
+// emulator is built on: pvr_write_area1_32() does `*(u32*)&vram[addr] = data`,
+// and the texture decoders read individual bytes back as `vram[offset ^ 3]`.
+//
+// The handler path below honours it for 64-bit accesses - it splits them into
+// two 32-bit accesses, low half at addr and high half at addr+4, exactly as a
+// little-endian DC lays them out. The direct block path did not: it issued one
+// raw `*(u64*)` store, which on a big-endian host puts the HIGH 32 bits at addr
+// and the LOW 32 bits at addr+4. Every 64-bit access to a mapped block
+// therefore had its two 32-bit halves transposed.
+//
+// HOWEVER - and this matters - the legacy behaviour is most likely the CORRECT
+// one, and this preset probably makes it wrong. The SH4 manual defines
+// FMOV.D DRm,@Rn as TWO 32-bit transfers: FRm to (Rn) and FRm+1 to (Rn+4).
+// `dr_hex` is `((u64*)fr)` (sh4_registers.h), so on a big-endian host that u64
+// already holds FRm in the high half and FRm+1 in the low half - and a raw
+// big-endian u64 store therefore lays down FRm at addr and FRm+1 at addr+4,
+// which is exactly what the hardware does. Splitting it the other way round
+// breaks that.
+//
+// It was written while chasing the Alone in the Dark background speckle, on the
+// theory that a texture uploaded with fmov pairs would come out with each
+// 8-byte group's halves swapped. That was DISPROVEN on hardware: decoding the
+// same texture with the swap undone (src[offset ^ 7] instead of ^ 3) is just as
+// corrupt. See [[aitd-background-speckle]].
+//
+// Kept only so the two behaviours can be A/B'd, default OFF. If you are reading
+// this while hunting something else: turning it ON is not a fix, it is a
+// deliberate deviation from what the SH4 does.
+//
+// The branch only exists in the u64 template instantiation, so u8/u16/u32
+// accesses are untouched and cost nothing.
+// ---------------------------------------------------------------------------
+extern "C" int get_fmov64_fix_preset();
+
+// ---------------------------------------------------------------------------
+// [AITD] VRAM write census - TEMPORARY DIAGNOSTIC.
+//
+// The Alone in the Dark backdrop is already speckled in emulated VRAM before
+// the renderer ever touches it, and the decode is verified byte-correct, so
+// something wrote those bytes wrong. There are four ways bytes reach VRAM
+// (direct block stores to the 0x04 64-bit window, the 0x05 32-bit-area
+// handlers, the TA direct-texture path, and the store queue), and they do NOT
+// share a layout convention - so the first thing to establish is simply WHICH
+// one uploaded this texture, and at what access width.
+//
+// Counters only, no behaviour change. Remove with the rest of the [AITD] work.
+// ---------------------------------------------------------------------------
+u32 g_aitd_vw_blk[4] = {0,0,0,0};   // block path by width: [0]=8b [1]=16b [2]=32b [3]=64b
+u32 g_aitd_vw_blk_lo = 0xFFFFFFFFu; // address range the block path touched
+u32 g_aitd_vw_blk_hi = 0;
+
 static _vmem_WriteMem8FP* _vmem_WF8  [HANDLER_COUNT];
 
 static _vmem_ReadMem16FP*  _vmem_RF16[HANDLER_COUNT];
@@ -99,6 +156,14 @@ static INLINE T fastcall _vmem_readt(u32 addr)
 #if HOST_ENDIAN == ENDIAN_BIG
         if (sz < 4)
             addr ^= 4 - sz;
+        else if (sz == 8 && get_fmov64_fix_preset())
+        {
+            // Two 32-bit reads, low half first - same order the handler path
+            // uses. See the [FMOV64] note above.
+            const u32 lo = *((u32*)&((u8*)ptr)[addr]);
+            const u32 hi = *((u32*)&((u8*)ptr)[addr + 4]);
+            return (T)(((u64)hi << 32) | (u64)lo);
+        }
 #endif
         return *((T*)&((u8*)ptr)[addr]);
     }
@@ -137,9 +202,31 @@ static INLINE void fastcall _vmem_writet(u32 addr, T data)
         u32 shift = (u32)(iirf & HANDLER_MAX);
         addr <<= shift;
         addr >>= shift;
+
+        // [AITD] census: is anything writing the VRAM 64-bit window directly?
+        if (1)
+        {
+            const u32 pg = page & 0x1F;
+            if (pg == 0x04 || pg == 0x06 || pg == 0x07)
+            {
+                g_aitd_vw_blk[sz == 1 ? 0 : sz == 2 ? 1 : sz == 4 ? 2 : 3]++;
+                if (addr < g_aitd_vw_blk_lo) g_aitd_vw_blk_lo = addr;
+                if (addr > g_aitd_vw_blk_hi) g_aitd_vw_blk_hi = addr;
+            }
+        }
+
 #if HOST_ENDIAN == ENDIAN_BIG
         if (sz < 4)
             addr ^= 4 - sz;
+        else if (sz == 8 && get_fmov64_fix_preset())
+        {
+            // Two 32-bit stores, low half first - same order the handler path
+            // uses. See the [FMOV64] note above.
+            const u64 v = (u64)data;
+            *((u32*)&((u8*)ptr)[addr])     = (u32)v;
+            *((u32*)&((u8*)ptr)[addr + 4]) = (u32)(v >> 32);
+            return;
+        }
 #endif
         *((T*)&((u8*)ptr)[addr]) = data;
     }
