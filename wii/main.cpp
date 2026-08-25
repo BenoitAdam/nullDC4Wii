@@ -1024,59 +1024,6 @@ void checkBiosFiles()
 }
 
 // ============================================================================
-// ACCURACY / INFO MENU
-// ============================================================================
-
-void displayAccuracyMenu()
-{
-
-  while (true)
-  {
-    printf("\033[2J\033[H");
-    printf("                  INFO - NullDC4Wii               \n");
-    printf(" \n");
-    printf("Information about preset :\n\n");
-
-    printf("Calculations Accuracy (can lead to bugs if not ACCURATE):\n");
-    printf("> FAST     - Maximum Speed\n");
-    printf("> BALANCED - Good Balance\n");
-    printf("> ACCURATE - Maximum Accuracy (closest to real hardware)\n\n");
-
-    printf("Graphical settings:\n");
-    printf("> LOW    = GX_NEAR   - lod0 - GX_DISABLE (Wii)\n");
-    printf("> NORMAL = GX_LINEAR - lod0 - GX_DISABLE (Wii)\n");
-    printf("> HIGH   = GX_LINEAR - lodH - GX_ENABLE  - Anisotropic x2 (WiiU)\n");
-    printf("> EXTRA  = GX_LINEAR - lodE - GX_ENABLE  - Anisotropic x4 (WiiU)\n\n");
-
-    printf("Ratio:\n");
-    printf("> ORIGINAL   - 4/3 ratio\n");
-    printf("> FULLSCREEN\n");
-    printf("> AUTO       - match Wii system aspect (4:3 or 16:9)\n\n");
-
-    printf("\nB: Back\n");
-    printf("Note: Change settings if you experience issues or need more speed.\n");
-
-    WPAD_ScanPads();
-    PAD_ScanPads();
-    u32 wmPressed = WPAD_ButtonsDown(0);
-    u32 pressed = wmPressed | CLASSIC_ToWPAD(wmPressed) | DRC_ButtonsDownWPAD() | SS_ButtonsDownWPAD()
-                | ((PAD_ButtonsDown(0) & PAD_BUTTON_B) ? WPAD_BUTTON_B : 0);
-
-    if (pressed & WPAD_BUTTON_B)
-    {
-      return;
-    }
-
-    VIDEO_SetNextFramebuffer(xfb[fb]);
-    VIDEO_Flush();
-    VIDEO_WaitVSync();
-    fb ^= 1;
-    console_init(xfb[fb], 20, 20, rmode->fbWidth, rmode->xfbHeight,
-                 rmode->fbWidth * VI_DISPLAY_PIX_SZ);
-  }
-}
-
-// ============================================================================
 // OPTIONS MENU
 // ============================================================================
 
@@ -1305,7 +1252,7 @@ static void printOptionsFooter(void)
 {
   int cols, rows;
   CON_GetMetrics(&cols, &rows);
-  printf("\033[%d;1H1-Y: Previous | 2+X: Next | HOME: More Info | alpha 0.63", rows);
+  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.63", rows);
 }
 
 bool displayOptionsMenu()
@@ -2111,11 +2058,6 @@ bool displayOptionsMenu()
     {
       if (selectedRow == OPT_LAUNCH)
         return true;
-    }
-    else if (pressed & WPAD_BUTTON_HOME)
-    {
-      // HOME is the dedicated "More Info" shortcut — works on every page.
-      displayAccuracyMenu();
     }
     else if ((pressed & (WPAD_BUTTON_1 | WPAD_BUTTON_MINUS)) || classicPrevPage)
     {
