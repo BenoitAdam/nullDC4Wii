@@ -30,7 +30,49 @@
                                 A real Wii simply fails the Wii U gate and
                                 falls through to the plain section below it.
         accuracy=fast       <- only fields listed are overridden
-        graphics=low
+        graphics=low        <- low | normal. TEXTURE FILTER ONLY:
+                                low=GX_NEAR (point sampling, best for 240p
+                                games whose art already matches the output
+                                resolution), normal=GX_LINEAR (bilinear).
+                                The former high/extra levels were just a fixed
+                                (lod_bias, bias clamp, aniso) bundle glued onto
+                                normal; those are the three separate keys below
+                                now. Old configs saying high/extra still load —
+                                they map to normal, and a log line points at
+                                gx=/lod_bias=/aniso= for the rest.
+        gx=on               <- on/off (GX_ENABLE/GX_DISABLE), the biasclamp +
+                                edgelod pair of GX_InitTexObjLOD() — the only
+                                two GX_DISABLE/GX_ENABLE arguments that call
+                                takes (see gxRend.cpp ApplyGraphismPreset).
+                                biasclamp stops lod_bias from pushing a
+                                minified texel past the point where its
+                                footprint no longer covers the pixel (blur /
+                                shimmer on steep surfaces); edgelod computes
+                                the LOD from adjacent instead of diagonal
+                                texels. off (default) = legacy. NOTE aniso
+                                below forces edgelod on by itself — libogc
+                                requires it whenever maxaniso > 1.
+        lod_bias=0.0        <- -1 | -0.75 | -0.5 | 0.0 | 0.5, texture LOD bias
+                                added to the computed LOD before the mip /
+                                filter decision. Negative sharpens (samples a
+                                larger level than the footprint asks for),
+                                positive blurs. 0.0 (default) is the hardware
+                                default and a true no-op.
+        aniso=0x            <- 0x | 2x | 4x, anisotropic filtering: the TX unit
+                                iterates its square filter along the axis of
+                                anisotropy, one extra filter cycle per level
+                                (sharper textures on surfaces seen at a steep
+                                angle, at texture fill-rate cost). Hollywood
+                                only implements 1x/2x/4x — there is no 8x mode;
+                                an old aniso=8x line loads clamped to 4x.
+                                REQUIRES mipmap=fast or mipmap=trilinear: the
+                                TX unit only iterates anisotropy when the min
+                                filter is GX_LIN_MIP_LIN, which needs a
+                                generated mip chain, so aniso does NOTHING on a
+                                game left at mipmap=off (the default). Asking
+                                for 2x/4x does promote an already-mipmapped
+                                texture to trilinear on its own.
+                                0x (default) = off.
         8bpp=i8_stub
         jojo_fix=on         <- on/off, enables the gxRend.cpp TLUT-checksum-skip
                                 and CACHE_FAST PalSelect-masking optimizations
@@ -473,6 +515,9 @@
 // ---------------------------------------------------------------------------
 extern int g_accuracy_preset;
 extern int g_graphism_preset;
+extern int g_gx_preset;
+extern int g_lod_bias_preset;
+extern int g_aniso_preset;
 extern int g_ratio_preset;
 extern int g_advanced_alpha_preset;
 extern int g_frameskip_preset;
@@ -548,6 +593,9 @@ struct GamePreset
     // -1 = not set (leave user default untouched)
     int accuracy;
     int graphics;
+    int gx;
+    int lod_bias;
+    int aniso;
     int ratio;
     int adv_alpha;
     int frameskip;
@@ -707,13 +755,63 @@ static int parse_accuracy(const char* v)
     return -1;
 }
 
+// graphics is the texture FILTER only: low=GX_NEAR, normal=GX_LINEAR. The old
+// high/extra levels were normal plus a fixed lod_bias/bias-clamp/aniso bundle,
+// which are their own keys now — old configs keep loading (mapped to normal)
+// with a one-line hint instead of an "unknown value" rejection.
 static int parse_graphics(const char* v)
 {
     if (key_eq(v, "low"))    return 0;
     if (key_eq(v, "normal")) return 1;
-    if (key_eq(v, "high"))   return 2;
-    if (key_eq(v, "extra"))  return 3;
+    if (key_eq(v, "high") || key_eq(v, "extra"))
+    {
+        printf("[game_presets] graphics=%s is gone (filter only now) -> normal;"
+               " use gx=/lod_bias=/aniso= for the rest\n", v);
+        return 1;
+    }
     printf("[game_presets] Unknown graphics value: '%s'\n", v);
+    return -1;
+}
+
+// gx= is on/off like every other binary field, but the menu labels it with the
+// GX constant names it actually sets, so those spellings are accepted too.
+static int parse_gx(const char* v)
+{
+    if (key_eq(v, "gx_enable")  || key_eq(v, "gx_enabled"))  return 1;
+    if (key_eq(v, "gx_disable") || key_eq(v, "gx_disabled")) return 0;
+    return parse_bool(v);
+}
+
+// Texture LOD bias -> index into gxRend.cpp s_lod_bias_steps[]. Written as the
+// value itself in the .cfg (lod_bias=-0.5); the menu index is an implementation
+// detail. Both "-0.5" and "-.5" spellings are accepted, as is a bare "0".
+static int parse_lod_bias(const char* v)
+{
+    if (key_eq(v, "-1")   || key_eq(v, "-1.0")  || key_eq(v, "-1.00")) return 0;
+    if (key_eq(v, "-0.75")|| key_eq(v, "-.75"))                        return 1;
+    if (key_eq(v, "-0.5") || key_eq(v, "-.5")   || key_eq(v, "-0.50")) return 2;
+    if (key_eq(v, "0")    || key_eq(v, "0.0")   || key_eq(v, "0.00")
+                          || key_eq(v, "off")   || key_eq(v, "default")) return 3;
+    if (key_eq(v, "0.5")  || key_eq(v, ".5")    || key_eq(v, "0.50")
+                          || key_eq(v, "+0.5"))                        return 4;
+    printf("[game_presets] Unknown lod_bias value: '%s'"
+           " (use -1 | -0.75 | -0.5 | 0.0 | 0.5)\n", v);
+    return -1;
+}
+
+// Anisotropic filtering -> index into gxRend.cpp s_aniso_steps[]. Hollywood has
+// no 8x mode, so the menu stops at 4x; an aniso=8x line still loads, clamped.
+static int parse_aniso(const char* v)
+{
+    if (key_eq(v, "0") || key_eq(v, "0x") || key_eq(v, "off") || key_eq(v, "1x")) return 0;
+    if (key_eq(v, "2") || key_eq(v, "2x")) return 1;
+    if (key_eq(v, "4") || key_eq(v, "4x")) return 2;
+    if (key_eq(v, "8") || key_eq(v, "8x"))
+    {
+        printf("[game_presets] aniso=8x does not exist on Hollywood -> 4x\n");
+        return 2;
+    }
+    printf("[game_presets] Unknown aniso value: '%s' (use 0x | 2x | 4x)\n", v);
     return -1;
 }
 
@@ -837,6 +935,9 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
 {
     if      (key_eq(key, "accuracy"))   p->accuracy   = parse_accuracy(val);
     else if (key_eq(key, "graphics"))   p->graphics   = parse_graphics(val);
+    else if (key_eq(key, "gx"))         p->gx         = parse_gx(val);
+    else if (key_eq(key, "lod_bias"))   p->lod_bias   = parse_lod_bias(val);
+    else if (key_eq(key, "aniso"))      p->aniso      = parse_aniso(val);
     else if (key_eq(key, "ratio"))      p->ratio      = parse_ratio(val);
     else if (key_eq(key, "adv_alpha"))  p->adv_alpha  = parse_bool(val);
     else if (key_eq(key, "frameskip"))  p->frameskip  = parse_frameskip(val);
@@ -905,6 +1006,7 @@ static void preset_clear(GamePreset* cur)
     memset(cur, 0, sizeof(*cur));
     cur->accuracy = cur->graphics  = cur->ratio    = cur->adv_alpha = -1;
     cur->frameskip= cur->tex_cache = cur->bpp4     = cur->bpp8      = -1;
+    cur->gx = cur->lod_bias = cur->aniso = -1;
     cur->jojo_fix = -1;
     cur->decal_alpha = -1;
     cur->speed_limiter = -1;
@@ -964,6 +1066,9 @@ static void preset_apply_fields(const GamePreset* p)
 {
     if (p->accuracy   >= 0) { g_accuracy_preset      = p->accuracy;   printf("  accuracy   -> %d\n", p->accuracy);   }
     if (p->graphics   >= 0) { g_graphism_preset       = p->graphics;   printf("  graphics   -> %d\n", p->graphics);   }
+    if (p->gx         >= 0) { g_gx_preset             = p->gx;         printf("  gx         -> %d\n", p->gx);         }
+    if (p->lod_bias   >= 0) { g_lod_bias_preset       = p->lod_bias;   printf("  lod_bias   -> %d\n", p->lod_bias);   }
+    if (p->aniso      >= 0) { g_aniso_preset          = p->aniso;      printf("  aniso      -> %d\n", p->aniso);      }
     if (p->ratio      >= 0) { g_ratio_preset          = p->ratio;      printf("  ratio      -> %d\n", p->ratio);      }
     if (p->adv_alpha  >= 0) { g_advanced_alpha_preset = p->adv_alpha;  printf("  adv_alpha  -> %d\n", p->adv_alpha);  }
     if (p->frameskip  >= 0) { g_frameskip_preset      = p->frameskip;  printf("  frameskip  -> %d\n", p->frameskip);  }

@@ -15,11 +15,22 @@ extern "C" int get_accuracy_preset();
 // This is defined in main.cpp
 extern "C" int get_graphism_preset();
 
-// Helper macros to check current graphism mode
+// Helper macros to check current graphism mode. GRAPHICS is now ONLY the
+// texture filter: the old HIGH/EXTRA levels bundled a fixed LOD bias / bias
+// clamp / aniso set on top of NORMAL, and those three are separate user
+// presets now (get_gx_preset / get_lod_bias_preset / get_aniso_preset below).
 #define LOW() (get_graphism_preset() == 0)
-#define NORMAL() (get_graphism_preset() == 1)
-#define HIGH() (get_graphism_preset() == 2)
-#define EXTRA() (get_graphism_preset() == 3)
+#define NORMAL() (get_graphism_preset() != 0)
+
+// GX texture-LOD extras: the biasclamp + edgelod pair of GX_InitTexObjLOD().
+// 0 = GX_DISABLE (default), 1 = GX_ENABLE.
+extern "C" int get_gx_preset();
+#define GX_LOD_EXTRAS() (get_gx_preset() == 1)
+
+// Texture LOD bias step (index into s_lod_bias_steps) and anisotropy step
+// (index into s_aniso_steps). Both default to their no-op entry.
+extern "C" int get_lod_bias_preset();
+extern "C" int get_aniso_preset();
 
 // FULLSCREEN or 4:3 (4:3 still has bugs in some games)
 extern "C" int get_ratio_preset();
@@ -926,19 +937,41 @@ static void gx_present_if_done()
 static u8 min_filt, mag_filt, bias_clamp, edge_lod, aniso;
 static f32 lod_bias;
 
+// LOD bias steps offered by the menu / lod_bias= preset key, in menu order.
+// Index 3 (0.0f) is the hardware default and a true no-op.
+static const f32 s_lod_bias_steps[5] = { -1.0f, -0.75f, -0.5f, 0.0f, 0.5f };
+
+// Anisotropy steps offered by the menu / aniso= preset key, in menu order
+// (0X / 2X / 4X). Hollywood's TX unit only implements GX_ANISO_1/2/4, so 4X is
+// the end of the scale - there is no 8X mode on this GPU to expose.
+static const u8 s_aniso_steps[3] = { GX_ANISO_1, GX_ANISO_2, GX_ANISO_4 };
+
 void ApplyGraphismPreset() {
-  switch (get_graphism_preset()) {
-    case 0: min_filt = GX_NEAR; mag_filt = GX_NEAR; lod_bias = 0.0f;
-            bias_clamp = GX_DISABLE; edge_lod = GX_DISABLE; aniso = GX_ANISO_1; break;
-    case 1: min_filt = GX_LINEAR; mag_filt = GX_LINEAR; lod_bias = 0.0f;
-            bias_clamp = GX_DISABLE; edge_lod = GX_DISABLE; aniso = GX_ANISO_1; break;
-    case 2: min_filt = GX_LINEAR; mag_filt = GX_LINEAR; lod_bias = -0.5f;
-            bias_clamp = GX_ENABLE; edge_lod = GX_ENABLE; aniso = GX_ANISO_2; break;
-    case 3: min_filt = GX_LINEAR; mag_filt = GX_LINEAR; lod_bias = -0.75f;
-            bias_clamp = GX_ENABLE; edge_lod = GX_ENABLE; aniso = GX_ANISO_4; break;
-    default: min_filt = GX_LINEAR; mag_filt = GX_LINEAR; lod_bias = 0.0f;
-              bias_clamp = GX_DISABLE; edge_lod = GX_DISABLE; aniso = GX_ANISO_1; break;
-  }
+  // GRAPHICS: texture filter only. LOW = GX_NEAR (point sampling, the right
+  // choice for 240p games whose art is already at output resolution),
+  // NORMAL = GX_LINEAR (bilinear).
+  if (LOW()) { min_filt = GX_NEAR;   mag_filt = GX_NEAR;   }
+  else       { min_filt = GX_LINEAR; mag_filt = GX_LINEAR; }
+
+  // LOD BIAS: added to the computed LOD before the mip/filter decision.
+  // Negative sharpens (samples a larger level than the footprint asks for),
+  // positive blurs.
+  int lod_idx = get_lod_bias_preset();
+  if (lod_idx < 0 || lod_idx > 4) lod_idx = 3; // 0.0f
+  lod_bias = s_lod_bias_steps[lod_idx];
+
+  // ANISOTROPIC: extra TX filter cycles per texel (one per level of aniso).
+  int aniso_idx = get_aniso_preset();
+  if (aniso_idx < 0 || aniso_idx > 2) aniso_idx = 0; // GX_ANISO_1 = off
+  aniso = s_aniso_steps[aniso_idx];
+
+  // GX: biasclamp + edgelod, the two GX_DISABLE/GX_ENABLE arguments of
+  // GX_InitTexObjLOD(). libogc requires edgelod whenever biasclamp is set OR
+  // maxaniso is GX_ANISO_2/GX_ANISO_4, so aniso forces edgelod on by itself -
+  // that is a hardware requirement, not an override of the user's GX choice
+  // (which still owns biasclamp).
+  bias_clamp = GX_LOD_EXTRAS() ? GX_ENABLE : GX_DISABLE;
+  edge_lod   = (GX_LOD_EXTRAS() || aniso != GX_ANISO_1) ? GX_ENABLE : GX_DISABLE;
 }
 
 // Macro to convert ABGR (standard for some PC/PVR formats) to RGBA/Other
@@ -4224,11 +4257,15 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       // a single texture cycle on Hollywood — near-free. MIPMAP_TRILINEAR uses
       // GX_LIN_MIP_LIN, which takes two cycles per texel and halves texture
       // fill rate. maxlod clamps to the smallest level we produced (4x4).
+      // Anisotropy (opt-in, GX_ANISO_1 by default) is only iterated by the TX
+      // unit when minfilt is GX_LIN_MIP_LIN, so asking for 2X/4X promotes the
+      // min filter to trilinear here rather than silently doing nothing.
       u8 mip_min_filt;
       if (min_filt == GX_NEAR)
         mip_min_filt = GX_NEAR_MIP_NEAR;
       else
-        mip_min_filt = MIPMAP_TRILINEAR() ? GX_LIN_MIP_LIN : GX_LIN_MIP_NEAR;
+        mip_min_filt = (MIPMAP_TRILINEAR() || aniso != GX_ANISO_1) ? GX_LIN_MIP_LIN
+                                                                  : GX_LIN_MIP_NEAR;
       GX_InitTexObjLOD(&pbuff->tex, mip_min_filt, mag_filt,
                     0.0f, (f32)mip_levels, lod_bias,
                     bias_clamp, edge_lod, aniso);
@@ -8260,7 +8297,7 @@ bool InitRenderer()
   // present (gx_present_if_done). Registered unconditionally: with the preset
   // off it only sets an unused flag.
   GX_SetDrawDoneCallback(gx_drawdone_cb);
-  ApplyGraphismPreset();  // LOW/NORMAL/HIGH/EXTRA
+  ApplyGraphismPreset();  // LOW/NORMAL filter + GX / lod_bias / aniso presets
 
   printf("vram_buffer: %08X\n", (u32)vram_buffer);
 

@@ -48,10 +48,51 @@ extern "C" {
   int get_accuracy_preset() { return g_accuracy_preset; }
 }
 
-int g_graphism_preset = 1;     // 0=Low, 1=Normal, 2=High, 3=Extra
+int g_graphism_preset = 1;     // 0=Low (GX_NEAR), 1=Normal (GX_LINEAR). The old
+                               // HIGH/EXTRA levels were nothing but a fixed
+                               // (lod_bias, bias clamp/edge LOD, aniso) bundle
+                               // glued onto NORMAL's GX_LINEAR; those three now
+                               // live as their own presets below, so GRAPHICS is
+                               // just the texture filter it always really was.
 
 extern "C" {
   int get_graphism_preset() { return g_graphism_preset; }
+}
+
+// GX texture-LOD extras: the biasclamp + edgelod pair of GX_InitTexObjLOD(),
+// the only two GX_DISABLE/GX_ENABLE arguments that call takes. biasclamp stops
+// the LOD bias below from pushing a minified texel past the point where the
+// footprint no longer covers a pixel (blur/shimmer on steep surfaces); edgelod
+// computes the LOD from the polygon edge instead of the quad center. libogc
+// requires edgelod whenever biasclamp is on OR aniso > 1, so ApplyGraphismPreset
+// forces it on for aniso even when this is off. 0=GX_DISABLE (default), 1=GX_ENABLE.
+int g_gx_preset = 0;
+
+extern "C" {
+  int get_gx_preset() { return g_gx_preset; }
+}
+
+// Texture LOD bias, index into { -1.0, -0.75, -0.5, 0.0, +0.5 }. Added to the
+// computed LOD before the mip/filter decision: negative sharpens (samples a
+// larger level than the footprint asks for), positive blurs. 3 = 0.0 = the
+// hardware default, a real no-op.
+int g_lod_bias_preset = 3;
+
+extern "C" {
+  int get_lod_bias_preset() { return g_lod_bias_preset; }
+}
+
+// Anisotropic filtering, index into { 0X, 2X, 4X }. Hollywood's TX unit only
+// implements GX_ANISO_1/2/4 (one filter cycle per level of aniso) - there is no
+// 8X mode on this GPU, so the menu stops at 4X. An aniso=8x line in an old
+// game_presets.cfg still loads, clamped to 4X. 0 = off (default).
+// NOTE: the TX unit only iterates anisotropy when the min filter is
+// GX_LIN_MIP_LIN, so this does nothing at all unless MIPMAPS (page 6) is set to
+// FAST or TRILINEAR - see SetTextureParams() in gxRend.cpp.
+int g_aniso_preset = 0;
+
+extern "C" {
+  int get_aniso_preset() { return g_aniso_preset; }
 }
 
 int g_ratio_preset = 1;        // 0=Original (4/3 pillarbox), 1=Fullscreen (default), 2=Auto (picks by CONF_GetAspectRatio: 4:3 console->full width, 16:9 console->pillarbox)
@@ -1097,7 +1138,10 @@ void checkBiosFiles()
 #define OPT_FOG         60     // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_Y_SCALER    61     // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_H_SCALER    62     // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
-#define OPT_ROW_COUNT   63
+#define OPT_GX          63     // shown on Page 1 (GENERAL) under GRAPHICS, see OPT_PAGE0_ROWS
+#define OPT_LOD_BIAS    64     // shown on Page 1 (GENERAL) under GRAPHICS, see OPT_PAGE0_ROWS
+#define OPT_ANISO       65     // shown on Page 1 (GENERAL) under GRAPHICS, see OPT_PAGE0_ROWS
+#define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
 // screen and related settings are grouped together.
@@ -1120,6 +1164,9 @@ static const int OPT_PAGE0_ROWS[] = {
   OPT_SPEED_LIMIT,
   OPT_SHOW_FPS,
   OPT_GRAPHICS,
+  OPT_GX,
+  OPT_LOD_BIAS,
+  OPT_ANISO,
   OPT_TEX_CACHE,
   OPT_4BPP,
   OPT_8BPP,
@@ -1333,12 +1380,41 @@ bool displayOptionsMenu()
     // --- Row: Graphics ---
     printf("%s GRAPHICS       : ", (selectedRow == OPT_GRAPHICS) ? ">" : " ");
     switch (g_graphism_preset) {
-      case 0: printf("[< LOW               >]"); break;
-      case 1: printf("[< NORMAL            >]"); break;
-      case 2: printf("[< HIGH              >]"); break;
-      case 3: printf("[< EXTRA             >]"); break;
+      case 0: printf("[< LOW (GX_NEAR)     >]"); break;
+      case 1: printf("[< NORMAL (GX_LINEAR)>]"); break;
     }
     printf(" 240p Games should use LOW");
+    printf("\n");
+
+    // --- Row: GX texture-LOD extras (biasclamp + edgelod) ---
+    printf("%s GX             : ", (selectedRow == OPT_GX) ? ">" : " ");
+    switch (g_gx_preset) {
+      case 0: printf("[< GX_DISABLE        >]"); break;
+      case 1: printf("[< GX_ENABLE         >]"); break;
+    }
+    printf(" LOD bias clamp + edge LOD");
+    printf("\n");
+
+    // --- Row: Texture LOD bias ---
+    printf("%s LOD BIAS       : ", (selectedRow == OPT_LOD_BIAS) ? ">" : " ");
+    switch (g_lod_bias_preset) {
+      case 0: printf("[< -1.00             >]"); break;
+      case 1: printf("[< -0.75             >]"); break;
+      case 2: printf("[< -0.50             >]"); break;
+      case 3: printf("[< 0.00 (DEFAULT)    >]"); break;
+      case 4: printf("[< +0.50             >]"); break;
+    }
+    printf(" minus = sharper, plus = blur");
+    printf("\n");
+
+    // --- Row: Anisotropic filtering ---
+    printf("%s ANISOTROPIC    : ", (selectedRow == OPT_ANISO) ? ">" : " ");
+    switch (g_aniso_preset) {
+      case 0: printf("[< 0X (OFF)          >]"); break;
+      case 1: printf("[< 2X                >]"); break;
+      case 2: printf("[< 4X                >]"); break;
+    }
+    printf(" 2X/4X needs MIPMAPS fast/trilinear");
     printf("\n");
 
     // --- Row: Texture Cache ---
@@ -1919,7 +1995,10 @@ bool displayOptionsMenu()
     else if (pressed & WPAD_BUTTON_LEFT)
     {
       switch (selectedRow) {
-        case OPT_GRAPHICS:  g_graphism_preset      = (g_graphism_preset      + 3) % 4; break;
+        case OPT_GRAPHICS:  g_graphism_preset      = (g_graphism_preset      + 1) % 2; break;
+        case OPT_GX:        g_gx_preset            = (g_gx_preset            + 1) % 2; break;
+        case OPT_LOD_BIAS:  g_lod_bias_preset      = (g_lod_bias_preset      + 4) % 5; break;
+        case OPT_ANISO:     g_aniso_preset         = (g_aniso_preset         + 2) % 3; break;
         case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 2) % 3; break;
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 2) % 3; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
@@ -1988,7 +2067,10 @@ bool displayOptionsMenu()
     else if (pressed & WPAD_BUTTON_RIGHT)
     {
       switch (selectedRow) {
-        case OPT_GRAPHICS:  g_graphism_preset      = (g_graphism_preset      + 1) % 4; break;
+        case OPT_GRAPHICS:  g_graphism_preset      = (g_graphism_preset      + 1) % 2; break;
+        case OPT_GX:        g_gx_preset            = (g_gx_preset            + 1) % 2; break;
+        case OPT_LOD_BIAS:  g_lod_bias_preset      = (g_lod_bias_preset      + 1) % 5; break;
+        case OPT_ANISO:     g_aniso_preset         = (g_aniso_preset         + 1) % 3; break;
         case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 1) % 3; break;
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 3; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
@@ -2698,11 +2780,28 @@ int main(int argc, wchar *argv[])
 
     printf("Graphics       : ");
     switch(g_graphism_preset) {
-      case 0: printf("LOW\n");    break;
-      case 1: printf("NORMAL\n"); break;
-      case 2: printf("HIGH\n");   break;
-      case 3: printf("EXTRA\n");  break;
+      case 0: printf("LOW (GX_NEAR)\n");     break;
+      case 1: printf("NORMAL (GX_LINEAR)\n"); break;
     }
+    printf("GX LOD Extras  : %s\n", g_gx_preset ? "GX_ENABLE" : "GX_DISABLE (DEFAULT)");
+    printf("LOD Bias       : ");
+    switch(g_lod_bias_preset) {
+      case 0: printf("-1.00\n");           break;
+      case 1: printf("-0.75\n");           break;
+      case 2: printf("-0.50\n");           break;
+      case 3: printf("0.00 (DEFAULT)\n");  break;
+      case 4: printf("+0.50\n");           break;
+    }
+    printf("Anisotropic    : ");
+    switch(g_aniso_preset) {
+      case 0: printf("0X (OFF, DEFAULT)\n");   break;
+      case 1: printf("2X\n");                  break;
+      case 2: printf("4X\n");                  break;
+    }
+    // Anisotropy is only iterated with a GX_LIN_MIP_LIN min filter, which needs
+    // a generated mip chain - warn instead of letting the setting look active.
+    if (g_aniso_preset > 0 && g_mipmap_preset == 0)
+      printf("               (Anisotropic does nothing while Mipmaps is OFF)\n");
     printf("Accuracy       : ");
     switch(g_accuracy_preset) {
       case 0: printf("FAST\n");     break;
