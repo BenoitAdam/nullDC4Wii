@@ -146,6 +146,8 @@ Presets are grouped in the in-emulator menu across 6 pages. The order below foll
 
 #### 🖼️ Graphics Preset
 
+OLD Behavior (Before alpha0.64) :
+
 | Mode | Settings | Best platform | 
 |------|----------| ------------------------- | 
 | **LOW** | `GX_NEAR` · `lod_bias 0.0f` · `GX_DISABLE`  | Wii |
@@ -157,8 +159,18 @@ The visual difference is limited for NORMAL/HIGH/EXTRA
 
 <img width="1844" height="1456" alt="levels" src="https://github.com/user-attachments/assets/79d5271d-0689-43d4-92c0-66674013ddce" />
 
+NEW behavior (from alpha 0.64) : 
+
+| Mode | Settings |
+|------|----------|
+| **LOW** | `GX_NEAR`  |
+| **NORMAL (default)** | `GX_LINEAR`   |
+
+
 - Use LOW for 240p games/modes
 - Use NORMAL for other games
+
+
 
 Important note : LOW can cause Z-Fighting (example in jet set radio, see https://github.com/BenoitAdam/nullDC4Wii/issues/115)
 
