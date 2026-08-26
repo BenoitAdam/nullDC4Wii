@@ -668,6 +668,10 @@ static char s_cfg_path[256] = "";
 // Exported so main.cpp can display the matched preset name in the options menu
 char g_matched_preset_name[MAX_KEYWORD_LEN] = "";
 
+// True when the section that matched used <angle> brackets (the Wii U gate),
+// so main.cpp shows <name> rather than [name].
+bool g_matched_preset_is_wiiu = false;
+
 // ---------------------------------------------------------------------------
 // String helpers  (no strncasecmp — not reliable on all devkitPPC newlib builds)
 // ---------------------------------------------------------------------------
@@ -1150,13 +1154,14 @@ static void preset_apply_fields(const GamePreset* p)
 // canonical and hit (both MAX_KEYWORD_LEN) receive the first alias and the
 // alias that matched.
 static bool section_matches(char* s, const char* lower_name, bool want_default,
-                            char* canonical, char* hit)
+                            char* canonical, char* hit, bool* is_wiiu)
 {
     bool matched    = false;
     bool have_alias = false;
     bool wiiu_only  = false;
     bool is_default = false;
     bool first      = true;
+    *is_wiiu = false;
     canonical[0] = hit[0] = '\0';
 
     // Walk every [alias]/<alias> group on the line; stop at the first
@@ -1200,6 +1205,10 @@ static bool section_matches(char* s, const char* lower_name, bool want_default,
 
     if (!have_alias) return false;
 
+    // Reported regardless of the outcome, so the caller can label the
+    // section even when the Wii U gate rejects it.
+    *is_wiiu = wiiu_only;
+
     bool conditions_ok = !wiiu_only || g_is_wiiu;
 
     // [default]/<default> is special: only ever picked by the want_default
@@ -1234,13 +1243,19 @@ static bool stream_apply(const char* lower_name, bool want_default)
         // Blank or full-line comment (;; or # or ;)
         if (!*s || *s == '#' || *s == ';') continue;
 
-        // Section header: [keyword] or several aliases [name1][name2][name3]
-        if (*s == '[')
+        // Section header: [keyword] or several aliases [name1][name2][name3].
+        // A <angle> group is a section header too — the brackets themselves
+        // are the Wii U gate — so '<' must be accepted here as well, or the
+        // whole Wii U section is skipped and its key=value lines are either
+        // dropped or (with no [wiiu] guard above them) absorbed by whatever
+        // section was still collecting.
+        if (*s == '[' || *s == '<')
         {
             if (collecting) break;   // next section starts — first match wins
 
             char canonical[MAX_KEYWORD_LEN], hit[MAX_KEYWORD_LEN];
-            if (section_matches(s, lower_name, want_default, canonical, hit))
+            bool sec_is_wiiu = false;
+            if (section_matches(s, lower_name, want_default, canonical, hit, &sec_is_wiiu))
             {
                 collecting = true;
                 preset_clear(&s_scratch);
@@ -1249,11 +1264,14 @@ static bool stream_apply(const char* lower_name, bool want_default)
                     printf("[game_presets] Applying [default]\n");
                 else
                 {
-                    printf("[game_presets] Matched [%s] (via '%s')\n", canonical, hit);
+                    printf("[game_presets] Matched %c%s%c (via '%s')\n",
+                           sec_is_wiiu ? '<' : '[', canonical,
+                           sec_is_wiiu ? '>' : ']', hit);
 
                     // Save canonical name (first alias) for the options menu
                     strncpy(g_matched_preset_name, canonical, MAX_KEYWORD_LEN - 1);
                     g_matched_preset_name[MAX_KEYWORD_LEN - 1] = '\0';
+                    g_matched_preset_is_wiiu = sec_is_wiiu;
                 }
             }
             continue;
@@ -1291,6 +1309,7 @@ static bool stream_apply(const char* lower_name, bool want_default)
 void game_presets_load(const char* cfg_path)
 {
     g_matched_preset_name[0] = '\0';
+    g_matched_preset_is_wiiu = false;
 
     strncpy(s_cfg_path, cfg_path, sizeof(s_cfg_path) - 1);
     s_cfg_path[sizeof(s_cfg_path) - 1] = '\0';
@@ -1309,7 +1328,8 @@ void game_presets_load(const char* cfg_path)
     char line[256];
     while (fgets(line, sizeof(line), f))
     {
-        if (*str_trim(line) == '[')
+        char c = *str_trim(line);
+        if (c == '[' || c == '<')
             sections++;
     }
     fclose(f);
@@ -1324,6 +1344,7 @@ void game_presets_load(const char* cfg_path)
 void game_presets_apply(const char* filepath)
 {
     g_matched_preset_name[0] = '\0';   // clear previous match
+    g_matched_preset_is_wiiu = false;
 
     if (!s_cfg_path[0])
         return;

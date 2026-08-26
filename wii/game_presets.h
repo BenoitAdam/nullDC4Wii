@@ -34,6 +34,12 @@ void game_presets_apply(const char* filepath);
  */
 extern char g_matched_preset_name[];
 
+/**
+ * True when the matched section used <angle> brackets in the .cfg, i.e. a
+ * Wii-U-only section. Display the name as <name> instead of [name].
+ */
+extern bool g_matched_preset_is_wiiu;
+
 #ifdef __cplusplus
 }
 #endif

@@ -1341,7 +1341,9 @@ bool displayOptionsMenu()
 
     // --- Row 2: Preset banner (display only) ---
     if (g_matched_preset_name[0] != '\0')
-      printf("    * Preset [%s] applied\n", g_matched_preset_name);
+      printf("    * Preset %c%s%c applied\n",
+             g_matched_preset_is_wiiu ? '<' : '[', g_matched_preset_name,
+             g_matched_preset_is_wiiu ? '>' : ']');
     else
       printf("    (no game preset matched)\n");
 
@@ -2747,6 +2749,7 @@ int main(int argc, wchar *argv[])
         // Boot to BIOS — clear preset name, no file selected
         handleBIOSBoot();
         g_matched_preset_name[0] = '\0';
+        g_matched_preset_is_wiiu = false;
         launchGame = true;
       }
       else if (selectedIndex >= 0)
@@ -2774,7 +2777,9 @@ int main(int argc, wchar *argv[])
       printf("Booting to BIOS (no disc)...\n");
 
     if (g_matched_preset_name[0] != '\0')
-      printf("Game preset    : [%s] applied\n", g_matched_preset_name);
+      printf("Game preset    : %c%s%c applied\n",
+             g_matched_preset_is_wiiu ? '<' : '[', g_matched_preset_name,
+             g_matched_preset_is_wiiu ? '>' : ']');
     else
       printf("Game preset    : none\n");
 
