@@ -400,11 +400,52 @@ bool _vmem_reserve()
     vram_buffer = (u8*)(((unat)vram_buffer + 63) & ~(unat)63); // 64-byte align
     SYS_SetArena2Lo(vram_buffer + VRAM_SIZE * 2);
 
+    // CACHE_VERY_FAST_PLUS overflow arena (see gxRend.cpp). That preset keeps
+    // VERY_FAST's address-derived texture slots, which need the whole 16 MB of
+    // vram_buffer, so its arena for textures that expand by more than 2x on
+    // decode has to come from somewhere else. Only that minority lands here, so
+    // a few MB goes a long way; if MEM2 is tight we skip it entirely and the
+    // preset falls back to using the slot for everything.
+    extern u8* plus_tex_arena;
+    extern u32 plus_tex_arena_size;
+    // Size: 4 MB. This is a HARD LIMIT, not a tuning knob. 6 MB was tried and
+    // froze the emulator during BIOS load, before the Dreamcast logo -- MEM2
+    // simply does not have it to give once AUTOSORT, the fastmem HTAB and the
+    // boot allocations have taken their share. Do not raise this without
+    // testing a cold boot on real hardware. (For reference: the textures that
+    // overflow their slot are all VQ and decode to ~314 KB each, so 4 MB holds
+    // about twelve of them. When that is not enough the preset gives up on the
+    // arena on its own -- see s_plus_arena_ok in gxRend.cpp -- and falls back to
+    // the address-derived slot, which is the VERY_FAST behaviour.)
+    // Taken off the TOP of MEM2, not the bottom. Growing Arena2Lo shifts the
+    // base address every later allocation sees — AUTOSORT, the fastmem HTAB
+    // (which has its own alignment needs), the boot buffers — and the 6 MB
+    // attempt froze the emulator during BIOS load even though MEM2 still had
+    // several MB free, which smells like a layout interaction rather than plain
+    // exhaustion. Carving from Arena2Hi leaves the bottom of the arena byte for
+    // byte as it was before this feature existed.
+    {
+        const u32 want = 4u * 1024u * 1024u;
+        const u32 keep = 4u * 1024u * 1024u; // MEM2 left for everyone else
+        u32 free_m2 = (u32)((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo());
+        // Never take more than half of what is free, whatever the numbers say.
+        if (free_m2 > want + keep && want <= free_m2 / 2u)
+        {
+            u8* a = (u8*)SYS_GetArena2Hi() - want;
+            a = (u8*)((unat)a & ~(unat)63); // 64-byte align, downwards
+            SYS_SetArena2Hi(a);
+            plus_tex_arena      = a;
+            plus_tex_arena_size = want;
+        }
+    }
+
     IRQ_Restore(level);
 
     printf("[vmem] Wii RAM: %p  VRAM buffer: %p  GDDR3 free: %.2f MB\n",
            ram_alloc, vram_buffer,
            ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / (1024.f * 1024.f));
+    printf("[vmem] PLUS tex arena: %p (%u KB)\n",
+           plus_tex_arena, plus_tex_arena_size / 1024u);
 #else
     u8* ram_alloc = SLIM_RAM;
 

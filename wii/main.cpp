@@ -167,6 +167,31 @@ int g_texture_cache_preset = 2;
 // 3 = QUALITY
 // 4 = EXTRA (debug)
 // 5 = EXTRA_DEBUG (debug)
+// 6 = VERY FAST+ (NORMAL, plus three fixes: stride-selected textures are sized
+//     for the 512-wide decode they actually perform instead of overrunning
+//     their slot, they are validated by a content hash rather than by format,
+//     and the cache sentinel is written at the un-mipped address so mipmapped
+//     textures really do cache.
+//     See the CACHE_VERY_FAST_PLUS block in plugs/drkPvr/gxRend.cpp)
+
+// Menu cycle order for OPT_TEX_CACHE. Not 0..N-1: VERY FAST+ is preset value 6
+// (4/5 are the debug-only EXTRA modes, unreachable from the menu) but belongs
+// between VERY FAST and FAST in the UI, where it sits on the speed/safety
+// ladder. Saved configs keep working because the stored value is the preset
+// number, not an index into this table.
+static const int kTexCacheCycle[] = { 0, 6, 1, 2, 3 };
+#define TEX_CACHE_CYCLE_N ((int)(sizeof(kTexCacheCycle)/sizeof(kTexCacheCycle[0])))
+
+// Step the tex-cache preset by +1 / -1 along kTexCacheCycle. A value not in the
+// table (an EXTRA debug mode set from a game preset) restarts the walk at 0.
+static int tex_cache_step(int cur, int dir)
+{
+  int i = 0;
+  for (int k = 0; k < TEX_CACHE_CYCLE_N; k++)
+    if (kTexCacheCycle[k] == cur) { i = k; break; }
+  i = (i + dir + TEX_CACHE_CYCLE_N) % TEX_CACHE_CYCLE_N;
+  return kTexCacheCycle[i];
+}
 
 extern "C" {
   int get_texture_cache_preset() { return g_texture_cache_preset; }
@@ -234,6 +259,15 @@ int g_yuv_twiddle_fix_preset = 1; // 0=off (legacy extraction), 1=on. TWIDDLED Y
 
 extern "C" {
   int get_yuv_twiddle_fix_preset() { return g_yuv_twiddle_fix_preset; }
+}
+
+int g_vq_cmpr_preset = 0; // 0=off (VQ decodes to 16bpp), 1=on (VQ -> GX CMPR)
+// Only meaningful with tex_cache=very_fast_plus: at 4 bits/texel a VQ texture
+// fits its address-derived cache slot, so it stops overrunning its neighbour
+// and stops needing the overflow arena. Costs a second lossy pass (DXT1 on top
+// of VQ), so gradients band. 565 VQ source only.
+extern "C" {
+  int get_vq_cmpr_preset() { return g_vq_cmpr_preset; }
 }
 
 int g_jojo_fix_preset = 0; // 0=off (pre-fix behavior), 1 = On
@@ -321,7 +355,7 @@ extern "C" {
   int get_mipmap_preset() { return g_mipmap_preset; }
 }
 
-int g_seam_fix_preset = 1; // 0=off (legacy); 1=on. Half-texel UV inset via a per-texture GX matrix so GX_LINEAR filtering stops sampling past a sprite's own texels — kills the thin black "seam" line between 2D tiles/sprites without dropping to GX_NEAR. Keeps wrap/tiling intact (sub-texel shift only).
+int g_seam_fix_preset = 0; // 0=off (legacy); 1=on. Half-texel UV inset via a per-texture GX matrix so GX_LINEAR filtering stops sampling past a sprite's own texels — kills the thin black "seam" line between 2D tiles/sprites without dropping to GX_NEAR. Keeps wrap/tiling intact (sub-texel shift only).
 
 extern "C" {
   int get_seam_fix_preset() { return g_seam_fix_preset; }
@@ -1111,6 +1145,7 @@ void checkBiosFiles()
 #define OPT_ACCURACY    33
 #define OPT_HOKUTO_HACK 34 // now shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_JOJO_FIX    35
+#define OPT_VQ_CMPR     67    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_RGB565_OPAQUE_ALPHA 36
 #define OPT_PPZ_WRITE   37
 #define OPT_ISP_DEPTH_FUNC 38 // now shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
@@ -1192,6 +1227,7 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_FOG,
   OPT_BG_POLY,
   OPT_RGB565_OPAQUE_ALPHA,
+  OPT_VQ_CMPR,
   OPT_JOJO_FIX,
   OPT_OFFSET_COLOR
 };
@@ -1423,6 +1459,7 @@ bool displayOptionsMenu()
     printf("%s TEXTURE CACHE  : ", (selectedRow == OPT_TEX_CACHE) ? ">" : " ");
     switch (g_texture_cache_preset) {
       case 0: printf("[< VERY FAST         >]"); break;
+      case 6: printf("[< VERY FAST+        >]"); break;
       case 1: printf("[< FAST              >]"); break;
       case 2: printf("[< NORMAL (DEFAULT)  >]"); break;
       case 3: printf("[< QUALITY (SLOW)    >]"); break;
@@ -1614,6 +1651,14 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Jojo Fix ---
+    printf("%s VQ AS CMPR     : ", (selectedRow == OPT_VQ_CMPR) ? ">" : " ");
+    switch (g_vq_cmpr_preset) {
+      case 0: printf("[< OFF (DEFAULT)     >]"); break;
+      case 1: printf("[< ON                >]"); break;
+    }
+    printf(" fixes VQ glitches on VERY FAST/+");
+    printf("\n");
+
     printf("%s JOJO FIX       : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
     switch (g_jojo_fix_preset) {
       case 0: printf("[< OFF               >]"); break;
@@ -2010,10 +2055,11 @@ bool displayOptionsMenu()
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
         case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 2) % 3; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 4) % 5; break;
-        case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 3) % 4; break;
+        case OPT_TEX_CACHE: g_texture_cache_preset  = tex_cache_step(g_texture_cache_preset, -1); break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 4) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 4) % 5; break;
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
+        case OPT_VQ_CMPR:   g_vq_cmpr_preset        = (g_vq_cmpr_preset        + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
@@ -2082,10 +2128,11 @@ bool displayOptionsMenu()
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
         case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 1) % 3; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 1) % 5; break;
-        case OPT_TEX_CACHE: g_texture_cache_preset  = (g_texture_cache_preset  + 1) % 4; break;
+        case OPT_TEX_CACHE: g_texture_cache_preset  = tex_cache_step(g_texture_cache_preset, +1); break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 1) % 5; break;
         case OPT_8BPP:      g_8bpp_preset           = (g_8bpp_preset           + 1) % 5; break;
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
+        case OPT_VQ_CMPR:   g_vq_cmpr_preset        = (g_vq_cmpr_preset        + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
         case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
@@ -2845,6 +2892,7 @@ int main(int argc, wchar *argv[])
     printf("Texture Cache  : ");
     switch(g_texture_cache_preset) {
       case 0: printf("VERY FAST\n"); break;
+      case 6: printf("VERY FAST+\n"); break;
       case 1: printf("FAST\n");      break;
       case 2: printf("NORMAL (DEFAULT)\n");    break;
       case 3: printf("QUALITY\n");   break;
@@ -2866,6 +2914,7 @@ int main(int argc, wchar *argv[])
       case 4: printf("RGB565\n");         break;
     }
     printf("Jojo Fix       : %s\n", g_jojo_fix_preset ? "YES" : "NO");
+    printf("VQ as CMPR     : %s\n", g_vq_cmpr_preset ? "YES" : "NO");
     printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
     printf("Render Delay   : %s\n", g_render_delay_preset ? "ON (HW-LIKE)" : "OFF (LEGACY)");
     printf("Show FPS       : %s\n", g_show_fps_overlay ? "ON" : "OFF");

@@ -95,6 +95,13 @@ extern "C" int get_8bpp_preset();
 extern "C" int get_jojo_fix_preset();
 #define JOJO_FIX() (get_jojo_fix_preset() != 0)
 
+// VQ textures decoded to GX_TF_CMPR (DXT1) instead of 16bpp — see
+// texture_VQ_CMPR(). 4 bits/texel instead of 16, which is what lets a VQ
+// texture fit its address-derived cache slot instead of needing the overflow
+// arena. 565 source only (CMPR carries no usable alpha).
+extern "C" int get_vq_cmpr_preset();
+#define VQ_CMPR() (get_vq_cmpr_preset() == 1)
+
 // Vertex-color Intensity (Gouraud) (cars in Crazy Taxi 1)
 extern "C" int get_vertex_color_fix_preset();
 #define VERTEX_COLOR_FIX() (get_vertex_color_fix_preset() != 0)
@@ -108,6 +115,68 @@ extern "C" int get_texture_cache_preset();
 #define CACHE_QUALITY()     (get_texture_cache_preset() == 3) // Quality with enhancements
 #define CACHE_EXTRA()       (get_texture_cache_preset() == 4) // Perfect Result (to the cost of FPS) — For Debug only
 #define CACHE_EXTRA_DEBUG() (get_texture_cache_preset() == 5) // Pure bump allocation, always re-decode — For Debug only
+#define CACHE_VERY_FAST_PLUS() (get_texture_cache_preset() == 6) // VERY_FAST slots, sized fallback, content-validated
+
+// CACHE_VERY_FAST_PLUS sits between VERY_FAST and FAST.
+//
+// Measured on Buggy Heat gameplay, 60 frames, same scene:
+//   very_fast : 33960 binds,    0 decodes  (100% cached)
+//   normal    : 34239 binds, 4437 decodes  ( 87% cached, 73/frame)
+//   plus v4   : 19670 binds, 2593 decodes  ( 86% cached, 43/frame), 170 arena
+//               wraps, 85% of binds routed to the arena — v4 carved the arena
+//               out of vram_buffer, which shrank the slot address range and
+//               pushed most textures into a 4 MB arena that could not hold them.
+//               v5 gives the arena its own MEM2 block so the slot range is whole
+//               again, and gives up on the arena entirely if it still thrashes.
+// VERY_FAST is not really a cache: slot = vram_buffer[tex_addr * 2] gives every
+// DC address a permanent private home (8 MB of VRAM spread over 16 MB of
+// buffer), so there is no lookup, no capacity limit and no eviction. The 14 MB
+// FAST/NORMAL arena cannot hold a real scene's decoded textures, so it evicts
+// and re-decodes forever. 73 decodes a frame at roughly 330k cycles each is the
+// whole FPS gap; no amount of tuning the lookup was ever going to close it.
+//
+// So PLUS keeps VERY_FAST's slot for every texture that provably fits it, and
+// routes only the ones that would overrun into a sized bump arena living in its
+// own MEM2 block (see tex_arena_base()). If that arena is absent or proves too
+// small for the scene, PLUS uses the slot for everything and accepts VERY_FAST's
+// overrun — never the thrash. On top of that it fixes three things VERY_FAST
+// and FAST/NORMAL respectively get wrong:
+//
+//  1. STRIDE ALLOCATION SIZE. A stride-selected scan-order texture does not
+//     decode at its declared width: norm_text() and the YUV path both raise w
+//     to 512 first. But `decode_bytes` is computed from 8<<TexU, so the slot is
+//     under-allocated by up to 16x and the decoder writes straight past its
+//     end. In the PER-FRAME arenas (QUALITY/EXTRA) that overrun lands in space
+//     the allocator has not handed out yet, so the next texture decoded that
+//     frame simply overwrites it and nothing is ever visibly wrong. In the
+//     PERSISTENT FAST/NORMAL arena it lands on a neighbour that was cached on
+//     an earlier frame and will NOT be re-decoded — permanently corrupting its
+//     pixels and its descriptor. A clobbered descriptor then fails its own
+//     validity check forever, so it re-decodes every draw and can overrun the
+//     NEXT neighbour in turn. That cascade is why 2D menus (which are exactly
+//     what stride textures are used for) look wrong AND run slowly on
+//     FAST/NORMAL while being fine on VERY_FAST and QUALITY.
+//  2. STRIDE SURFACES ARE VALIDATED BY CONTENT, not by shape. VERY_FAST and
+//     QUALITY end their validity check with !(StrideSel && ScanOrder), i.e.
+//     they never cache these at all — correct, because shape_key only
+//     describes the FORMAT and cannot notice that the game repainted the
+//     surface, but expensive, because every draw re-converts 512*h texels.
+//     PLUS hashes 8 words spread across the surface instead (see
+//     stride_fingerprint()) and re-decodes only when the hash moves, so static
+//     menu art caches and animated art still refreshes. No sentinel is written
+//     for these: on a scan-order surface it lands on visible top-left pixels.
+//  3. SENTINEL ADDRESS. FAST/NORMAL write the 0xDEADBEEF sentinel at
+//     `tex_addr`, which the twiddled/YUV/4BPP/8BPP decoders have by then
+//     advanced past the small mip levels (twidle_tex() does
+//     `tex_addr += OtherMipPoint[...]`). The validity check reads `ptex_skmp`,
+//     still pointing at the ORIGINAL address, so no mipmapped non-VQ texture
+//     ever registers a hit — and the stomp lands in the full-size mip level
+//     the decoder actually samples, which is visible corruption. VERY_FAST is
+//     immune (it writes through the saved `ptex_skmp`); PLUS does the same.
+//
+// FAST and NORMAL are deliberately left exactly as they were, so the game
+// presets tuned against them keep the behaviour they were tested with.
+#define CACHE_NORMAL_FAMILY() (CACHE_NORMAL() || CACHE_VERY_FAST_PLUS())
 
 // Per Polygon Z Write
 extern "C" int get_ppz_write_preset();
@@ -562,6 +631,14 @@ int frame_counter;
 using namespace TASplitter;
 
 u8 *vram_buffer;
+
+// CACHE_VERY_FAST_PLUS overflow arena, handed to us by _vmem_reserve(). PLUS
+// keeps VERY_FAST's address-derived slots, which need every byte of
+// vram_buffer, so the arena for textures that cannot fit such a slot lives in
+// its own MEM2 block. Null when MEM2 was too tight to spare one — PLUS then
+// uses the slot for everything, i.e. it behaves exactly like VERY_FAST.
+u8 *plus_tex_arena = 0;
+u32 plus_tex_arena_size = 0;
 
 // Double buffering setup: frameBuffer[0] and [1] prevent screen tearing.
 static void *frameBuffer[2] = {NULL, NULL};
@@ -1227,7 +1304,51 @@ static TextureCacheDesc* bump_alloc(u32 pixel_bytes, u32 **pixel_out)
 // (which redecodes every texture every frame): the caller still runs the usual
 // CACHE_FAST/CACHE_NORMAL sentinel/shape-key (or VQ fingerprint) check against
 // whatever this map returns before trusting it.
+// Texture-cache instrumentation counters. Declared up here because
+// fast_bump_alloc() below bumps the wrap counter; they are read and printed
+// once a second by tex_frame_reset(). Temporary — see the report line there.
+static u32 g_texc_binds   = 0;
+static u32 g_texc_decodes = 0;
+static u32 g_texc_frames  = 0;
+// Why each decode happened, so a single log line says where the work is going.
+static u32 g_texc_m_stride = 0; // dynamic stride surface, contents changed
+static u32 g_texc_m_new    = 0; // slot is not holding this address (first use / evicted)
+static u32 g_texc_m_sent   = 0; // sentinel gone: the game overwrote the texture
+static u32 g_texc_m_shape  = 0; // shape_key or VQ fingerprint mismatch
+static u32 g_texc_wraps    = 0; // persistent arena filled and discarded every entry
+static u32 g_texc_mapfull  = 0; // 2048-slot map full: texture cannot be cached at all
+static u32 g_texc_arena    = 0; // PLUS binds that did not fit their skimp slot
+// ...and which formats those were, so the fix aims at the right one.
+static u32 g_texc_a_vq     = 0; // VQ: 2 bits/texel source -> 16 bits decoded
+static u32 g_texc_a_pal    = 0; // CI4/CI8 decoded to 16bpp (the OPTIMIZED presets)
+static u32 g_texc_a_oth    = 0; // anything else
+static u32 g_texc_wraps_frame = 0; // arena wraps inside the current frame
+static u32 g_texc_allocs   = 0; // arena allocations, i.e. distinct slots handed out
+static u32 g_texc_alloc_kb = 0; // KB handed out — tells us how big the arena must be
+static u32 s_plus_wrap_frames = 0; // consecutive frames in which the arena wrapped
+
 static const u32 FAST_BUMP_TOTAL = 14u * 1024u * 1024u; // 14 MB, mirrors BUMP_TOTAL
+
+// Which block the persistent bump arena lives in. FAST/NORMAL use the front of
+// vram_buffer, as they always have. PLUS cannot: skimp_slot() spreads DC
+// addresses across the whole 16 MB (tex_addr * 2 over 8 MB of VRAM), so an
+// arena carved out of the same buffer both overwrites slots and shrinks the
+// address range the scheme depends on. PLUS uses its own MEM2 block instead.
+static INLINE u8* tex_arena_base()
+{
+  return (CACHE_VERY_FAST_PLUS() && plus_tex_arena) ? plus_tex_arena : vram_buffer;
+}
+static INLINE u32 tex_arena_limit()
+{
+  return (CACHE_VERY_FAST_PLUS() && plus_tex_arena) ? plus_tex_arena_size
+                                                    : FAST_BUMP_TOTAL;
+}
+
+// Cleared for the rest of the session if the arena turns out too small to hold
+// the scene (it wrapped again and again, re-decoding everything each time).
+// Thrashing it is strictly worse than accepting VERY_FAST's slot overrun, so
+// PLUS stops routing to it and behaves like VERY_FAST from then on.
+static bool s_plus_arena_ok = true;
 
 static u32 s_fast_bump_offset = 0;
 
@@ -1259,6 +1380,7 @@ static INLINE u32 fast_map_locate(u32 tex_addr, bool *found)
     probe++;
   }
   *found = false;
+  g_texc_mapfull++;
   return FASTMAP_SIZE; // table completely full (shouldn't happen at 2048 slots)
 }
 
@@ -1272,14 +1394,19 @@ static TextureCacheDesc* fast_bump_alloc(u32 pixel_bytes, u32 **pixel_out, u32 *
   u32 desc_sz  = (sizeof(TextureCacheDesc) + 31) & ~31u;
   u32 pixel_sz = (pixel_bytes + 31) & ~31u;
   u32 total    = desc_sz + pixel_sz;
-  if (s_fast_bump_offset + total > FAST_BUMP_TOTAL)
+  u8 *abase = tex_arena_base(); // FAST/NORMAL: vram_buffer. PLUS: its own block.
+  if (s_fast_bump_offset + total > tex_arena_limit())
   {
     s_fast_bump_offset = 0;
     memset(s_fastmap, 0xFF, sizeof(s_fastmap));
+    g_texc_wraps++;
+    g_texc_wraps_frame++;
   }
+  g_texc_allocs++;
+  g_texc_alloc_kb += total >> 10;
   u32 alloc_off       = s_fast_bump_offset;
-  TextureCacheDesc *d = (TextureCacheDesc*)&vram_buffer[alloc_off];
-  *pixel_out          = (u32*)&vram_buffer[alloc_off + desc_sz];
+  TextureCacheDesc *d = (TextureCacheDesc*)&abase[alloc_off];
+  *pixel_out          = (u32*)&abase[alloc_off + desc_sz];
   memset(d, 0, desc_sz);
   d->slot_size        = total;
   s_fast_bump_offset += total;
@@ -1330,11 +1457,92 @@ static INLINE u32 tex_shape_key(PolyParam *mod, u32 pixel_fmt)
   return key;
 }
 
+// CACHE_VERY_FAST_PLUS change 2 (v3): content fingerprint for a stride-selected
+// scan-order surface. VERY_FAST and QUALITY refuse to cache these at all, since
+// they are the dynamically redrawn 2D/menu surfaces and no shape_key can notice
+// that the game repainted one. Refusing to cache is correct but expensive: each
+// draw re-decodes 512*h texels. Instead, hash 8 words spread across the source
+// span the decoder will actually read (512 px wide, 16bpp) and re-decode only
+// when that changes -- ~8 VRAM reads against a full surface conversion. Static
+// menu art then caches; genuinely animated art still re-decodes, as it must.
+static INLINE u32 stride_fingerprint(u32 base, u32 h)
+{
+  u32 span = 512u * h * 2u;      // bytes norm_text() reads for this surface
+  u32 step = span >> 3;          // 8 evenly spaced probes
+  u32 fp   = span;
+  for (u32 i = 0; i < 8u; i++)
+  {
+    u32 off = (base + step * i) & (VRAM_MASK & ~3u);
+    fp = fp * 31u + *(u32*)&params.vram[off];
+  }
+  return fp;
+}
+
+// CACHE_VERY_FAST_PLUS hit-rate diagnostic. Two u32 increments on the texture
+// path (unconditional, so no preset getter call in the hot loop) and one line
+// per second in /ndclog.txt — but ONLY while that experimental preset is
+// selected, so nothing else in the build gets noisier. Reading it: a low
+// cached% means the cache is still missing and re-decoding, so the cost is in
+// texture conversion; a high cached% with bad FPS means the decode path is
+// fine and the time is going somewhere else entirely.
+
+static int s_last_cache_preset = -1;
+
 static void tex_frame_reset()
 {
+  // The cache preset can change from the in-game menu. Every offset already in
+  // s_fastmap was handed out by the previous preset's allocator, and PLUS uses
+  // a different region of vram_buffer than FAST/NORMAL do, so carrying them
+  // over would decode straight into another preset's memory.
+  {
+    int cp = get_texture_cache_preset();
+    if (cp != s_last_cache_preset)
+    {
+      s_last_cache_preset = cp; fast_cache_reset();
+      s_plus_arena_ok = true; s_plus_wrap_frames = 0;
+    }
+  }
+  // Deciding whether the overflow arena is worth keeping. A scene load wraps it
+  // a few times while the new working set streams in — that is a burst, and
+  // tripping on it (as an earlier version did, at >=2 wraps in one frame) threw
+  // away the arena on every race start for no reason. Real thrash is a working
+  // set that does not fit, and it looks different: it wraps frame after frame
+  // after frame. Give up on that, and on a single frame that wraps the whole
+  // arena many times over, but ride out a burst.
+  if (g_texc_wraps_frame) s_plus_wrap_frames++;
+  else                    s_plus_wrap_frames = 0;
+  if (s_plus_wrap_frames >= 8 || g_texc_wraps_frame >= 8) s_plus_arena_ok = false;
+  g_texc_wraps_frame = 0;
+
   bump_reset();       // reset arena for new frame
   hash_map_reset();   // clear hash map — O(4 KB memset), fast on PPC
   // params.vram sentinels survive across frames.
+
+  // Texture-cache report, once a second, for whichever preset is active. The
+  // counters themselves are two increments on the bind path and are always on
+  // (the arena give-up valve above reads them); only the printf is gated, so
+  // turning DEBUG MESSAGES on is enough to get the numbers back. This is how
+  // the whole very_fast/very_fast_plus investigation was settled - keep it.
+  if (++g_texc_frames >= 60)
+  {
+    if (DEBUG_MESSAGE())
+    {
+      u32 cached_pct = g_texc_binds ? (100u * (g_texc_binds - g_texc_decodes)) / g_texc_binds : 0u;
+      printf("[TEXC] p%d %uf binds=%u dec=%u (%u%% cached, %u/frame) miss: stride=%u new=%u sent=%u shape=%u | wraps=%u mapfull=%u arena=%u(vq=%u pal=%u oth=%u) allocs=%u allocKB=%u plusarena=%u\n",
+             get_texture_cache_preset(), g_texc_frames, g_texc_binds, g_texc_decodes,
+             cached_pct, g_texc_decodes / g_texc_frames,
+             g_texc_m_stride, g_texc_m_new, g_texc_m_sent, g_texc_m_shape,
+             g_texc_wraps, g_texc_mapfull, g_texc_arena,
+             g_texc_a_vq, g_texc_a_pal, g_texc_a_oth,
+             g_texc_allocs, g_texc_alloc_kb, s_plus_arena_ok ? 1u : 0u);
+      fflush(stdout); // log is freopen'd to SD; without this the tail is lost
+    }
+    g_texc_frames = g_texc_binds = g_texc_decodes = 0;
+    g_texc_m_stride = g_texc_m_new = g_texc_m_sent = g_texc_m_shape = 0;
+    g_texc_wraps = g_texc_mapfull = g_texc_arena = 0;
+    g_texc_a_vq = g_texc_a_pal = g_texc_a_oth = 0;
+    g_texc_allocs = g_texc_alloc_kb = 0;
+  }
 }
 
 
@@ -2582,6 +2790,89 @@ int g_yuv_src_real_h = 0;
 // DC planar YUV422: UYVY layout — DC LE bytes [U, Y0, V, Y1] at addresses [0,1,2,3].
 // Each pixel pair is two u16s (Y<<8)|chroma; LE storage puts chroma at even addresses.
 // Wii BE u32 read gives the DC LE u32 value; bit-shift extraction recovers channels.
+// VQ -> CMPR (DXT1), for CACHE_VERY_FAST_PLUS.
+//
+// Why this exists: a VQ texture is 2 bits/texel in VRAM (plus a 2 KB codebook)
+// and decodes to 16 bits/texel, a 7.6x expansion. Its address-derived cache
+// slot only has room for 2x, so every VQ texture overruns its neighbour — the
+// corruption VERY_FAST is known for — and routing them to a sized arena instead
+// needs ~314 KB each, far more than the Wii can spare. At 4 bits/texel CMPR is
+// a 2x expansion, and the codebook the source carries provides the margin, so
+// every VQ size from 8x8 to 1024x1024 fits its slot with room over. No extra
+// memory, no overrun, no arena.
+//
+// It streams: each 4x4 CMPR block is built from four 2x2 codebook lookups on
+// the stack. A full-size 16bpp intermediate would need up to 512 KB of scratch,
+// and MEM1 has nothing like that to spare.
+//
+// Quality: DXT1 on top of VQ is a second lossy pass. VQ is already 2x2-block
+// based so the two mostly agree, but smooth gradients (skies, fades) will band.
+// That is why this is opt-in.
+template <class PixelConvertor>
+void fastcall texture_VQ_CMPR(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
+{
+  u8 *dst = VramWork;
+  const u32 divider = PixelConvertor::xpp * PixelConvertor::ypp; // 4 for 2x2
+
+  const u32 *table_x, *table_y;
+  get_twiddle_axis_tables(Width, Height, &table_x, &table_y);
+
+  // GX CMPR is an 8x8 super-tile of four 4x4 DXT1 blocks: [TL][TR][BL][BR].
+  static const u32 sub_ox[4] = {0,4,0,4};
+  static const u32 sub_oy[4] = {0,0,4,4};
+
+  for (u32 ty = 0; ty < Height; ty += 8)
+  for (u32 tx = 0; tx < Width;  tx += 8)
+  {
+    u8 *super_dst = dst + ((ty >> 3) * (Width >> 3) + (tx >> 3)) * 32;
+    for (int sub = 0; sub < 4; sub++)
+    {
+      const u32 bx = tx + sub_ox[sub], by = ty + sub_oy[sub];
+      u16 block[16]; // 4x4 pixels, row-major, as encode_cmpr_block wants
+      for (u32 dy = 0; dy < 4; dy += 2)
+      {
+        const u32 offset_y = table_y[by + dy];
+        for (u32 dx = 0; dx < 4; dx += 2)
+        {
+          // One index byte per 2x2 block, same addressing as texture_VQ.
+          u8 idx = *host_ptr_xor(&p_in[(offset_y | table_x[bx + dx]) / divider]);
+          u8 *cb = &vq_codebook[idx * 8];
+          u16 s0 = *host_ptr_xor((u16*)&cb[0]);
+          u16 s1 = *host_ptr_xor((u16*)&cb[2]);
+          u16 s2 = *host_ptr_xor((u16*)&cb[4]);
+          u16 s3 = *host_ptr_xor((u16*)&cb[6]);
+          block[ dy      * 4 + dx    ] = PixelConvertor::ConvertPixel(s0);
+          block[ dy      * 4 + dx + 1] = PixelConvertor::ConvertPixel(s2);
+          block[(dy + 1) * 4 + dx    ] = PixelConvertor::ConvertPixel(s1);
+          block[(dy + 1) * 4 + dx + 1] = PixelConvertor::ConvertPixel(s3);
+        }
+      }
+      encode_cmpr_block(block, super_dst + sub * 8);
+    }
+  }
+}
+
+// VQ branch of twidle_tex(), routed through texture_VQ_CMPR instead. Kept as a
+// macro for the same reason twidle_tex is one: it needs tex_addr/w/h/texVQ and
+// the conv##format##_VQ token from the caller.
+#define twidle_tex_vq_cmpr(format)                                                        \
+  {                                                                                       \
+    /* Codebook always at tex_addr - do NOT move this for mipmaps */                      \
+    vq_codebook = (u8 *)&params.vram[tex_addr];                                           \
+    if (mod->tcw.NO_PAL.MipMapped)                                                        \
+    {                                                                                     \
+      /* Jump to the full-size VQ index map, exactly as twidle_tex does */                \
+      tex_addr += VQMipPoint[mod->tsp.TexU + 3];                                          \
+      h = w; /* MipMapped = square: ignore TexV */                                        \
+    }                                                                                     \
+    else                                                                                  \
+    {                                                                                     \
+      tex_addr += 2048; /* skip codebook to reach index map */                            \
+    }                                                                                     \
+    texture_VQ_CMPR<conv##format##_VQ>((u8 *)&params.vram[tex_addr], w, h, vq_codebook);  \
+    texVQ = 1;                                                                            \
+  }
+
 static void YUV422_to_CMPR_Planar(u8 *src_vram, u32 w, u32 h, u8 *dst)
 {
   u32 src_stride = g_yuv_src_stride_override ? (u32)g_yuv_src_stride_override : w;
@@ -3063,9 +3354,14 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   u32 tex_addr = (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
   const u32 orig_tex_addr = tex_addr;
   u32 *ptex_skmp = (u32 *)&params.vram[tex_addr];
+  g_texc_binds++; // see tex_frame_reset()
 
   // Declare all variables needed by section 1 upfront.
   bool is_vq = mod->tcw.NO_PAL.VQ_Comp;
+  // Stride-selected scan-order surface: decodes 512 px wide and is redrawn by
+  // the game. Same test VERY_FAST and QUALITY use, deliberately without a
+  // PixelFmt exclusion so PLUS treats exactly the same set of textures they do.
+  bool stride_dyn = mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder;
   u32 FMT    = GX_TF_RGB565;
   u32 texVQ  = 0;
   u8 *vq_codebook;
@@ -3087,23 +3383,110 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     // Mipmapped textures decode square: every mip path forces h = w, which
     // can exceed the h = 8<<TexV this sizing would otherwise use.
     u32 eff_h = mod->tcw.NO_PAL.MipMapped ? w : h;
-    if (is_yuv422 && FMV_FORMAT_RGBA8())
-      decode_bytes = (u32)w * eff_h * 4; // RGBA8: 4 bytes/pixel
+    // CACHE_VERY_FAST_PLUS change 1 (see the macro block at the top of this
+    // file): stride-selected scan-order textures decode at w = 512, not at
+    // 8<<TexU, so size the slot for 512 or the decoder runs off the end of it.
+    // PixelFmt 5/6 are excluded because a palettised TCW has no StrideSel or
+    // ScanOrder field — those bits are PalSelect, and reading them here would
+    // over-allocate a 16x-too-large slot for ordinary palette textures.
+    u32 eff_w = w;
+    if (CACHE_VERY_FAST_PLUS() && w < 512
+        && mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder
+        && mod->tcw.NO_PAL.PixelFmt != 5 && mod->tcw.NO_PAL.PixelFmt != 6)
+      eff_w = 512;
+    if (is_vq && VQ_CMPR() && mod->tcw.NO_PAL.PixelFmt == 1)
+    {
+      // VQ decoded to CMPR is 4 bits/texel, a quarter of the 16bpp assumption
+      // below, and this is an exact figure rather than a worst case. Saying so
+      // matters for the presets that actually ALLOCATE (fast/normal/quality):
+      // otherwise they reserve 4x what the decode writes and throw away the
+      // memory saving that is the whole point of vq_cmpr. CMPR never gets a
+      // generated mip chain either (GenerateMipChain16 only runs for
+      // RGB565/RGB5A3), so there is no tail to add.
+      decode_bytes = (u32)w * eff_h / 2u;
+    }
     else
-      decode_bytes = (u32)w * eff_h * 2; // 16bpp worst-case (covers CMPR and RGB565)
-    // 16bpp mipmapped textures grow a generated GX mip chain after the base
-    // level (~1/3 extra) — see GenerateMipChain16 above. MIPMAP_OFF skips the
-    // chain entirely, so no extra room is needed.
-    if (mod->tcw.NO_PAL.MipMapped && !is_yuv422 && !MIPMAP_OFF())
-      decode_bytes += MipChainExtraBytes16(w);
+    {
+      if (is_yuv422 && FMV_FORMAT_RGBA8())
+        decode_bytes = (u32)eff_w * eff_h * 4; // RGBA8: 4 bytes/pixel
+      else
+        decode_bytes = (u32)eff_w * eff_h * 2; // 16bpp worst-case (covers CMPR and RGB565)
+      // 16bpp mipmapped textures grow a generated GX mip chain after the base
+      // level (~1/3 extra) — see GenerateMipChain16 above. MIPMAP_OFF skips the
+      // chain entirely, so no extra room is needed.
+      if (mod->tcw.NO_PAL.MipMapped && !is_yuv422 && !MIPMAP_OFF())
+        decode_bytes += MipChainExtraBytes16(w);
+    }
   }
+  // CACHE_VERY_FAST_PLUS routing. VERY_FAST does not use a cache in the usual
+  // sense: slot = vram_buffer[tex_addr * 2], so every DC address has a
+  // permanent, private home (DC VRAM is 8 MB, vram_buffer is 16 MB, so the 2x
+  // spread covers all of it). Nothing is ever evicted and nothing is ever
+  // looked up — which is why it measures 100% cached / 0 decodes per frame on
+  // scenes where the 14 MB FAST/NORMAL arena has to keep throwing textures out
+  // and re-decoding them. Its one real flaw is that the slot has no size: the
+  // room available is 2x the texture's VRAM footprint (the gap to the next
+  // texture), and formats that expand by more than 2x on decode run into their
+  // neighbour. VQ is the bad case (2 bits/texel source, 16 bits/texel decoded).
+  //
+  // So PLUS keeps the free, eviction-proof slot for every texture that provably
+  // fits in it, and sends only the ones that would overrun to the sized bump
+  // arena. Best of both: VERY_FAST's hit rate without VERY_FAST's corruption.
+  bool plus_skimp = false;
+  if (CACHE_VERY_FAST_PLUS())
+  {
+    u32 pf = mod->tcw.NO_PAL.PixelFmt;
+    // Every mip path forces h = w (mipmapped DC textures are square), so use
+    // that height here too or the sums below describe the wrong texture.
+    u32 eh = mod->tcw.NO_PAL.MipMapped ? w : h;
+    u32 src_bytes;                                     // VRAM footprint of this texture
+    if      (is_vq)      src_bytes = 2048u + (w * eh) / 4u; // codebook + 2bpp indices
+    else if (stride_dyn) src_bytes = 512u * eh * 2u;        // 512 px wide, 16bpp
+    else if (pf == 5)    src_bytes = (w * eh) / 2u;         // CI4
+    else if (pf == 6)    src_bytes = w * eh;                // CI8
+    else                 src_bytes = w * eh * 2u;           // 16bpp / YUV422
+    // Mipmapped textures actually occupy MORE than this (the chain below the
+    // full-size level), so using the base level alone is the conservative
+    // choice: it can only push a texture to the arena, never into an overrun.
+    // decode_bytes is deliberately pessimistic: it assumes 16bpp for everything
+    // that is not YUV/RGBA8, because the allocators must never under-reserve.
+    // A skimp slot is not allocated though — it only has to be big enough — so
+    // testing against that figure would route every CI4/CI8 texture to the arena
+    // even under the CI presets, which decode to 4 and 8 bits per texel and fit
+    // the slot comfortably. Use what the decoder will really write.
+    // VQ-as-CMPR needs no correction here: decode_bytes is already exact for it.
+    u32 dec_for_slot = decode_bytes;
+    if (pf == 5 && !(TEXTURE_4BPP_OPTIMIZED() || TEXTURE_4BPP_RGB565()))
+      dec_for_slot = (w * eh) / 2u;  // GX_TF_I4 / GX_TF_CI4
+    else if (pf == 6 && !(TEXTURE_8BPP_OPTIMIZED() || TEXTURE_8BPP_RGB565()))
+      dec_for_slot = w * eh;         // GX_TF_I8 / GX_TF_CI8
+    // (both are indexed/intensity outputs, which never get a generated mip
+    //  chain, so there is no extra tail to account for here.)
+    u32 need = ((sizeof(TextureCacheDesc) + 31) & ~31u) + ((dec_for_slot + 31) & ~31u);
+    // The slot is used whenever the decode fits the gap to the next texture.
+    // It is also used when there is no arena to fall back on, or when the arena
+    // has already proved too small for this scene: an overrun costs correctness
+    // on some other texture, but arena thrash costs a full re-decode of
+    // everything, every frame, which is the slower and more visible failure.
+    plus_skimp = (need <= src_bytes * 2u)
+              || !plus_tex_arena || !s_plus_arena_ok;
+    if (!plus_skimp)
+    {
+      g_texc_arena++;
+      if      (is_vq)                  g_texc_a_vq++;
+      else if (pf == 5 || pf == 6)     g_texc_a_pal++;
+      else                             g_texc_a_oth++;
+    }
+  }
+
   u32 *pixel_buf   = nullptr;
   TextureCacheDesc *pbuff = nullptr;
   bool already_decoded_this_frame = false;
 
-  if (CACHE_VERY_FAST())
+  if (CACHE_VERY_FAST() || plus_skimp)
   {
-    // Direct-slot cache: slot derived from tex_addr. O(1), no scan.
+    // Direct-slot cache: slot derived from tex_addr. O(1), no scan, no map,
+    // no arena, and therefore no eviction — see the routing note above.
     pbuff     = skimp_slot(tex_addr);
     pixel_buf = (u32*)&pbuff[1];
   }
@@ -3118,8 +3501,9 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     if (found)
     {
       u32 off   = s_fastmap[fidx].bump_offset;
-      pbuff     = (TextureCacheDesc*)&vram_buffer[off];
-      pixel_buf = (u32*)&vram_buffer[off + desc_sz];
+      u8 *abase = tex_arena_base();
+      pbuff     = (TextureCacheDesc*)&abase[off];
+      pixel_buf = (u32*)&abase[off + desc_sz];
     }
     else
     {
@@ -3134,7 +3518,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       // check below naturally treats this as a cache miss and decodes it.
     }
   }
-  else if (CACHE_NORMAL())
+  else if (CACHE_NORMAL_FAMILY())
   {
     // Persistent bump arena + hash map: O(1) lookup like skimp_slot, but the
     // allocation is sized to what this texture actually decodes to, so it
@@ -3145,8 +3529,9 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     if (found)
     {
       u32 off   = s_fastmap[fidx].bump_offset;
-      pbuff     = (TextureCacheDesc*)&vram_buffer[off];
-      pixel_buf = (u32*)&vram_buffer[off + desc_sz];
+      u8 *abase = tex_arena_base();
+      pbuff     = (TextureCacheDesc*)&abase[off];
+      pixel_buf = (u32*)&abase[off + desc_sz];
       // The slot was sized for whatever shape this address held when it was
       // allocated. If the texture at this address changed shape and now
       // decodes bigger (e.g. non-mip → mipmapped, which appends a generated
@@ -3317,10 +3702,36 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
   bool cache_valid = false;
 
-  if (CACHE_VERY_FAST())
+  if (CACHE_VERY_FAST() || plus_skimp)
   {
-    cache_valid = (*ptex_skmp == 0xDEADBEEF) && (pbuff->addr == tex_addr)
-                && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
+    if (!CACHE_VERY_FAST_PLUS())
+    {
+      cache_valid = (*ptex_skmp == 0xDEADBEEF) && (pbuff->addr == tex_addr)
+                  && !stride_dyn;
+    }
+    else if (is_vq)
+    {
+      // Non-destructive codebook+index fingerprint. The slot is fine for a
+      // small VQ texture, but stomping a sentinel at tex_addr would corrupt
+      // codebook entry 0 the way VERY_FAST does.
+      u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
+      if (mod->tcw.NO_PAL.MipMapped)
+        idx_addr = (orig_tex_addr + VQMipPoint[mod->tsp.TexU + 3]) & VRAM_MASK;
+      u32 fp = *(u32*)&params.vram[orig_tex_addr] ^ *(u32*)&params.vram[idx_addr];
+      cache_valid = (pbuff->addr == tex_addr) && (pbuff->vq_codebook_w0 == fp);
+    }
+    else if (stride_dyn)
+    {
+      cache_valid = (pbuff->addr == tex_addr)
+                  && (pbuff->vq_codebook_w0 == stride_fingerprint(orig_tex_addr, h));
+    }
+    else
+    {
+      // Exactly VERY_FAST's test. No shape_key: the slot is address-derived,
+      // so the only texture that can alias it is one at the same address, and
+      // writing it would have cleared the sentinel.
+      cache_valid = (*ptex_skmp == 0xDEADBEEF) && (pbuff->addr == tex_addr);
+    }
   }
   else if (CACHE_FAST())
   {
@@ -3353,7 +3764,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
                   && (pbuff->shape_key == shape_key);
     }
   }
-  else if (CACHE_NORMAL())
+  else if (CACHE_NORMAL_FAMILY())
   {
     // VQ: the codebook lives at tex_addr itself, so the VERY_FAST trick of
     // stomping tex_addr with the sentinel would corrupt codebook entry 0,
@@ -3380,8 +3791,24 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       // stride+scan-order textures. Validating the shape instead lets
       // CACHE_NORMAL keep caching those textures safely.
       u32 shape_key = tex_shape_key(mod, pixel_fmt);
-      cache_valid = (*ptex_skmp == 0xDEADBEEF) && (pbuff->addr == tex_addr)
-                  && (pbuff->shape_key == shape_key);
+      // CACHE_VERY_FAST_PLUS change 2 (v3): shape_key describes the FORMAT, so
+      // it cannot tell that the game redrew a stride surface's contents.
+      // VERY_FAST and QUALITY answer that by never caching them, which is
+      // correct but re-converts 512*h texels on every draw. Hash the surface
+      // instead and re-decode only when the hash moves. The sentinel is not
+      // used (and not written) for these: it sits on the visible top-left
+      // pixels of a scan-order surface, and it would poison probe 0 anyway.
+      if (CACHE_VERY_FAST_PLUS() && stride_dyn)
+      {
+        cache_valid = (pbuff->addr == tex_addr)
+                    && (pbuff->shape_key == shape_key)
+                    && (pbuff->vq_codebook_w0 == stride_fingerprint(orig_tex_addr, h));
+      }
+      else
+      {
+        cache_valid = (*ptex_skmp == 0xDEADBEEF) && (pbuff->addr == tex_addr)
+                    && (pbuff->shape_key == shape_key);
+      }
     }
   }
   else if (CACHE_QUALITY())
@@ -3430,10 +3857,17 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
   if (!cache_valid)
   {
+    g_texc_decodes++; // see tex_frame_reset()
+    // Attribute the miss. Only runs on misses, so the cost is irrelevant.
+    if (stride_dyn)                                  g_texc_m_stride++;
+    else if (pbuff->addr != tex_addr && pbuff->addr != orig_tex_addr)
+                                                     g_texc_m_new++;
+    else if (!is_vq && *ptex_skmp != 0xDEADBEEF)     g_texc_m_sent++;
+    else                                             g_texc_m_shape++;
     u32 *dst = dst_base;
     VramWork  = (u8*)dst;
     pbuff->has_pal = false;
-    pbuff->addr    = (CACHE_VERY_FAST() || CACHE_FAST() || CACHE_NORMAL()) ? tex_addr : orig_tex_addr;
+    pbuff->addr    = (CACHE_VERY_FAST() || CACHE_FAST() || CACHE_NORMAL_FAMILY()) ? tex_addr : orig_tex_addr;
 
     if (is_vq && !CACHE_VERY_FAST())
     {
@@ -3444,13 +3878,18 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       u32 idx_w0 = *(u32*)&params.vram[idx_addr];
       pbuff->vq_codebook_w0 = cb_w0 ^ idx_w0;
     }
-    else if (CACHE_FAST() || CACHE_NORMAL())
+    else if (CACHE_FAST() || CACHE_NORMAL_FAMILY())
     {
       // Non-VQ: remember the format/scan/stride/mip/size bits alongside the
       // sentinel so a future draw at the same address with a different
       // shape (e.g. a stride-selected texture) can't be served this slot's
       // stale data — see the CACHE_FAST/CACHE_NORMAL validity check above.
       pbuff->shape_key = tex_shape_key(mod, pixel_fmt);
+      // PLUS: remember what the stride surface looked like, so the next draw
+      // can tell whether the game repainted it. h is still the declared
+      // height here — the decode switch below is what rewrites w/h.
+      if (CACHE_VERY_FAST_PLUS() && stride_dyn)
+        pbuff->vq_codebook_w0 = stride_fingerprint(orig_tex_addr, h);
     }
 
     if(DEBUG_MESSAGE()) {
@@ -3489,13 +3928,23 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         // verify(tcw.NO_PAL.VQ_Comp==0);
         norm_text(565);
         //(&pbt,(u16*)&params.vram[sa],w,h);
+        FMT = GX_TF_RGB565;
+      }
+      else if (VQ_CMPR() && mod->tcw.NO_PAL.VQ_Comp)
+      {
+        // 4 bits/texel instead of 16, so the decode fits the address-derived
+        // cache slot. 565 is the only format this is offered for: CMPR has no
+        // usable alpha, and 1555/4444 decode to RGB5A3, which encode_cmpr_block
+        // would misread as RGB565. See texture_VQ_CMPR.
+        twidle_tex_vq_cmpr(565);
+        FMT = GX_TF_CMPR;
       }
       else
       {
         // verify(tsp.TexU==tsp.TexV);
         twidle_tex(565);
+        FMT = GX_TF_RGB565;
       }
-      FMT = GX_TF_RGB565;
       break;
 
     case 2:
@@ -4282,13 +4731,30 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     {
       *ptex_skmp = 0xDEADBEEF;
     }
+    else if (CACHE_VERY_FAST_PLUS())
+    {
+      // Same rule as FAST/NORMAL below for VQ (fingerprint only, no VRAM
+      // write), but non-VQ goes through ptex_skmp — the pointer captured from
+      // the ORIGINAL tex_addr before the mip-level decoders advanced it. That
+      // is the exact word the validity check reads, so a mipmapped texture
+      // finally registers a cache hit instead of re-decoding on every draw.
+      // It also lands on the SMALLEST mip level (DC mip chains run small ->
+      // large) rather than on the full-size level the decoder actually
+      // samples, so the stomp is invisible as well as effective.
+      if (!is_vq && !stride_dyn)
+        *ptex_skmp = 0xDEADBEEF;
+    }
     else if (CACHE_FAST() || CACHE_NORMAL())
     {
       // VQ validity is tracked purely via the codebook+index fingerprint
       // (stored above) — no VRAM write, so the codebook/index data the
       // decoder just read stays intact. Only stomp the sentinel for
-      // non-VQ formats, where tex_addr == orig_tex_addr (untouched by the
-      // VQ mip-offset math) and a real overwrite naturally invalidates it.
+      // non-VQ formats. NOTE: for a MIPMAPPED non-VQ texture tex_addr has
+      // already been advanced past the small mip levels by the decoder, so
+      // this lands somewhere the validity check never looks and the texture
+      // re-decodes on every draw — CACHE_VERY_FAST_PLUS above is the gated
+      // fix for that; this path is left as-is so `fast`/`normal` keep the
+      // exact behaviour every tuned game preset was tested against.
       if (!is_vq)
       {
         u32 *ptex_fast = (u32*)&params.vram[tex_addr];

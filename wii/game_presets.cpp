@@ -74,6 +74,17 @@
                                 texture to trilinear on its own.
                                 0x (default) = off.
         8bpp=i8_stub
+        vq_cmpr=on          <- on/off, decodes VQ textures to GX CMPR (DXT1,
+                                4 bits/texel) instead of 16bpp. Only useful with
+                                tex_cache=very_fast_plus: at that size a VQ
+                                texture fits its address-derived cache slot, so
+                                it no longer overruns the neighbouring texture
+                                (the classic very_fast VQ corruption) and no
+                                longer needs the overflow arena. Costs a second
+                                lossy pass on top of VQ, so smooth gradients
+                                band. 565 VQ source only; 1555/4444 keep the
+                                16bpp path since CMPR has no usable alpha.
+                                Default off.
         jojo_fix=on         <- on/off, enables the gxRend.cpp TLUT-checksum-skip
                                 and CACHE_FAST PalSelect-masking optimizations
                                 (see plugs/drkPvr/gxRend.cpp JOJO_FIX()).
@@ -530,6 +541,7 @@ extern int g_canvas_width_preset;
 extern int g_4bpp_preset;
 extern int g_8bpp_preset;
 extern int g_jojo_fix_preset;
+extern int g_vq_cmpr_preset;
 extern int g_decal_alpha_preset;
 extern int g_speed_limiter_preset;
 extern int g_render_delay_preset;
@@ -608,6 +620,7 @@ struct GamePreset
     int bpp4;
     int bpp8;
     int jojo_fix;
+    int vq_cmpr;
     int decal_alpha;
     int speed_limiter;
     int render_delay;
@@ -842,6 +855,8 @@ static int parse_frameskip(const char* v)
 static int parse_tex_cache(const char* v)
 {
     if (key_eq(v, "very_fast")) return 0;
+    if (key_eq(v, "very_fast_plus")) return 6; // fast + sentinel at the un-mipped address
+    if (key_eq(v, "very_fast+"))     return 6; // accepted spelling of the same preset
     if (key_eq(v, "fast"))      return 1;
     if (key_eq(v, "normal"))    return 2;
     if (key_eq(v, "quality"))   return 3;
@@ -954,6 +969,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "4bpp"))       p->bpp4       = parse_bpp(val);
     else if (key_eq(key, "8bpp"))       p->bpp8       = parse_bpp(val);
     else if (key_eq(key, "jojo_fix"))   p->jojo_fix   = parse_bool(val);
+    else if (key_eq(key, "vq_cmpr"))    p->vq_cmpr    = parse_bool(val);
     else if (key_eq(key, "decal_alpha")) p->decal_alpha = parse_bool(val);
     else if (key_eq(key, "speed_limiter")) p->speed_limiter = parse_bool(val);
     else if (key_eq(key, "render_delay"))  p->render_delay  = parse_bool(val);
@@ -1012,6 +1028,7 @@ static void preset_clear(GamePreset* cur)
     cur->frameskip= cur->tex_cache = cur->bpp4     = cur->bpp8      = -1;
     cur->gx = cur->lod_bias = cur->aniso = -1;
     cur->jojo_fix = -1;
+    cur->vq_cmpr = -1;
     cur->decal_alpha = -1;
     cur->speed_limiter = -1;
     cur->render_delay = -1;
@@ -1085,6 +1102,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->bpp4       >= 0) { g_4bpp_preset           = p->bpp4;       printf("  4bpp       -> %d\n", p->bpp4);       }
     if (p->bpp8       >= 0) { g_8bpp_preset           = p->bpp8;       printf("  8bpp       -> %d\n", p->bpp8);       }
     if (p->jojo_fix   >= 0) { g_jojo_fix_preset       = p->jojo_fix;   printf("  jojo_fix   -> %d\n", p->jojo_fix);   }
+    if (p->vq_cmpr    >= 0) { g_vq_cmpr_preset        = p->vq_cmpr;    printf("  vq_cmpr    -> %d\n", p->vq_cmpr);    }
     if (p->decal_alpha >= 0) { g_decal_alpha_preset   = p->decal_alpha; printf("  decal_alpha -> %d\n", p->decal_alpha); }
     if (p->speed_limiter >= 0) { g_speed_limiter_preset = p->speed_limiter; printf("  speed_limiter -> %d\n", p->speed_limiter); }
     if (p->render_delay  >= 0) { g_render_delay_preset  = p->render_delay;  printf("  render_delay  -> %d\n", p->render_delay);  }
