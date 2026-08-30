@@ -902,7 +902,7 @@ Reduce CO2 emission & grow trees is the plan for the planet. Also prevent stupid
 
 ### Do you have a discord ?
 
-Yes : https://discord.gg/fZzxdeXrZ
+Yes : https://discord.gg/sJst6jmQyH
 
 ### Do you accept donation ?
 
