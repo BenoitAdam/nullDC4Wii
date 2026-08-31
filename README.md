@@ -853,16 +853,18 @@ Try different games, parameters and report in the compatibility wiki : https://w
 
 ### Is 100% speed of the emulator achievable on Wii ?
 
-Yes...in dolphin !
-
-Some games are running 100/120% in dolphin, but on real hardware, there is around around 20% of drop on heavy scenes.
+The only way to know this answer is to try our best ! Actually, some 2D games run 100% speed, and some 3D games also ! But we are mostly around 60 or 80% of speed...
 
 We are still trying to improve performance, altough we already done a lot of amazing stuff :  
 - Improved Dynarec
 - Fastmem
 - ARM7 CACHE
 
+We also need to work more on TEV (Texture Environnement - a specialized hardware unit inside the graphics chip), it has been tested but only on dolphin. Maybe on real hardware this would have better result.
+
 Another good strategy would be to really have a per-game specific emulator. That would take a long time, so for now we have presets & auto-presets implementation trough game_presets.cfg
+
+Also, it's suggested we build a custom Dolphin-Emulator with some tools to help fine-tuning everything and gain more speed. More info here : https://github.com/BenoitAdam/nullDC4Wii/issues/116
 
 ### Is 100% speed of the emulator achievable on Wii U?
 
