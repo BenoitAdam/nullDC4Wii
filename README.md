@@ -1,4 +1,4 @@
-[![Discord](https://img.shields.io/discord/286429969104764928?label=NullDC4wii&logo=discord&logoColor=FFFFFF)](https://discord.gg/fZzxdeXrZ)
+[![Discord](https://img.shields.io/discord/286429969104764928?label=NullDC4wii&logo=discord&logoColor=FFFFFF)](https://discord.gg/sJst6jmQyH)
 
 # NullDC4Wii - Dreamcast Emulator for Wii
 
@@ -902,7 +902,7 @@ Reduce CO2 emission & grow trees is the plan for the planet. Also prevent stupid
 
 ### Do you have a discord ?
 
-Yes : https://discord.gg/fZzxdeXrZ
+Yes : https://discord.gg/sJst6jmQyH
 
 ### Do you accept donation ?
 
