@@ -203,6 +203,46 @@ extern "C" {
   int get_ppz_write_preset() { return g_ppz_write_preset; }
 }
 
+// Translucent-list depth WRITE:
+//   1 = on   legacy, the TR list writes depth (default)
+//   0 = off  never write, translucent strips paint in submission order
+// DEBUG ONLY: off hides the Dreamcast BIOS boot logo. parse_bool("off") is
+// 0, so getting the polarity backwards makes `trans_zwrite=off` a silent
+// no-op.
+// The TR list is drawn with the frame-wide GEQUAL compare and Z-write on,
+// which lets the first translucent strip submitted at a near depth stamp
+// the Z buffer and depth-reject every farther translucent strip behind it.
+// Real PVR2 blends the translucent list rather than using it as occluders.
+// Found in Fighting Vipers 2's SEGA screen: a full-screen white quad at
+// W=0.01 was hiding the logo at W=0.10 (see the [LOGO] probe in gxRend.cpp).
+int g_trans_zwrite_preset = 1;
+
+// Sprite Base Colour (see SPRITE_COLOR in gxRend.cpp). 1 = use the sprite
+// header's own BaseCol, which the TA already parses and the renderer used to
+// discard; 0 = legacy, every sprite drawn with white vertex colour.
+// Defaults ON: reading the field is simply correct, and discarding it was
+// silently wrong for every sprite in every game (Wii-confirmed on Fighting
+// Vipers 2's SEGA screen). Set 0 per-game if some title depends on the old
+// white -- if that turns out to be common, this wants an AUTO rule instead.
+int g_sprite_color_preset = 1;
+
+// Vertex alpha on ARGB1555 surfaces (see VTX_ALPHA_HONOR in gxRend.cpp).
+// 0 = legacy, force opaque on every ARGB1555 poly (Test Drive 6's cutout
+// font needs it); 1 = honour TSP.UseAlpha, so vertex-alpha fades work.
+int g_vtx_alpha_preset = 0;
+
+extern "C" {
+  int get_sprite_color_preset() { return g_sprite_color_preset; }
+  int get_vtx_alpha_preset()    { return g_vtx_alpha_preset; }
+}
+
+extern "C" {
+  int get_trans_zwrite_preset() { return g_trans_zwrite_preset; }
+  // For the [LOGO] probe: "" means no per-game section matched the ROM
+  // filename, i.e. every preset is at its built-in default.
+  const char* get_matched_preset_name() { return g_matched_preset_name; }
+}
+
 int g_x_scaler_preset = 1; // 0=off (legacy), 1=PVR SCALER_CTL.hscale support (Omicron / Wacky Races render 1280 wide, scaler halves 2:1)
 
 extern "C" {
@@ -1176,6 +1216,9 @@ void checkBiosFiles()
 #define OPT_GX          63     // shown on Page 1 (GENERAL) under GRAPHICS, see OPT_PAGE0_ROWS
 #define OPT_LOD_BIAS    64     // shown on Page 1 (GENERAL) under GRAPHICS, see OPT_PAGE0_ROWS
 #define OPT_ANISO       65     // shown on Page 1 (GENERAL) under GRAPHICS, see OPT_PAGE0_ROWS
+#define OPT_TRANS_ZWRITE 68    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
+#define OPT_SPRITE_COLOR 69    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
+#define OPT_VTX_ALPHA    70    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
@@ -1222,6 +1265,8 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_FMV_FORMAT,
   OPT_YUV_TWIDDLE_FIX,
   OPT_VERTEX_COLOR_FIX,
+  OPT_SPRITE_COLOR,
+  OPT_VTX_ALPHA,
   OPT_DECAL_ALPHA,
   OPT_SEAM_FIX,
   OPT_FOG,
@@ -1241,6 +1286,7 @@ static const int OPT_PAGE2_ROWS[] = {
   OPT_HUD_PASS,
   OPT_SUBPASS_ZCLEAR,
   OPT_PPZ_WRITE,
+  OPT_TRANS_ZWRITE,
   OPT_ISP_DEPTH_FUNC,
   OPT_ISP_CULL,
   OPT_AUTOSORT,
@@ -1605,6 +1651,24 @@ bool displayOptionsMenu()
     printf(" Crazy Taxi's arrow or JSR logo");
     printf("\n");
 
+    // --- Row: Sprite base colour ---
+    printf("%s SPRITE COLOR   : ", (selectedRow == OPT_SPRITE_COLOR) ? ">" : " ");
+    switch (g_sprite_color_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" sprite BaseCol; OFF = always white");
+    printf("\n");
+
+    // --- Row: Vertex alpha on ARGB1555 ---
+    printf("%s VTX ALPHA      : ", (selectedRow == OPT_VTX_ALPHA) ? ">" : " ");
+    switch (g_vtx_alpha_preset) {
+      case 0: printf("[< OFF (FORCE OPAQUE)>]"); break;
+      case 1: printf("[< ON (USE TSP.UseA) >]"); break;
+    }
+    printf(" ON for vertex-alpha fades (FV2 SEGA)");
+    printf("\n");
+
     // --- Row: Decal Alpha Fix ---
     printf("%s DECAL ALPHA    : ", (selectedRow == OPT_DECAL_ALPHA) ? ">" : " ");
     switch (g_decal_alpha_preset) {
@@ -1732,6 +1796,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (DEFAULT)      >]"); break;
     }
     printf(" OFF to fix black remanence");
+    printf("\n");
+
+    // --- Row: Translucent-list depth write ---
+    printf("%s TRANS ZWRITE   : ", (selectedRow == OPT_TRANS_ZWRITE) ? ">" : " ");
+    switch (g_trans_zwrite_preset) {
+      case 0: printf("[< OFF (NO OCCLUDE)  >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" DEBUG ONLY - OFF hides the BIOS logo");
     printf("\n");
 
     // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
@@ -2049,6 +2122,9 @@ bool displayOptionsMenu()
         case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 2) % 3; break;
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 2) % 3; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
+        case OPT_TRANS_ZWRITE: g_trans_zwrite_preset = (g_trans_zwrite_preset  + 1) % 2; break;
+        case OPT_SPRITE_COLOR: g_sprite_color_preset = (g_sprite_color_preset  + 1) % 2; break;
+        case OPT_VTX_ALPHA:    g_vtx_alpha_preset    = (g_vtx_alpha_preset     + 1) % 2; break;
         case OPT_POLY_OFFSET: g_poly_offset_preset  = (g_poly_offset_preset    + 3) % 4; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
@@ -2122,6 +2198,9 @@ bool displayOptionsMenu()
         case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 1) % 3; break;
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 3; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
+        case OPT_TRANS_ZWRITE: g_trans_zwrite_preset = (g_trans_zwrite_preset  + 1) % 2; break;
+        case OPT_SPRITE_COLOR: g_sprite_color_preset = (g_sprite_color_preset  + 1) % 2; break;
+        case OPT_VTX_ALPHA:    g_vtx_alpha_preset    = (g_vtx_alpha_preset     + 1) % 2; break;
         case OPT_POLY_OFFSET: g_poly_offset_preset  = (g_poly_offset_preset    + 1) % 4; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
@@ -2870,6 +2949,9 @@ int main(int argc, wchar *argv[])
     printf("Decal Alpha Fix: %s\n", g_decal_alpha_preset ? "YES (DEFAULT)" : "NO");
     printf("2D Framebuffer : %s\n", g_framebuffer_2d ? "YES" : "NO");
     printf("PPZ_WRITE      : %s\n", g_ppz_write_preset ? "YES" : "NO");
+    printf("Sprite Color   : %s\n", g_sprite_color_preset ? "YES (BaseCol)" : "NO (white)");
+    printf("Vtx Alpha      : %s\n", g_vtx_alpha_preset ? "YES (TSP.UseAlpha)" : "NO (force opaque)");
+    printf("TRANS ZWRITE   : %s\n", g_trans_zwrite_preset ? "ON (default)" : "OFF (debug)");
     printf("Poly Offset    : ");
     switch (g_poly_offset_preset) {
       case 0: printf("OFF (LEGACY)\n"); break;

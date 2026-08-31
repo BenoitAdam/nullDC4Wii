@@ -238,6 +238,63 @@ extern "C" int get_rgb565_opaque_alpha_preset();
 extern "C" int get_blend_fps_boost_preset();
 #define BLEND_FPS_BOOST() (get_blend_fps_boost_preset() == 1)
 
+// Translucent-list depth WRITE (see the g_trans_zwrite_preset note in
+// wii/main.cpp). The TR range inherits the frame-wide
+// GX_SetZMode(GX_TRUE, GX_GEQUAL, GX_TRUE), so the FIRST translucent strip
+// submitted at a near depth stamps the Z buffer and depth-rejects every
+// farther translucent strip behind it -- one near full-screen quad can hide
+// the whole rest of the list. Real PVR2 blends the translucent list instead
+// of using it as occluders. Depth TESTING is always kept, so opaque geometry
+// drawn earlier still occludes translucent geometry behind it.
+//
+//   1 = on   legacy (default), bit-for-bit what the renderer did before this
+//            preset existed.
+//   0 = off  always drop the write, so translucent strips paint in
+//            submission order and never occlude each other.
+//
+// DEBUG ONLY. `off` hides the Dreamcast BIOS boot logo, which needs the
+// depth ordering this removes. It was written for Fighting Vipers 2's SEGA
+// screen and turned out NOT to be the fix there either (that was
+// sprite_color + vtx_alpha), so it survives only as an investigation tool
+// for the next scene where translucent strips occlude each other wrongly.
+//
+// An AUTO mode keyed on ISP_FEED_CFG bit 0 (regs.h: "Translucent polygon
+// sort mode") was tried and removed: nothing in the tree ever writes that
+// register -- regs.cpp sets the reset value 0x00402000 and that is all -- so
+// it read 0 in every scene and behaved identically to ON on hardware.
+extern "C" int get_trans_zwrite_preset();
+extern "C" const char* get_matched_preset_name(); // [LOGO] probe only
+#define TRANS_NO_ZWRITE() (get_trans_zwrite_preset() == 0)
+
+// Vertex alpha on ARGB1555 surfaces. The legacy rule rewrites vertex alpha to
+// 0xFF for EVERY ARGB1555 polygon regardless of TSP.UseAlpha -- a deliberate
+// hack for Test Drive 6's ARGB1555 cutout font, where games leave vertex
+// alpha at 0 and rely on the TEXTURE alpha to gate visibility.
+//
+// It also destroys any game that FADES via vertex alpha on such a surface:
+// ARGB1555 has only 1 bit of texture alpha, so a fade has to live in the
+// 8-bit vertex/sprite-header alpha, and forcing that opaque pins the overlay
+// permanently on screen. That is Fighting Vipers 2's SEGA screen, where a
+// full-screen fade overlay covered everything behind it.
+//
+// 1 = honour TSP.UseAlpha and nothing else (the hardware's own rule).
+// 0 = legacy (default): keep the Test Drive 6 hack, which other games need.
+extern "C" int get_vtx_alpha_preset();
+#define VTX_ALPHA_HONOR() (get_vtx_alpha_preset() == 1)
+
+// Sprite base colour. A Sprite (PCW.ParaType 5) carries ONE packed Base
+// Colour in its header that applies to all four corners -- sprites have no
+// per-vertex colour. AppendSpriteVertexA hardcoded 0xFFFFFFFF and
+// AppendSpriteParam read only OffsCol, so TA_SpriteParam::BaseCol was parsed
+// and thrown away: every sprite in every game drew with WHITE vertex colour.
+// With TSP.ShadInstr = ModulateAlpha (colour = texture x vertex) that turns a
+// black sprite into a white one -- which is exactly Fighting Vipers 2's SEGA
+// screen, where a full-screen black sprite came out as a white plate covering
+// the whole display.
+// Default OFF: this changes the colour of every sprite in every game.
+extern "C" int get_sprite_color_preset();
+#define SPRITE_COLOR() (get_sprite_color_preset() == 1)
+
 // Punch-through list fix
 extern "C" int get_punch_through_preset();
 #define PUNCH_THROUGH_FIX() (get_punch_through_preset() == 1)
@@ -283,6 +340,82 @@ extern "C" int get_hokuto_hack_preset();
 // back empty no matter how correct this code is. Uncheck that and "Skip EFB
 // Access from CPU" before concluding anything about render-to-texture there.
 #define RTT_DEBUG_LOG 0
+
+// ── [LOGO] boot/2D-screen probe ────────────────────────────────────────────
+// Built for the "SEGA logo screen is solid white" class of bug (first seen in
+// Fighting Vipers 2): the audio plays, the render pass runs, but every pixel
+// comes out white instead of a black plate with one textured logo quad on it.
+//
+// Four different faults produce that, and the screen alone cannot tell them
+// apart. One capture answers all four:
+//
+//   1. Does the pass reach the 3D path at all, or is the screen a 2D
+//      framebuffer blit / an RTT pass / a skipped frame?
+//        -> [LOGO] pass= header, plus the [PATH] lines (armed with this probe)
+//   2. Is the BACKGROUND white? The BG plane's v0 colour goes straight to
+//      GX_SetCopyClear, so it paints the whole screen wherever nothing else
+//      covers it -- a bad decode there IS a white screen, with or without a
+//      correct logo drawn on top of it.
+//        -> [LOGO] bg lines
+//   3. Is the logo strip submitted, and where does it land? A quad that should
+//      be a small logo but spans 0..640 x 0..480 explains the white on its
+//      own, and so does a UV range that collapsed onto a single texel (which
+//      is the failure mode to expect from a broken 16-bit UV decode, and this
+//      polygon has uv_16bit set).
+//        -> [LOGO] #nnn (submitted) / draw#nnn (what GX was actually told)
+//   4. Is the TEXTURE the logo, or a white/blank/garbage block?
+//        -> [LOGO] tex= line + ASCII thumbnail, sampled straight out of
+//           emulated VRAM with the same twiddle/mip/endian rules the real
+//           decoder uses, so it is independent of the texture cache and of
+//           whichever tex_cache preset is selected.
+//
+// Compile-time on purpose, exactly like SCOPE_DEBUG_LOG: the capture must not
+// depend on getting a menu preset right, and the per-strip vertex scans plus
+// the texture sampling are far too expensive to leave in a shipping build.
+// Flip back to 0 and rebuild once the capture has been read.
+//
+// Output lands in /ndclog.txt on the SD card (InitRenderer freopens stdout
+// there) -- nothing appears on screen. Every dump ends in fflush, so powering
+// the console off on the stuck screen still leaves a readable tail.
+#define LOGO_DEBUG_LOG 0
+
+// Schedule, counted in RENDER PASSES rather than frames: a scene that stalls
+// or frame-skips stops advancing FrameCount, and a frame-clocked probe would
+// go quiet exactly where it is needed. Passes always tick.
+#define LOGO_HEAD_PASSES 24   // dump every one of the first N passes (boot)
+#define LOGO_EVERY       30   // then one pass in every N ...
+#define LOGO_LAST_PASS   1500 // ... up to here (~25 s at 60 Hz), which brackets
+                              //     the SEGA screen of any game
+#define LOGO_HEARTBEAT   300  // proof-of-life line, always, even while quiet
+#define LOGO_MAX_STRIPS  48   // per-strip lines per dumped pass
+#define LOGO_MAX_TEX     6    // texture thumbnails per dumped pass (the
+                              // expensive part: COLS*ROWS VRAM samples each)
+#define LOGO_TEX_COLS    48
+#define LOGO_TEX_ROWS    20
+
+// VRAM address of the texture being hunted (0 = no signature trigger).
+// Any pass whose parameter list references it is dumped IN FULL whatever
+// the schedule above says, and its strip + thumbnail are printed even past
+// the per-pass caps -- so the capture does not depend on the sampling
+// happening to land on the right frame, and does not go missing because
+// the scene submitted fifty strips ahead of the interesting one.
+//
+// 0x036500 is the SEGA logo in Fighting Vipers 2 (512x512 ARGB1555, the
+// polygon a PVR viewer reports as isp=82400000 tsp=949004F6). Change it to
+// whatever the viewer reports for the next screen under investigation.
+#define LOGO_TRIGGER_TEX 0x036500
+
+#if LOGO_DEBUG_LOG
+// Set by logo_dump_pass() at the top of StartRender and read by the probes
+// further down the frame (render-path lines, BG plane, per-strip GX state), so
+// a pass is either fully logged or fully silent -- never half of each.
+static bool s_logo_dump_now = false;
+// (plain unsigned rather than u32: this block sits above the typedefs)
+static unsigned s_logo_draw_n = 0; // per-pass counter for the draw-time lines
+#define LOGO_ARMED() (s_logo_dump_now)
+#else
+#define LOGO_ARMED() (false)
+#endif
 
 // Where the [SS] output goes. InitRenderer() normally does
 // freopen("/ndclog.txt", "w", stdout) the moment the renderer starts, so EVERY
@@ -1172,6 +1305,13 @@ struct PolyParam
   TCW tcw;
 };
 
+#if LOGO_DEBUG_LOG
+// [LOGO] probe (see LOGO_DEBUG_LOG at the top): DoRender's inline probes run
+// above the probe block that defines these.
+extern u32 g_vtx_reset_seq;                                 // reset_vtx_state()
+static INLINE bool logo_is_hunted_tex(const PolyParam *pp); // LOGO_TRIGGER_TEX
+#endif
+
 struct TextureCacheDesc
 {
   GXTexObj  tex;
@@ -1658,6 +1798,11 @@ u32 curPolyOffsMask = 0;
 // Per-polygon offset color for sprites (they carry it in the header, not per
 // vertex). Already ABGR-converted and masked by curPolyOffsMask.
 u32 curSpriteSpc = 0;
+// SPRITE_COLOR(): the sprite header's Base Colour, shared by all 4 corners.
+// 0xFFFFFFFF (white = no tint under MODULATE) when the preset is off, which
+// is exactly what the code hardcoded before the preset existed.
+u32 curSpriteCol = 0xFFFFFFFF;
+bool g_sprite_color_cached = false;
 
 // Cached once per frame in reset_vtx_state() instead of calling
 // VERTEX_COLOR_FIX() (an uncached extern getter) on every Intensity vertex —
@@ -1996,9 +2141,19 @@ static u32 bg_lerp_color(u32 c0, u32 c1, u32 c2, f32 w0, f32 w1, f32 w2, bool fo
   return out;
 }
 
+#if LOGO_DEBUG_LOG
+// Bumped on every buffer rewind so logo_dump_pass() can tell a genuinely
+// empty pass from one that resubmitted exactly as much geometry as the
+// last one. Comparing cursors cannot: both cases look identical.
+u32 g_vtx_reset_seq = 0;
+#endif
+
 // Resets internal pointers for the next frame's vertex list.
 void reset_vtx_state()
 {
+#if LOGO_DEBUG_LOG
+  g_vtx_reset_seq++;
+#endif
   curVTX = vertices;
   curLST = lists;
   curMod = listModes;
@@ -2029,6 +2184,7 @@ void reset_vtx_state()
   vtx_max_Z = 0;
   tex_frame_reset(); // reset per-frame texture bump arena
   g_vertex_color_fix_cached = VERTEX_COLOR_FIX();
+  g_sprite_color_cached     = SPRITE_COLOR();
   g_offset_color_fix_cached = OFFSET_COLOR_FIX();
   g_fog_cached              = FOG();
   g_split_screen_cached     = SPLIT_SCREEN();
@@ -5998,6 +6154,82 @@ void DoRender()
   };
   GX_SetCopyClear(bgColor, 0x00000000);
 
+#if LOGO_DEBUG_LOG
+  {
+    static u32 s_logo_last_bg = 0x12345678u; // never a plausible first value
+    if ((u32)bgV[0].col != s_logo_last_bg)
+    {
+      printf("[LOGO] BGCOL change frame=%u %08X -> %08X (BACKGND_T=%08X D=%08X)\n",
+             (u32)FrameCount, s_logo_last_bg, (u32)bgV[0].col,
+             (u32)ISP_BACKGND_T, (u32)ISP_BACKGND_D);
+      fflush(stdout);
+      s_logo_last_bg = (u32)bgV[0].col;
+    }
+  }
+#endif
+
+#if LOGO_DEBUG_LOG
+  // The single most important line for a "whole screen is one flat colour"
+  // bug: bgColor is what GX_SetCopyClear paints everywhere the scene does not
+  // cover, and it comes straight from the background polygon's first vertex.
+  // If this reads FFFFFFFF the screen is white before a single triangle is
+  // drawn, and nothing downstream can be blamed for it.
+  if (LOGO_ARMED())
+  {
+    printf("[LOGO] bg CLEAR rgba=%02X%02X%02X%02X (from v0.col=%08X) bg_poly_fix=%d "
+           "tag=%06X skip=%u isp=%08X tsp=%08X tcw=%08X tex=%d useA=%d shad=%u "
+           "src=%u dst=%u ignA=%u\n",
+           (unsigned)bgColor.r, (unsigned)bgColor.g, (unsigned)bgColor.b,
+           (unsigned)bgColor.a, (u32)bgV[0].col, (int)bg_poly_fix,
+           real_tag_address, real_skip,
+           (u32)bg_isp.full, (u32)bg_tsp.full, (u32)bg_tcw.full,
+           (int)bg_isp.Texture, (int)bg_tsp.UseAlpha, (unsigned)bg_tsp.ShadInstr,
+           (unsigned)bg_tsp.SrcInstr, (unsigned)bg_tsp.DstInstr,
+           (unsigned)bg_tsp.IgnoreTexA);
+    // With bg_poly_fix off the renderer decodes v0 alone and floods the
+    // screen with its colour. That is only correct for a FLAT background: if
+    // ISP.Gouraud is set the three corners carry different colours and the
+    // real background is a gradient, of which v0 is just one corner. Decode
+    // all three here whatever the preset says, so the log can tell the two
+    // apart -- decode_pvr_vertex() only reads VRAM, no side effects, so this
+    // does not change a single pixel of what is drawn.
+    Vertex logo_bg[3] = {};
+    logo_bg[0] = bgV[0];
+    for (int lvi = 1; lvi < 3; lvi++)
+    {
+      if (bg_poly_fix)
+        logo_bg[lvi] = bgV[lvi];
+      else
+        decode_pvr_vertex(strip_base, vertex_ptr + lvi * strip_vs, &logo_bg[lvi]);
+    }
+    for (int lvi = 0; lvi < 3; lvi++)
+      printf("[LOGO] bg v%d x=%.2f y=%.2f 1/W=%.6f uv=(%.3f,%.3f) col=%08X spc=%08X%s\n",
+             lvi, logo_bg[lvi].x, logo_bg[lvi].y, logo_bg[lvi].z,
+             logo_bg[lvi].u, logo_bg[lvi].v,
+             (u32)logo_bg[lvi].col, (u32)logo_bg[lvi].spc,
+             (lvi && !bg_poly_fix) ? "  (read for this log only - not drawn)" : "");
+    if (!bg_poly_fix)
+      printf("[LOGO] bg gouraud=%d: only v0 feeds the flat clear. If v1/v2 "
+             "differ from v0 the background is a GRADIENT and the flat clear "
+             "is wrong - bg_poly=on is the test.\n", (int)bg_isp.Gouraud);
+    // Provenance: PARAM_BASE + tag_address*4 is where the background's
+    // ISP/TSP/TCW triple was read from, and vertex_ptr where v0 came from.
+    // If those words do not look like a plausible parameter block, the white
+    // is a misread rather than the game's intent.
+    printf("[LOGO] bg src PARAM_BASE=%08X param_base=%06X strip_base=%06X "
+           "vs=%u vertex_ptr=%06X words:",
+           (u32)PARAM_BASE, param_base, strip_base, strip_vs, vertex_ptr);
+    for (u32 lwi = 0; lwi < 8; lwi++)
+      printf(" %08X", vri(strip_base + lwi * 4));
+    printf("\n");
+    printf("[LOGO] bg vtx words:");
+    for (u32 lwi = 0; lwi < 8; lwi++)
+      printf(" %08X", vri(vertex_ptr + lwi * 4));
+    printf("\n");
+    fflush(stdout);
+  }
+#endif
+
   GX_SetZMode(GX_TRUE, GX_GEQUAL, GX_TRUE);
   GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
   GX_SetAlphaUpdate(GX_TRUE);
@@ -6112,6 +6344,32 @@ void DoRender()
     p5 = p6 / vtx_min_Z;
   }
 
+#if LOGO_DEBUG_LOG
+  // Frame-level state the per-strip lines are interpreted against: the canvas
+  // the projection maps onto, the depth range every W gets squeezed into, and
+  // the handful of presets that can turn a correct submission into a wrong
+  // picture (depth mode, punch-through/sort routing, alpha, texture cache).
+  if (LOGO_ARMED())
+    printf("[LOGO] frame canvas=%.0fx%.0f nearW=%.5f farW=%.2f p5=%.6f p6=%.6f "
+           "| presets: tex_cache=%d fixed_depth=%d legacy_depth=%d depth_clip=%d "
+           "hud_pass=%d punch_through=%d trans_sort=%d autosort=%d bg_poly_fix=%d "
+           "adv_alpha=%d blend_mode=%d decal_alpha=%d offset_col=%d "
+           "graphics=%d accuracy=%d frameskip=%d trans_zwrite=%d(no_zw=%d) "
+           "ppz_write=%d isp_depth_func=%d isp_cull=%d sprite_color=%d "
+           "vtx_alpha=%d"
+           " | game_presets section matched: '%s'\n",
+           dc_width, dc_height, vtx_min_Z, vtx_max_Z, p5, p6,
+           get_texture_cache_preset(), get_fixed_depth_preset(),
+           (int)LEGACY_DEPTH(), get_depth_clip_preset(),
+           HUD_PASS(), (int)PUNCH_THROUGH_FIX(), (int)TRANS_SORT(), AUTOSORT(),
+           (int)BG_POLY_FIX(), (int)ADVANCED_ALPHA(), (int)BLEND_MODE(),
+           (int)DECAL_ALPHA_FIX(), (int)OFFSET_COLOR_FIX(),
+           get_graphism_preset(), get_accuracy_preset(), get_frameskip_preset(),
+           get_trans_zwrite_preset(), (int)TRANS_NO_ZWRITE(),
+           (int)PER_POLYGON_Z_WRITE(),
+           ISP_DEPTH_FUNC(), ISP_CULL(), (int)SPRITE_COLOR(),
+           (int)VTX_ALPHA_HONOR(), get_matched_preset_name());
+#endif
   // The projection matrix maps DC screen-space coords to GX clip space.
   // X aspect ratio is NOT corrected here — DC vertices are already in screen
   // space (x=[0..640]) and z is 1/W (depth), so a perspective matrix would
@@ -6253,6 +6511,8 @@ void DoRender()
 
   // Per-polygon ISP state presets, read once per frame (macros at top of file).
   const bool ppz_write      = PER_POLYGON_Z_WRITE();
+  const bool trans_no_zwrite = TRANS_NO_ZWRITE();
+  const bool vtx_alpha_honor = VTX_ALPHA_HONOR();
   const int  isp_depth_func = ISP_DEPTH_FUNC(); // 0=off 1=OP/PT lists 2=all lists
   const int  isp_cull       = ISP_CULL();       // 0=off 1=on 2=on, swapped winding
 
@@ -6725,6 +6985,17 @@ void DoRender()
         drawMod = ts_end_mod;
       }
 
+      // TRANS_NO_ZWRITE(): the PT list is effectively opaque and must keep
+      // stamping depth. With PUNCH_THROUGH_FIX the segments run OP -> PT -> TR
+      // so PT is finished before the TR boundary below ever fires; on the
+      // legacy walk PT follows the TR range inside this same segment, so give
+      // the write back here or those strips inherit the TR state.
+      if (trans_no_zwrite && PTLST && drawLST == PTLST && !last_z_write)
+      {
+        GX_SetZMode(GX_TRUE, (u8)last_z_func, GX_TRUE);
+        last_z_write = true;
+      }
+
       if (drawLST == seg_trans_begin && !seg_as)
       {
         // Enable blending for the translucent list. Blend factors are set
@@ -6737,6 +7008,16 @@ void DoRender()
         last_src_blend = -1; // force first per-polygon update
         last_dst_blend = -1;
         GX_SetBlendMode(GX_BM_BLEND, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
+
+        // TRANS_NO_ZWRITE(): stop translucent strips occluding each other (see
+        // the macro at the top of the file). Kept in sync with last_z_write so
+        // the per-polygon Z block below only reissues GX_SetZMode on a real
+        // change, and so a later opaque/PT segment restores writing normally.
+        if (trans_no_zwrite && last_z_write)
+        {
+          GX_SetZMode(GX_TRUE, (u8)last_z_func, GX_FALSE);
+          last_z_write = false;
+        }
 
         // Per-polygon ISP state (isp.ZWriteDis, isp.DepthMode, isp.CullMode)
         // is applied in the strip-header block further below, each behind its
@@ -7047,7 +7328,12 @@ void DoRender()
           // Same vertex-alpha forcing as the draw pass, so the kill sees the
           // alpha the fragment will actually blend with.
           u32 fmt = stripMod->tcw.NO_PAL.PixelFmt;
-          if (RGB565_OPAQUE_ALPHA())
+          if (vtx_alpha_honor)
+            // Hardware rule only: UseAlpha==0 is the DC's own "ignore vertex
+            // alpha". No format-based override, so a game that fades via vertex
+            // alpha on an ARGB1555 surface actually fades.
+            force_vtx_alpha_opaque = !stripMod->tsp.UseAlpha;
+          else if (RGB565_OPAQUE_ALPHA())
             force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !stripMod->tsp.UseAlpha;
           else
             force_vtx_alpha_opaque = (fmt == 0) || !stripMod->tsp.UseAlpha;
@@ -7155,7 +7441,12 @@ void DoRender()
           // own alpha, not the vertex alpha, to gate visibility. Always force opaque for
           // these two formats; defer to TSP.UseAlpha for everything else (e.g. ARGB4444).
           u32 fmt = stripMod->tcw.NO_PAL.PixelFmt;
-          if (RGB565_OPAQUE_ALPHA())
+          if (vtx_alpha_honor)
+            // Hardware rule only: UseAlpha==0 is the DC's own "ignore vertex
+            // alpha". No format-based override, so a game that fades via vertex
+            // alpha on an ARGB1555 surface actually fades.
+            force_vtx_alpha_opaque = !stripMod->tsp.UseAlpha;
+          else if (RGB565_OPAQUE_ALPHA())
             force_vtx_alpha_opaque = (fmt == 0 || fmt == 1) || !stripMod->tsp.UseAlpha;
           else
             force_vtx_alpha_opaque = (fmt == 0) || !stripMod->tsp.UseAlpha;
@@ -7224,6 +7515,12 @@ void DoRender()
         if ((ppz_write || isp_depth_func) && !seg_as)
         {
           bool z_write = ppz_write ? !stripMod->isp.ZWriteDis : true;
+          // TRANS_NO_ZWRITE() has to win over the polygon's own ZWriteDis:
+          // the preset's whole statement is "the TR list must not stamp
+          // depth", and these polys carry ZWriteDis=0. Without this,
+          // ppz_write (default ON) re-enables the write on every strip and
+          // silently undoes the boundary setting above.
+          if (trans_no_zwrite && in_trans_list) z_write = false;
           int z_func = GX_GEQUAL;
           if (isp_depth_func == 2 || (isp_depth_func == 1 && !in_trans_list))
             z_func = (int)stripMod->isp.DepthMode;
@@ -7356,6 +7653,45 @@ void DoRender()
         }
       }
 #endif
+#if LOGO_DEBUG_LOG
+      // What GX was ACTUALLY told for this strip, as opposed to what the DC
+      // asked for (the [LOGO] #nnn lines above). The gap between the two is
+      // where a correct submission turns into a wrong picture: a blend factor
+      // that never got applied because BLEND_MODE() is off, a Z func still on
+      // the frame-wide GEQUAL painter compare because isp_depth_func is off,
+      // a strip withheld by the RTT list split, or vertex alpha forced opaque.
+      // -1 means "never overridden this frame, still the frame-start default".
+      if (LOGO_ARMED()
+          && (s_logo_draw_n < LOGO_MAX_STRIPS
+              || (stripMod && stripMod->pcw.Texture
+                  && logo_is_hunted_tex(stripMod))))
+      {
+        // Vertex::z holds W (view depth, larger = farther). The projection
+        // maps it to NDC z = -p5 + p6/W, which GX turns into a depth that
+        // INCREASES toward the camera -- so the frame-wide GX_GEQUAL means
+        // "nearer or equal wins". Printing it makes the ordering between
+        // strips readable instead of something to work out from W by hand.
+        float zn0 = 1e30f, zn1 = -1e30f;
+        for (int lzi = 0; lzi < count; lzi++)
+        {
+          const float zw = drawVTX[lzi].z;
+          const float zn = (zw != 0.0f) ? (-p5 + p6 / zw) : 0.0f;
+          if (zn < zn0) zn0 = zn;
+          if (zn > zn1) zn1 = zn;
+        }
+        printf("[LOGO] draw#%03u n=%d skip=%d tex=%d trans=%d pt=%d as=%d hud=%d "
+               "zfunc=%d zwrite=%d blend=%d/%d tev_stages=%d alpha_fmt=%d "
+               "vtxA_forced=%d cull=%d clr1=%d W=%.5f..%.5f ndcZ=%.4f..%.4f\n",
+               s_logo_draw_n, count, (int)strip_skip, last_textured,
+               (int)in_trans_list, (int)seg_is_pt, (int)seg_as, (int)hud_strip,
+               last_z_func, (int)last_z_write, last_src_blend, last_dst_blend,
+               last_tev_stages, last_alpha_fmt, (int)force_vtx_alpha_opaque,
+               last_cull, (int)emit_clr1,
+               count ? drawVTX[0].z : 0.0f, count ? drawVTX[count - 1].z : 0.0f,
+               zn0, zn1);
+        s_logo_draw_n++;
+      }
+#endif
       if (strip_skip)
       {
         // Not for this render (see the RTT_KEEP_LIST() split above). State was
@@ -7452,8 +7788,13 @@ void DoRender()
       // strip re-applies its own mode from here, exactly like the AUTOSORT tail.
       if (hud_strip)
       {
-        GX_SetZMode(GX_TRUE, GX_GEQUAL, GX_TRUE);
-        last_z_write = true;
+        // TRANS_NO_ZWRITE(): restore to the baseline this range actually has,
+        // not unconditionally to "writing" -- inside the TR range the baseline
+        // is no-write, and re-enabling it here would let the rest of the list
+        // start occluding again halfway through.
+        const bool restore_zw = !(trans_no_zwrite && in_trans_list);
+        GX_SetZMode(GX_TRUE, GX_GEQUAL, restore_zw ? GX_TRUE : GX_FALSE);
+        last_z_write = restore_zw;
         last_z_func  = GX_GEQUAL;
       }
 
@@ -7594,7 +7935,7 @@ void PresentFramebuffer()
   u32 fb_modulus = (FB_R_SIZE >> 20) & 0x3FF;
   u32 fb_depth   = FB_R_CTRL.fb_depth;
 
-  if(DEBUG_MESSAGE()) printf("[FB] PresentFramebuffer FB_R_SIZE=%08X (x=%u y=%u mod=%u) depth=%u SOF1=%08X\n",
+  if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[FB] PresentFramebuffer FB_R_SIZE=%08X (x=%u y=%u mod=%u) depth=%u SOF1=%08X\n",
     (u32)FB_R_SIZE, fb_x_size, fb_y_size, fb_modulus, fb_depth, FB_R_SOF1);
 
   if (fb_x_size == 0 || fb_y_size == 0)
@@ -7763,7 +8104,7 @@ void VBlank()
   if (ShouldSkipFrame())
     return;
 
-  if(DEBUG_MESSAGE()) printf("[PATH] VBlank-FB present: FB_R_SOF1=%08X fb_depth=%d\n",
+  if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[PATH] VBlank-FB present: FB_R_SOF1=%08X fb_depth=%d\n",
     FB_R_SOF1, (int)FB_R_CTRL.fb_depth);
 
   PresentFramebuffer();
@@ -7994,6 +8335,457 @@ static void ss_dump_pass()
 // START RENDERING
 // ============================
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LOGO_DEBUG_LOG: per-render-pass dump ([LOGO] lines)
+// See the big comment next to the #define at the top of this file for what
+// each line is for. Everything below compiles to nothing when the gate is 0.
+// ─────────────────────────────────────────────────────────────────────────────
+#if LOGO_DEBUG_LOG
+
+static u32 s_logo_pass_no = 0; // every StartRender, ever
+static u32 s_logo_seen    = 0; // passes since the last heartbeat
+// Cursors at the PREVIOUS StartRender: everything submitted since then is
+// exactly this pass's geometry (the same bookkeeping ss_dump_pass uses).
+static const VertexList *s_logo_prev_lst = lists;
+static const Vertex     *s_logo_prev_vtx = vertices;
+static const PolyParam  *s_logo_prev_mod = listModes;
+// Texture addresses already thumbnailed in the current pass, so a scene that
+// draws one atlas across twenty strips still costs one dump.
+static u32 s_logo_tex_done[LOGO_MAX_TEX];
+static u32 s_logo_tex_n = 0;
+
+// Does this parameter reference the texture being hunted? A PVR viewer may
+// report either the TCW's raw TexAddr field (8-byte units) or the byte address
+// it expands to, and guessing wrong turns the trigger into a silent no-op --
+// which is indistinguishable from "the texture was never drawn". Accept both
+// readings rather than make the capture depend on that guess.
+static INLINE bool logo_is_hunted_tex(const PolyParam *pp)
+{
+#if LOGO_TRIGGER_TEX
+  const u32 byte_addr = (u32)((pp->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
+  return byte_addr == ((u32)LOGO_TRIGGER_TEX & VRAM_MASK)
+      || byte_addr == (((u32)LOGO_TRIGGER_TEX << 3) & VRAM_MASK);
+#else
+  (void)pp;
+  return false;
+#endif
+}
+
+// One source texel -> 8-bit ARGB. Mirrors the real converters (ABGR1555 /
+// ABGR0565 / ABGR4444 near the top of this file) so the thumbnail shows what
+// the decoder sees rather than offering a second opinion.
+static void logo_texel_argb(u32 fmt, u16 s, int *a, int *r, int *g, int *b)
+{
+  switch (fmt)
+  {
+  case 0: // ARGB1555 - one bit of alpha
+    *a = (s & 0x8000) ? 255 : 0;
+    *r = (((s >> 10) & 31) * 255) / 31;
+    *g = (((s >>  5) & 31) * 255) / 31;
+    *b = ((  s       & 31) * 255) / 31;
+    break;
+  case 1: // RGB565 - no alpha channel at all, always opaque
+    *a = 255;
+    *r = (((s >> 11) & 31) * 255) / 31;
+    *g = (((s >>  5) & 63) * 255) / 63;
+    *b = ((  s       & 31) * 255) / 31;
+    break;
+  case 2: // ARGB4444
+    *a = (((s >> 12) & 15) * 255) / 15;
+    *r = (((s >>  8) & 15) * 255) / 15;
+    *g = (((s >>  4) & 15) * 255) / 15;
+    *b = ((  s       & 15) * 255) / 15;
+    break;
+  default: // YUV422 / bump / anything else: the luma byte only. Not colour-
+           // exact, but enough to tell "there is a shape in here" from
+           // "this block is uniform".
+    *a = 255;
+    *r = *g = *b = (s >> 8) & 255;
+    break;
+  }
+}
+
+// Print a window of a strip's SOURCE texture as ASCII, read out of emulated
+// VRAM. (u0,u1,v0,v1) selects the region: 0,1,0,1 for the whole texture, or the
+// strip's own UV rectangle to see exactly the texels that reach the screen --
+// which is the only view that means anything for a quad sampling an 8x8 corner
+// of a 256x256 atlas.
+//   space = transparent texel, '.' = opaque black ... '@' = opaque white.
+// A correct SEGA logo is mostly blank with a few bright letters standing out.
+// A block that comes back all '@' is a genuinely white texture and explains a
+// white screen by itself; all-blank means the polygon has nothing to draw and
+// the white must be coming from the background or the blend state instead.
+//
+// This walks the raw DC data with the same rules texture_TW / texture_VQ /
+// Plannar use (Morton twiddle, mip base offset, host_ptr_xor for the DC
+// little-endian u16s sitting in big-endian Wii RAM), and deliberately does NOT
+// consult the texture cache: it says what the GAME wrote, so a wrong picture
+// on screen can be blamed on -- or cleared of -- the decode/cache path.
+static void logo_dump_texture(const PolyParam *pp, float u0, float u1,
+                              float v0, float v1, const char *what)
+{
+  const u32  fmt  = pp->tcw.NO_PAL.PixelFmt;
+  const bool pal  = (fmt == 5 || fmt == 6);
+  const bool isvq = pp->tcw.NO_PAL.VQ_Comp != 0;
+  const bool mip  = pp->tcw.NO_PAL.MipMapped != 0;
+  // StrideSel / ScanOrder only exist on a non-palettised TCW; those bits are
+  // PalSelect otherwise, and reading them there would be nonsense.
+  const bool scan = !pal && pp->tcw.NO_PAL.ScanOrder != 0; // 1 = linear/planar
+  const bool strd = !pal && pp->tcw.NO_PAL.StrideSel != 0;
+
+  const u32 base = (u32)((pp->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
+  u32 w = 8u << pp->tsp.TexU;
+  u32 h = 8u << pp->tsp.TexV;
+  if (mip) h = w;            // mipmapped DC textures are always square
+  if (scan && strd) w = 512; // stride-selected surfaces decode 512 px wide
+
+  // FAST/NORMAL/QUALITY stamp 0xDEADBEEF over the first u32 of the source once
+  // they have decoded a texture, so seeing it here is not corruption -- it is
+  // proof the cache has already been through this address. The first two
+  // texels of the thumbnail are that sentinel, not picture data.
+  const u32 sentinel = *(u32 *)&params.vram[base & (VRAM_MASK & ~3u)];
+
+  printf("[LOGO]   tex %06X %ux%u fmt=%u(%s) vq=%d scan=%d stride=%d mip=%d "
+         "filt=%u clampUV=%u%u flipUV=%u%u mipD=%u palsel=%u first_u32=%08X%s"
+         " | window %s: u=%.3f..%.3f v=%.3f..%.3f = texels x %.0f..%.0f y %.0f..%.0f\n",
+         base, w, h, (unsigned)fmt,
+         fmt == 0 ? "ARGB1555" : fmt == 1 ? "RGB565" : fmt == 2 ? "ARGB4444"
+                  : fmt == 3 ? "YUV422" : fmt == 4 ? "BUMP"
+                  : fmt == 5 ? "PAL4" : fmt == 6 ? "PAL8" : "?",
+         (int)isvq, (int)scan, (int)strd, (int)mip,
+         (unsigned)pp->tsp.FilterMode,
+         (unsigned)pp->tsp.ClampU, (unsigned)pp->tsp.ClampV,
+         (unsigned)pp->tsp.FlipU,  (unsigned)pp->tsp.FlipV,
+         (unsigned)pp->tsp.MipMapD,
+         pal ? (unsigned)pp->tcw.PAL.PalSelect : 0u,
+         sentinel,
+         sentinel == 0xDEADBEEF ? " (DEADBEEF = cache sentinel, already decoded)" : "",
+         what, u0, u1, v0, v1,
+         u0 * w, u1 * w, v0 * h, v1 * h);
+
+  if (pal)
+  {
+    // A palettised texture is meaningless without its TLUT, and the mip base
+    // offset differs per bit depth. Say so instead of printing a lie; the
+    // logo polygon this probe was written for is not palettised anyway.
+    printf("[LOGO]   (palettised source - thumbnail skipped, needs the TLUT)\n");
+    return;
+  }
+
+  // Where the full-size level starts. TCW points at the 1x1 mip, levels are
+  // packed small->large, and for VQ the codebook stays at the base while only
+  // the index map moves -- exactly what twidle_tex() does.
+  u32 data_base = base;
+  const u32 cb_base = base; // VQ codebook, never moved by the mip offset
+  if (isvq)
+    data_base = base + (mip ? VQMipPoint[pp->tsp.TexU + 3] : 2048u);
+  else if (mip)
+    data_base = base + OtherMipPoint[pp->tsp.TexU + 3] * 2u;
+
+  static const char ramp[10] = ".:-=+*#%@";
+  char line[LOGO_TEX_COLS + 1];
+  u32 n_clear = 0, n_opaque = 0, n_white = 0;
+  int lmin = 255, lmax = 0;
+  // Distinct source values in the window. A quad that paints one flat colour
+  // shows up as a single entry covering every sample, which is the whole
+  // question for a full-screen fill.
+  u16 hist_val[8];
+  u32 hist_cnt[8];
+  u32 hist_n = 0, hist_other = 0;
+
+  for (u32 ty = 0; ty < LOGO_TEX_ROWS; ty++)
+  {
+    for (u32 tx = 0; tx < LOGO_TEX_COLS; tx++)
+    {
+      // Sample texel centres across the window, clamped inside the texture so
+      // a rect ending exactly at 1.0 does not read the row past the last one.
+      float fx = (u0 + (u1 - u0) * ((float)tx + 0.5f) / (float)LOGO_TEX_COLS) * (float)w;
+      float fy = (v0 + (v1 - v0) * ((float)ty + 0.5f) / (float)LOGO_TEX_ROWS) * (float)h;
+      if (fx < 0.0f) fx = 0.0f;
+      if (fy < 0.0f) fy = 0.0f;
+      u32 x = (u32)fx, y = (u32)fy;
+      if (x >= w) x = w - 1;
+      if (y >= h) y = h - 1;
+      u16 s;
+      if (isvq)
+      {
+        // 2x2 block index, then the block's four codebook words in the same
+        // (0,0) (0,1) (1,0) (1,1) order texture_VQ unpacks them.
+        const u32 bi   = twop(x & ~1u, y & ~1u, w, h) / 4u;
+        const u8  idx  = *host_ptr_xor(&params.vram[(data_base + bi) & VRAM_MASK]);
+        const u32 wsel = (x & 1u) * 2u + (y & 1u);
+        s = *host_ptr_xor((u16 *)&params.vram[(cb_base + idx * 8u + wsel * 2u) & (VRAM_MASK & ~1u)]);
+      }
+      else
+      {
+        const u32 off = scan ? (y * w + x) * 2u : twop(x, y, w, h) * 2u;
+        s = *host_ptr_xor((u16 *)&params.vram[(data_base + off) & (VRAM_MASK & ~1u)]);
+      }
+
+      u32 hk = 0;
+      for (; hk < hist_n; hk++)
+        if (hist_val[hk] == s) { hist_cnt[hk]++; break; }
+      if (hk == hist_n)
+      {
+        if (hist_n < 8) { hist_val[hist_n] = s; hist_cnt[hist_n] = 1; hist_n++; }
+        else hist_other++;
+      }
+
+      int a, r, g, b;
+      logo_texel_argb(fmt, s, &a, &r, &g, &b);
+      const int lum = (r * 77 + g * 151 + b * 28) >> 8;
+      if (lum < lmin) lmin = lum;
+      if (lum > lmax) lmax = lum;
+      if (a == 0)
+      {
+        n_clear++;
+        line[tx] = ' ';
+      }
+      else
+      {
+        n_opaque++;
+        if (r > 240 && g > 240 && b > 240) n_white++;
+        line[tx] = ramp[(lum * 8) / 255];
+      }
+    }
+    line[LOGO_TEX_COLS] = 0;
+    printf("[LOGO]   |%s|\n", line);
+  }
+
+  printf("[LOGO]   sampled %u texels: clear=%u opaque=%u pure_white=%u luma=%d..%d\n",
+         (unsigned)(LOGO_TEX_COLS * LOGO_TEX_ROWS), n_clear, n_opaque, n_white, lmin, lmax);
+  printf("[LOGO]   colours in window (raw -> A R G B):");
+  for (u32 hk = 0; hk < hist_n; hk++)
+  {
+    int ha, hr, hg, hb;
+    logo_texel_argb(fmt, hist_val[hk], &ha, &hr, &hg, &hb);
+    printf(" %04X=%u(%d,%d,%d,%d)", hist_val[hk], hist_cnt[hk], ha, hr, hg, hb);
+  }
+  if (hist_other)
+    printf(" +%u more", hist_other);
+  printf("\n");
+
+  // First eight source u16s verbatim. If the thumbnail looks wrong these say
+  // whether the bytes are plausible picture data, all-zero, all-FFFF (white),
+  // or byte-swapped.
+  printf("[LOGO]   raw u16 @%06X:", data_base);
+  for (u32 i = 0; i < 8; i++)
+    printf(" %04X", *host_ptr_xor((u16 *)&params.vram[(data_base + i * 2u) & (VRAM_MASK & ~1u)]));
+  printf("\n");
+}
+
+// One dumped render pass: header, then every strip submitted since the
+// previous StartRender, then a thumbnail for the first few distinct textures.
+static void logo_dump_pass()
+{
+  // DoRender/reset_vtx_state() rewound the buffers since last time, so this
+  // pass starts from the origin again. Keyed off the rewind COUNTER, not off
+  // "curLST moved backwards": a scene that submits the same strip count every
+  // frame (this one submits exactly 2) leaves the cursor at the same address
+  // pass after pass, and the old test read that as an empty pass.
+  static u32 s_logo_seen_seq = 0;
+  if (g_vtx_reset_seq != s_logo_seen_seq)
+  {
+    s_logo_seen_seq = g_vtx_reset_seq;
+    s_logo_prev_lst = lists;
+    s_logo_prev_vtx = vertices;
+    s_logo_prev_mod = listModes;
+  }
+
+  s_logo_pass_no++;
+  s_logo_seen++;
+
+  // Heartbeat: unconditional and cheap. If the dumps themselves never appear,
+  // this line still proves StartRender is running and says how far in we are,
+  // which distinguishes "the screen never renders" from "the probe is off".
+  if ((s_logo_pass_no % LOGO_HEARTBEAT) == 0)
+  {
+    printf("[LOGO] alive pass=%u frame=%u since=%u\n",
+           s_logo_pass_no, (u32)FrameCount, s_logo_seen);
+    fflush(stdout);
+    s_logo_seen = 0;
+  }
+
+  // Signature trigger: does this pass reference the texture being hunted? One
+  // walk over the pass's parameter headers (a few dozen, not the vertices), so
+  // it is cheap enough to run on every pass including the quiet ones.
+  bool want_sig = false;
+#if LOGO_TRIGGER_TEX
+  // '<' not '!=': a walk that starts past its end would run through the whole
+  // 8K param array.
+  for (const PolyParam *m = s_logo_prev_mod; m < curMod; m++)
+    if (m->pcw.Texture && logo_is_hunted_tex(m))
+    {
+      want_sig = true;
+      break;
+    }
+#endif
+
+  // Dump every pass at boot, then sample one in LOGO_EVERY until the window
+  // closes -- enough to land several times on any boot logo, and quiet after.
+  // The signature trigger overrides all of it, including the closed window.
+  s_logo_dump_now = want_sig
+                 || (s_logo_pass_no <= LOGO_HEAD_PASSES)
+                 || (s_logo_pass_no <= LOGO_LAST_PASS
+                     && (s_logo_pass_no % LOGO_EVERY) == 0);
+  if (!s_logo_dump_now)
+  {
+    s_logo_prev_lst = curLST;  // keep the cursors tracking while quiet
+    s_logo_prev_vtx = curVTX;
+    s_logo_prev_mod = curMod;
+    return;
+  }
+
+  s_logo_tex_n  = 0;
+  s_logo_draw_n = 0;
+
+  const u32 xclip = FB_X_CLIP.full;
+  const u32 yclip = FB_Y_CLIP.full;
+
+  printf("[LOGO] === pass=%u frame=%u sig=%d W_SOF1=%08X bit24=%d R_SOF1=%08X "
+         "R_CTRL(en=%d depth=%d) W_CTRL=%08X pack=%d stride=%u\n",
+         s_logo_pass_no, (u32)FrameCount, (int)want_sig, (u32)FB_W_SOF1,
+         (FB_W_SOF1 & 0x1000000) ? 1 : 0, (u32)FB_R_SOF1,
+         (int)FB_R_CTRL.fb_enable, (int)FB_R_CTRL.fb_depth,
+         (u32)FB_W_CTRL, (int)(FB_W_CTRL & 7),
+         (u32)((FB_W_LINESTRIDE & 0x1FF) * 8));
+  printf("[LOGO]     XCLIP=%u..%u YCLIP=%u..%u tclip=%08X BORDER_COL=%08X "
+         "BACKGND_T=%08X BACKGND_D=%08X ISP_FEED_CFG=%08X (presort bit0=%d)\n",
+         (u32)(xclip & 0x7FF), (u32)((xclip >> 16) & 0x7FF),
+         (u32)(yclip & 0x3FF), (u32)((yclip >> 16) & 0x3FF),
+         ta_tileclip, (u32)VO_BORDER_COL,
+         (u32)ISP_BACKGND_T, (u32)ISP_BACKGND_D,
+         (u32)ISP_FEED_CFG, (int)((ISP_FEED_CFG & 1) != 0));
+
+  const VertexList *l   = s_logo_prev_lst;
+  const Vertex     *vtx = s_logo_prev_vtx;
+  const PolyParam  *mod = s_logo_prev_mod;
+  const PolyParam  *cur = (mod > listModes) ? mod - 1 : mod;
+
+  printf("[LOGO]     strips=%d verts=%d TRat=%d PTat=%d W=%.5f..%.2f\n",
+         (int)(curLST - l), (int)(curVTX - vtx),
+         TransLST ? (int)(TransLST - lists) : -1,
+         PTLST    ? (int)(PTLST    - lists) : -1,
+         vtx_min_Z, vtx_max_Z);
+
+  int idx = 0;
+  for (; l != curLST; l++, idx++)
+  {
+    s32 c = l->count;
+    if (c < 0)
+      cur = mod++;
+    c &= 0x7FFF;
+
+    // The hunted strip is the whole point of the capture: print it whatever
+    // its index, and thumbnail its texture even if the per-pass budget is up.
+    const u32 strip_tex = cur->pcw.Texture
+                        ? (u32)((cur->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) : 0u;
+    const bool is_sig = cur->pcw.Texture && logo_is_hunted_tex(cur);
+
+    if (idx < LOGO_MAX_STRIPS || is_sig)
+    {
+      // Screen bbox: x,y are W-prescaled, so screen x = x/W (the same maths
+      // the [SS] and [HOKUTO_STAGE] dumps use). W is the raw view depth.
+      float minx = 1e30f, maxx = -1e30f, miny = 1e30f, maxy = -1e30f;
+      float minw = 1e30f, maxw = -1e30f;
+      float minu = 1e30f, maxu = -1e30f, minv = 1e30f, maxv = -1e30f;
+      for (s32 i = 0; i < c; i++)
+      {
+        const float z  = vtx[i].z;
+        const float iw = (z != 0.0f) ? 1.0f / z : 0.0f;
+        const float sx = vtx[i].x * iw, sy = vtx[i].y * iw;
+        if (sx < minx) minx = sx;
+        if (sx > maxx) maxx = sx;
+        if (sy < miny) miny = sy;
+        if (sy > maxy) maxy = sy;
+        if (z  < minw) minw = z;
+        if (z  > maxw) maxw = z;
+        if (vtx[i].u < minu) minu = vtx[i].u;
+        if (vtx[i].u > maxu) maxu = vtx[i].u;
+        if (vtx[i].v < minv) minv = vtx[i].v;
+        if (vtx[i].v > maxv) maxv = vtx[i].v;
+      }
+      const char *cls = (PTLST    && l >= PTLST)    ? "PT"
+                      : (TransLST && l >= TransLST) ? "TR" : "OP";
+
+      printf("[LOGO] #%03d %s lt=%d n=%2d tex=%d isp=%08X tsp=%08X tcw=%08X "
+             "x=%.0f..%.0f y=%.0f..%.0f W=%.5f..%.2f uv=%.3f..%.3f/%.3f..%.3f "
+             "col0=%08X spc0=%08X tc=%08X\n",
+             idx, cls, (int)cur->pcw.ListType, (int)c, (int)cur->pcw.Texture,
+             (u32)cur->isp.full, (u32)cur->tsp.full, (u32)cur->tcw.full,
+             minx, maxx, miny, maxy, minw, maxw,
+             minu, maxu, minv, maxv,
+             c > 0 ? (u32)vtx[0].col : 0u, c > 0 ? (u32)vtx[0].spc : 0u,
+             listTileClip[cur - listModes]);
+      // Second line: the DC state words spelled out field by field, because
+      // "82400000 / 949004F6" is exactly what a PVR viewer shows, and
+      // comparing the two side by side is how a wrong bitfield gets caught.
+      printf("[LOGO]      isp: depth=%u cull=%u zwdis=%u tex=%u off=%u gour=%u uv16=%u "
+             "| tsp: shad=%u ignA=%u useA=%u src=%u dst=%u ssel=%u dsel=%u fog=%u "
+             "cclamp=%u sup=%u | pcw: uv16=%u gour=%u off=%u tex=%u col=%u vol=%u shd=%u\n",
+             (unsigned)cur->isp.DepthMode, (unsigned)cur->isp.CullMode,
+             (unsigned)cur->isp.ZWriteDis, (unsigned)cur->isp.Texture,
+             (unsigned)cur->isp.Offset, (unsigned)cur->isp.Gouraud,
+             (unsigned)cur->isp.UV_16b,
+             (unsigned)cur->tsp.ShadInstr, (unsigned)cur->tsp.IgnoreTexA,
+             (unsigned)cur->tsp.UseAlpha, (unsigned)cur->tsp.SrcInstr,
+             (unsigned)cur->tsp.DstInstr, (unsigned)cur->tsp.SrcSelect,
+             (unsigned)cur->tsp.DstSelect, (unsigned)cur->tsp.FogCtrl,
+             (unsigned)cur->tsp.ColorClamp, (unsigned)cur->tsp.SupSample,
+             (unsigned)cur->pcw.UV_16bit, (unsigned)cur->pcw.Gouraud,
+             (unsigned)cur->pcw.Offset, (unsigned)cur->pcw.Texture,
+             (unsigned)cur->pcw.Col_Type, (unsigned)cur->pcw.Volume,
+             (unsigned)cur->pcw.Shadow);
+
+      // Every vertex, not just v0: PCW.Gouraud=0 means the PVR flat-shades
+      // from ONE of them, and a per-vertex alpha fade is invisible in v0 alone.
+      // col is post-ABGR8888 (RGBA byte order), so alpha is the top byte.
+      for (s32 vi = 0; vi < c && vi < 8; vi++)
+        printf("[LOGO]      v%d screen=(%.1f,%.1f) W=%.5f uv=(%.4f,%.4f) "
+               "col=%08X (a=%u) spc=%08X\n",
+               (int)vi,
+               vtx[vi].z != 0.0f ? vtx[vi].x / vtx[vi].z : 0.0f,
+               vtx[vi].z != 0.0f ? vtx[vi].y / vtx[vi].z : 0.0f,
+               vtx[vi].z, vtx[vi].u, vtx[vi].v,
+               (u32)vtx[vi].col, (unsigned)(vtx[vi].col >> 24),
+               (u32)vtx[vi].spc);
+
+      if (cur->pcw.Texture && (s_logo_tex_n < LOGO_MAX_TEX || is_sig))
+      {
+        bool seen = false;
+        for (u32 k = 0; k < s_logo_tex_n; k++)
+          if (s_logo_tex_done[k] == strip_tex) { seen = true; break; }
+        if (is_sig)
+          printf("[LOGO]   ^^ this is the hunted texture (LOGO_TRIGGER_TEX)\n");
+        // The whole texture once (atlas context), then the rectangle this
+        // strip actually samples -- for a full-screen quad reading an 8x8
+        // corner, only the second one describes what reaches the screen.
+        if (!seen)
+        {
+          if (s_logo_tex_n < LOGO_MAX_TEX)
+            s_logo_tex_done[s_logo_tex_n++] = strip_tex;
+          logo_dump_texture(cur, 0.0f, 1.0f, 0.0f, 1.0f, "WHOLE TEXTURE");
+        }
+        logo_dump_texture(cur, minu, maxu, minv, maxv, "THIS STRIP'S UV RECT");
+      }
+    }
+    vtx += c;
+  }
+  if (idx > LOGO_MAX_STRIPS)
+    printf("[LOGO]  ... %d more strips past the head cap\n", idx - LOGO_MAX_STRIPS);
+
+  s_logo_prev_lst = curLST;
+  s_logo_prev_vtx = curVTX;
+  s_logo_prev_mod = curMod;
+
+  // stdout is a FILE on the SD card (InitRenderer freopens it to /ndclog.txt),
+  // so it is fully buffered: without this, everything logged since the last
+  // block boundary is lost when the console is powered off instead of exited
+  // cleanly -- which is exactly how you leave a stuck screen.
+  fflush(stdout);
+}
+#endif // LOGO_DEBUG_LOG
+
 void StartRender()
 {
   u32 VtxCnt = curVTX - vertices;
@@ -8001,6 +8793,10 @@ void StartRender()
 
 #if SCOPE_DEBUG_LOG
   ss_dump_pass();   // must run BEFORE any path below returns
+#endif
+
+#if LOGO_DEBUG_LOG
+  logo_dump_pass(); // same rule: must run BEFORE any path below returns
 #endif
 
   if (RENDER_DELAY())
@@ -8066,7 +8862,7 @@ void StartRender()
       if (rtt_h > FB2D_H)               rtt_h = FB2D_H;
       if (rtt_h > (u32)rmode->efbHeight) rtt_h = (u32)rmode->efbHeight;
 
-      if(DEBUG_MESSAGE()) printf("[PATH] RTT: FB_W_SOF1=%08X %ux%u packmode=%d stride=%d VtxCnt=%d\n",
+      if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[PATH] RTT: FB_W_SOF1=%08X %ux%u packmode=%d stride=%d VtxCnt=%d\n",
         FB_W_SOF1, rtt_w, rtt_h, (int)(FB_W_CTRL & 7), (int)((FB_W_LINESTRIDE & 0x1FF) * 8), VtxCnt);
 
       s_rtt_x = xclip & 0x7FF;   // clip ORIGIN: the window's position in the
@@ -8085,7 +8881,7 @@ void StartRender()
     // the buffers exactly where it is — only the bookkeeping moves.
     if (RTT_CARRY_OVERLAY() && VtxCnt > 0 && curLST > lists)
     {
-      if(DEBUG_MESSAGE()) printf("[PATH] RTT-carry: FB_W_SOF1=%08X strips=%d VtxCnt=%d TR=%d\n",
+      if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[PATH] RTT-carry: FB_W_SOF1=%08X strips=%d VtxCnt=%d TR=%d\n",
         FB_W_SOF1, (int)(curLST - lists), VtxCnt, TransLST ? (int)(TransLST - lists) : -1);
 
       carry_lst_end   = curLST;
@@ -8126,7 +8922,7 @@ void StartRender()
     if(FRAMEBUFFER_2D()){
       if (s_did_3d_render)
       {
-        if(DEBUG_MESSAGE()) printf("[PATH] 2D-after-3D: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
+        if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[PATH] 2D-after-3D: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
           FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
         s_did_3d_render = false;
         gx_sync_pending(); // ASYNC_RENDER(): apply the queued frame's flip first
@@ -8143,7 +8939,7 @@ void StartRender()
       if (ShouldSkipFrame())
         return;   // skip the 2D present, same as the VBlank() path
 
-      if(DEBUG_MESSAGE()) printf("[PATH] 2D-blit: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
+      if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[PATH] 2D-blit: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
         FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
 
       PresentFramebuffer();
@@ -8161,7 +8957,7 @@ void StartRender()
     return;              // no GX calls — saves ~10-15 ms on a heavy frame
   }
 
-  if(DEBUG_MESSAGE()) printf("[PATH] 3D: FB_W_SOF1=%08X FB_R_SOF1=%08X VtxCnt=%d lists=%d\n",
+  if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[PATH] 3D: FB_W_SOF1=%08X FB_R_SOF1=%08X VtxCnt=%d lists=%d\n",
     FB_W_SOF1, FB_R_SOF1, VtxCnt, (int)(curLST - lists));
 
   DoRender();
@@ -8267,7 +9063,7 @@ struct VertexDecoder
   curMod->isp = pp->isp;               \
   curMod->tsp = pp->tsp;               \
   curMod->tcw = pp->tcw;               \
-  if (g_split_screen_cached || g_rtt_keep_cached || SCOPE_DEBUG_LOG) \
+  if (g_split_screen_cached || g_rtt_keep_cached || SCOPE_DEBUG_LOG || LOGO_DEBUG_LOG) \
     listTileClip[curMod - listModes] = ta_tileclip; \
   /* FOG(): with the offset colour dropped, keep its ALPHA anyway - that is the per-vertex fog coefficient. */ \
   curPolyOffsMask = pp->pcw.Offset ? (g_offset_color_fix_cached ? 0xFFFFFFFFu : (g_fog_cached ? 0xFF000000u : 0u)) : 0u;
@@ -8581,6 +9377,9 @@ struct VertexDecoder
     // Sprites carry one packed offset color in the header, shared by all 4
     // vertices (masked to 0 when PCW.Offset is off or the fix is disabled).
     curSpriteSpc = ABGR8888(pp->OffsCol) & curPolyOffsMask;
+    // Sprites have no per-vertex colour: this one header value is the colour
+    // of all four corners. White when the preset is off = the old hardcode.
+    curSpriteCol = g_sprite_color_cached ? ABGR8888(pp->BaseCol) : 0xFFFFFFFFu;
   }
 
 // Sprite Vertex Handlers
@@ -8605,10 +9404,10 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
   {
     
     StartPolyStrip();
-    curVTX[0].col = 0xFFFFFFFF;
-    curVTX[1].col = 0xFFFFFFFF;
-    curVTX[2].col = 0xFFFFFFFF;
-    curVTX[3].col = 0xFFFFFFFF;
+    curVTX[0].col = curSpriteCol;
+    curVTX[1].col = curSpriteCol;
+    curVTX[2].col = curSpriteCol;
+    curVTX[3].col = curSpriteCol;
     curVTX[0].spc = curSpriteSpc;
     curVTX[1].spc = curSpriteSpc;
     curVTX[2].spc = curSpriteSpc;
@@ -8738,6 +9537,13 @@ bool InitRenderer()
   // SCOPE_DEBUG_LOG and there is no point looking for [SS] lines at all.
   printf("[SS] scope pass logger ARMED (burst=%d, quiet=%d passes, heartbeat=%d)\n",
          SS_BURST, SS_QUIET_PASSES, SS_HEARTBEAT);
+  fflush(stdout);
+#endif
+#if LOGO_DEBUG_LOG
+  // If this line is missing from ndclog.txt the build did not pick up
+  // LOGO_DEBUG_LOG and there is no point looking for [LOGO] lines.
+  printf("[LOGO] boot-screen probe ARMED (every pass up to %d, then 1 in %d until pass %d, heartbeat=%d)\n",
+         LOGO_HEAD_PASSES, LOGO_EVERY, LOGO_LAST_PASS, LOGO_HEARTBEAT);
   fflush(stdout);
 #endif
   // Obtain the preferred video mode from the system
