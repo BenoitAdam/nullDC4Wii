@@ -98,7 +98,26 @@ extern "C" int get_jojo_fix_preset();
 // VQ textures decoded to GX_TF_CMPR (DXT1) instead of 16bpp — see
 // texture_VQ_CMPR(). 4 bits/texel instead of 16, which is what lets a VQ
 // texture fit its address-derived cache slot instead of needing the overflow
-// arena. 565 source only (CMPR carries no usable alpha).
+// arena. 565 source only.
+//
+// UNPROVEN IDEA - extending this to 1555, and why it is not here.
+// 1555 is 1-bit alpha, which is exactly what CMPR's second block mode carries:
+// when the two endpoints compare c0 <= c1 the palette becomes c0, c1,
+// (c0+c1)/2, and index 3 = TRANSPARENT. So punch-through VQ (foliage, fences,
+// chain-link, signage) could shrink to 4 bits/texel too and fit its slot,
+// instead of falling back to the overflow arena the way it does now.
+//
+// It was written and it REGRESSED on hardware - Power Stone 2 in particular.
+// Prime suspect: a texel the DC marks transparent loses its RGB. CMPR index 3
+// is transparent BLACK, while RGB5A3 keeps the colour alongside alpha 0, and a
+// polygon drawn with TSP.IgnoreTexA displays that colour - so a punch-through
+// texture gains black where it used to show colour. Power Stone 2 is full of
+// punch-through effects, which fits. Not confirmed; it could equally be the
+// endpoint-ordering issue noted above encode_cmpr_block().
+//
+// The work is parked on branch `vq_cmpr_1555` (encode_cmpr_block_a1() plus the
+// case 0/7 wiring). Do not revive it without a way to tell IgnoreTexA polygons
+// apart, or without first proving the regression is something else.
 extern "C" int get_vq_cmpr_preset();
 #define VQ_CMPR() (get_vq_cmpr_preset() == 1)
 
@@ -2703,6 +2722,19 @@ int TexUV(u32 flip, u32 clamp)
 //   [4-7] 16x 2-bit selectors, row-major, MSB-first (pixel0=bits[31:30])
 //         index 0=color0, 1=color1, 2=(2c0+c1)/3, 3=(c0+2c1)/3
 // Strategy: min/max luma anchor selection + nearest-palette assignment per pixel.
+//
+// SUSPECTED BUG, not fixed here, believed independent of everything else: the
+// endpoints are chosen by LUMA, but the mode bit GX reads is the UNSIGNED
+// comparison of the two packed RGB565 words, and those two orders disagree.
+// Pure green (0x07E0) is brighter than pure red (0xF800) but packs far lower,
+// so a block spanning those comes out c0 < c1 - which is CMPR's 3-colour +
+// TRANSPARENT mode, and a quarter of its texels silently vanish. The fix is one
+// line, `if (c0 < c1) swap(c0, c1)` right after the two anchors are picked: the
+// 4-colour palette is symmetric, so the interpolants merely trade places and
+// every texel still picks its nearest entry. Parked on branch `vq_cmpr_1555`
+// alongside the 1555 work, so it has NOT been tested apart from it - if that
+// branch's Power Stone 2 regression turns out to be this rather than the alpha
+// handling, this is where to look. Affects fmv_format=cmpr as well.
 // Exact for x < 768 (171 == floor(512/3) + 1); our callers pass x <= 189.
 static inline u32 __attribute__((always_inline)) div3_u8(u32 x) { return (x * 171) >> 9; }
 static void encode_cmpr_block(const u16 *src, u8 *dst)
@@ -3906,6 +3938,9 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     case 7:
       // 0	1555 value: 1 bit; RGB values: 5 bits each
       // 7	Reserved	Regarded as 1555
+      // No VQ_CMPR() branch here, unlike case 1. 1555 could use CMPR's
+      // transparent mode, but it regressed on hardware - see the UNPROVEN IDEA
+      // note by the VQ_CMPR() macro, and branch `vq_cmpr_1555`.
      if (mod->tcw.NO_PAL.ScanOrder)
       {
         // verify(tcw.NO_PAL.VQ_Comp==0);
