@@ -318,6 +318,8 @@ See more : https://github.com/BenoitAdam/nullDC4Wii/issues/68
 
 Use this or LOW to fix seam lines. See https://github.com/BenoitAdam/nullDC4Wii/issues/18
 
+Warning : ON causes a bug with Vertex Displacement (water mostly) : https://github.com/BenoitAdam/nullDC4Wii/issues/119
+
 #### BG POLYGON
 
 | Mode | Settings | Rendering |
