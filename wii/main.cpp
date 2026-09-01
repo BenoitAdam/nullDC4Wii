@@ -209,21 +209,12 @@ extern "C" {
 // DEBUG ONLY: off hides the Dreamcast BIOS boot logo. parse_bool("off") is
 // 0, so getting the polarity backwards makes `trans_zwrite=off` a silent
 // no-op.
-// The TR list is drawn with the frame-wide GEQUAL compare and Z-write on,
-// which lets the first translucent strip submitted at a near depth stamp
-// the Z buffer and depth-reject every farther translucent strip behind it.
-// Real PVR2 blends the translucent list rather than using it as occluders.
-// Found in Fighting Vipers 2's SEGA screen: a full-screen white quad at
-// W=0.01 was hiding the logo at W=0.10 (see the [LOGO] probe in gxRend.cpp).
 int g_trans_zwrite_preset = 1;
 
-// Sprite Base Colour (see SPRITE_COLOR in gxRend.cpp). 1 = use the sprite
-// header's own BaseCol, which the TA already parses and the renderer used to
-// discard; 0 = legacy, every sprite drawn with white vertex colour.
-// Defaults ON: reading the field is simply correct, and discarding it was
-// silently wrong for every sprite in every game (Wii-confirmed on Fighting
-// Vipers 2's SEGA screen). Set 0 per-game if some title depends on the old
-// white -- if that turns out to be common, this wants an AUTO rule instead.
+// Sprite Base Colour
+//   1 = on   - sprite header's own BaseCol
+//   0 = off  - legacy, appears white
+// Needed in most game (game menu and other)
 int g_sprite_color_preset = 1;
 
 // Vertex alpha on ARGB1555 surfaces (see VTX_ALPHA_HONOR in gxRend.cpp).
@@ -255,28 +246,14 @@ extern "C" {
   int get_canvas_width_preset() { return g_canvas_width_preset; }
 }
 
-// PVR vertical (Y) scaler: SCALER_CTL.vscalefactor (bits 15-0), the "Y" half of
-// the register whose "X" half (hscale) g_x_scaler_preset already handles. 6.10
-// fixed point, 0x400 = 1.0. Above 1.0 the CORE renders the scene that many
-// times TALLER and the video scaler shrinks it back down on framebuffer write
-// (vertical SSAA / flicker filter); below 1.0 it renders shorter and the scaler
-// stretches it. Either way the projected canvas height has to follow or only a
-// slice of the scene reaches the screen - the vertical twin of the Omicron /
-// Wacky Races "left half only" bug. 0=off (legacy, factor ignored), 1=honor it.
+// PVR vertical (Y) scaler
 int g_y_scaler_preset = 0;
 
 extern "C" {
   int get_y_scaler_preset() { return g_y_scaler_preset; }
 }
 
-// PVR horizontal (H) scaler at video output: VO_CONTROL.pixel_double (bit 8).
-// Set by the low-res video modes - the framebuffer holds a HALF-width (320)
-// image and the video DAC emits every pixel twice to fill the 640-pixel line,
-// so the scene is drawn in a 320-wide screen space. With the bit ignored that
-// scene goes into a 640 canvas and fills only its left half. This is the
-// register-driven counterpart of the manual canvas_width override (which exists
-// for games like SF3 that render narrow WITHOUT setting the bit), so an
-// explicit canvas width wins over it. 0=off (legacy, bit ignored), 1=honor it.
+// PVR horizontal (H) scaler
 int g_h_scaler_preset = 0;
 
 extern "C" {
@@ -1155,8 +1132,8 @@ void checkBiosFiles()
 #define OPT_GRAPHICS    7
 #define OPT_TEX_CACHE   8
 #define OPT_TMEM_CACHE  9
-#define OPT_4BPP        10
-#define OPT_8BPP        11
+#define OPT_4BPP        10    // now shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
+#define OPT_8BPP        11    // now shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_ASYNC_RENDER 12
 #define OPT_FRAMESKIP   13
 #define OPT_FRAMEBUFFER_2D 14
@@ -1185,7 +1162,7 @@ void checkBiosFiles()
 #define OPT_ACCURACY    33
 #define OPT_HOKUTO_HACK 34 // now shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_JOJO_FIX    35
-#define OPT_VQ_CMPR     67    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
+#define OPT_VQ_CMPR     67    // now shown on Page 1 (GENERAL), under TEXTURE CACHE, see OPT_PAGE0_ROWS
 #define OPT_RGB565_OPAQUE_ALPHA 36
 #define OPT_PPZ_WRITE   37
 #define OPT_ISP_DEPTH_FUNC 38 // now shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
@@ -1246,8 +1223,7 @@ static const int OPT_PAGE0_ROWS[] = {
   OPT_LOD_BIAS,
   OPT_ANISO,
   OPT_TEX_CACHE,
-  OPT_4BPP,
-  OPT_8BPP,
+  OPT_VQ_CMPR,
   OPT_FRAMESKIP,
   OPT_FRAMEBUFFER_2D,
   OPT_ADV_ALPHA,
@@ -1272,9 +1248,10 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_FOG,
   OPT_BG_POLY,
   OPT_RGB565_OPAQUE_ALPHA,
-  OPT_VQ_CMPR,
   OPT_JOJO_FIX,
-  OPT_OFFSET_COLOR
+  OPT_OFFSET_COLOR,
+  OPT_4BPP,
+  OPT_8BPP
 };
 
 // Page 2 - DEPTH & WIDTH
@@ -1513,26 +1490,13 @@ bool displayOptionsMenu()
     printf(" Can have huge FPS impact");
     printf("\n");
 
-    // --- Row: 4BPP ---
-    printf("%s 4BPP MODE      : ", (selectedRow == OPT_4BPP) ? ">" : " ");
-    switch (g_4bpp_preset) {
-      case 0: printf("[< I4 STUB           >]"); break;
-      case 1: printf("[< 4BPP OPTIMIZED    >]"); break;
-      case 2: printf("[< CI4 (FAST)        >]"); break;
-      case 3: printf("[< CI4 (NORMAL)      >]"); break;
-      case 4: printf("[< RGB565 (ACCURATE) >]"); break;
+    // --- Row: VQ as CMPR ---
+    printf("%s VQ AS CMPR     : ", (selectedRow == OPT_VQ_CMPR) ? ">" : " ");
+    switch (g_vq_cmpr_preset) {
+      case 0: printf("[< OFF (DEFAULT)     >]"); break;
+      case 1: printf("[< ON                >]"); break;
     }
-    printf("\n");
-
-    // --- Row: 8BPP ---
-    printf("%s 8BPP MODE      : ", (selectedRow == OPT_8BPP) ? ">" : " ");
-    switch (g_8bpp_preset) {
-      case 0: printf("[< I8 STUB           >]"); break;
-      case 1: printf("[< 8BPP OPTIMIZED    >]"); break;
-      case 2: printf("[< CI8 (FAST)        >]"); break;
-      case 3: printf("[< CI8 (NORMAL)      >]"); break;
-      case 4: printf("[< RGB565 (ACCURATE) >]"); break;
-    }
+    printf(" fixes VQ glitches on VERY FAST/+");
     printf("\n");
 
     // --- Row: Frameskipping ---
@@ -1666,7 +1630,7 @@ bool displayOptionsMenu()
       case 0: printf("[< OFF (FORCE OPAQUE)>]"); break;
       case 1: printf("[< ON (USE TSP.UseA) >]"); break;
     }
-    printf(" ON for vertex-alpha fades (FV2 SEGA)");
+    printf(" ON fixes some transparency");
     printf("\n");
 
     // --- Row: Decal Alpha Fix ---
@@ -1715,14 +1679,6 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Jojo Fix ---
-    printf("%s VQ AS CMPR     : ", (selectedRow == OPT_VQ_CMPR) ? ">" : " ");
-    switch (g_vq_cmpr_preset) {
-      case 0: printf("[< OFF (DEFAULT)     >]"); break;
-      case 1: printf("[< ON                >]"); break;
-    }
-    printf(" fixes VQ glitches on VERY FAST/+");
-    printf("\n");
-
     printf("%s JOJO FIX       : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
     switch (g_jojo_fix_preset) {
       case 0: printf("[< OFF               >]"); break;
@@ -1738,6 +1694,28 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CORRECT)      >]"); break;
     }
     printf(" SPECULAR : OFF if all white");
+    printf("\n");
+
+    // --- Row: 4BPP ---
+    printf("%s 4BPP MODE      : ", (selectedRow == OPT_4BPP) ? ">" : " ");
+    switch (g_4bpp_preset) {
+      case 0: printf("[< I4 STUB           >]"); break;
+      case 1: printf("[< 4BPP OPTIMIZED    >]"); break;
+      case 2: printf("[< CI4 (FAST)        >]"); break;
+      case 3: printf("[< CI4 (NORMAL)      >]"); break;
+      case 4: printf("[< RGB565 (ACCURATE) >]"); break;
+    }
+    printf("\n");
+
+    // --- Row: 8BPP ---
+    printf("%s 8BPP MODE      : ", (selectedRow == OPT_8BPP) ? ">" : " ");
+    switch (g_8bpp_preset) {
+      case 0: printf("[< I8 STUB           >]"); break;
+      case 1: printf("[< 8BPP OPTIMIZED    >]"); break;
+      case 2: printf("[< CI8 (FAST)        >]"); break;
+      case 3: printf("[< CI8 (NORMAL)      >]"); break;
+      case 4: printf("[< RGB565 (ACCURATE) >]"); break;
+    }
     printf("\n\n");
 
     printOptionsFooter();
@@ -1746,7 +1724,7 @@ bool displayOptionsMenu()
     if (optionsPage == 2) {
     // --- Row: legacy (1bb8c27) depth pipeline ---
     printf("%s LEGACY DEPTH   : ", (selectedRow == OPT_LEGACY_DEPTH) ? ">" : " ");
-    printf(g_legacy_depth_preset ? "[< ON (1bb8c27)      >]" : "[< OFF               >]");
+    printf(g_legacy_depth_preset ? "[< ON                >]" : "[< OFF               >]");
     printf(" Overrides FIXED DEPTH");
     printf("\n");
 
@@ -1804,7 +1782,7 @@ bool displayOptionsMenu()
       case 0: printf("[< OFF (NO OCCLUDE)  >]"); break;
       case 1: printf("[< ON (DEFAULT)      >]"); break;
     }
-    printf(" DEBUG ONLY - OFF hides the BIOS logo");
+    printf(" DEBUG ONLY"); // OFF hides the BIOS logo
     printf("\n");
 
     // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
