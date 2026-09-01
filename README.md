@@ -634,7 +634,7 @@ With recent version, multiple file names are suppported :
 [crazytaxi2][crazy taxi 2] ; more specific first
 depth_clip=1
 tex_cache=normal
-vertex_color_fix=off
+vertex_color=off
 
 [crazytaxi][crazy taxi]
 depth_clip=1

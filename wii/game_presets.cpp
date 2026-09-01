@@ -199,10 +199,10 @@
                                 of the Medium/Slow/VerySlow timeslice cascade.
                                 Leading suspect for the cross-game post-logo
                                 stall (Rez). Default off. EXPERIMENTAL — A/B.
-        vertex_color_fix=on <- on/off, real PVR Intensity (Gouraud) shading: each
+        vertex_color=on <- on/off, real PVR Intensity (Gouraud) shading: each
                                 vertex's scalar intensity is multiplied by the
                                 polygon's FaceColor (see gxRend.cpp
-                                VERTEX_COLOR_FIX()). Default off keeps the
+                                VERTEX_COLOR()). Default off keeps the
                                 old flat-grayscale behavior for every other game;
                                 Crazy Taxi needs this on for its HUD arrow/dollar
                                 sign to show their real color instead of gray.
@@ -548,7 +548,7 @@ extern int g_vq_cmpr_preset;
 extern int g_decal_alpha_preset;
 extern int g_speed_limiter_preset;
 extern int g_render_delay_preset;
-extern int g_vertex_color_fix_preset;
+extern int g_vertex_color_preset;
 extern int g_blend_mode_preset;
 extern int g_rgb565_opaque_alpha_preset;
 extern int g_blend_fps_boost_preset;
@@ -630,7 +630,7 @@ struct GamePreset
     int decal_alpha;
     int speed_limiter;
     int render_delay;
-    int vertex_color_fix;
+    int vertex_color;
     int players;
     int controller;
     int framebuffer_2d;
@@ -982,7 +982,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "decal_alpha")) p->decal_alpha = parse_bool(val);
     else if (key_eq(key, "speed_limiter")) p->speed_limiter = parse_bool(val);
     else if (key_eq(key, "render_delay"))  p->render_delay  = parse_bool(val);
-    else if (key_eq(key, "vertex_color_fix")) p->vertex_color_fix = parse_bool(val);
+    else if (key_eq(key, "vertex_color")) p->vertex_color = parse_bool(val);
     else if (key_eq(key, "players"))    p->players    = parse_players(val);
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);
     else if (key_eq(key, "framebuffer_2d")) p->framebuffer_2d = parse_bool(val);
@@ -1041,7 +1041,7 @@ static void preset_clear(GamePreset* cur)
     cur->decal_alpha = -1;
     cur->speed_limiter = -1;
     cur->render_delay = -1;
-    cur->vertex_color_fix = -1;
+    cur->vertex_color = -1;
     cur->players  = cur->controller                                  = -1;
     cur->ppz_write = -1;
     cur->trans_zwrite = -1;
@@ -1121,7 +1121,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->decal_alpha >= 0) { g_decal_alpha_preset   = p->decal_alpha; printf("  decal_alpha -> %d\n", p->decal_alpha); }
     if (p->speed_limiter >= 0) { g_speed_limiter_preset = p->speed_limiter; printf("  speed_limiter -> %d\n", p->speed_limiter); }
     if (p->render_delay  >= 0) { g_render_delay_preset  = p->render_delay;  printf("  render_delay  -> %d\n", p->render_delay);  }
-    if (p->vertex_color_fix >= 0) { g_vertex_color_fix_preset = p->vertex_color_fix; printf("  vertex_color_fix -> %d\n", p->vertex_color_fix); }
+    if (p->vertex_color >= 0) { g_vertex_color_preset = p->vertex_color; printf("  vertex_color -> %d\n", p->vertex_color); }
     if (p->players    >= 0) { g_player_count          = p->players;    printf("  players    -> %d\n", p->players);    }
     if (p->controller >= 0) { g_controller_type       = p->controller; printf("  controller -> %d\n", p->controller); }
     if (p->framebuffer_2d >= 0) { g_framebuffer_2d    = p->framebuffer_2d; printf("  framebuffer_2d -> %d\n", p->framebuffer_2d); }

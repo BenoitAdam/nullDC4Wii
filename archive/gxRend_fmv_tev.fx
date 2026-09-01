@@ -73,8 +73,8 @@ extern "C" int get_jojo_fix_preset();
 #define JOJO_FIX() (get_jojo_fix_preset() != 0)
 
 // Vertex-color Intensity (Gouraud) (cars in Crazy Taxi 1)
-extern "C" int get_vertex_color_fix_preset();
-#define VERTEX_COLOR_FIX() (get_vertex_color_fix_preset() != 0)
+extern "C" int get_vertex_color_preset();
+#define VERTEX_COLOR() (get_vertex_color_preset() != 0)
 
 // Texture cache management
 extern "C" int get_texture_cache_preset();
@@ -656,9 +656,9 @@ u32 curPolyOffsMask = 0;
 u32 curSpriteSpc = 0;
 
 // Cached once per frame in reset_vtx_state() instead of calling
-// VERTEX_COLOR_FIX() (an uncached extern getter) on every Intensity vertex —
+// VERTEX_COLOR() (an uncached extern getter) on every Intensity vertex —
 // the preset can't change mid-frame anyway.
-bool g_vertex_color_fix_cached = false;
+bool g_vertex_color_cached = false;
 bool g_offset_color_fix_cached = false; // same idea, for OFFSET_COLOR_FIX()
 bool g_split_screen_cached     = false; // same idea, for SPLIT_SCREEN(): gates
                                         // the listTileClip[] store per param
@@ -787,7 +787,7 @@ void reset_vtx_state()
   vtx_min_Z = 131072;
   vtx_max_Z = 0;
   tex_frame_reset(); // reset per-frame texture bump arena
-  g_vertex_color_fix_cached = VERTEX_COLOR_FIX();
+  g_vertex_color_cached = VERTEX_COLOR();
   g_offset_color_fix_cached = OFFSET_COLOR_FIX();
   g_split_screen_cached     = SPLIT_SCREEN();
 }
@@ -4759,12 +4759,12 @@ struct VertexDecoder
   // the final RGB is the polygon's FaceColor (curFaceColor*, set by
   // AppendPolyParam1/2B/4B) scaled by that intensity. Alpha comes straight
   // from curFaceColorA, not from the intensity scalar. Gated behind
-  // g_vertex_color_fix_cached (refreshed once per frame in reset_vtx_state(),
+  // g_vertex_color_cached (refreshed once per frame in reset_vtx_state(),
   // see its decl above) — off keeps the original flat grayscale behavior
   // untouched for every game that hasn't opted in.
   static u32 INTESITY(float inte)
   {
-    if (!g_vertex_color_fix_cached)
+    if (!g_vertex_color_cached)
     {
       u32 C = inte * 255;
       if (C > 255)

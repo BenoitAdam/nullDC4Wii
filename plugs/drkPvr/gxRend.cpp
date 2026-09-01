@@ -122,8 +122,8 @@ extern "C" int get_vq_cmpr_preset();
 #define VQ_CMPR() (get_vq_cmpr_preset() == 1)
 
 // Vertex-color Intensity (Gouraud) (cars in Crazy Taxi 1)
-extern "C" int get_vertex_color_fix_preset();
-#define VERTEX_COLOR_FIX() (get_vertex_color_fix_preset() != 0)
+extern "C" int get_vertex_color_preset();
+#define VERTEX_COLOR() (get_vertex_color_preset() != 0)
 
 // Texture cache management
 extern "C" int get_texture_cache_preset();
@@ -1805,9 +1805,9 @@ u32 curSpriteCol = 0xFFFFFFFF;
 bool g_sprite_color_cached = false;
 
 // Cached once per frame in reset_vtx_state() instead of calling
-// VERTEX_COLOR_FIX() (an uncached extern getter) on every Intensity vertex —
+// VERTEX_COLOR() (an uncached extern getter) on every Intensity vertex —
 // the preset can't change mid-frame anyway.
-bool g_vertex_color_fix_cached = false;
+bool g_vertex_color_cached = false;
 bool g_offset_color_fix_cached = false; // same idea, for OFFSET_COLOR_FIX()
 bool g_fog_cached              = false; // same idea, for FOG(): makes the TA
                                         // decoder keep a polygon's offset-colour
@@ -2183,7 +2183,7 @@ void reset_vtx_state()
   vtx_min_Z = 131072;
   vtx_max_Z = 0;
   tex_frame_reset(); // reset per-frame texture bump arena
-  g_vertex_color_fix_cached = VERTEX_COLOR_FIX();
+  g_vertex_color_cached = VERTEX_COLOR();
   g_sprite_color_cached     = SPRITE_COLOR();
   g_offset_color_fix_cached = OFFSET_COLOR_FIX();
   g_fog_cached              = FOG();
@@ -9014,12 +9014,12 @@ struct VertexDecoder
   // the final RGB is the polygon's FaceColor (curFaceColor*, set by
   // AppendPolyParam1/2B/4B) scaled by that intensity. Alpha comes straight
   // from curFaceColorA, not from the intensity scalar. Gated behind
-  // g_vertex_color_fix_cached (refreshed once per frame in reset_vtx_state(),
+  // g_vertex_color_cached (refreshed once per frame in reset_vtx_state(),
   // see its decl above) — off keeps the original flat grayscale behavior
   // untouched for every game that hasn't opted in.
   static u32 INTESITY(float inte)
   {
-    if (!g_vertex_color_fix_cached)
+    if (!g_vertex_color_cached)
     {
       u32 C = inte * 255;
       if (C > 255)

@@ -293,10 +293,10 @@ extern "C" {
   int get_jojo_fix_preset() { return g_jojo_fix_preset; }
 }
 
-int g_vertex_color_fix_preset = 1; // 0 = Greyscale , 1 = On
+int g_vertex_color_preset = 1; // 0 = Greyscale , 1 = On
 
 extern "C" {
-  int get_vertex_color_fix_preset() { return g_vertex_color_fix_preset; }
+  int get_vertex_color_preset() { return g_vertex_color_preset; }
 }
 
 int g_blend_mode_preset = 1; // 0=off 1=on (per-polygon TSP blend, correct for RE3)
@@ -1148,7 +1148,7 @@ void checkBiosFiles()
 
 // --- Page 2: rendering / compatibility fixes ---
 #define OPT_FMV_FORMAT  23
-#define OPT_VERTEX_COLOR_FIX 24
+#define OPT_VERTEX_COLOR 24
 #define OPT_DECAL_ALPHA 25
 #define OPT_MIPMAP      26
 #define OPT_SEAM_FIX    27
@@ -1240,7 +1240,7 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_LAUNCH,
   OPT_FMV_FORMAT,
   OPT_YUV_TWIDDLE_FIX,
-  OPT_VERTEX_COLOR_FIX,
+  OPT_VERTEX_COLOR,
   OPT_SPRITE_COLOR,
   OPT_VTX_ALPHA,
   OPT_DECAL_ALPHA,
@@ -1607,8 +1607,8 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Intensity Color Fix ---
-    printf("%s VERTEX COLOR   : ", (selectedRow == OPT_VERTEX_COLOR_FIX) ? ">" : " ");
-    switch (g_vertex_color_fix_preset) {
+    printf("%s VERTEX COLOR   : ", (selectedRow == OPT_VERTEX_COLOR) ? ">" : " ");
+    switch (g_vertex_color_preset) {
       case 0: printf("[< OFF (GRAY SCALE)  >]"); break;
       case 1: printf("[< ON                >]"); break;
     }
@@ -2115,7 +2115,7 @@ bool displayOptionsMenu()
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
         case OPT_VQ_CMPR:   g_vq_cmpr_preset        = (g_vq_cmpr_preset        + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
-        case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
+        case OPT_VERTEX_COLOR: g_vertex_color_preset = (g_vertex_color_preset + 1) % 2; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
         case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
@@ -2191,7 +2191,7 @@ bool displayOptionsMenu()
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
         case OPT_VQ_CMPR:   g_vq_cmpr_preset        = (g_vq_cmpr_preset        + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
-        case OPT_VERTEX_COLOR_FIX: g_vertex_color_fix_preset = (g_vertex_color_fix_preset + 1) % 2; break;
+        case OPT_VERTEX_COLOR: g_vertex_color_preset = (g_vertex_color_preset + 1) % 2; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
         case OPT_BLEND_FPS_BOOST: g_blend_fps_boost_preset = (g_blend_fps_boost_preset + 1) % 2; break;
@@ -3003,7 +3003,7 @@ int main(int argc, wchar *argv[])
       case -1: printf("DEFAULT (SAVED)\n"); break;
       default: printf("%d\n", g_audio_buffers_preset); break;
     }
-    printf("Vertex Color Fix: %s\n", g_vertex_color_fix_preset ? "ON" : "OFF");
+    printf("Vertex Color Fix: %s\n", g_vertex_color_preset ? "ON" : "OFF");
     printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("RGB565 Opq Alpha: %s\n", g_rgb565_opaque_alpha_preset ? "ON (FMT0+FMT1)" : "OFF (FMT0 ONLY)");
     printf("Blend FPS Boost: %s\n", g_blend_fps_boost_preset ? "ON (FASTER)" : "OFF (CORRECT)");
