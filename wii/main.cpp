@@ -1215,6 +1215,7 @@ void checkBiosFiles()
 #define OPT_SPRITE_COLOR 69    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_VTX_ALPHA    70    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_YUV_STRIDE   71    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
+#define OPT_DINO_CRISIS_INVENTORY_HACK 72 // shown on Page 5 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
@@ -1325,6 +1326,7 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_MIPMAP,
   OPT_DMA_FIX,
   OPT_SCHED,
+  OPT_DINO_CRISIS_INVENTORY_HACK,
   OPT_DYNAREC
 };
 
@@ -2072,6 +2074,15 @@ bool displayOptionsMenu()
     printf(" hw-order DMA/IRQ completions (exp)");
     printf("\n");
 
+    // --- Row: Dino Crisis inventory preview icon redecode hack (gxRend.cpp DINO_CRISIS_INVENTORY_HACK) ---
+    printf("%s DINO CRISIS FIX: ", (selectedRow == OPT_DINO_CRISIS_INVENTORY_HACK) ? ">" : " ");
+    switch (g_dino_crisis_inventory_hack_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON                >]"); break;
+    }
+    printf(" fixes black inventory icon");
+    printf("\n");
+
     // --- Row: DYNAREC - SH4 core back-end (Dynarec vs Interpreter) ---
     printf("%s SH4 CORE       : ", (selectedRow == OPT_DYNAREC) ? ">" : " ");
     switch (g_dynarec_preset) {
@@ -2192,6 +2203,7 @@ bool displayOptionsMenu()
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
+        case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
@@ -2269,6 +2281,7 @@ bool displayOptionsMenu()
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
+        case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
@@ -3036,6 +3049,7 @@ int main(int argc, wchar *argv[])
     printf("FPU Pin        : %s\n", g_fpu_pin_preset ? "ON (EXPERIMENTAL)" : "OFF (LEGACY)");
     printf("JIT Align      : %s\n", g_jit_align_preset ? "ON (32B LINES)" : "OFF (LEGACY)");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
+    printf("Dino Crisis Fix: %s\n", g_dino_crisis_inventory_hack_preset ? "ON (REDECODE)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {
       case -1: printf("DEFAULT (SAVED)\n"); break;

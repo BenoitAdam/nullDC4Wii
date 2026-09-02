@@ -4192,8 +4192,6 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         tex_addr += OtherMipPoint[mod->tsp.TexU + 3] * 2; // YUV422: 2 bytes/pixel
         h = w; // mipmapped textures are always square (ignore TexV), as elsewhere
       }
-      if (mod->tcw.NO_PAL.StrideSel)
-        w = 512;
 
       // The declared texture width (w) is a power of two, and the source's real
       // per-row pixel pitch can be smaller than it - but ONLY for a texture the
@@ -4212,14 +4210,33 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       // collapses to 16 pixels and every row from 16 down is zero-filled by the
       // decoders below - Soul Calibur's character select went mostly black.
       // Ask the converter which regions it actually wrote instead.
+      //
+      // NOTE: this used to unconditionally force w=512 whenever TCW.StrideSel
+      // was set, guessing that a stride-select texture's real pitch always
+      // comes from a separate register rather than the declared size. That was
+      // a harmless no-op while StrideSel read the wrong physical bit (see
+      // acb3942 / 94639b7a) - it never fired on real game data. Now that
+      // 94639b7a put StrideSel back on its real hardware bit (25, confirmed
+      // against flycast's ta_structs.h), it correctly reads 1 for real
+      // stride-select FMV textures, and for any one of those yuv_conv_lookup()
+      // below fails to track, a blind 512 is very often NOT the real pitch -
+      // tearing the frame into repeating slices, the exact alpha-0.32
+      // "messy/split" FMV bug ec67c40 fixed. The declared width is the far
+      // safer fallback, so StrideSel no longer assigns a width by itself here;
+      // it stays informational ([YUV] debug log) except under yuv_stride=always
+      // below, which reproduces the old guess verbatim for A/B.
       u32 yuv_real_w = w, yuv_real_h = h;
       g_yuv_src_stride_override = 0; // 0 = no override, decode at declared size
       g_yuv_src_real_h          = 0;
 
       if (YUV_STRIDE_ALWAYS())
       {
-        // Legacy path, kept only so the old result can be reproduced for A/B
-        // on a game where the address gate below turns out to miss.
+        // Legacy path: reproduces the pre-fix StrideSel->512 guess AND the
+        // unconditional TA_YUV_TEX_CTRL read, kept only so that result can
+        // still be reproduced for A/B on a game where auto's address gate
+        // turns out to miss.
+        if (mod->tcw.NO_PAL.StrideSel)
+          w = yuv_real_w = 512;
         u32 cw = ((TA_YUV_TEX_CTRL & 0x3F) + 1) * 16;
         u32 ch = (((TA_YUV_TEX_CTRL >> 8) & 0x3F) + 1) * 16;
         if (cw <= w) { yuv_real_w = cw; g_yuv_src_stride_override = (int)cw; }
