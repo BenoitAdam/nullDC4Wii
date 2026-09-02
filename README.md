@@ -336,14 +336,14 @@ Warning : ON causes a bug with Vertex Displacement (water mostly) : https://gith
 
 May disapear in a future
 
-#### HOKUTO HACK
+#### LAYER SORT
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
 | **OFF (legacy, default)** | Disable | Standard sort |
-| **ON (TR tier sort)** | Layer-tiered translucent sort | Specific fix for Hokuto no Ken |
+| **ON (TR tier sort)** | Layer-tiered translucent sort | For 2D scenes drawn at ONE depth |
 
-Helps determine which what should be front and back trough looking at texture format/properties. For some textures it even check RAM address. Only work for stage 1/2 at the moment
+Helps determine what should be front and back trough looking at texture format/properties. For games that submit their whole 2D scene at a single depth and rely on the Dreamcast's per-pixel autosort: background plates draw first, then stage art, then stage sprites, then everything else. Game-agnostic — used by Hokuto no Ken and Street Fighter III. Was part of the HOKUTO HACK before alpha0.66.
 
 #### JOJO FIX
 
@@ -603,6 +603,15 @@ May fix black surface on some games (ie = sega worldwide soccer)
 | **OFF (cascade, default)** | Legacy cascade scheduling | Standard |
 | **ON (deadline)** | Unified cycle-deadline scheduler | Hardware-order DMA/IRQ completions, related to loading CDI/GDI file (experimental) |
 
+#### HOKUTO HACK
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Disable | Standard sort |
+| **ON (HnK addresses)** | Hardcoded RAM address hack | Specific fix for Hokuto no Ken |
+
+Refines LAYER SORT using Hokuto no Ken's own VRAM texture addresses, for the debris tiles that texture format/properties alone cannot tell apart from the fighters. Needs LAYER SORT on — it does nothing by itself — and only works for stage 1/2 at the moment. Leave it off in every other game.
+
 #### SH4 CORE
 
 | Mode | Settings | Rendering |
@@ -612,7 +621,7 @@ May fix black surface on some games (ie = sega worldwide soccer)
 
 ### Game Specific Presets
 
-HOKUTO HACK (Hokuto No Ken) help determine which what should be front and back trough looking at texture format/properties. For some textures it even check RAM address.
+LAYER SORT (Hokuto No Ken, Street Fighter III) helps determine what should be front and back trough looking at texture format/properties. HOKUTO HACK adds to it a RAM address check for a few Hokuto no Ken textures that those properties cannot separate — Hokuto no Ken only, and it needs LAYER SORT on.
 
 JOJO FIX (Jojo's Bizarre adventure) has to be used with CI4_FAST to reduce FPS drop in battle. May use the same technique in other games
 

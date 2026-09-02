@@ -311,8 +311,25 @@ extern "C" int get_sprite_color_preset();
 extern "C" int get_punch_through_preset();
 #define PUNCH_THROUGH_FIX() (get_punch_through_preset() == 1)
 
-// hokuto_hack preset: layer-tiered translucent sort for games that submit
-// their whole 2D scene at ONE depth. 
+// layer_sort preset: layer-tiered translucent sort for games that submit
+// their whole 2D scene at ONE depth and rely on PVR per-pixel autosort.
+// Game-agnostic: strips are tiered by RENDER STATE only (see the tclass
+// classifier in the draw loop) -- full-screen untextured REPLACE plates draw
+// first, then VQ stage art, then 8bpp sprites on palette bank 32-47, then
+// everything else in submission order. Implies TRANS_SORT() (it is the same
+// machinery, tiered at equal depth) and overrides AUTOSORT() (peeling cannot
+// separate layers that share one depth).
+extern "C" int get_layer_sort_preset();
+#define LAYER_SORT() (get_layer_sort_preset() == 1)
+
+// hokuto_hack preset: Hokuto no Ken's hardcoded VRAM texture addresses, layered
+// on top of LAYER_SORT() (which it needs -- it only refines the tier-2 order,
+// so it does nothing on its own). Those addresses are that game's stage 1/2
+// debris tiles: state-based tiering cannot tell them apart from the fighters
+// (same format + blend), so they are identified by address and pushed behind
+// the rest of the tier, and one tile that must never be seen is pushed behind
+// everything. Address lists are per-scene AND per-game -- keep this OFF for
+// anything but Hokuto no Ken. See hokuto_is_debris_tex() below.
 extern "C" int get_hokuto_hack_preset();
 #define HOKUTO_HACK() (get_hokuto_hack_preset() == 1)
 
@@ -532,10 +549,10 @@ extern "C" int get_trans_sort_preset();
 //     PREVIOUS peel are dropped, not re-sorted (biased-down ramp; dropping
 //     beats infinite re-selection). 2D stacks at EXACTLY equal depth are
 //     safe (drawn together via EQUAL); "almost equal" sub-epsilon stacks
-//     belong to trans_sort/hokuto_hack instead.
+//     belong to trans_sort/layer_sort instead.
 //   * Layers beyond N per pixel are dropped (farthest N win).
 //   * Needs the Z24 EFB (rmode->aa off) and MEM2 buffers (~700 KB).
-//   * RTT frames keep the legacy path. hokuto_hack overrides this preset
+//   * RTT frames keep the legacy path. layer_sort overrides this preset
 //     (those games stack everything at ONE depth, peeling can't help).
 //     Recommended companions: punch_through=on (PT occludes TR correctly),
 //     depth_clip=1 (default; keeps the near-parked Z init off-plane).
@@ -5260,14 +5277,17 @@ struct TransStripRec
   Vertex *vtx;     // first vertex of the strip
   PolyParam *mod;  // render state in effect for this strip
   u16 count;       // vertex count (sign bit already consumed)
-  u16 tr_class;    // HOKUTO_HACK() layer tier at equal depth (0 otherwise):
+  u16 tr_class;    // LAYER_SORT() layer tier at equal depth (0 otherwise):
                    // 3 = full-screen plate, 2 = VQ stage art,
                    // 1 = 8bpp bank 32-47 (stage sprites), 0 = rest
 };
 
 static TransStripRec trans_sort_recs[8 * 1024];
 
-// hokuto_hack
+// hokuto_hack: Hokuto no Ken specific VRAM texture addresses (see the preset
+// note at the top of the file). These refine the LAYER_SORT() tier-2 order and
+// are meaningless -- actively harmful -- in any other game, which is why they
+// live behind their own preset.
 
 // Stage 1
 #define HOKUTO_DEBRIS_TEX_ADDR_0 0x000E6000u // top-left corner ~x=242 y=107
@@ -5299,13 +5319,18 @@ static inline bool hokuto_is_debris_tex(u32 addr)
       || addr == HOKUTO_DEBRIS_TEX_ADDR_11;
 }
 
+// HOKUTO_HACK() latched once per frame, just before the qsort below: the
+// comparator runs O(n log n) times and must not call through the preset getter
+// on every compare. False = the address hack contributes nothing to the order.
+static bool s_hokuto_addr_hack = false;
+
 static int trans_strip_cmp(const void *a, const void *b)
 {
   const TransStripRec *ra = (const TransStripRec *)a;
   const TransStripRec *rb = (const TransStripRec *)b;
   if (ra->far_w > rb->far_w) return -1; // farther strips draw first
   if (ra->far_w < rb->far_w) return 1;
-  // hokuto_hack layer tier: at equal depth, background plates (3) draw before
+  // layer_sort layer tier: at equal depth, background plates (3) draw before
   // stage art (2) before stage sprites (1) before everything else (0).
   // Always 0 with the preset off.
   if (ra->tr_class > rb->tr_class) return -1;
@@ -5313,20 +5338,27 @@ static int trans_strip_cmp(const void *a, const void *b)
   // Within tier 2 (VQ stage art) only: some of the grid is opaque
   if (ra->tr_class == 2 && rb->tr_class == 2)
   {
-    // HOKUTO_DEBRIS_TEX_ADDR_0 should not be seen
-    bool ra_hidden_tile = ((ra->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) == HOKUTO_DEBRIS_TEX_ADDR_0;
-    bool rb_hidden_tile = ((rb->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) == HOKUTO_DEBRIS_TEX_ADDR_0;
-    if (ra_hidden_tile && !rb_hidden_tile) return -1;
-    if (!ra_hidden_tile && rb_hidden_tile) return 1;
+    // hokuto_hack: HOKUTO_DEBRIS_TEX_ADDR_0 should not be seen — park it
+    // behind everything else in the tier. Address-keyed, HnK only.
+    if (s_hokuto_addr_hack)
+    {
+      bool ra_hidden_tile = ((ra->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) == HOKUTO_DEBRIS_TEX_ADDR_0;
+      bool rb_hidden_tile = ((rb->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) == HOKUTO_DEBRIS_TEX_ADDR_0;
+      if (ra_hidden_tile && !rb_hidden_tile) return -1;
+      if (!ra_hidden_tile && rb_hidden_tile) return 1;
+    }
 
+    // Opaque REPLACE art draws before blended art. Keyed on render state, so
+    // this stays part of layer_sort itself.
     bool ra_replace = ra->mod->tsp.SrcInstr == 1 && ra->mod->tsp.DstInstr == 0;
     bool rb_replace = rb->mod->tsp.SrcInstr == 1 && rb->mod->tsp.DstInstr == 0;
     if (ra_replace && !rb_replace) return -1;
     if (!ra_replace && rb_replace) return 1;
-    // Within the non-REPLACE (blend) bucket: HnK's debris pile (see
-    // hokuto_is_debris_tex() above) draws before — behind — other
+
+    // hokuto_hack: within the non-REPLACE (blend) bucket, HnK's debris pile
+    // (see hokuto_is_debris_tex() above) draws before — behind — other
     // translucent VQ scenery sharing this tier.
-    if (!ra_replace && !rb_replace)
+    if (s_hokuto_addr_hack && !ra_replace && !rb_replace)
     {
       bool ra_debris = hokuto_is_debris_tex((ra->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
       bool rb_debris = hokuto_is_debris_tex((rb->mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
@@ -6636,11 +6668,11 @@ void DoRender()
   // AUTOSORT() frame gate: per-pixel depth peeling for the TR range (see the
   // preset doc at the top). RTT passes keep the legacy path (the game reads
   // the copy back immediately; peeling would multiply that cost), and
-  // hokuto_hack keeps its curated layer-tier sort (those scenes sit at ONE
+  // layer_sort keeps its curated layer-tier sort (those scenes sit at ONE
   // depth, peeling cannot separate them). Peeling replaces TRANS_SORT() when
   // both are on -- it is the strictly stronger ordering.
   int as_frame_peels = 0;
-  if (!s_rtt_pass && TransLST && s_as_ready && !HOKUTO_HACK())
+  if (!s_rtt_pass && TransLST && s_as_ready && !LAYER_SORT())
   {
     as_frame_peels = AUTOSORT();
     if (as_frame_peels < 0) as_frame_peels = 0;
@@ -6649,7 +6681,7 @@ void DoRender()
   if (as_frame_peels)
     as_setup_frame(p5, p6); // texgen matrices + GR16 mask konsts
 
-  const bool trans_sort = (TRANS_SORT() || HOKUTO_HACK()) && !as_frame_peels; // read once per frame (hokuto_hack implies the sort)
+  const bool trans_sort = (TRANS_SORT() || LAYER_SORT()) && !as_frame_peels; // read once per frame (layer_sort implies the sort)
   bool ts_active = false;
   int ts_idx = 0;
   int ts_count = 0;
@@ -7127,7 +7159,7 @@ void DoRender()
           // not happen — TA lists start with a global param — but a valid
           // fallback beats reading a NULL mod).
           PolyParam *cur_mod = (wmod > listModes) ? wmod - 1 : wmod;
-          const bool isp_tier = HOKUTO_HACK(); // layer tiers at equal depth
+          const bool isp_tier = LAYER_SORT(); // layer tiers at equal depth
           int n = 0;
           for (const VertexList *l = drawLST; l != tr_end; l++)
           {
@@ -7141,7 +7173,7 @@ void DoRender()
               if (wvtx[i].z > far_w)
                 far_w = wvtx[i].z;
 
-            // hokuto_hack: classify one-depth 2D layers by texture state (see
+            // layer_sort: classify one-depth 2D layers by texture state (see
             // the preset note at the top of the file). ALL VQ shares one
             // tier: within a tier submission order is preserved, so
             // VQ-vs-VQ compositing stays legacy-identical (an address-based
@@ -7259,6 +7291,11 @@ void DoRender()
             }
           }
 #endif
+
+          // Latch the Hokuto no Ken address hack for trans_strip_cmp() (it
+          // must not call the preset getter per compare). It only refines the
+          // tier-2 order layer_sort produces, so it is meaningless without it.
+          s_hokuto_addr_hack = HOKUTO_HACK() && isp_tier;
 
           if (n > 1)
             qsort(trans_sort_recs, n, sizeof(TransStripRec), trans_strip_cmp);

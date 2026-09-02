@@ -247,7 +247,7 @@
                                 per-game, only where trans_sort's per-strip
                                 painter sort is not enough (intersecting or
                                 interleaved translucent geometry). Overrides
-                                trans_sort; hokuto_hack overrides it. Best with
+                                trans_sort; layer_sort overrides it. Best with
                                 punch_through=on. 0 (default): off.
         render_to_texture=on <- on/off/overlay/keep, render-to-texture support (see
                                 gxRend.cpp RENDER_TO_TEXTURE()). Frames whose
@@ -598,6 +598,7 @@ extern int g_tmem_cache_preset;
 extern int g_cdda_preset;
 extern int g_mute_pcm16_preset;
 extern int g_bg_poly_preset;
+extern int g_layer_sort_preset;
 extern int g_hokuto_hack_preset;
 extern int g_isp_depth_func_preset;
 extern int g_isp_cull_preset;
@@ -686,6 +687,7 @@ struct GamePreset
     int cdda;
     int mute_pcm16;
     int bg_poly;
+    int layer_sort;
     int hokuto_hack;
     int isp_depth_func;
     int isp_cull;
@@ -1049,6 +1051,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "cdda"))           p->cdda           = parse_bool(val);
     else if (key_eq(key, "mute_pcm16"))     p->mute_pcm16     = parse_bool(val);
     else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
+    else if (key_eq(key, "layer_sort"))     p->layer_sort     = parse_bool(val);
     else if (key_eq(key, "hokuto_hack"))    p->hokuto_hack    = parse_bool(val);
     else if (key_eq(key, "isp_depth_func")) p->isp_depth_func = atoi(val);
     else if (key_eq(key, "isp_cull"))       p->isp_cull       = atoi(val);
@@ -1117,6 +1120,7 @@ static void preset_clear(GamePreset* cur)
     cur->cdda = -1;
     cur->mute_pcm16 = -1;
     cur->bg_poly = -1;
+    cur->layer_sort = -1;
     cur->hokuto_hack = -1;
     cur->isp_depth_func = -1;
     cur->isp_cull = -1;
@@ -1192,6 +1196,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->cdda           >= 0) { g_cdda_preset          = p->cdda;            printf("  cdda           -> %d\n", p->cdda);           }
     if (p->mute_pcm16     >= 0) { g_mute_pcm16_preset    = p->mute_pcm16;      printf("  mute_pcm16     -> %d\n", p->mute_pcm16);     }
     if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
+    if (p->layer_sort     >= 0) { g_layer_sort_preset    = p->layer_sort;      printf("  layer_sort     -> %d\n", p->layer_sort);     }
     if (p->hokuto_hack    >= 0) { g_hokuto_hack_preset   = p->hokuto_hack;     printf("  hokuto_hack    -> %d\n", p->hokuto_hack);    }
     if (p->isp_depth_func >= 0) { g_isp_depth_func_preset = p->isp_depth_func; printf("  isp_depth_func -> %d\n", p->isp_depth_func); }
     if (p->isp_cull       >= 0) { g_isp_cull_preset      = p->isp_cull;        printf("  isp_cull       -> %d\n", p->isp_cull);       }

@@ -133,11 +133,22 @@ extern "C" {
   int get_8bpp_preset() { return g_8bpp_preset; }
 }
 
-int g_hokuto_hack_preset = 0;
+int g_layer_sort_preset = 0;
 // 0=off (legacy: painter order), 1=on (layer-tiered translucent sort for 2D
 //   games that submit their whole scene at one depth — origin case is
-//   Hokuto no Ken's VQ backdrop erasing its fighters/HUD without this; see
-//   gxRend.cpp HOKUTO_HACK())
+//   Hokuto no Ken's VQ backdrop erasing its fighters/HUD without this, but the
+//   tiering keys off render state only, so it is game-agnostic and SF3 needs
+//   it too; see gxRend.cpp LAYER_SORT())
+
+extern "C" {
+  int get_layer_sort_preset() { return g_layer_sort_preset; }
+}
+
+int g_hokuto_hack_preset = 0;
+// 0=off, 1=on (Hokuto no Ken's hardcoded stage 1/2 debris VRAM addresses,
+//   refining the layer_sort tier-2 order — does nothing unless layer_sort is
+//   also on, and must stay OFF in every other game; see gxRend.cpp
+//   HOKUTO_HACK())
 
 extern "C" {
   int get_hokuto_hack_preset() { return g_hokuto_hack_preset; }
@@ -1178,7 +1189,7 @@ void checkBiosFiles()
 
 // --- Page 3: accuracy / experimental presets ---
 #define OPT_ACCURACY    33
-#define OPT_HOKUTO_HACK 34 // now shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
+#define OPT_HOKUTO_HACK 34 // now shown on Page 6 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_JOJO_FIX    35
 #define OPT_VQ_CMPR     67    // now shown on Page 1 (GENERAL), under TEXTURE CACHE, see OPT_PAGE0_ROWS
 #define OPT_RGB565_OPAQUE_ALPHA 36
@@ -1211,10 +1222,11 @@ void checkBiosFiles()
 #define OPT_GX          63     // shown on Page 1 (GENERAL) under GRAPHICS, see OPT_PAGE0_ROWS
 #define OPT_LOD_BIAS    64     // shown on Page 1 (GENERAL) under GRAPHICS, see OPT_PAGE0_ROWS
 #define OPT_ANISO       65     // shown on Page 1 (GENERAL) under GRAPHICS, see OPT_PAGE0_ROWS
-#define OPT_TRANS_ZWRITE 68    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
+#define OPT_TRANS_ZWRITE 68    // shown on Page 6 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_SPRITE_COLOR 69    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_VTX_ALPHA    70    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_YUV_STRIDE   71    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
+#define OPT_LAYER_SORT  73    // shown on Page 3 (DEPTH & WIDTH), above HOKUTO HACK
 #define OPT_DINO_CRISIS_INVENTORY_HACK 72 // shown on Page 5 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_ROW_COUNT   66
 
@@ -1284,11 +1296,10 @@ static const int OPT_PAGE2_ROWS[] = {
   OPT_HUD_PASS,
   OPT_SUBPASS_ZCLEAR,
   OPT_PPZ_WRITE,
-  OPT_TRANS_ZWRITE,
   OPT_ISP_DEPTH_FUNC,
   OPT_ISP_CULL,
   OPT_AUTOSORT,
-  OPT_HOKUTO_HACK,
+  OPT_LAYER_SORT,
   OPT_X_SCALER,
   OPT_Y_SCALER,
   OPT_H_SCALER,
@@ -1326,6 +1337,8 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_MIPMAP,
   OPT_DMA_FIX,
   OPT_SCHED,
+  OPT_TRANS_ZWRITE,
+  OPT_HOKUTO_HACK,
   OPT_DINO_CRISIS_INVENTORY_HACK,
   OPT_DYNAREC
 };
@@ -1808,15 +1821,6 @@ bool displayOptionsMenu()
     printf(" OFF to fix black remanence");
     printf("\n");
 
-    // --- Row: Translucent-list depth write ---
-    printf("%s TRANS ZWRITE   : ", (selectedRow == OPT_TRANS_ZWRITE) ? ">" : " ");
-    switch (g_trans_zwrite_preset) {
-      case 0: printf("[< OFF (NO OCCLUDE)  >]"); break;
-      case 1: printf("[< ON (DEFAULT)      >]"); break;
-    }
-    printf(" DEBUG ONLY"); // OFF hides the BIOS logo
-    printf("\n");
-
     // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
     printf("%s ISP DEPTH FUNC : ", (selectedRow == OPT_ISP_DEPTH_FUNC) ? ">" : " ");
     switch (g_isp_depth_func_preset) {
@@ -1846,13 +1850,13 @@ bool displayOptionsMenu()
     printf(" real per-pixel TR sort");
     printf("\n");
 
-    // --- Row: Hokuto Hack (layer-tiered translucent sort) ---
-    printf("%s HOKUTO HACK    : ", (selectedRow == OPT_HOKUTO_HACK) ? ">" : " ");
-    switch (g_hokuto_hack_preset) {
+    // --- Row: Layer Sort (layer-tiered translucent sort) ---
+    printf("%s LAYER SORT     : ", (selectedRow == OPT_LAYER_SORT) ? ">" : " ");
+    switch (g_layer_sort_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (TR TIER SORT) >]"); break;
     }
-    printf(" ON for Hokuto no Ken (Specific)");
+    printf(" for 2D scenes drawn at ONE depth");
     printf("\n\n");
 
     // --- Row: PVR horizontal X-Scaler ---
@@ -2074,13 +2078,31 @@ bool displayOptionsMenu()
     printf(" hw-order DMA/IRQ completions (exp)");
     printf("\n");
 
+    // --- Row: Translucent-list depth write ---
+    printf("%s TRANS ZWRITE   : ", (selectedRow == OPT_TRANS_ZWRITE) ? ">" : " ");
+    switch (g_trans_zwrite_preset) {
+      case 0: printf("[< OFF (NO OCCLUDE)  >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" DEBUG ONLY"); // OFF hides the BIOS logo
+    printf("\n");
+
+    // --- Row: Hokuto Hack (HnK debris VRAM addresses, needs LAYER SORT on page 3) ---
+    printf("%s HOKUTO HACK    : ", (selectedRow == OPT_HOKUTO_HACK) ? ">" : " ");
+    switch (g_hokuto_hack_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (RAM hack)     >]"); break;
+    }
+    printf(" Hokuto no Ken : specific hack");
+    printf("\n");
+
     // --- Row: Dino Crisis inventory preview icon redecode hack (gxRend.cpp DINO_CRISIS_INVENTORY_HACK) ---
-    printf("%s DINO CRISIS FIX: ", (selectedRow == OPT_DINO_CRISIS_INVENTORY_HACK) ? ">" : " ");
+    printf("%s REGINA HACK    : ", (selectedRow == OPT_DINO_CRISIS_INVENTORY_HACK) ? ">" : " ");
     switch (g_dino_crisis_inventory_hack_preset) {
       case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON                >]"); break;
+      case 1: printf("[< ON (RAM hack)     >]"); break;
     }
-    printf(" fixes black inventory icon");
+    printf(" Dino Crisis : inventory fix");
     printf("\n");
 
     // --- Row: DYNAREC - SH4 core back-end (Dynarec vs Interpreter) ---
@@ -2184,6 +2206,7 @@ bool displayOptionsMenu()
           else if (g_canvas_width_preset <= 320) g_canvas_width_preset = 0;
           else                                   g_canvas_width_preset -= 16;
           break;
+        case OPT_LAYER_SORT:  g_layer_sort_preset     = (g_layer_sort_preset       + 1) % 2; break;
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 2) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
@@ -2262,6 +2285,7 @@ bool displayOptionsMenu()
           else if (g_canvas_width_preset >= 1280) g_canvas_width_preset = 0;
           else                                    g_canvas_width_preset += 16;
           break;
+        case OPT_LAYER_SORT:  g_layer_sort_preset     = (g_layer_sort_preset       + 1) % 2; break;
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 1) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
