@@ -282,6 +282,17 @@
                                 quality but takes 2 texture cycles/texel on
                                 Hollywood, halving texture fill rate (-40% FPS
                                 in Test Drive 6).
+        yuv_stride=auto     <- off/auto/always (default auto). Decides the REAL
+                                per-row pitch of a YUV422 source, which can be
+                                smaller than the declared power-of-two texture
+                                size. auto = only for a texture the YUV converter
+                                wrote, i.e. an FMV frame (Bomberman, Test Drive 6,
+                                Dino Crisis). always = the old behaviour, taken
+                                from TA_YUV_TEX_CTRL for EVERY YUV422 texture:
+                                a game that never programs that register then
+                                decodes its YUV art as 16x16 and it goes black
+                                (Soul Calibur character select). Only set this to
+                                always if a movie is still sliced under auto.
         yuv_twiddle_fix=on  <- on/off (default off). Fixes TWIDDLED YUV422
                                 textures (static YUV art, not FMV): the legacy
                                 decoder swapped the two u16 halves of each source
@@ -564,6 +575,7 @@ extern int g_mipmap_preset;
 extern int g_seam_fix_preset;
 extern int g_fog_preset;
 extern int g_yuv_twiddle_fix_preset;
+extern int g_yuv_stride_preset;
 extern int g_fixed_depth_preset;
 extern int g_legacy_depth_preset;
 extern int g_depth_clip_preset;
@@ -649,6 +661,7 @@ struct GamePreset
     int seam_fix;
     int fog;
     int yuv_twiddle_fix;
+    int yuv_stride;
     int fixed_depth;
     int legacy_depth;
     int depth_clip;
@@ -894,6 +907,15 @@ static int parse_fmv_format(const char* v)
     return -1;
 }
 
+static int parse_yuv_stride(const char* v)
+{
+    if (key_eq(v, "off")    || strcmp(v, "0") == 0) return 0;
+    if (key_eq(v, "auto")   || strcmp(v, "1") == 0) return 1;
+    if (key_eq(v, "always") || strcmp(v, "2") == 0) return 2;
+    printf("[game_presets] Unknown yuv_stride value: '%s'\n", v);
+    return -1;
+}
+
 static int parse_mipmap(const char* v)
 {
     if (key_eq(v, "off")       || strcmp(v, "0") == 0) return 0;
@@ -1000,6 +1022,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
     else if (key_eq(key, "seam_fix"))       p->seam_fix       = parse_bool(val);
     else if (key_eq(key, "fog"))            p->fog            = parse_bool(val);
+    else if (key_eq(key, "yuv_stride"))     p->yuv_stride     = parse_yuv_stride(val);
     else if (key_eq(key, "yuv_twiddle_fix")) p->yuv_twiddle_fix = parse_bool(val);
     else if (key_eq(key, "fixed_depth"))    p->fixed_depth    = atoi(val);
     else if (key_eq(key, "legacy_depth"))   p->legacy_depth   = parse_bool(val);
@@ -1067,6 +1090,7 @@ static void preset_clear(GamePreset* cur)
     cur->seam_fix = -1;
     cur->fog = -1;
     cur->yuv_twiddle_fix = -1;
+    cur->yuv_stride = -1;
     cur->fixed_depth = -1;
     cur->legacy_depth = -1;
     cur->depth_clip = -1;
@@ -1139,6 +1163,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->mipmap         >= 0) { g_mipmap_preset        = p->mipmap;          printf("  mipmap         -> %d\n", p->mipmap);         }
     if (p->seam_fix       >= 0) { g_seam_fix_preset      = p->seam_fix;        printf("  seam_fix       -> %d\n", p->seam_fix);       }
     if (p->fog            >= 0) { g_fog_preset           = p->fog;             printf("  fog            -> %d\n", p->fog);            }
+    if (p->yuv_stride     >= 0) { g_yuv_stride_preset   = p->yuv_stride;      printf("  yuv_stride     -> %d\n", p->yuv_stride);     }
     if (p->yuv_twiddle_fix >= 0) { g_yuv_twiddle_fix_preset = p->yuv_twiddle_fix; printf("  yuv_twiddle_fix -> %d\n", p->yuv_twiddle_fix); }
     if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }
     if (p->legacy_depth    >= 0) { g_legacy_depth_preset  = p->legacy_depth;     printf("  legacy_depth   -> %d\n", p->legacy_depth);    }

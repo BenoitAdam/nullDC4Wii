@@ -225,6 +225,18 @@ extern "C" int get_fmv_format_preset();
 extern "C" int get_yuv_twiddle_fix_preset();
 #define YUV_TW_FIX() (get_yuv_twiddle_fix_preset() == 1)
 
+// YUV422 source pitch: how the REAL per-row pixel pitch (and row count) of a
+// YUV422 source is decided. It can be smaller than the declared power-of-two
+// texture size. See the case-3 YUV branch in SetTextureParams.
+//   0 = off    : always decode at the declared width (pre-"fmv fixed" behaviour)
+//   1 = auto   : use the real size only for textures the YUV converter wrote
+//   2 = always : take the size from TA_YUV_TEX_CTRL for every YUV422 texture
+//                (the ec67c40 behaviour, kept for A/B: it blacks out games
+//                 that leave that register unprogrammed)
+extern "C" int get_yuv_stride_preset();
+#define YUV_STRIDE_AUTO()   (get_yuv_stride_preset() == 1)
+#define YUV_STRIDE_ALWAYS() (get_yuv_stride_preset() == 2)
+
 // Blend mode: per-polygon TSP SrcInstr/DstInstr blending (necessary for Resident Evil 3)
 extern "C" int get_blend_mode_preset();
 #define BLEND_MODE() (get_blend_mode_preset() == 1)
@@ -779,6 +791,11 @@ int frame_counter;
 // The FIFO is the command buffer for the GX hardware. 
 // 256KB is a standard size for most homebrew applications. May need more for NullDC4Wii to avoid FIFO error ?
 #define DEFAULT_FIFO_SIZE (256 * 1024)
+
+// Regions the YUV converter has actually written - dc/pvr/pvr_if.cpp.
+// Declared here rather than with the preset block at the top of the file:
+// that block sits above every #include, so u32 does not exist yet up there.
+extern "C" int yuv_conv_lookup(u32 addr, u32 *out_w, u32 *out_h);
 
 using namespace TASplitter;
 
@@ -2963,15 +2980,17 @@ static void encode_cmpr_block(const u16 *src, u8 *dst)
 
 // Real per-row pixel stride for the planar YUV422 source, independent of the
 // destination CMPR block width (which must stay == the declared GX texture
-// width). Recomputed every decode from TA_YUV_TEX_CTRL — see the case-3
-// YUV branch above where it's assigned — falling back to the declared width
-// when that register doesn't describe a smaller real size.
+// width). Rewritten on every decode by the case-3 YUV branch in
+// SetTextureParams; 0 = no override, decode at the declared width. Only a
+// texture the YUV converter wrote (an FMV frame) gets a non-zero value - see
+// that branch for why trusting TA_YUV_TEX_CTRL for every YUV422 texture is
+// wrong.
 int g_yuv_src_stride_override = 0;
 // Real source row COUNT (height), same idea as the stride above but for the
-// vertical axis (TA_YUV_TEX_CTRL bits[13:8]). 0 = no override, use declared h.
-// Rows at/after this are NOT real source data — treat them the same way
-// rows past the declared height already are (zero-fill), instead of reading
-// past the legitimately-written buffer.
+// vertical axis. 0 = no override, use the declared h. Rows at/after this are
+// NOT real source data: treat them the same way rows past the declared height
+// already are (zero-fill), instead of reading past the legitimately-written
+// buffer.
 int g_yuv_src_real_h = 0;
 
 // YUV422 planar -> GX_TF_CMPR
@@ -4155,7 +4174,12 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       
     case 3:
     {
-      // YUV422: 32 bits per 2 pixels (UYVY — U, Y0, V, Y1, 8 bits each).
+      // YUV422: 32 bits per 2 pixels (UYVY - U, Y0, V, Y1, 8 bits each).
+      // The address of the texture as the game declared it, i.e. before the
+      // mipmap fixup below moves it. That is the address the YUV converter
+      // would have written, so it is the one to look up.
+      const u32 yuv_decl_addr = tex_addr;
+
       if (mod->tcw.NO_PAL.MipMapped)
       {
         tex_addr += OtherMipPoint[mod->tsp.TexU + 3] * 2; // YUV422: 2 bytes/pixel
@@ -4164,19 +4188,45 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       if (mod->tcw.NO_PAL.StrideSel)
         w = 512;
 
-      // The declared texture width (w) may not match the actual video width
-      // which is stored in the YUV converter's TA_YUV_TEX_CTRL register (bits[5:0] = (real_width/16 - 1)).
-      // Using this register fixes texture issues without hardcoding values.
-      u32 yuv_real_w = ((TA_YUV_TEX_CTRL & 0x3F) + 1) * 16;
-      if (yuv_real_w == 0 || yuv_real_w > w)
-        yuv_real_w = w; // sane fallback: register unset/irrelevant for this texture
-      g_yuv_src_stride_override = (int)yuv_real_w;
+      // The declared texture width (w) is a power of two, and the source's real
+      // per-row pixel pitch can be smaller than it - but ONLY for a texture the
+      // YUV converter produced. An FMV frame is written row by row at the
+      // video's native width (e.g. 320) with no padding, so decoding it at the
+      // declared width shears the picture into repeated slices. A YUV422
+      // texture the game uploaded to VRAM itself is stored at its declared
+      // width and must be decoded at that width.
+      //
+      // This used to read the pitch straight out of TA_YUV_TEX_CTRL for EVERY
+      // YUV422 texture (bits[5:0] = real_width/16 - 1, bits[13:8] the same for
+      // the height). That register belongs to the converter unit and describes
+      // whatever it was last programmed for; it says nothing about a texture
+      // the game uploaded directly. A game that never programs it leaves it at
+      // 0, which reads back as a real size of (0+1)*16 = 16x16: the pitch
+      // collapses to 16 pixels and every row from 16 down is zero-filled by the
+      // decoders below - Soul Calibur's character select went mostly black.
+      // Ask the converter which regions it actually wrote instead.
+      u32 yuv_real_w = w, yuv_real_h = h;
+      g_yuv_src_stride_override = 0; // 0 = no override, decode at declared size
+      g_yuv_src_real_h          = 0;
 
-      // Same idea, vertical axis: TA_YUV_TEX_CTRL bits[13:8] = (real_height/16 - 1).
-      u32 yuv_real_h = (((TA_YUV_TEX_CTRL >> 8) & 0x3F) + 1) * 16;
-      if (yuv_real_h == 0 || yuv_real_h > h)
-        yuv_real_h = h;
-      g_yuv_src_real_h = (int)yuv_real_h;
+      if (YUV_STRIDE_ALWAYS())
+      {
+        // Legacy path, kept only so the old result can be reproduced for A/B
+        // on a game where the address gate below turns out to miss.
+        u32 cw = ((TA_YUV_TEX_CTRL & 0x3F) + 1) * 16;
+        u32 ch = (((TA_YUV_TEX_CTRL >> 8) & 0x3F) + 1) * 16;
+        if (cw <= w) { yuv_real_w = cw; g_yuv_src_stride_override = (int)cw; }
+        if (ch <= h) { yuv_real_h = ch; g_yuv_src_real_h          = (int)ch; }
+      }
+      else if (YUV_STRIDE_AUTO())
+      {
+        u32 cw = 0, ch = 0;
+        if (yuv_conv_lookup(yuv_decl_addr, &cw, &ch))
+        {
+          if (cw && cw <= w) { yuv_real_w = cw; g_yuv_src_stride_override = (int)cw; }
+          if (ch && ch <= h) { yuv_real_h = ch; g_yuv_src_real_h          = (int)ch; }
+        }
+      }
 
       u8 *yuv_src = &params.vram[tex_addr];
 
@@ -4185,11 +4235,12 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       {
         printf("[YUV] ---- new YUV422 texture ----\n");
         printf("[YUV] tex_addr=%06X w=%u h=%u scan=%u mip=%u stride=%u fmv_format=%d "
-               "TA_YUV_TEX_CTRL=%08X real_w=%u real_h=%u\n",
+               "TA_YUV_TEX_CTRL=%08X yuv_stride=%d conv=%d real_w=%u real_h=%u\n",
                tex_addr, w, h, (unsigned)mod->tcw.NO_PAL.ScanOrder,
                (unsigned)mod->tcw.NO_PAL.MipMapped,
                (unsigned)mod->tcw.NO_PAL.StrideSel, get_fmv_format_preset(),
-               (u32)TA_YUV_TEX_CTRL, yuv_real_w, yuv_real_h);
+               (u32)TA_YUV_TEX_CTRL, get_yuv_stride_preset(),
+               g_yuv_src_stride_override != 0, yuv_real_w, yuv_real_h);
 
         // Dump raw bytes at the start of the source (first 16 bytes = 4 u32 words).
         u32 *raw32 = (u32*)yuv_src;

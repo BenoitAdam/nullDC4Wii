@@ -278,6 +278,12 @@ extern "C" {
   int get_yuv_twiddle_fix_preset() { return g_yuv_twiddle_fix_preset; }
 }
 
+int g_yuv_stride_preset = 1; // 0=off, 1=auto (converter-gated), 2=always (legacy). Decides the REAL per-row pitch/height of a YUV422 source, which can be smaller than the declared power-of-two texture size. Only an FMV frame written by the YUV converter has such a pitch; "always" took the size from TA_YUV_TEX_CTRL for EVERY YUV422 texture, and a game that leaves that register at 0 then decodes its textures as 16x16 - Soul Calibur's character select went mostly black.
+
+extern "C" {
+  int get_yuv_stride_preset() { return g_yuv_stride_preset; }
+}
+
 int g_vq_cmpr_preset = 0; // 0=off (VQ decodes to 16bpp), 1=on (VQ -> GX CMPR)
 // Only meaningful with tex_cache=very_fast_plus: at 4 bits/texel a VQ texture
 // fits its address-derived cache slot, so it stops overrunning its neighbour
@@ -1196,6 +1202,7 @@ void checkBiosFiles()
 #define OPT_TRANS_ZWRITE 68    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_SPRITE_COLOR 69    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_VTX_ALPHA    70    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
+#define OPT_YUV_STRIDE   71    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
@@ -1239,6 +1246,7 @@ static const int OPT_PAGE0_ROWS[] = {
 static const int OPT_PAGE1_ROWS[] = {
   OPT_LAUNCH,
   OPT_FMV_FORMAT,
+  OPT_YUV_STRIDE,
   OPT_YUV_TWIDDLE_FIX,
   OPT_VERTEX_COLOR,
   OPT_SPRITE_COLOR,
@@ -1595,6 +1603,16 @@ bool displayOptionsMenu()
       case 2: printf("[< RGB565 (FASTER)   >]"); break;
     }
     printf(" CMPR if some movie display white");
+    printf("\n");
+
+    // --- Row: YUV422 source pitch ---
+    printf("%s YUV STRIDE     : ", (selectedRow == OPT_YUV_STRIDE) ? ">" : " ");
+    switch (g_yuv_stride_preset) {
+      case 0: printf("[< OFF (DECLARED)    >]"); break;
+      case 1: printf("[< AUTO (FMV ONLY)   >]"); break;
+      case 2: printf("[< ALWAYS (LEGACY)   >]"); break;
+    }
+    printf(" ALWAYS blacks out Soul Calibur");
     printf("\n");
 
     // --- Row: Twiddled YUV422 texture decode fix ---
@@ -2127,6 +2145,7 @@ bool displayOptionsMenu()
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
         case OPT_FOG:       g_fog_preset             = (g_fog_preset             + 1) % 2; break;
+        case OPT_YUV_STRIDE: g_yuv_stride_preset = (g_yuv_stride_preset + 2) % 3; break;
         case OPT_YUV_TWIDDLE_FIX: g_yuv_twiddle_fix_preset = (g_yuv_twiddle_fix_preset + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 2) % 3; break;
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
@@ -2203,6 +2222,7 @@ bool displayOptionsMenu()
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
         case OPT_FOG:       g_fog_preset             = (g_fog_preset             + 1) % 2; break;
+        case OPT_YUV_STRIDE: g_yuv_stride_preset = (g_yuv_stride_preset + 1) % 3; break;
         case OPT_YUV_TWIDDLE_FIX: g_yuv_twiddle_fix_preset = (g_yuv_twiddle_fix_preset + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 1) % 3; break;
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
@@ -2940,6 +2960,12 @@ int main(int argc, wchar *argv[])
       case 0: printf("CMPR (DXT1)\n"); break;
       case 1: printf("RGBA8\n");       break;
       case 2: printf("RGB565\n");      break;
+    }
+    printf("YUV Stride     : ");
+    switch(g_yuv_stride_preset) {
+      case 0: printf("OFF (DECLARED)\n");  break;
+      case 1: printf("AUTO (FMV ONLY)\n"); break;
+      case 2: printf("ALWAYS (LEGACY)\n"); break;
     }
     printf("Frameskipping  : ");
     switch(g_frameskip_preset) {

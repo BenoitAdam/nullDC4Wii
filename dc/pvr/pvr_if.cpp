@@ -41,6 +41,73 @@ static u32 YUV_x_size = 0;         // Output width in pixels
 static u32 YUV_y_size = 0;         // Output height in pixels
 
 //------------------------------------------------------------------------------
+// YUV Converter Output Regions
+//------------------------------------------------------------------------------
+// The renderer needs the REAL per-row pixel pitch of a YUV422 texture that this
+// converter produced: a game declares a power-of-two texture size in TSP/TCW,
+// but the converter writes rows of YUV_x_size pixels (the video's native width,
+// e.g. 320) back-to-back with no padding, so decoding at the declared width
+// shears the picture into repeated slices.
+//
+// TA_YUV_TEX_CTRL alone cannot answer that question. It describes whatever the
+// converter unit was last programmed for and says nothing about a YUV422
+// texture the game uploaded to VRAM directly - for those it is often stale or
+// zero, and a zero decodes as a 16x16 "real size" that blacks the texture out.
+// So remember the regions the converter actually wrote and let the renderer
+// look a texture address up. Small ring because FMV is commonly double- or
+// triple-buffered across a handful of base addresses.
+struct YuvConvRegion { u32 base; u32 w; u32 h; };
+static const u32 YUV_REGION_SLOTS = 4;
+static YuvConvRegion YUV_regions[YUV_REGION_SLOTS];
+static u32 YUV_region_next = 0;
+
+/**
+ * Record (or refresh) the region the converter is currently writing.
+ * Called once per macroblock; the 4-slot scan is noise next to converting
+ * 256 pixels.
+ */
+static void YUV_RememberRegion(u32 base, u32 w, u32 h)
+{
+    if (w == 0 || h == 0)
+        return;
+
+    for (u32 i = 0; i < YUV_REGION_SLOTS; i++) {
+        if (YUV_regions[i].w != 0 && YUV_regions[i].base == base) {
+            YUV_regions[i].w = w;
+            YUV_regions[i].h = h;
+            return;
+        }
+    }
+
+    YUV_regions[YUV_region_next].base = base;
+    YUV_regions[YUV_region_next].w    = w;
+    YUV_regions[YUV_region_next].h    = h;
+    YUV_region_next = (YUV_region_next + 1) % YUV_REGION_SLOTS;
+}
+
+/**
+ * Look an address up against the regions the YUV converter has written.
+ * @param addr   VRAM address (already VRAM_MASK'd) of a YUV422 texture
+ * @param out_w  receives the real source pitch in pixels
+ * @param out_h  receives the real source row count
+ * @return 1 if addr falls inside converter output, 0 otherwise
+ */
+extern "C" int yuv_conv_lookup(u32 addr, u32 *out_w, u32 *out_h)
+{
+    for (u32 i = 0; i < YUV_REGION_SLOTS; i++) {
+        const YuvConvRegion &r = YUV_regions[i];
+        if (r.w == 0 || r.h == 0)
+            continue;
+        if (addr >= r.base && addr < r.base + r.w * r.h * 2) {
+            *out_w = r.w;
+            *out_h = r.h;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+//------------------------------------------------------------------------------
 // YUV Helper Functions
 //------------------------------------------------------------------------------
 
@@ -143,6 +210,11 @@ INLINE void YUV_ConvertMacroBlock()
     bool is_yuv420 = ((TA_YUV_TEX_CTRL & (1 << 24)) == 0);
     
     if (is_yuv420) {
+        // This block is about to be written for real - remember where, so the
+        // renderer can tell converter output apart from a directly-uploaded
+        // YUV422 texture (see YUV_RememberRegion).
+        YUV_RememberRegion(YUV_dest, YUV_x_size, YUV_y_size);
+
         // YUV 4:2:0 format (384 bytes per macroblock)
         // Layout: 64 bytes U, 64 bytes V, 256 bytes Y
         u8* U = (u8*)&YUV_tempdata[0];
@@ -402,4 +474,11 @@ void pvr_Reset(bool Manual)
     YUV_y_curr = 0;
     YUV_x_size = 0;
     YUV_y_size = 0;
+
+    for (u32 i = 0; i < YUV_REGION_SLOTS; i++) {
+        YUV_regions[i].base = 0;
+        YUV_regions[i].w    = 0;
+        YUV_regions[i].h    = 0;
+    }
+    YUV_region_next = 0;
 }
