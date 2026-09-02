@@ -741,6 +741,9 @@ extern "C" int get_y_scaler_preset();
 extern "C" int get_h_scaler_preset();
 #define H_SCALER() (get_h_scaler_preset() == 1)
 
+extern "C" int get_dino_crisis_inventory_hack_preset();
+#define DINO_CRISIS_INVENTORY_HACK() (get_dino_crisis_inventory_hack_preset() == 1)
+
 // 6. NATIVE POLYGON OFFSET (GX depth bias). Real hardware note: GX has no
 //    glPolygonOffset-style register — no programmable shaders means there is
 //    no way to nudge a fragment's post-transform Z from the pixel pipeline.
@@ -4061,6 +4064,10 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     }
   }
   // CACHE_EXTRA_DEBUG: cache_valid stays false, always re-decode.
+
+  // HACK: Dino Crisis inventory item preview icon.
+  if (DINO_CRISIS_INVENTORY_HACK() && orig_tex_addr == 0x242000u)
+    cache_valid = false;
 
   if (!cache_valid)
   {

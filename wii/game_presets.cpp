@@ -464,6 +464,18 @@
                                 driven counterpart of canvas_width below (for
                                 games that render narrow WITHOUT setting the
                                 bit), so an explicit canvas_width wins.
+        dino_crisis_inventory_hack=on <- on/off, forces one hardcoded texture
+                                address (0x242000, see gxRend.cpp
+                                DINO_CRISIS_INVENTORY_HACK()) to
+                                bypass the persistent texture cache and
+                                always redecode. Off by default -- this
+                                address is meaningless for any game but Dino
+                                Crisis, whose inventory preview icon lives
+                                there: the game repaints that shared slot in
+                                place with whichever item is selected, and
+                                the persistent cache only ever checks "has
+                                this slot been decoded once", so it never
+                                notices and shows a stale (black) snapshot.
         canvas_width=384    <- integer, forced canvas width in 240p modes
                                 (see gxRend.cpp CANVAS_WIDTH()). Some low-res
                                 games draw their scene narrower than 640 and
@@ -551,6 +563,7 @@ extern int g_vtx_alpha_preset;
 extern int g_x_scaler_preset;
 extern int g_y_scaler_preset;
 extern int g_h_scaler_preset;
+extern int g_dino_crisis_inventory_hack_preset;
 extern int g_canvas_width_preset;
 extern int g_4bpp_preset;
 extern int g_8bpp_preset;
@@ -634,6 +647,7 @@ struct GamePreset
     int x_scaler;
     int y_scaler;
     int h_scaler;
+    int dino_crisis_inventory_hack;
     int canvas_width;
     int bpp4;
     int bpp8;
@@ -996,6 +1010,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "x_scaler"))   p->x_scaler   = parse_bool(val);
     else if (key_eq(key, "y_scaler"))   p->y_scaler   = parse_bool(val);
     else if (key_eq(key, "h_scaler"))   p->h_scaler   = parse_bool(val);
+    else if (key_eq(key, "dino_crisis_inventory_hack")) p->dino_crisis_inventory_hack = parse_bool(val);
     else if (key_eq(key, "canvas_width")) p->canvas_width = atoi(val);
     else if (key_eq(key, "4bpp"))       p->bpp4       = parse_bpp(val);
     else if (key_eq(key, "8bpp"))       p->bpp8       = parse_bpp(val);
@@ -1073,6 +1088,7 @@ static void preset_clear(GamePreset* cur)
     cur->x_scaler = -1;
     cur->y_scaler = -1;
     cur->h_scaler = -1;
+    cur->dino_crisis_inventory_hack = -1;
     cur->canvas_width = -1;
     cur->framebuffer_2d = -1;
     cur->fmv_format = -1;
@@ -1137,6 +1153,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->x_scaler   >= 0) { g_x_scaler_preset       = p->x_scaler;   printf("  x_scaler   -> %d\n", p->x_scaler);   }
     if (p->y_scaler   >= 0) { g_y_scaler_preset       = p->y_scaler;   printf("  y_scaler   -> %d\n", p->y_scaler);   }
     if (p->h_scaler   >= 0) { g_h_scaler_preset       = p->h_scaler;   printf("  h_scaler   -> %d\n", p->h_scaler);   }
+    if (p->dino_crisis_inventory_hack >= 0) { g_dino_crisis_inventory_hack_preset = p->dino_crisis_inventory_hack; printf("  dino_crisis_inventory_hack -> %d\n", p->dino_crisis_inventory_hack); }
     if (p->canvas_width >= 0) { g_canvas_width_preset  = p->canvas_width; printf("  canvas_width -> %d\n", p->canvas_width); }
     if (p->bpp4       >= 0) { g_4bpp_preset           = p->bpp4;       printf("  4bpp       -> %d\n", p->bpp4);       }
     if (p->bpp8       >= 0) { g_8bpp_preset           = p->bpp8;       printf("  8bpp       -> %d\n", p->bpp8);       }

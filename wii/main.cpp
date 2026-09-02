@@ -260,6 +260,18 @@ extern "C" {
   int get_h_scaler_preset() { return g_h_scaler_preset; }
 }
 
+// Force one hardcoded texture address (Dino Crisis's inventory preview
+// icon slot, 0x242000) to always redecode instead of trusting the
+// persistent texture cache's sentinel. That cache only ever asks "has this
+// slot been decoded once", so a game that repaints a shared icon slot in
+// place (swapping which item's thumbnail is there) never gets noticed.
+// Off by default: hardcoded to one address, meaningless for any other game.
+int g_dino_crisis_inventory_hack_preset = 0;
+
+extern "C" {
+  int get_dino_crisis_inventory_hack_preset() { return g_dino_crisis_inventory_hack_preset; }
+}
+
 int g_framebuffer_2d = 0; // 1 to activate 2D Framebuffer
 
 extern "C" {
