@@ -1688,7 +1688,7 @@ static void printOptionsFooter(void)
 {
   int cols, rows;
   CON_GetMetrics(&cols, &rows);
-  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.65", rows);
+  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.66", rows);
 }
 
 bool displayOptionsMenu()
@@ -2921,7 +2921,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - alpha 0.65   ");
+    printf("\nNullDC4Wii - alpha 0.66   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");
