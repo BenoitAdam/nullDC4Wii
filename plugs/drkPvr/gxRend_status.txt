@@ -253,9 +253,57 @@ splitscreen uses mode 2 (inside). PCW bitfields are endian-corrected in
 ta_structs.h so pcw.User_Clip is safe on the big-endian Wii.
 PresentFramebuffer() resets viewport+scissor when the preset is on so the 2D
 path can't inherit a sub-rect scissor left by the last clipped strip.
-(A first attempt composed multi-pass frames from partial FB_X/Y_CLIP render
-passes — Daytona doesn't use that scheme, so it was removed; see git history
-if another 2P game ever needs per-pass composition.)
+
+ClaudeAI (2026-09): split_screen grew a SECOND mechanism, because the tile clip
+is only one of the two ways a Dreamcast game confines a viewport and the other
+one has its own symptom. The preset is now 0=off / 1=tile_clip (everything
+above, unchanged) / 2=multipass / 3=both, in the menu, in game_presets.cfg
+(split_screen=multipass) and in gxRend.cpp as SPLIT_SCREEN() vs SPLIT_COMPOSE().
+
+MULTI-PASS: the game issues one RENDER_START PER VIEWPORT into the same
+framebuffer, each restricted to its band of it. StartRender presented every one
+of those as a finished frame, so the display alternated player 1 / player 2 /
+player 1 at render rate — reported as heavy flicker in Le Mans 24 Hours,
+Demolition Racer and Disney's Magical Racing Tour, and distinct from the
+tile-clip symptom ("we mostly see player 1's angle", no flicker). Skmp read it
+as a TA clipping issue and originaldave_ as double buffering gone wrong; it is
+both, in the sense that the clip that should have restricted the pass was
+ignored AND the incomplete pass was flipped to screen.
+
+On Hollywood the assembled frame lives in the EFB between passes: nothing
+clears the EFB except the clear-on-copy of GX_CopyDisp, so simply not copying
+after a partial pass keeps the earlier passes for free. The work is deciding
+which passes are partial, where each belongs, and when the frame is done.
+A pass's band (split_pass_window) comes from FB_X_CLIP/FB_Y_CLIP first; from
+the region array only when the pixel clip declared nothing; and its scanline
+placement from FB_W_SOF1 minus the frame's first pass, over FB_W_LINESTRIDE —
+that last one covers a game that renders every viewport at screen y 0 and
+places it by bumping the write address, which DoRender turns into a shifted GX
+viewport origin. The band becomes a GX scissor that everything in the pass —
+background included, and intersected with any user tile clip — is confined to,
+DoRender returns before its copy/present (with a GX_DrawDone, because
+reset_vtx_state just recycled the texture arena the queued draws sample from),
+and split_compose_present() copies the finished EFB out once. The frame is
+presented when its passes cover 7/8 of the canvas, when a new pass lands on
+ground an earlier one already covered (the next frame has started), or at the
+vblank, whichever comes first. Frameskip and FrameCount are per composed FRAME,
+not per pass — deciding per pass would drop half a picture and double-count FPS.
+
+The region array parse is the one uncertain piece: entries are 5 or 6 words
+depending on a FPU_PARAM_CFG bit this port has never checked against hardware,
+so split_region_bounds walks BOTH strides and takes the one that validates
+(terminator found, and the entries tile a solid rectangle exactly). It is also
+only consulted when the pixel clip found nothing, so a misparse cannot shrink a
+window the clip already got right.
+The first 80 passes after the preset is switched on print a [2P] line carrying
+every register the decision was made from (clips, region base + parsed bounds,
+stride, FPU_PARAM_CFG, canvas, resulting window, PARTIAL/FULL), then it goes
+quiet on its own — so a game using a scheme this does not recognise can be read
+straight out of /ndclog.txt without a debug build.
+Default OFF, awaiting Wii test.
+(The 2026-07 note above mentions a first attempt at per-pass composition that
+was removed because Daytona doesn't use that scheme. This is that idea rebuilt
+from scratch as its own preset value, so the Daytona path is untouched.)
 
 
 

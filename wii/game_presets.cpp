@@ -498,15 +498,29 @@
                                 logos) keep the 640 canvas. Street Fighter
                                 III / Double Impact: 384 (CPS3 arcade width).
                                 0 (default): off, legacy canvas.
-        split_screen=on     <- on/off, split-screen multiplayer (see gxRend.cpp
-                                SPLIT_SCREEN()). 2P games (Daytona USA
-                                multiplayer) render one pass per player
-                                viewport, clipped with FB_X_CLIP/FB_Y_CLIP.
-                                on draws each partial-clip pass scissored into
-                                its half of the EFB and presents the assembled
-                                frame once per vblank; off (default, legacy)
-                                presents every pass fullscreen, so only one
-                                player's view shows.
+        split_screen=on     <- off (default) / on|tile_clip / multipass / both.
+                                Split-screen multiplayer; the Dreamcast has two
+                                ways to confine a viewport and games pick either
+                                (see gxRend.cpp SPLIT_SCREEN()/SPLIT_COMPOSE()).
+                                on (=tile_clip): both viewports come in ONE
+                                render pass, each player's polygons carrying a
+                                PVR User Tile Clip rect; each strip is scissored
+                                to it. Without this the two cameras draw
+                                fullscreen on top of each other and you mostly
+                                see player 1 (Daytona USA, confirmed).
+                                multipass: the game issues ONE RENDER_START PER
+                                VIEWPORT into the same framebuffer, each
+                                restricted to its band of it by FB_X_CLIP /
+                                FB_Y_CLIP, the region array or a bumped
+                                FB_W_SOF1. Legacy presents every one of those as
+                                a whole frame, so the screen alternates player 1
+                                / player 2 / player 1 — heavy flicker (Le Mans
+                                24 Hours, Demolition Racer, Disney's Magical
+                                Racing Tour). This draws each partial pass into
+                                its own band of the EFB, leaves the EFB alone
+                                between passes and presents ONE assembled frame.
+                                both: a game doing per-poly tile clips inside
+                                multi-pass renders.
         layout_chuchu=on    <- on/off, ChuChu Rocket special controller
                                 layout (see main.cpp g_special_layout_preset,
                                 drkMapleDevices.cpp MapButtons()). All players:
@@ -811,6 +825,20 @@ static int parse_rtt(const char* v)
     return parse_bool(v);
 }
 
+// split_screen carries two independent split-screen mechanisms (see gxRend.cpp
+// SPLIT_SCREEN() / SPLIT_COMPOSE()): 1 confines both viewports drawn in ONE
+// render pass with the PVR user tile clip, 2 composes ONE PASS PER VIEWPORT
+// into a single frame, 3 does both. "on" stays the tile-clip mode every
+// existing config line meant.
+static int parse_split_screen(const char* v)
+{
+    if (key_eq(v, "tile_clip") || key_eq(v, "tileclip")) return 1;
+    if (key_eq(v, "multipass") || key_eq(v, "multi_pass") ||
+        key_eq(v, "compose")   || strcmp(v, "2") == 0)   return 2;
+    if (key_eq(v, "both")      || strcmp(v, "3") == 0)   return 3;
+    return parse_bool(v);
+}
+
 static int parse_accuracy(const char* v)
 {
     if (key_eq(v, "fast"))     return 0;
@@ -1048,7 +1076,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "trans_sort"))     p->trans_sort     = parse_bool(val);
     else if (key_eq(key, "autosort"))       p->autosort       = atoi(val);
     else if (key_eq(key, "render_to_texture")) p->render_to_texture = parse_rtt(val);
-    else if (key_eq(key, "split_screen"))   p->split_screen   = parse_bool(val);
+    else if (key_eq(key, "split_screen"))   p->split_screen   = parse_split_screen(val);
     else if (key_eq(key, "layout_chuchu"))  { int b = parse_bool(val); if (b >= 0) p->layout = b ? 1 /* SPECIAL_LAYOUT_CHUCHU */ : 0 /* SPECIAL_LAYOUT_OFF */; }
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
     else if (key_eq(key, "seam_fix"))       p->seam_fix       = parse_bool(val);

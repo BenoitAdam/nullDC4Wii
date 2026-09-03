@@ -647,9 +647,34 @@ extern "C" int get_render_to_texture_preset();
 extern "C" int get_render_delay_preset();
 #define RENDER_DELAY() (get_render_delay_preset() != 0)
 
-// Split-screen viewport support (Slower)
+// Split-screen multiplayer. The Dreamcast offers TWO ways to confine a player's
+// camera to its half of the screen and games pick either one, so this preset
+// carries two independent mechanisms:
+//
+//   1 TILE CLIP  — the game draws BOTH viewports in ONE render pass and tags
+//                  each player's polygons with a User Tile Clip rect. Handled
+//                  per strip by apply_tile_clip() (Daytona USA, confirmed).
+//                  With it off the two cameras render fullscreen on top of each
+//                  other and you mostly see player 1.
+//
+//   2 MULTI-PASS — the game issues ONE RENDER_START PER VIEWPORT into the same
+//                  framebuffer, each restricted to its band of it (FB_X_CLIP /
+//                  FB_Y_CLIP, the region array, or a bumped FB_W_SOF1). The
+//                  legacy path presents every RENDER_START as a finished frame,
+//                  so the display alternates player 1 / player 2 / player 1 —
+//                  the "heavy flickering, it shows one screen then the other"
+//                  symptom (Le Mans 24 Hours, Demolition Racer, Disney's
+//                  Magical Racing Tour). SPLIT_COMPOSE() instead scissors each
+//                  partial pass into its own band of the EFB, leaves the EFB
+//                  alone between passes, and presents ONE assembled frame.
+//
+//   3 BOTH       — for a game that uses per-poly tile clips inside multi-pass
+//                  renders.
+//
+// See the split_compose_* block above DoRender() for the composition itself.
 extern "C" int get_split_screen_preset();
-#define SPLIT_SCREEN() (get_split_screen_preset() == 1)
+#define SPLIT_SCREEN()  (get_split_screen_preset() == 1 || get_split_screen_preset() == 3)
+#define SPLIT_COMPOSE() (get_split_screen_preset() == 2 || get_split_screen_preset() == 3)
 
 // GX mipmap generation
 extern "C" int get_mipmap_preset();
@@ -5530,10 +5555,32 @@ static float s_clip_sx = 1.f, s_clip_sy = 1.f; // DC px → EFB px scale
 static float s_clip_ox = 0.f, s_clip_oy = 0.f; // EFB px offset (viewport origin)
 static u32 s_tileclip_applied = 0; // packed tileclip currently in the GX scissor
 
+// SPLIT_COMPOSE(): the EFB band the pass currently in flight owns, in EFB
+// pixels. Everything the pass draws — background included — is scissored to it
+// so it cannot touch the other viewport's half of the frame. Off for an
+// ordinary full-screen pass, in which case none of it applies.
+static bool s_cmp_scissor_on = false;
+static s32  s_cmp_sx0 = 0, s_cmp_sy0 = 0, s_cmp_sx1 = 0, s_cmp_sy1 = 0;
+
+// Open the GX scissor to whatever the pass in flight is allowed to touch: the
+// compose band, or the whole EFB. Also drops apply_tile_clip's cache, which no
+// longer describes the applied rect.
+static void split_open_scissor()
+{
+  if (s_cmp_scissor_on)
+    GX_SetScissor((u32)s_cmp_sx0, (u32)s_cmp_sy0,
+                  (u32)(s_cmp_sx1 - s_cmp_sx0), (u32)(s_cmp_sy1 - s_cmp_sy0));
+  else
+    GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+  s_tileclip_applied = 0;
+}
+
 // Apply a strip's user tile clip as a GX scissor. Mode 2 (inside): scissor =
 // rect, clamped to the EFB. Mode 0/1 (disabled/reserved): full EFB. Mode 3
 // (outside — draw only OUTSIDE the rect) cannot be expressed as one GX
 // scissor rect and is drawn unclipped; splitscreen games only use inside mode.
+// Under SPLIT_COMPOSE() every result is further clipped to the pass's band —
+// preset 3 (both mechanisms) is exactly a per-poly clip inside a partial pass.
 static void apply_tile_clip(u32 tc)
 {
   if ((tc >> 30) != 2)
@@ -5543,7 +5590,11 @@ static void apply_tile_clip(u32 tc)
   s_tileclip_applied = tc;
   if (tc == 0)
   {
-    GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+    if (s_cmp_scissor_on)
+      GX_SetScissor((u32)s_cmp_sx0, (u32)s_cmp_sy0,
+                    (u32)(s_cmp_sx1 - s_cmp_sx0), (u32)(s_cmp_sy1 - s_cmp_sy0));
+    else
+      GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
     return;
   }
   // Tile units are 32 DC pixels; max is inclusive.
@@ -5559,12 +5610,291 @@ static void apply_tile_clip(u32 tc)
   if (ey0 < 0) ey0 = 0;
   if (ex1 > (s32)rmode->fbWidth)   ex1 = (s32)rmode->fbWidth;
   if (ey1 > (s32)rmode->efbHeight) ey1 = (s32)rmode->efbHeight;
+  if (s_cmp_scissor_on)
+  {
+    // Never wider than the band this pass owns (see split_open_scissor).
+    if (ex0 < s_cmp_sx0) ex0 = s_cmp_sx0;
+    if (ey0 < s_cmp_sy0) ey0 = s_cmp_sy0;
+    if (ex1 > s_cmp_sx1) ex1 = s_cmp_sx1;
+    if (ey1 > s_cmp_sy1) ey1 = s_cmp_sy1;
+  }
   if (ex1 <= ex0 || ey1 <= ey0)
   {
     // Fully clipped away: park the scissor on a 1px corner so nothing shows.
     ex0 = 0; ey0 = 0; ex1 = 1; ey1 = 1;
   }
   GX_SetScissor((u32)ex0, (u32)ey0, (u32)(ex1 - ex0), (u32)(ey1 - ey0));
+}
+
+// ── SPLIT_COMPOSE(): multi-pass split-screen composition ─────────────────────
+//
+// See the preset doc at the top of the file for what this is for. The problem
+// it solves: a game that renders one RENDER_START per player viewport gets each
+// of those presented as a whole frame by the legacy path, so the screen shows
+// player 1, then player 2, then player 1 — the flicker. What must happen
+// instead is what the real PVR does: every pass writes only its own band of the
+// framebuffer, the rest of the framebuffer keeps what the previous pass put
+// there, and the assembled image is scanned out once.
+//
+// On Hollywood the assembled image lives in the EFB between passes. The EFB is
+// only cleared by the clear-on-copy of GX_CopyDisp, so simply NOT copying after
+// a partial pass leaves the earlier passes intact for free — the whole trick is
+// deciding which passes are partial, where each one belongs, and when the frame
+// is finished.
+//
+// A pass's band is derived from three sources, in the order the hardware
+// applies them:
+//   * FB_X_CLIP / FB_Y_CLIP — the PVR's pixel write clip. The usual mechanism
+//     and the one trusted first.
+//   * the region array — the tile list the ISP/TSP walk. Consulted only when
+//     the pixel clip says "whole screen", because it is the less certain parse
+//     of the two (see split_region_bounds).
+//   * FB_W_SOF1 — a game may render every viewport at screen y 0 and place it
+//     by writing to a bumped framebuffer address instead. The delta against the
+//     frame's first pass, divided by FB_W_LINESTRIDE, is that placement in
+//     scanlines, and the pass's GX viewport is shifted down by it.
+//
+// The frame is presented when its passes cover the canvas, when a new pass
+// lands on ground an earlier one already covered (i.e. the next frame has
+// started), or at the vblank — whichever comes first.
+
+// Canvas DoRender() last projected onto, in DC pixels. Published by DoRender
+// rather than recomputed here: deriving it takes half a dozen presets and two
+// video registers, and it only ever changes on a video-mode switch, so the
+// one-pass lag of reading last pass's value is not observable.
+static float s_cmp_canvas_w = 640.f;
+static float s_cmp_canvas_h = 480.f;
+
+static bool s_cmp_pass   = false; // a partial pass is in DoRender() right now
+static bool s_cmp_active = false; // a composed frame is started and unpresented
+static u32  s_cmp_base   = 0;     // FB_W_SOF1 of that frame's first pass
+static u32  s_cmp_passes = 0;     // partial passes accumulated into it
+static bool s_cmp_skip   = false; // frameskip verdict, taken once for the FRAME
+// Union of the destination rects accumulated so far (DC framebuffer pixels),
+// plus the summed pass areas the "frame is covered" test uses.
+static s32  s_cmp_cov_x0 = 0, s_cmp_cov_y0 = 0, s_cmp_cov_x1 = -1, s_cmp_cov_y1 = -1;
+static u32  s_cmp_cov_area = 0;
+// Pass count as of the previous vblank, so the vblank backstop can tell a frame
+// the game has finished adding to from one it is still building. 0xFFFFFFFF =
+// nothing in progress. Without this, a vblank landing between two viewport
+// passes — which is exactly what a scene heavy enough to miss 60 FPS does —
+// would flip half a frame to screen and put the flicker straight back.
+static u32  s_cmp_vb_passes = 0xFFFFFFFFu;
+// Destination rect of the pass in flight, in DC framebuffer pixels, and the
+// scanline shift its geometry needs to land there. DoRender() turns these into
+// the GX viewport origin and s_cmp_s* EFB scissor.
+static u32   s_cmp_dx0 = 0, s_cmp_dy0 = 0, s_cmp_dx1 = 0, s_cmp_dy1 = 0;
+static float s_cmp_shift_y = 0.f;
+
+// The first passes after the preset is switched on are logged, then it goes
+// quiet by itself (see the "quiet diagnostics" rule). A game whose scheme this
+// does not recognise can then be diagnosed straight from /ndclog.txt — the
+// [2P] lines carry every register the decision was made from — without needing
+// a debug build.
+#define SPLIT_LOG_PASSES 80
+static u32 s_cmp_log_seen = 0;
+static int s_cmp_log_preset = -1;
+
+// Walk the PVR region array and return the tile rectangle this render writes,
+// in DC screen pixels.
+//
+// One entry per 32x32 tile: a control word (bits 2..7 tile X, 8..13 tile Y,
+// bit 31 = last entry) followed by the per-list pointers — 5 words for a
+// type-1 region header, 6 for type-2 (the extra punch-through pointer). Which
+// one a game uses is selected by FPU_PARAM_CFG, but rather than bet on a bit
+// position in a register this port has never verified against hardware, BOTH
+// strides are walked and the one that VALIDATES is taken: the walk has to find
+// the terminator, and the entries have to tile a solid rectangle exactly
+// (count == width * height in tiles). A wrong stride reads its control word out
+// of the middle of a list pointer and essentially never satisfies both, so a
+// failure to agree returns false and the caller falls back on the pixel clip.
+static bool split_region_bounds(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1)
+{
+  const u32 base = REGION_BASE & VRAM_MASK & ~3u;
+  if (base == 0)
+    return false;
+
+  for (int variant = 0; variant < 2; variant++)
+  {
+    const u32 step = (variant == 0 ? 5u : 6u) * 4u;
+    u32 tx0 = 63, ty0 = 63, tx1 = 0, ty1 = 0, n = 0;
+    u32 addr = base;
+    bool terminated = false;
+
+    for (u32 i = 0; i < 2048u; i++)
+    {
+      if (addr + step > (u32)VRAM_SIZE)
+        break;
+      const u32 ctrl = vri(addr);
+      const u32 tx = (ctrl >> 2) & 63;
+      const u32 ty = (ctrl >> 8) & 63;
+      if (tx < tx0) tx0 = tx;
+      if (tx > tx1) tx1 = tx;
+      if (ty < ty0) ty0 = ty;
+      if (ty > ty1) ty1 = ty;
+      n++;
+      if (ctrl & 0x80000000u) { terminated = true; break; }
+      addr += step;
+    }
+
+    if (!terminated || n == 0 || tx1 < tx0 || ty1 < ty0)
+      continue;
+    if (n != (tx1 - tx0 + 1) * (ty1 - ty0 + 1))
+      continue; // entries don't tile a solid rectangle: wrong stride
+
+    *ox0 = tx0 * 32;
+    *oy0 = ty0 * 32;
+    *ox1 = tx1 * 32 + 31;
+    *oy1 = ty1 * 32 + 31;
+    return true;
+  }
+  return false;
+}
+
+// Band this render pass writes, in DC framebuffer pixels, plus the scanline
+// offset its geometry has to be shifted by to land there. Returns false when
+// the pass covers the whole canvas — i.e. it is an ordinary frame and none of
+// the composition machinery applies to it.
+// rgn_dbg[4] receives the region array's own x0,y0,x1,y1 for the [2P] log
+// (left untouched when the array could not be parsed), whether or not the
+// result was applied.
+static bool split_pass_window(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1, u32 *oshift,
+                              u32 *rgn_dbg)
+{
+  const s32 cw = (s32)s_cmp_canvas_w;
+  const s32 ch = (s32)s_cmp_canvas_h;
+  if (cw < 64 || ch < 64)
+    return false;
+
+  s32 x0 = 0, y0 = 0, x1 = cw - 1, y1 = ch - 1;
+  bool clipped = false;
+
+  // 1. FB_X_CLIP / FB_Y_CLIP (extracted by hand rather than through the
+  //    bitfields — see the ISP_BACKGND_T note in DoRender about big-endian
+  //    unions on the Wii).
+  {
+    const u32 xc = FB_X_CLIP.full, yc = FB_Y_CLIP.full;
+    const s32 cx0 = (s32)(xc & 0x7FF),  cx1 = (s32)((xc >> 16) & 0x7FF);
+    const s32 cy0 = (s32)(yc & 0x3FF),  cy1 = (s32)((yc >> 16) & 0x3FF);
+    // Only a clip that intersects the canvas says anything: a game that leaves
+    // a 480-line clip in place while we project a 240-line 240p canvas is not
+    // asking for a sub-rect, it just never reprogrammed the register.
+    if (cx1 >= cx0 && cy1 >= cy0 && cx0 < cw && cy0 < ch)
+    {
+      if (cx0 > x0) { x0 = cx0; clipped = true; }
+      if (cx1 < x1) { x1 = cx1; clipped = true; }
+      if (cy0 > y0) { y0 = cy0; clipped = true; }
+      if (cy1 < y1) { y1 = cy1; clipped = true; }
+    }
+  }
+
+  // 2. Region array — only when the pixel clip declared nothing, so a misparse
+  //    can never shrink a window the clip already got right. (Also walked while
+  //    the diagnostic is still logging, so the log can say what it would have
+  //    found; a few hundred VRAM reads on 80 passes total.)
+  if (!clipped || s_cmp_log_seen < SPLIT_LOG_PASSES)
+  {
+    u32 rx0, ry0, rx1, ry1;
+    if (split_region_bounds(&rx0, &ry0, &rx1, &ry1))
+    {
+      rgn_dbg[0] = rx0; rgn_dbg[1] = ry0; rgn_dbg[2] = rx1; rgn_dbg[3] = ry1;
+      const s32 rw = (s32)rx1 - (s32)rx0 + 1;
+      const s32 rh = (s32)ry1 - (s32)ry0 + 1;
+      // A real viewport is a decent fraction of the screen (a 4-player split is
+      // still a quarter); anything tinier is a misparse or a render this has no
+      // business touching.
+      if (!clipped && rw >= cw / 8 && rh >= ch / 8 && (s32)rx0 < cw && (s32)ry0 < ch)
+      {
+        if ((s32)rx0 > x0) { x0 = (s32)rx0; clipped = true; }
+        if ((s32)rx1 < x1) { x1 = (s32)rx1; clipped = true; }
+        if ((s32)ry0 > y0) { y0 = (s32)ry0; clipped = true; }
+        if ((s32)ry1 < y1) { y1 = (s32)ry1; clipped = true; }
+      }
+    }
+  }
+
+  if (x1 >= cw) x1 = cw - 1;
+  if (y1 >= ch) y1 = ch - 1;
+  if (x1 < x0 || y1 < y0)
+    return false; // degenerate: treat as an ordinary pass rather than draw nothing
+
+  // 3. FB_W_SOF1 placement. Measured against the frame already in progress, so
+  //    the first pass of a frame is always shift 0 by construction.
+  u32 shift = 0;
+  if (s_cmp_active)
+  {
+    const u32 stride = (FB_W_LINESTRIDE & 0x1FF) * 8; // register unit = 8 bytes
+    const u32 sof    = FB_W_SOF1 & VRAM_MASK;
+    if (stride != 0 && sof > s_cmp_base)
+    {
+      const u32 d = sof - s_cmp_base;
+      if ((d % stride) == 0)
+      {
+        const u32 lines = d / stride;
+        if (lines > 0 && (s32)lines < ch)
+          shift = lines;
+      }
+    }
+  }
+
+  *ox0 = (u32)x0; *oy0 = (u32)y0;
+  *ox1 = (u32)x1; *oy1 = (u32)y1;
+  *oshift = shift;
+  return clipped || shift != 0;
+}
+
+// Put the assembled frame on screen. This is DoRender()'s display tail with the
+// drawing removed: every pass of the frame already went through DoRender, and
+// what they left in the EFB is the finished picture.
+static void split_compose_present()
+{
+  if (!s_cmp_active)
+    return;
+  const u32 base = s_cmp_base;
+  const bool drawn = (s_cmp_passes != 0) && !s_cmp_skip;
+  s_cmp_active = false;
+  s_cmp_passes = 0;
+  s_cmp_cov_x0 = 0; s_cmp_cov_y0 = 0;
+  s_cmp_cov_x1 = -1; s_cmp_cov_y1 = -1;
+  s_cmp_cov_area = 0;
+  s_cmp_vb_passes = 0xFFFFFFFFu;
+  if (!drawn)
+    return; // frame was skipped: nothing was rendered into the EFB to show
+
+  // The last pass left its band in the GX scissor. The EFB copy is driven by
+  // GX_SetDispCopySrc rather than the scissor, but the next path to draw
+  // anything would inherit the sub-rect, so put it back before leaving.
+  s_cmp_scissor_on = false;
+  split_open_scissor();
+
+  const bool async_render = ASYNC_RENDER();
+  if (!async_render)
+    GX_DrawDone();
+
+  GX_CopyDisp(frameBuffer[fb], GX_TRUE);
+  if (async_render)
+  {
+    s_gx_done_irq = false; // must clear BEFORE queuing the token (irq race)
+    GX_SetDrawDone();
+    s_gx_pending = true;
+    s_gx_pending_fb = fb;
+    fb ^= 1;
+  }
+  else
+  {
+    GX_DrawDone(); // wait for the copy before the CPU draws the FPS text
+    DrawXfbFpsText(frameBuffer[fb]);
+    VIDEO_SetNextFramebuffer(frameBuffer[fb]);
+    VIDEO_Flush();
+  }
+
+  s_did_3d_render = true;
+  // Stamp the frame's ORIGIN, not FB_W_SOF1: the last pass may have been
+  // writing partway down the framebuffer, and VBlank() looks for the marker at
+  // the scanout origin.
+  fb_stamp_present_magic_at(base);
+  wii_audio_frame();
+  FrameCount++;
 }
 
 // ── AUTOSORT(): per-pixel translucent depth peeling ─────────────────────────
@@ -6100,57 +6430,89 @@ void DoRender()
   // into the texture, which is why render_to_texture=on produced nothing
   // usable. The canvas below is now the display canvas for RTT passes too.
 
+  // SPLIT_COMPOSE(): published for split_pass_window(), which needs the canvas
+  // the clip registers are to be read against but must not recompute the block
+  // above (half a dozen presets and two video registers) from StartRender.
+  s_cmp_canvas_w = dc_width;
+  s_cmp_canvas_h = dc_height;
+
   VIDEO_SetBlack(FALSE);
   // Set viewport to a centred 4:3 sub-region of the 16:9 framebuffer.
   // NDC [-1..+1] maps to this viewport, so all DC geometry (which is
   // already in 4:3 screen-space) displays with correct proportions.
   // In fullscreen mode use the whole width (stretched 16:9).
-  if (s_rtt_pass)
+  float vp_x, vp_w;
+  if (s_rtt_pass || RATIO_FULL_WIDTH())
   {
     // RTT: render the pass across the WHOLE EFB in ordinary DC screen space
     // (see the canvas note above), full width regardless of the display aspect
     // preset — the result is a texture, not a picture, so it must not inherit
     // the 4:3 pillarbox. rtt_copy_efb_to_vram() then lifts the clip window out
     // of the EFB, using exactly the s_clip_* mapping set here.
-    GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
-    // GX scissor state persists across frames and across passes, and nothing on
-    // the RTT path ever set it — so a sub-rect left by a user tile clip (or by
-    // the carry overlay) would silently reject every pixel of this render.
-    // Open it explicitly; the tile clip re-applies per strip if it is on.
-    GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
-    s_tileclip_applied = 0;
-    s_clip_sx = (float)rmode->fbWidth / dc_width;
-    s_clip_sy = (float)rmode->efbHeight / dc_height;
-    s_clip_ox = 0.f; s_clip_oy = 0.f;
-  }
-  else if (RATIO_FULL_WIDTH())
-  {
-    GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
-    s_clip_sx = (float)rmode->fbWidth / dc_width;
-    s_clip_sy = (float)rmode->efbHeight / dc_height;
-    s_clip_ox = 0.f; s_clip_oy = 0.f;
+    vp_x = 0.f;
+    vp_w = (float)rmode->fbWidth;
   }
   else
   {
-    const float ratio  = (4.f / 3.f) / (16.f / 9.f); // 0.75
-    const float vp_w   = rmode->fbWidth * ratio;
-    const float vp_x   = (rmode->fbWidth - vp_w) * 0.5f;
-    GX_SetViewport(vp_x, 0, vp_w, rmode->efbHeight, 0, 1);
-    s_clip_sx = vp_w / dc_width;
-    s_clip_sy = (float)rmode->efbHeight / dc_height;
-    s_clip_ox = vp_x; s_clip_oy = 0.f;
+    const float ratio = (4.f / 3.f) / (16.f / 9.f); // 0.75
+    vp_w = rmode->fbWidth * ratio;
+    vp_x = (rmode->fbWidth - vp_w) * 0.5f;
   }
+  s_clip_sx = vp_w / dc_width;
+  s_clip_sy = (float)rmode->efbHeight / dc_height;
+  s_clip_ox = vp_x;
+  s_clip_oy = 0.f;
+
+  // SPLIT_COMPOSE(): a partial pass renders into its band of the assembled
+  // frame. Shifting the viewport origin down by the pass's scanline placement
+  // is what puts a viewport the game submits at screen y 0 onto the bottom half
+  // of the picture; s_cmp_s* then scissors everything — background included —
+  // to the destination rect so this pass cannot touch the other player's half.
+  float vp_y = 0.f;
+  if (s_cmp_pass)
+  {
+    vp_y = s_cmp_shift_y * s_clip_sy;
+    s_clip_oy = vp_y; // tile clips are in the pass's own screen space
+
+    s32 ex0 = (s32)(vp_x + (float)s_cmp_dx0 * s_clip_sx);
+    s32 ey0 = (s32)((float)s_cmp_dy0 * s_clip_sy);
+    s32 ex1 = (s32)(vp_x + (float)(s_cmp_dx1 + 1) * s_clip_sx + 0.5f);
+    s32 ey1 = (s32)((float)(s_cmp_dy1 + 1) * s_clip_sy + 0.5f);
+    if (ex0 < 0) ex0 = 0;
+    if (ey0 < 0) ey0 = 0;
+    if (ex1 > (s32)rmode->fbWidth)   ex1 = (s32)rmode->fbWidth;
+    if (ey1 > (s32)rmode->efbHeight) ey1 = (s32)rmode->efbHeight;
+    if (ex1 > ex0 && ey1 > ey0)
+    {
+      s_cmp_sx0 = ex0; s_cmp_sy0 = ey0;
+      s_cmp_sx1 = ex1; s_cmp_sy1 = ey1;
+      s_cmp_scissor_on = true;
+    }
+    else
+    {
+      s_cmp_scissor_on = false; // degenerate band: draw it unclipped, not blank
+    }
+  }
+  else
+  {
+    s_cmp_scissor_on = false;
+  }
+
+  GX_SetViewport(vp_x, vp_y, vp_w, rmode->efbHeight, 0, 1);
+
   // Per-strip user tile clip (splitscreen games draw both players' viewports
   // in one pass, confining each with an inside clip). Read once per frame.
-  // GX scissor state persists across frames — with the preset on, re-open it
-  // in case the last strip of the previous frame left a sub-rect applied;
-  // with it off the scissor is never touched, so skip the GX call entirely.
+  // GX scissor state persists across frames and across passes — re-open it
+  // whenever anything here cares what it holds: the RTT path never set it at
+  // all, and a sub-rect left by the last strip of the previous pass (a tile
+  // clip, a compose band, the carry overlay) would silently reject this pass's
+  // pixels. With none of them on, the scissor is never touched and the GX call
+  // is skipped entirely. (SPLIT_COMPOSE() re-opens on EVERY pass, not just the
+  // partial ones: a full-screen pass following a partial one would otherwise
+  // render inside the band the partial one left behind.)
   const bool tileclip_on = SPLIT_SCREEN();
-  if (tileclip_on)
-  {
-    s_tileclip_applied = 0;
-    GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
-  }
+  if (tileclip_on || s_rtt_pass || SPLIT_COMPOSE())
+    split_open_scissor();
   GX_InvVtxCache();
   // TMEM_CACHE(): keep the GPU texture cache warm across frames; stale entries
   // are invalidated at decode time instead (see SetTextureParams).
@@ -8056,9 +8418,9 @@ void DoRender()
     {
       // Re-open the scissor: GX scissor state persists across frames, and this
       // is the last segment, so leaving the scope window applied would clip
-      // the NEXT frame down to it.
-      GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
-      s_tileclip_applied = 0; // apply_tile_clip's cache no longer matches
+      // the NEXT frame down to it. (Back to the compose band, not the whole
+      // EFB, when this pass owns only part of the frame.)
+      split_open_scissor();
     }
 
     if (seg_as == 2 && segs[seg].as_last)
@@ -8090,6 +8452,21 @@ void DoRender()
     rtt_lst_end = curLST;  // everything up to here has been offered to the texture
   else
     reset_vtx_state();
+
+  // SPLIT_COMPOSE(): a partial pass produces no picture of its own. Leave the
+  // result sitting in the EFB — nothing clears it but the clear-on-copy that is
+  // being skipped here — for the next viewport's pass to draw beside, and let
+  // split_compose_present() copy the assembled frame out once.
+  //
+  // The GPU IS drained before returning, though, even under ASYNC_RENDER():
+  // reset_vtx_state() just recycled the per-frame texture arena, and the next
+  // pass would decode its textures straight into slots these draws are still
+  // sampling from.
+  if (s_cmp_pass)
+  {
+    GX_DrawDone();
+    return;
+  }
 
   // ASYNC_RENDER() (display frames only): skip the blocking GX_DrawDone() —
   // the queue + deferred wait happens after GX_CopyDisp below. RTT passes
@@ -8160,6 +8537,11 @@ void DoRender()
 
 void PresentFramebuffer()
 {
+  // SPLIT_COMPOSE(): the 2D path is about to overwrite the EFB, so anything
+  // still being composed in it has to go out (or be dropped) first.
+  if (s_cmp_active)
+    split_compose_present();
+
   // ASYNC_RENDER(): a queued 3D frame may still be in flight — wait and apply
   // its deferred flip first, or the stale pending flip would override this
   // present on the next DoRender. This path itself stays fully synchronous.
@@ -8267,12 +8649,15 @@ void PresentFramebuffer()
   GX_LoadPosMtxImm(mv, GX_PNMTX0);
 
   // A user-tile-clipped strip may have left a sub-rect scissor applied (see
-  // apply_tile_clip); this fullscreen quad must not inherit it. Preset-gated
-  // so the legacy state flow is untouched.
-  if (SPLIT_SCREEN())
+  // apply_tile_clip), and a composed pass leaves both a sub-rect scissor and a
+  // shifted viewport origin; this fullscreen quad must not inherit either.
+  // Preset-gated so the legacy state flow is untouched.
+  if (SPLIT_SCREEN() || SPLIT_COMPOSE())
   {
+    s_cmp_scissor_on = false;
     GX_SetViewport(0, 0, rmode->fbWidth, rmode->efbHeight, 0, 1);
     GX_SetScissor(0, 0, rmode->fbWidth, rmode->efbHeight);
+    s_tileclip_applied = 0;
   }
 
   // In 4:3 mode, draw the 2D framebuffer into a centred 4:3 sub-rectangle
@@ -8332,6 +8717,21 @@ void VBlank()
   // screen now (non-blocking) — without this, a game that stops submitting
   // frames (static menu) would never show its last rendered frame.
   gx_present_if_done();
+
+  // SPLIT_COMPOSE() backstop: a composed frame whose viewports never covered
+  // enough of the canvas to trip the coverage test goes out here, so the screen
+  // still refreshes whatever shape the game's split is. It waits for a whole
+  // vblank with no new pass first — a frame the game is still adding viewports
+  // to must not be flipped half-drawn (see s_cmp_vb_passes). Must run before
+  // the fb_needs_present() check below, which would otherwise see a framebuffer
+  // this frame has not stamped yet and blit stale VRAM over it.
+  if (s_cmp_active)
+  {
+    if (s_cmp_passes == s_cmp_vb_passes)
+      split_compose_present();
+    else
+      s_cmp_vb_passes = s_cmp_passes;
+  }
 
   if (!FB_R_CTRL.fb_enable)
     return;   // display output disabled
@@ -9195,6 +9595,112 @@ void StartRender()
     } else {
       return; // just return
     }
+  }
+
+  // ── SPLIT_COMPOSE(): multi-pass split-screen composition ──────────────────
+  // See the block above DoRender() for the mechanism. A pass that writes only
+  // part of the framebuffer is drawn into its band of the EFB and NOT
+  // presented; the assembled frame goes out once, when its passes cover the
+  // canvas, when the next frame's first pass arrives, or at the vblank.
+  if (SPLIT_COMPOSE())
+  {
+    u32 wx0 = 0, wy0 = 0, wx1 = 0, wy1 = 0, shift = 0;
+    u32 rgn[4] = { 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu }; // "unparsed"
+    const bool partial = split_pass_window(&wx0, &wy0, &wx1, &wy1, &shift, rgn);
+
+    // Diagnostic: the first passes after the preset is switched on, then quiet.
+    // Everything the decision was made from is here, so a game using a scheme
+    // this doesn't recognise can be read straight out of /ndclog.txt.
+    {
+      const int preset_now = get_split_screen_preset();
+      if (preset_now != s_cmp_log_preset) { s_cmp_log_preset = preset_now; s_cmp_log_seen = 0; }
+      if (s_cmp_log_seen < SPLIT_LOG_PASSES)
+      {
+        s_cmp_log_seen++;
+        const u32 xc = FB_X_CLIP.full, yc = FB_Y_CLIP.full;
+        printf("[2P] pass=%u frame=%u W_SOF1=%08X R_SOF1=%08X stride=%u "
+               "XCLIP=%u..%u YCLIP=%u..%u RGNBASE=%08X rgn=%d..%d,%d..%d "
+               "PARAMCFG=%08X canvas=%.0fx%.0f -> win=%u..%u,%u..%u shift=%u %s "
+               "(active=%d passes=%u strips=%d vtx=%u)\n",
+               s_cmp_log_seen, (u32)FrameCount, (u32)FB_W_SOF1, (u32)FB_R_SOF1,
+               (u32)((FB_W_LINESTRIDE & 0x1FF) * 8),
+               (u32)(xc & 0x7FF), (u32)((xc >> 16) & 0x7FF),
+               (u32)(yc & 0x3FF), (u32)((yc >> 16) & 0x3FF),
+               (u32)REGION_BASE,
+               (int)rgn[0], (int)rgn[2], (int)rgn[1], (int)rgn[3], // -1 = unparsed
+               (u32)FPU_PARAM_CFG,
+               s_cmp_canvas_w, s_cmp_canvas_h,
+               wx0, wx1, wy0, wy1, shift, partial ? "PARTIAL" : "FULL",
+               (int)s_cmp_active, s_cmp_passes, (int)(curLST - lists), VtxCnt);
+        fflush(stdout); // see the "/ndclog.txt tail is lost without fflush" note
+      }
+    }
+
+    if (partial)
+    {
+      s32 dy0 = (s32)wy0 + (s32)shift;
+      s32 dy1 = (s32)wy1 + (s32)shift;
+
+      // Landing on ground a pass of the frame in progress already covered means
+      // that frame is finished and this pass belongs to the next one. That is
+      // what ends the frame for a game whose viewports don't tile the canvas.
+      if (s_cmp_active &&
+          !(dy0 > s_cmp_cov_y1 || dy1 < s_cmp_cov_y0 ||
+            (s32)wx0 > s_cmp_cov_x1 || (s32)wx1 < s_cmp_cov_x0))
+        split_compose_present();
+
+      if (!s_cmp_active)
+      {
+        // First pass of a composed frame. Its FB_W_SOF1 anchors the frame, so
+        // its own placement is 0 by construction; the frameskip verdict is
+        // taken once here and applies to every pass of the frame (deciding it
+        // per pass would drop half a picture).
+        s_cmp_active   = true;
+        s_cmp_base     = FB_W_SOF1 & VRAM_MASK;
+        s_cmp_passes   = 0;
+        s_cmp_skip     = ShouldSkipFrame();
+        s_cmp_cov_x0   = 0x7FFF; s_cmp_cov_y0 = 0x7FFF;
+        s_cmp_cov_x1   = -1;     s_cmp_cov_y1 = -1;
+        s_cmp_cov_area = 0;
+        shift = 0; dy0 = (s32)wy0; dy1 = (s32)wy1;
+      }
+
+      s_cmp_passes++;
+      if ((s32)wx0 < s_cmp_cov_x0) s_cmp_cov_x0 = (s32)wx0;
+      if ((s32)wx1 > s_cmp_cov_x1) s_cmp_cov_x1 = (s32)wx1;
+      if (dy0 < s_cmp_cov_y0) s_cmp_cov_y0 = dy0;
+      if (dy1 > s_cmp_cov_y1) s_cmp_cov_y1 = dy1;
+      s_cmp_cov_area += (u32)(wx1 - wx0 + 1) * (u32)(dy1 - dy0 + 1);
+
+      if (s_cmp_skip)
+      {
+        reset_vtx_state();  // whole composed frame is being dropped
+        return;
+      }
+
+      s_cmp_dx0 = wx0; s_cmp_dx1 = wx1;
+      s_cmp_dy0 = (u32)dy0; s_cmp_dy1 = (u32)dy1;
+      s_cmp_shift_y = (float)shift;
+      s_cmp_pass = true;
+      DoRender();          // draws into the band; no copy, no present
+      s_cmp_pass = false;
+      s_cmp_scissor_on = false;
+
+      // Canvas covered -> show it now rather than waiting for the vblank
+      // backstop. 7/8 rather than the whole thing so a split with an unpainted
+      // divider between the viewports still counts as complete.
+      if (s_cmp_cov_area * 8 >= (u32)(s_cmp_canvas_w * s_cmp_canvas_h) * 7)
+        split_compose_present();
+      return;
+    }
+
+    // A full-screen pass covers everything anyway (and, since nothing cleared
+    // the EFB, it draws straight on top of whatever was composed there), so the
+    // composition is over — drop it and take the ordinary single-pass path,
+    // whose own copy presents the result.
+    s_cmp_active    = false;
+    s_cmp_passes    = 0;
+    s_cmp_vb_passes = 0xFFFFFFFFu;
   }
 
   // ── Frame-skip early-out (3D display frames only, see NOTE above) ─────────

@@ -376,7 +376,7 @@ extern "C" {
   int get_render_to_texture_preset() { return g_render_to_texture_preset; }
 }
 
-int g_split_screen_preset = 0; // 0=off (every render pass presented fullscreen, legacy), 1=on (partial-clip passes scissored into the EFB, presented once per vblank — 2P splitscreen)
+int g_split_screen_preset = 0; // 0=off (legacy), 1=tile clip (both viewports in ONE pass, confined per polygon by the PVR User Tile Clip — Daytona USA), 2=multi-pass (ONE PASS PER VIEWPORT, each scissored into its band of the EFB and the assembled frame presented once — fixes the "shows player 1 then player 2 then player 1" flicker in Le Mans 24 Hours / Demolition Racer / Magical Racing Tour), 3=both. See gxRend.cpp SPLIT_SCREEN() / SPLIT_COMPOSE()
 
 extern "C" {
   int get_split_screen_preset() { return g_split_screen_preset; }
@@ -1908,9 +1908,11 @@ bool displayOptionsMenu()
     printf("%s SPLIT SCREEN   : ", (selectedRow == OPT_SPLIT_SCREEN) ? ">" : " ");
     switch (g_split_screen_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
-      case 1: printf("[< ON (CORRECT)      >]"); break;
+      case 1: printf("[< TILE CLIP (1 PASS)>]"); break;
+      case 2: printf("[< MULTI-PASS (2P)   >]"); break;
+      case 3: printf("[< BOTH              >]"); break;
     }
-    printf(" 2P viewports, Daytona USA");
+    printf(" 2P viewports, Racing Games");
     printf("\n\n");
 
     printOptionsFooter();
@@ -2482,7 +2484,7 @@ bool displayOptionsMenu()
         case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
         case OPT_TRANS_SORT: g_trans_sort_preset = (g_trans_sort_preset + 1) % 2; break;
         case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 3) % 4; break;
-        case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
+        case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 3) % 4; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
         case OPT_FOG:       g_fog_preset             = (g_fog_preset             + 1) % 2; break;
@@ -2561,7 +2563,7 @@ bool displayOptionsMenu()
         case OPT_OFFSET_COLOR: g_offset_color_preset = (g_offset_color_preset + 1) % 2; break;
         case OPT_TRANS_SORT: g_trans_sort_preset = (g_trans_sort_preset + 1) % 2; break;
         case OPT_RENDER_TO_TEXTURE: g_render_to_texture_preset = (g_render_to_texture_preset + 1) % 4; break;
-        case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 2; break;
+        case OPT_SPLIT_SCREEN: g_split_screen_preset = (g_split_screen_preset + 1) % 4; break;
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
         case OPT_FOG:       g_fog_preset             = (g_fog_preset             + 1) % 2; break;
@@ -3380,7 +3382,9 @@ int main(int argc, wchar *argv[])
       printf("Autosort       : OFF (LEGACY)\n");
     printf("Render To Tex  : %s\n", g_render_to_texture_preset == 2 ? "OVERLAY (CARRY)" :
                                     g_render_to_texture_preset == 1 ? "ON (CORRECT)" : "OFF (LEGACY)");
-    printf("Split Screen   : %s\n", g_split_screen_preset ? "ON (2P VIEWPORTS)" : "OFF (LEGACY)");
+    printf("Split Screen   : %s\n", g_split_screen_preset == 3 ? "BOTH" :
+                                    g_split_screen_preset == 2 ? "MULTI-PASS (2P)" :
+                                    g_split_screen_preset == 1 ? "TILE CLIP (2P)" : "OFF (LEGACY)");
     printf("Special Layout : %s\n", kSpecialLayoutNames[g_special_layout_preset]);
     printf("Mipmaps        : ");
     switch (g_mipmap_preset) {
