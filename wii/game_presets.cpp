@@ -645,6 +645,14 @@ extern int g_controller_type;
 extern int g_framebuffer_2d;
 extern int g_fmv_format_preset;
 
+// Debug logs (all OFF by default, options page 6). Per-game so a diagnostic can
+// be armed for one disc without touching the menu — see the note in main.cpp
+// about printf going to /ndclog.txt on the card.
+extern int g_debug_fb2d;
+extern int g_debug_message;
+extern int g_debug_loop;
+extern int g_debug_gdrom;
+
 // Set once at boot (main.cpp) from WiiDRC_Inited() — true only on real Wii U
 // hardware in vWii mode. Consumed below by <angle-bracket> alias groups.
 extern bool g_is_wiiu;
@@ -729,6 +737,10 @@ struct GamePreset
     int fpu_pin;
     int jit_align;
     int sched;
+    int debug_fb2d;
+    int debug_message;
+    int debug_loop;
+    int debug_gdrom;
 };
 
 // Nothing from the .cfg stays in RAM: game_presets_apply() streams the file
@@ -1109,6 +1121,10 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "fpu_pin"))        p->fpu_pin        = parse_bool(val);
     else if (key_eq(key, "jit_align"))      p->jit_align      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
+    else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
+    else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
+    else if (key_eq(key, "debug_loop"))     p->debug_loop     = parse_bool(val);
+    else if (key_eq(key, "debug_gdrom"))    p->debug_gdrom    = parse_bool(val);
     else printf("[game_presets] Unknown key: '%s'\n", key);
 }
 
@@ -1178,6 +1194,10 @@ static void preset_clear(GamePreset* cur)
     cur->fpu_pin = -1;
     cur->jit_align = -1;
     cur->sched = -1;
+    cur->debug_fb2d = -1;
+    cur->debug_message = -1;
+    cur->debug_loop = -1;
+    cur->debug_gdrom = -1;
 }
 
 // Apply every set field of a preset slot onto the live g_*_preset globals
@@ -1254,6 +1274,10 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->fpu_pin        >= 0) { g_fpu_pin_preset        = p->fpu_pin;        printf("  fpu_pin        -> %d\n", p->fpu_pin);        }
     if (p->jit_align      >= 0) { g_jit_align_preset      = p->jit_align;      printf("  jit_align      -> %d\n", p->jit_align);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
+    if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
+    if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }
+    if (p->debug_loop     >= 0) { g_debug_loop            = p->debug_loop;     printf("  debug_loop     -> %d\n", p->debug_loop);     }
+    if (p->debug_gdrom    >= 0) { g_debug_gdrom           = p->debug_gdrom;    printf("  debug_gdrom    -> %d\n", p->debug_gdrom);    }
 }
 
 // ---------------------------------------------------------------------------

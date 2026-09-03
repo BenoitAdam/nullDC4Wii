@@ -61,6 +61,12 @@ extern "C" int get_debug_message();
 
 extern "C" int get_debug_loop();
 
+// debug_log_framebuffer2d: "would the 2D FRAMEBUFFER preset do anything here?"
+// See fb2d_log_candidate() above StartRender() for what it prints and why it
+// cannot simply be the existing DEBUG_MESSAGE() lines.
+extern "C" int get_debug_fb2d();
+#define DEBUG_FB2D() (get_debug_fb2d() == 1)
+
 // Specific debug for FMV
 int fmv_debug = 0;
 
@@ -9433,6 +9439,63 @@ static void logo_dump_pass()
 }
 #endif // LOGO_DEBUG_LOG
 
+// ============================================================================
+// DEBUG_FB2D(): "is the 2D FRAMEBUFFER preset worth trying on this game?"
+// ============================================================================
+//
+// A bit-24 render pass (FB_W_SOF1 & 0x1000000) that no other consumer claims
+// is exactly what FRAMEBUFFER_2D() acts on: with the preset ON it becomes a
+// present, with it OFF the pass is dropped and the screen only refreshes when
+// VBlank()'s magic-word check happens to notice. The catch is that the two
+// [PATH] 2D-blit / 2D-after-3D lines live INSIDE the FRAMEBUFFER_2D() branch,
+// so they only ever printed once the preset was already on — you could not
+// learn from a log that turning it on would change anything. This runs BEFORE
+// the branch, on the same passes, whatever the preset is set to.
+//
+// Rate limited on purpose: stdout is a file on the SD card, and a game that
+// hits this path every frame would turn the log into a write storm. The first
+// FB2D_LOG_BURST of each kind go out in full, then one line every
+// FB2D_LOG_EVERY hits carries the running total so a long session's log tail
+// still shows the path is live.
+#define FB2D_LOG_BURST 8
+#define FB2D_LOG_EVERY 600
+
+static u32 s_fb2d_hits[2] = { 0, 0 };   // [0] = 2D-blit, [1] = 2D-after-3D
+
+static void fb2d_log_candidate(bool after_3d, u32 VtxCnt)
+{
+  const int  k     = after_3d ? 1 : 0;
+  const u32  n     = ++s_fb2d_hits[k];
+  const bool burst = (n <= FB2D_LOG_BURST);
+
+  if (!burst && (n % FB2D_LOG_EVERY) != 0)
+    return;
+
+  const char *path = after_3d ? "2D-after-3D" : "2D-blit";
+
+  // The preset's own state decides what this line is telling the user: with it
+  // off the pass is about to be thrown away (actionable), with it on it is
+  // about to be presented (confirmation that the preset is doing the work).
+  if (FRAMEBUFFER_2D())
+    printf("[PATH] %s : FRAMEBUFFER_2D PRESET is ON (pass presented) "
+           "FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d hits=%u\n",
+           path, (u32)FB_W_SOF1, (u32)FB_R_SOF1, (int)FB_R_CTRL.fb_depth,
+           (int)VtxCnt, n);
+  else
+    printf("[PATH] %s : Try Enabling FRAMEBUFFER_2D PRESET "
+           "(pass dropped) FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d "
+           "VtxCnt=%d hits=%u\n",
+           path, (u32)FB_W_SOF1, (u32)FB_R_SOF1, (int)FB_R_CTRL.fb_depth,
+           (int)VtxCnt, n);
+
+  if (n == FB2D_LOG_BURST)
+    printf("[PATH] %s : (further hits logged every %d)\n", path, FB2D_LOG_EVERY);
+
+  // See the /ndclog.txt note in logo_dump_pass(): without this the tail is lost
+  // when the console is powered off instead of exited cleanly.
+  fflush(stdout);
+}
+
 void StartRender()
 {
   u32 VtxCnt = curVTX - vertices;
@@ -9565,6 +9628,14 @@ void StartRender()
       vtx_max_Z = 0;
       return; // no present, no FrameCount++ — this pass was never a frame
     }
+
+    // DEBUG_FB2D(): this pass reached the FRAMEBUFFER_2D() decision — no RTT
+    // consumer claimed it — so it is exactly what the preset acts on. Logged
+    // here, outside the branch, so the answer is the same whether the preset
+    // is on or off. Deliberately ahead of ShouldSkipFrame() below: a skipped
+    // frame is still evidence that the game uses this path.
+    if (DEBUG_FB2D())
+      fb2d_log_candidate(s_did_3d_render, VtxCnt);
 
     if(FRAMEBUFFER_2D()){
       if (s_did_3d_render)

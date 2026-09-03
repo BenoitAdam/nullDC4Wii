@@ -660,6 +660,13 @@ static const int kControllerTypeCount = 5;
 // ============================================================================
 // DEBUG MODE
 // ============================================================================
+//
+// Every flag here is OFF by default, sits at the end of options page 6 and is
+// also settable per game from game_presets.cfg (keys: debug_message,
+// debug_loop, debug_gdrom, debug_log_framebuffer2d), so a diagnostic can be
+// armed for one disc without touching the menu. Remember that printf is
+// redirected to /ndclog.txt on the SD card: leaving one of these on costs card
+// writes every frame, so turn it back off once it has answered its question.
 
 int g_debug_loop = 0;
 extern "C" { int get_debug_loop()    { return g_debug_loop;    } }
@@ -669,6 +676,15 @@ extern "C" { int get_debug_message() { return g_debug_message; } }
 
 int g_debug_gdrom = 0;
 extern "C" { int get_debug_gdrom()   { return g_debug_gdrom;   } }
+
+// FRAMEBUFFER_2D candidate detector (gxRend.cpp, StartRender's bit-24 branch).
+// The [PATH] 2D-blit / 2D-after-3D lines only ever printed from INSIDE the
+// FRAMEBUFFER_2D() branch, i.e. only once the preset was already on — so the
+// log could never tell you the preset was worth trying. This flag logs the
+// same passes from OUTSIDE the branch: with the preset off it names the path
+// the pass WOULD have taken and says so. Self-quieting (see FB2D_LOG_BURST).
+int g_debug_fb2d = 0;
+extern "C" { int get_debug_fb2d()    { return g_debug_fb2d;    } }
 
 // ============================================================================
 // FILE BROWSER STATE
@@ -1522,6 +1538,10 @@ void checkBiosFiles()
 #define OPT_VTX_ALPHA    70    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_YUV_STRIDE   71    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_LAYER_SORT  73    // shown on Page 3 (DEPTH & WIDTH), above HOKUTO HACK
+#define OPT_DEBUG_FB2D   74   // shown on Page 6 (EXPERIMENTAL), under SH4 CORE
+#define OPT_DEBUG_MESSAGE 75  // shown on Page 6 (EXPERIMENTAL), debug block at the end
+#define OPT_DEBUG_LOOP   76   // shown on Page 6 (EXPERIMENTAL), debug block at the end
+#define OPT_DEBUG_GDROM  77   // shown on Page 6 (EXPERIMENTAL), debug block at the end
 #define OPT_DINO_CRISIS_INVENTORY_HACK 72 // shown on Page 5 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_ROW_COUNT   66
 
@@ -1635,7 +1655,12 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_TRANS_ZWRITE,
   OPT_HOKUTO_HACK,
   OPT_DINO_CRISIS_INVENTORY_HACK,
-  OPT_DYNAREC
+  OPT_DYNAREC,
+  OPT_DEBUG_FB2D,
+  // --- debug log block, always last on this page ---
+  OPT_DEBUG_MESSAGE,
+  OPT_DEBUG_LOOP,
+  OPT_DEBUG_GDROM
 };
 
 static const int *opt_page_rows(int page, int *count)
@@ -2410,6 +2435,45 @@ bool displayOptionsMenu()
       case 1: printf("[< DYNAREC (DEFAULT) >]"); break;
     }
     printf(" INTERPRETER is slow, for debugging");
+    printf("\n");
+
+    // --- Row: 2D framebuffer path logger (gxRend.cpp DEBUG_FB2D) ---
+    // Answers "is 2D FRAMEBUFFER (page 1) worth turning on for this game?" —
+    // it logs the bit-24 render passes that preset would act on, WITHOUT
+    // needing the preset itself to be on. Nothing in the log = it can't help.
+    printf("%s DBG FB2D LOG   : ", (selectedRow == OPT_DEBUG_FB2D) ? ">" : " ");
+    switch (g_debug_fb2d) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOG PASSES)   >]"); break;
+    }
+    printf(" 2D FRAMEBUFFER candidate -> log");
+    printf("\n\n");
+
+    // --- Debug log block (all default OFF; output goes to /ndclog.txt) ---
+    printf("%s DEBUG MESSAGE  : ", (selectedRow == OPT_DEBUG_MESSAGE) ? ">" : " ");
+    switch (g_debug_message) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (VERBOSE)      >]"); break;
+    }
+    printf(" renderer trace ([PATH], [FB]...)");
+    printf("\n");
+
+    printf("%s DEBUG LOOP     : ", (selectedRow == OPT_DEBUG_LOOP) ? ">" : " ");
+    switch (g_debug_loop) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (VERY SLOW)    >]"); break;
+    }
+    printf(" per-loop CPU/GDROM/IO trace");
+    printf("\n");
+
+    printf("%s DEBUG GDROM    : ", (selectedRow == OPT_DEBUG_GDROM) ? ">" : " ");
+    switch (g_debug_gdrom) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (SPI CMDS)     >]"); break;
+    }
+    printf(" GD-ROM / CDDA command trace");
+    printf("\n");
+    printf("                  (logs are written to /ndclog.txt on the card)");
     printf("\n\n");
 
     printOptionsFooter();
@@ -2526,6 +2590,10 @@ bool displayOptionsMenu()
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
+        case OPT_DEBUG_FB2D:     g_debug_fb2d             = (g_debug_fb2d             + 1) % 2; break;
+        case OPT_DEBUG_MESSAGE:  g_debug_message          = (g_debug_message          + 1) % 2; break;
+        case OPT_DEBUG_LOOP:     g_debug_loop             = (g_debug_loop             + 1) % 2; break;
+        case OPT_DEBUG_GDROM:    g_debug_gdrom            = (g_debug_gdrom            + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -2605,6 +2673,10 @@ bool displayOptionsMenu()
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
+        case OPT_DEBUG_FB2D:     g_debug_fb2d             = (g_debug_fb2d             + 1) % 2; break;
+        case OPT_DEBUG_MESSAGE:  g_debug_message          = (g_debug_message          + 1) % 2; break;
+        case OPT_DEBUG_LOOP:     g_debug_loop             = (g_debug_loop             + 1) % 2; break;
+        case OPT_DEBUG_GDROM:    g_debug_gdrom            = (g_debug_gdrom            + 1) % 2; break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
@@ -3429,6 +3501,10 @@ int main(int argc, wchar *argv[])
                                   : (g_isp_depth_func_preset == 1 ? "ON (OPAQUE/PT)" : "ON (ALL LISTS)"));
     printf("ISP Cull       : %s\n", g_isp_cull_preset == 0 ? "OFF (LEGACY)"
                                   : (g_isp_cull_preset == 1 ? "ON" : "ON (SWAP WINDING)"));
+    printf("Dbg FB2D Log   : %s\n", g_debug_fb2d ? "ON (LOG PASSES)" : "OFF");
+    printf("Debug Message  : %s\n", g_debug_message ? "ON (VERBOSE)" : "OFF");
+    printf("Debug Loop     : %s\n", g_debug_loop ? "ON (VERY SLOW)" : "OFF");
+    printf("Debug GDROM    : %s\n", g_debug_gdrom ? "ON (SPI CMDS)" : "OFF");
     printf("Players        : %d\n", g_player_count);
     printf("Controller     : %s\n",
       (g_controller_type >= 0 && g_controller_type < kControllerTypeCount)
