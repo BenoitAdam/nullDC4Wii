@@ -301,7 +301,7 @@ extern "C" {
   int get_yuv_twiddle_fix_preset() { return g_yuv_twiddle_fix_preset; }
 }
 
-int g_yuv_stride_preset = 1; // 0=off, 1=auto (converter-gated), 2=always (legacy). Decides the REAL per-row pitch/height of a YUV422 source, which can be smaller than the declared power-of-two texture size. Only an FMV frame written by the YUV converter has such a pitch; "always" took the size from TA_YUV_TEX_CTRL for EVERY YUV422 texture, and a game that leaves that register at 0 then decodes its textures as 16x16 - Soul Calibur's character select went mostly black.
+int g_yuv_stride_preset = 3;  // 0=off, 1=auto (converter-gated), 2=always (legacy), 3=texctl 
 
 extern "C" {
   int get_yuv_stride_preset() { return g_yuv_stride_preset; }
@@ -1933,8 +1933,9 @@ bool displayOptionsMenu()
       case 0: printf("[< OFF (DECLARED)    >]"); break;
       case 1: printf("[< AUTO (FMV ONLY)   >]"); break;
       case 2: printf("[< ALWAYS (LEGACY)   >]"); break;
+      case 3: printf("[< TEXCTL (HARDWARE) >]"); break;
     }
-    printf(" ALWAYS blacks out Soul Calibur");
+    printf(" TEXCTL if FMV still messy");
     printf("\n");
 
     // --- Row: Twiddled YUV422 texture decode fix ---
@@ -2485,7 +2486,7 @@ bool displayOptionsMenu()
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 2) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
         case OPT_FOG:       g_fog_preset             = (g_fog_preset             + 1) % 2; break;
-        case OPT_YUV_STRIDE: g_yuv_stride_preset = (g_yuv_stride_preset + 2) % 3; break;
+        case OPT_YUV_STRIDE: g_yuv_stride_preset = (g_yuv_stride_preset + 3) % 4; break;
         case OPT_YUV_TWIDDLE_FIX: g_yuv_twiddle_fix_preset = (g_yuv_twiddle_fix_preset + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 2) % 3; break;
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
@@ -2564,7 +2565,7 @@ bool displayOptionsMenu()
         case OPT_MIPMAP:    g_mipmap_preset          = (g_mipmap_preset          + 1) % 3; break;
         case OPT_SEAM_FIX:  g_seam_fix_preset        = (g_seam_fix_preset        + 1) % 2; break;
         case OPT_FOG:       g_fog_preset             = (g_fog_preset             + 1) % 2; break;
-        case OPT_YUV_STRIDE: g_yuv_stride_preset = (g_yuv_stride_preset + 1) % 3; break;
+        case OPT_YUV_STRIDE: g_yuv_stride_preset = (g_yuv_stride_preset + 1) % 4; break;
         case OPT_YUV_TWIDDLE_FIX: g_yuv_twiddle_fix_preset = (g_yuv_twiddle_fix_preset + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 1) % 3; break;
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
@@ -3301,6 +3302,7 @@ int main(int argc, wchar *argv[])
       case 0: printf("OFF (DECLARED)\n");  break;
       case 1: printf("AUTO (FMV ONLY)\n"); break;
       case 2: printf("ALWAYS (LEGACY)\n"); break;
+      case 3: printf("TEXCTL (HARDWARE)\n"); break;
     }
     printf("Frameskipping  : ");
     switch(g_frameskip_preset) {

@@ -292,8 +292,18 @@
                                 from TA_YUV_TEX_CTRL for EVERY YUV422 texture:
                                 a game that never programs that register then
                                 decodes its YUV art as 16x16 and it goes black
-                                (Soul Calibur character select). Only set this to
-                                always if a movie is still sliced under auto.
+                                (Soul Calibur character select). texctl = auto,
+                                plus the real hardware stride wherever the
+                                texture's TCW.StrideSel bit is set: the row pitch
+                                is TEXT_CONTROL[4:0] x 32 texels. Used only as a
+                                fallback when the converter never tracked the
+                                surface, and applied to the SOURCE PITCH, never
+                                to the declared width - rewriting the width
+                                rescales every UV, which is the tearing itself.
+                                texctl also covers the planar RGB path, the last
+                                place still guessing a blind 512. Try texctl
+                                first if a movie is still sliced under auto;
+                                always only after that.
         yuv_twiddle_fix=on  <- on/off (default off). Fixes TWIDDLED YUV422
                                 textures (static YUV art, not FMV): the legacy
                                 decoder swapped the two u16 halves of each source
@@ -931,6 +941,7 @@ static int parse_yuv_stride(const char* v)
     if (key_eq(v, "off")    || strcmp(v, "0") == 0) return 0;
     if (key_eq(v, "auto")   || strcmp(v, "1") == 0) return 1;
     if (key_eq(v, "always") || strcmp(v, "2") == 0) return 2;
+    if (key_eq(v, "texctl") || strcmp(v, "3") == 0) return 3;
     printf("[game_presets] Unknown yuv_stride value: '%s'\n", v);
     return -1;
 }

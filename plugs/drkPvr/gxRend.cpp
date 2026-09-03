@@ -233,9 +233,14 @@ extern "C" int get_yuv_twiddle_fix_preset();
 //   2 = always : take the size from TA_YUV_TEX_CTRL for every YUV422 texture
 //                (the ec67c40 behaviour, kept for A/B: it blacks out games
 //                 that leave that register unprogrammed)
+//   3 = texctl : auto, PLUS the actual hardware stride rule wherever
+//                TCW.StrideSel is set - see stride_src_pitch(). Applies to the
+//                planar RGB path (norm_text) as well as YUV, and is the only
+//                mode in which either of them stops guessing 512.
 extern "C" int get_yuv_stride_preset();
-#define YUV_STRIDE_AUTO()   (get_yuv_stride_preset() == 1)
+#define YUV_STRIDE_AUTO()   (get_yuv_stride_preset() == 1 || get_yuv_stride_preset() == 3)
 #define YUV_STRIDE_ALWAYS() (get_yuv_stride_preset() == 2)
+#define STRIDE_TEXCTL()     (get_yuv_stride_preset() == 3)
 
 // Blend mode: per-polygon TSP SrcInstr/DstInstr blending (necessary for Resident Evil 3)
 extern "C" int get_blend_mode_preset();
@@ -1657,13 +1662,67 @@ static INLINE u32 tex_shape_key(PolyParam *mod, u32 pixel_fmt)
 // scan-order surface. VERY_FAST and QUALITY refuse to cache these at all, since
 // they are the dynamically redrawn 2D/menu surfaces and no shape_key can notice
 // that the game repainted one. Refusing to cache is correct but expensive: each
-// draw re-decodes 512*h texels. Instead, hash 8 words spread across the source
-// span the decoder will actually read (512 px wide, 16bpp) and re-decode only
+// draw re-decodes pitch*h texels. Instead, hash 8 words spread across the source
+// span the decoder will actually read (pitch px wide, 16bpp) and re-decode only
 // when that changes -- ~8 VRAM reads against a full surface conversion. Static
 // menu art then caches; genuinely animated art still re-decodes, as it must.
-static INLINE u32 stride_fingerprint(u32 base, u32 h)
+//
+// See stride_fp_pitch() below for the `pitch` argument.
+
+// The real per-row SOURCE pitch, in texels, of a scan-order (planar) texture.
+//
+// TCW.StrideSel means the rows of this surface are packed at the pitch the game
+// programmed into TEXT_CONTROL[4:0] - in units of 32 texels - instead of at the
+// declared power-of-two width. The polygon still samples a declared w x h
+// region: every UV in the strip is relative to THAT, so the stride is a source
+// pitch and must never be written back into w. Doing so is what made the old
+// blind "w = 512" tear an FMV frame into repeating slices.
+//
+// Returns w unchanged for any texture this rule does not apply to, so callers
+// can use it unconditionally. Only reached under STRIDE_TEXCTL(); the other
+// yuv_stride modes keep the legacy 512 guess verbatim.
+//
+// `base`/`h` are only for the bounds guard: a pitch WIDER than the sampled
+// width is legal (the polygon is a window into a wider surface) but makes the
+// decoder walk (h-1)*sr + w texels from base, which can be more than the
+// surface actually holds. vram is exactly VRAM_SIZE with no slack behind it, so
+// a pitch that would read off the end falls back to the declared width - a
+// sheared texture beats an out-of-bounds read on real hardware.
+static INLINE u32 stride_src_pitch(const PolyParam *mod, u32 w, u32 h, u32 base)
 {
-  u32 span = 512u * h * 2u;      // bytes norm_text() reads for this surface
+  // StrideSel only exists on a non-palettised TCW, and the stride rule only
+  // applies to non-twiddled (scan-order) surfaces - it is meaningless for a
+  // twiddled one, whose rows are not linear in the first place.
+  if (!(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder))
+    return w;
+  u32 sr = (TEXT_CONTROL & 31) * 32;
+  // 0 = the game never programmed the register. The declared width is the only
+  // honest answer then; a 0 pitch would collapse every row onto row 0.
+  if (!sr)
+    return w;
+  if (sr > w)
+  {
+    u64 span = ((u64)(h - 1) * sr + w) * 2u;   // 16bpp
+    if ((u64)base + span > (u64)VRAM_SIZE)
+      return w;
+  }
+  return sr;
+}
+
+// The pitch stride_fingerprint() must probe with: whatever norm_text() will
+// actually decode this surface at under the current mode, so the probes track
+// the bytes the decoder reads and nothing else - 512 under the legacy modes,
+// the real stride_src_pitch() under STRIDE_TEXCTL(). Get this wrong and the
+// probes drift off the surface onto bytes the decoder never looks at, which
+// makes the cache re-decode on unrelated changes (or miss real ones).
+static INLINE u32 stride_fp_pitch(const PolyParam *mod, u32 w, u32 h, u32 base)
+{
+  return STRIDE_TEXCTL() ? stride_src_pitch(mod, w, h, base) : 512u;
+}
+
+static INLINE u32 stride_fingerprint(u32 base, u32 h, u32 pitch)
+{
+  u32 span = pitch * h * 2u;     // bytes norm_text() reads for this surface
   u32 step = span >> 3;          // 8 evenly spaced probes
   u32 fp   = span;
   for (u32 i = 0; i < 8u; i++)
@@ -2712,8 +2771,14 @@ void fastcall texture_VQ(u8 *p_in, u32 Width, u32 Height, u8 *vq_codebook)
 }
 
 // Planar (Linear) texture conversion.
+// `w`/`h` are the DECLARED texture size - what the polygon samples and what the
+// destination GX tiling below is laid out for. `src_stride` is how many texels
+// one source row advances by, which is the same as w for an ordinary planar
+// texture but not for a stride-select one (see stride_src_pitch). Keeping the
+// two apart is the whole point: the old code had only `w` and so had to resize
+// the texture to change the pitch, which rescaled every UV with it.
 template <int type>
-void Plannar(u8 *praw, u32 w, u32 h)
+void Plannar(u8 *praw, u32 w, u32 h, u32 src_stride)
 {
   // host_ptr_xor(u16* p) = (u16*)((unat)p ^ (4-sizeof(u16))) = (u16*)((unat)p ^ 2).
   // This correctly reads a DC little-endian u16 from Wii big-endian VRAM where each
@@ -2730,12 +2795,21 @@ void Plannar(u8 *praw, u32 w, u32 h)
   // for u32 is ^0 = identity, so *(u32*)ptr is already correct).
   // Within that u32: low 16 bits = first DC pixel, high 16 bits = second DC pixel.
 
-  u32 *src = (u32 *)praw;  // u32 reads give correct DC values directly
+  u32 *src_base = (u32 *)praw;  // u32 reads give correct DC values directly
   u16 *dst = (u16 *)VramWork;
   u32 x, y;
 
   for (y = 0; y < h; y++)
   {
+    // Two pixels per u32, so a row of src_stride texels is src_stride/2 words.
+    // src_stride is always even (the declared width is a power of two, and the
+    // stride register counts in units of 32), so this never truncates.
+    //
+    // When src_stride < w the tail columns read on into the next source row
+    // rather than being zero-filled. That is what the hardware does - VRAM is
+    // linear and there is nothing else there - and it matches the YUV planar
+    // decoders; a quad whose UVs stop at the real pitch never sees it.
+    u32 *src = src_base + ((y * src_stride) >> 1);
     for (x = 0; x < w; x += 2)  // two pixels per u32 word
     {
       u32 word = *src++;          // correct DC u32 value: low=pix0, high=pix1
@@ -2880,17 +2954,34 @@ static const u32 VQMipPoint[11] = {
     texture_TW<conv##format##_TW> /*TW*/ ((u8 *)&params.vram[tex_addr], w, h);            \
   }
 
-#define norm_text(format)        \
-  if (mod->tcw.NO_PAL.StrideSel) \
-    w = 512;                     \
-  Plannar<format>((u8 *)&params.vram[tex_addr], w, h);
-
-  /*u32 sr;\
-if (mod->tcw.NO_PAL.StrideSel)\
-  {sr=(TEXT_CONTROL&31)*32;}\
-        else\
-  {sr=w;}\
-  format((u8*)&params.vram[tex_addr],sr,h);*/
+// Planar (scan-order) decode for the non-YUV 16bpp formats.
+//
+// STRIDE_TEXCTL() applies the real hardware rule: TCW.StrideSel puts the source
+// row pitch in TEXT_CONTROL[4:0] (x32 texels), and it is a PITCH - w stays the
+// declared width, so the strip's UVs keep meaning what they meant. Every other
+// yuv_stride mode keeps the legacy behaviour byte for byte: a blind pitch of
+// 512 that also resized the texture, which is both the wrong number for most
+// stride surfaces and the wrong variable to put it in.
+//
+// That guess was dormant while StrideSel read the wrong physical bit, so it
+// never fired on real game data; 94639b7a put the field back on bit 25, which
+// makes it live. 378adb4 removed the same guess from the YUV path but left
+// this one, because Plannar() had no pitch of its own to move it to.
+#define norm_text(format)                                    \
+  {                                                          \
+    u32 sr;                                                  \
+    if (STRIDE_TEXCTL())                                     \
+    {                                                        \
+      sr = stride_src_pitch(mod, w, h, tex_addr);            \
+    }                                                        \
+    else                                                     \
+    {                                                        \
+      if (mod->tcw.NO_PAL.StrideSel)                         \
+        w = 512;                                             \
+      sr = w;                                                \
+    }                                                        \
+    Plannar<format>((u8 *)&params.vram[tex_addr], w, h, sr); \
+  }
 
 // Maps Dreamcast texture wrap/clamp modes to Wii GX constants.
 int TexUV(u32 flip, u32 clamp)
@@ -3616,8 +3707,13 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     // PixelFmt 5/6 are excluded because a palettised TCW has no StrideSel or
     // ScanOrder field — those bits are PalSelect, and reading them here would
     // over-allocate a 16x-too-large slot for ordinary palette textures.
+    //
+    // Not needed under STRIDE_TEXCTL(): there norm_text() leaves w alone and
+    // moves the stride to Plannar's source pitch, so the DESTINATION is the
+    // declared w x h and 512 would only over-reserve. The slot must still be
+    // 512-wide for every other mode, where norm_text() does rewrite w.
     u32 eff_w = w;
-    if (CACHE_VERY_FAST_PLUS() && w < 512
+    if (CACHE_VERY_FAST_PLUS() && w < 512 && !STRIDE_TEXCTL()
         && mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder
         && mod->tcw.NO_PAL.PixelFmt != 5 && mod->tcw.NO_PAL.PixelFmt != 6)
       eff_w = 512;
@@ -3950,7 +4046,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     else if (stride_dyn)
     {
       cache_valid = (pbuff->addr == tex_addr)
-                  && (pbuff->vq_codebook_w0 == stride_fingerprint(orig_tex_addr, h));
+                  && (pbuff->vq_codebook_w0 == stride_fingerprint(orig_tex_addr, h, stride_fp_pitch(mod, w, h, orig_tex_addr)));
     }
     else
     {
@@ -4029,7 +4125,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       {
         cache_valid = (pbuff->addr == tex_addr)
                     && (pbuff->shape_key == shape_key)
-                    && (pbuff->vq_codebook_w0 == stride_fingerprint(orig_tex_addr, h));
+                    && (pbuff->vq_codebook_w0 == stride_fingerprint(orig_tex_addr, h, stride_fp_pitch(mod, w, h, orig_tex_addr)));
       }
       else
       {
@@ -4120,7 +4216,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       // can tell whether the game repainted it. h is still the declared
       // height here — the decode switch below is what rewrites w/h.
       if (CACHE_VERY_FAST_PLUS() && stride_dyn)
-        pbuff->vq_codebook_w0 = stride_fingerprint(orig_tex_addr, h);
+        pbuff->vq_codebook_w0 = stride_fingerprint(orig_tex_addr, h, stride_fp_pitch(mod, w, h, orig_tex_addr));
     }
 
     if(DEBUG_MESSAGE()) {
@@ -4239,9 +4335,15 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       // below fails to track, a blind 512 is very often NOT the real pitch -
       // tearing the frame into repeating slices, the exact alpha-0.32
       // "messy/split" FMV bug ec67c40 fixed. The declared width is the far
-      // safer fallback, so StrideSel no longer assigns a width by itself here;
-      // it stays informational ([YUV] debug log) except under yuv_stride=always
-      // below, which reproduces the old guess verbatim for A/B.
+      // safer fallback, so StrideSel no longer assigns a width by itself here.
+      //
+      // What StrideSel DOES legitimately say is that the source rows are packed
+      // at the pitch in TEXT_CONTROL[4:0] (x32 texels) - the actual hardware
+      // rule the 512 was standing in for. yuv_stride=texctl uses that as the
+      // fallback for exactly the case this comment describes (converter
+      // tracking missed), applying it to the source pitch and never to w. See
+      // stride_src_pitch(). yuv_stride=always still reproduces the old guess
+      // verbatim for A/B.
       u32 yuv_real_w = w, yuv_real_h = h;
       g_yuv_src_stride_override = 0; // 0 = no override, decode at declared size
       g_yuv_src_real_h          = 0;
@@ -4267,6 +4369,29 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
           if (cw && cw <= w) { yuv_real_w = cw; g_yuv_src_stride_override = (int)cw; }
           if (ch && ch <= h) { yuv_real_h = ch; g_yuv_src_real_h          = (int)ch; }
         }
+        else if (STRIDE_TEXCTL())
+        {
+          // Converter tracking missed this surface. The ring only holds 4 base
+          // addresses, so a game that cycles more FMV buffers than that - or
+          // draws a quad pointing just outside a tracked region - falls through
+          // to here and would otherwise decode at the declared power-of-two
+          // width, shearing the frame into repeating slices.
+          //
+          // TCW.StrideSel is exactly the "my rows are not the declared width"
+          // flag, and the real pitch is TEXT_CONTROL[4:0] x 32 texels. This is
+          // the hardware rule the old blind 512 was standing in for. It goes to
+          // the SOURCE PITCH and not to w: the polygon still samples a declared
+          // w x h texture and rewriting w rescales every UV in the strip, which
+          // is the "messy/split FMV" bug itself rather than a fix for it.
+          //
+          // Nothing here can supply the real HEIGHT - TEXT_CONTROL has no such
+          // field - so g_yuv_src_real_h stays 0 and the rows below the picture
+          // decode as whatever VRAM holds instead of being blanked. Only the
+          // converter ring knows the height; this is the fallback, not a
+          // replacement for it.
+          u32 sw = stride_src_pitch(mod, w, h, tex_addr);
+          if (sw && sw < w) { yuv_real_w = sw; g_yuv_src_stride_override = (int)sw; }
+        }
       }
 
       u8 *yuv_src = &params.vram[tex_addr];
@@ -4276,11 +4401,12 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       {
         printf("[YUV] ---- new YUV422 texture ----\n");
         printf("[YUV] tex_addr=%06X w=%u h=%u scan=%u mip=%u stride=%u fmv_format=%d "
-               "TA_YUV_TEX_CTRL=%08X yuv_stride=%d conv=%d real_w=%u real_h=%u\n",
+               "TA_YUV_TEX_CTRL=%08X TEXT_CONTROL=%08X texctl_pitch=%u yuv_stride=%d conv=%d real_w=%u real_h=%u\n",
                tex_addr, w, h, (unsigned)mod->tcw.NO_PAL.ScanOrder,
                (unsigned)mod->tcw.NO_PAL.MipMapped,
                (unsigned)mod->tcw.NO_PAL.StrideSel, get_fmv_format_preset(),
-               (u32)TA_YUV_TEX_CTRL, get_yuv_stride_preset(),
+               (u32)TA_YUV_TEX_CTRL, (u32)TEXT_CONTROL,
+               (unsigned)((TEXT_CONTROL & 31) * 32), get_yuv_stride_preset(),
                g_yuv_src_stride_override != 0, yuv_real_w, yuv_real_h);
 
         // Dump raw bytes at the start of the source (first 16 bytes = 4 u32 words).
@@ -8549,7 +8675,16 @@ static void logo_dump_texture(const PolyParam *pp, float u0, float u1,
   u32 w = 8u << pp->tsp.TexU;
   u32 h = 8u << pp->tsp.TexV;
   if (mip) h = w;            // mipmapped DC textures are always square
-  if (scan && strd) w = 512; // stride-selected surfaces decode 512 px wide
+  // Stride-selected surfaces decoded 512 px wide - but only under the modes
+  // where norm_text() still rewrites w. Under STRIDE_TEXCTL() the decode width
+  // IS the declared width and the stride moves to the source pitch, so report
+  // that instead or the dump describes a texture the decoder never produced.
+  u32 pitch = w;
+  if (scan && strd)
+  {
+    if (STRIDE_TEXCTL()) pitch = stride_src_pitch(pp, w, h, base);
+    else                 pitch = w = 512;
+  }
 
   // FAST/NORMAL/QUALITY stamp 0xDEADBEEF over the first u32 of the source once
   // they have decoded a texture, so seeing it here is not corruption -- it is
@@ -8558,13 +8693,13 @@ static void logo_dump_texture(const PolyParam *pp, float u0, float u1,
   const u32 sentinel = *(u32 *)&params.vram[base & (VRAM_MASK & ~3u)];
 
   printf("[LOGO]   tex %06X %ux%u fmt=%u(%s) vq=%d scan=%d stride=%d mip=%d "
-         "filt=%u clampUV=%u%u flipUV=%u%u mipD=%u palsel=%u first_u32=%08X%s"
+         "pitch=%u filt=%u clampUV=%u%u flipUV=%u%u mipD=%u palsel=%u first_u32=%08X%s"
          " | window %s: u=%.3f..%.3f v=%.3f..%.3f = texels x %.0f..%.0f y %.0f..%.0f\n",
          base, w, h, (unsigned)fmt,
          fmt == 0 ? "ARGB1555" : fmt == 1 ? "RGB565" : fmt == 2 ? "ARGB4444"
                   : fmt == 3 ? "YUV422" : fmt == 4 ? "BUMP"
                   : fmt == 5 ? "PAL4" : fmt == 6 ? "PAL8" : "?",
-         (int)isvq, (int)scan, (int)strd, (int)mip,
+         (int)isvq, (int)scan, (int)strd, (int)mip, (unsigned)pitch,
          (unsigned)pp->tsp.FilterMode,
          (unsigned)pp->tsp.ClampU, (unsigned)pp->tsp.ClampV,
          (unsigned)pp->tsp.FlipU,  (unsigned)pp->tsp.FlipV,
