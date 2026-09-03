@@ -5676,10 +5676,24 @@ static bool s_cmp_active = false; // a composed frame is started and unpresented
 static u32  s_cmp_base   = 0;     // FB_W_SOF1 of that frame's first pass
 static u32  s_cmp_passes = 0;     // partial passes accumulated into it
 static bool s_cmp_skip   = false; // frameskip verdict, taken once for the FRAME
-// Union of the destination rects accumulated so far (DC framebuffer pixels),
-// plus the summed pass areas the "frame is covered" test uses.
-static s32  s_cmp_cov_x0 = 0, s_cmp_cov_y0 = 0, s_cmp_cov_x1 = -1, s_cmp_cov_y1 = -1;
-static u32  s_cmp_cov_area = 0;
+// Destination rects accumulated into the frame so far (DC framebuffer pixels),
+// kept INDIVIDUALLY rather than as one union: with a union, a 4-way split's
+// fourth quadrant "overlaps" the bounding box of the first three (which is
+// already the whole screen) and the frame gets flipped three-quarters drawn —
+// exactly the flicker this preset exists to remove, back again on any game with
+// more than two viewports (Quake III Arena). 8 is well past any real split; a
+// frame with more passes than that stops recording and simply relies on the
+// coverage test and the vblank backstop.
+#define CMP_MAX_RECTS 8
+static s32  s_cmp_rc[CMP_MAX_RECTS][4]; // x0, y0, x1, y1
+static u32  s_cmp_rc_n = 0;
+static u32  s_cmp_cov_area = 0;         // summed pass areas (they never overlap)
+// Vblanks seen since the frame in progress started. An overlapping pass is only
+// evidence of a NEW frame if something else already said the frame was over:
+// games legitimately render the same band twice in one frame (a second Z-keep
+// pass over the same viewport for multi-pass shading), and treating that as a
+// frame boundary flips the viewport half-shaded.
+static u32  s_cmp_vblanks = 0;
 // Pass count as of the previous vblank, so the vblank backstop can tell a frame
 // the game has finished adding to from one it is still building. 0xFFFFFFFF =
 // nothing in progress. Without this, a vblank landing between two viewport
@@ -5692,14 +5706,37 @@ static u32  s_cmp_vb_passes = 0xFFFFFFFFu;
 static u32   s_cmp_dx0 = 0, s_cmp_dy0 = 0, s_cmp_dx1 = 0, s_cmp_dy1 = 0;
 static float s_cmp_shift_y = 0.f;
 
-// The first passes after the preset is switched on are logged, then it goes
-// quiet by itself (see the "quiet diagnostics" rule). A game whose scheme this
-// does not recognise can then be diagnosed straight from /ndclog.txt — the
-// [2P] lines carry every register the decision was made from — without needing
-// a debug build.
-#define SPLIT_LOG_PASSES 80
-static u32 s_cmp_log_seen = 0;
+// [2P] diagnostic. A game whose scheme this does not recognise can be diagnosed
+// straight from /ndclog.txt without a debug build, so the lines carry every
+// register the decision was made from.
+//
+// What it does NOT do is log the first N passes: the preset loads with the game,
+// so those N passes are the boot logo and the menus, and the log would be long
+// quiet by the time anyone reached a 2-player match. It logs NOVEL pass shapes
+// instead — a signature of the clip registers, region bounds, placement and
+// verdict, checked against the last few seen. A steady 2- or 4-viewport pattern
+// therefore prints 2 or 4 lines and stops; entering split-screen prints the new
+// shapes immediately, whenever that happens. Capped so it can never spam
+// (see the "quiet diagnostics" rule).
+#define SPLIT_LOG_MAX  120 // [2P] lines per preset change, ever
+#define SPLIT_LOG_RING 12  // distinct pass shapes remembered
+static u32 s_cmp_log_n = 0;
+static u32 s_cmp_log_ring[SPLIT_LOG_RING];
+static u32 s_cmp_log_ring_n = 0;
 static int s_cmp_log_preset = -1;
+
+// True the first time a given pass shape is seen (and remembers it).
+static bool split_log_novel(u32 sig)
+{
+  for (u32 i = 0; i < s_cmp_log_ring_n; i++)
+    if (s_cmp_log_ring[i] == sig)
+      return false;
+  if (s_cmp_log_ring_n < SPLIT_LOG_RING)
+    s_cmp_log_ring[s_cmp_log_ring_n++] = sig;
+  else
+    s_cmp_log_ring[sig % SPLIT_LOG_RING] = sig; // full: evict one, keep moving
+  return true;
+}
 
 // Walk the PVR region array and return the tile rectangle this render writes,
 // in DC screen pixels.
@@ -5714,6 +5751,14 @@ static int s_cmp_log_preset = -1;
 // (count == width * height in tiles). A wrong stride reads its control word out
 // of the middle of a list pointer and essentially never satisfies both, so a
 // failure to agree returns false and the caller falls back on the pixel clip.
+// A game does not have to shorten the array to shrink the render, and the two
+// cases have to be told apart: it can emit the FULL tile grid every pass and
+// mark the tiles outside the viewport off, either by clearing the entry's
+// writeout (control bit 28) or by leaving every one of its list pointers empty
+// (bit 31 of each pointer word). Bounding the whole array would then read
+// "whole screen" on a pass that only paints a quarter of it. So the bounds come
+// from the tiles that actually PAINT, while the whole array is what validates
+// the stride.
 static bool split_region_bounds(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1)
 {
   const u32 base = REGION_BASE & VRAM_MASK & ~3u;
@@ -5722,8 +5767,10 @@ static bool split_region_bounds(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1)
 
   for (int variant = 0; variant < 2; variant++)
   {
-    const u32 step = (variant == 0 ? 5u : 6u) * 4u;
-    u32 tx0 = 63, ty0 = 63, tx1 = 0, ty1 = 0, n = 0;
+    const u32 words = (variant == 0 ? 5u : 6u);
+    const u32 step  = words * 4u;
+    u32 tx0 = 63, ty0 = 63, tx1 = 0, ty1 = 0, n = 0;       // every entry
+    u32 ax0 = 63, ay0 = 63, ax1 = 0, ay1 = 0, an = 0;      // painting entries
     u32 addr = base;
     bool terminated = false;
 
@@ -5739,6 +5786,23 @@ static bool split_region_bounds(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1)
       if (ty < ty0) ty0 = ty;
       if (ty > ty1) ty1 = ty;
       n++;
+
+      // Painting = writes out, and has at least one list to draw.
+      if (!((ctrl >> 28) & 1))
+      {
+        bool has_list = false;
+        for (u32 w = 1; w < words; w++)
+          if (!(vri(addr + w * 4) & 0x80000000u)) { has_list = true; break; }
+        if (has_list)
+        {
+          if (tx < ax0) ax0 = tx;
+          if (tx > ax1) ax1 = tx;
+          if (ty < ay0) ay0 = ty;
+          if (ty > ay1) ay1 = ty;
+          an++;
+        }
+      }
+
       if (ctrl & 0x80000000u) { terminated = true; break; }
       addr += step;
     }
@@ -5747,6 +5811,13 @@ static bool split_region_bounds(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1)
       continue;
     if (n != (tx1 - tx0 + 1) * (ty1 - ty0 + 1))
       continue; // entries don't tile a solid rectangle: wrong stride
+
+    // Painting subset when there is one, whole array otherwise (a pass where
+    // every tile paints, or an "empty" convention this doesn't recognise).
+    if (an != 0 && ax1 >= ax0 && ay1 >= ay0)
+    {
+      tx0 = ax0; ty0 = ay0; tx1 = ax1; ty1 = ay1;
+    }
 
     *ox0 = tx0 * 32;
     *oy0 = ty0 * 32;
@@ -5773,7 +5844,7 @@ static bool split_pass_window(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1, u32 *oshif
     return false;
 
   s32 x0 = 0, y0 = 0, x1 = cw - 1, y1 = ch - 1;
-  bool clipped = false;
+  bool clip_x = false, clip_y = false; // did the PIXEL clip narrow this axis?
 
   // 1. FB_X_CLIP / FB_Y_CLIP (extracted by hand rather than through the
   //    bitfields — see the ISP_BACKGND_T note in DoRender about big-endian
@@ -5787,21 +5858,23 @@ static bool split_pass_window(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1, u32 *oshif
     // asking for a sub-rect, it just never reprogrammed the register.
     if (cx1 >= cx0 && cy1 >= cy0 && cx0 < cw && cy0 < ch)
     {
-      if (cx0 > x0) { x0 = cx0; clipped = true; }
-      if (cx1 < x1) { x1 = cx1; clipped = true; }
-      if (cy0 > y0) { y0 = cy0; clipped = true; }
-      if (cy1 < y1) { y1 = cy1; clipped = true; }
+      if (cx0 > x0) { x0 = cx0; clip_x = true; }
+      if (cx1 < x1) { x1 = cx1; clip_x = true; }
+      if (cy0 > y0) { y0 = cy0; clip_y = true; }
+      if (cy1 < y1) { y1 = cy1; clip_y = true; }
     }
   }
 
-  // 2. Region array — only when the pixel clip declared nothing, so a misparse
-  //    can never shrink a window the clip already got right. (Also walked while
-  //    the diagnostic is still logging, so the log can say what it would have
-  //    found; a few hundred VRAM reads on 80 passes total.)
-  if (!clipped || s_cmp_log_seen < SPLIT_LOG_PASSES)
+  // 2. Region array, PER AXIS: it only gets to speak about an axis the pixel
+  //    clip left alone. That is what a 4-way split needs whose game restricts
+  //    rows with FB_Y_CLIP and columns with the tile list — as a whole-rect
+  //    fallback that pass reads as a full-width band with two quadrants in it —
+  //    while a game whose pixel clip already describes the viewport (the 2P
+  //    racers this preset was built on, which work) can never have its window
+  //    second-guessed by this parse.
   {
     u32 rx0, ry0, rx1, ry1;
-    if (split_region_bounds(&rx0, &ry0, &rx1, &ry1))
+    if ((!clip_x || !clip_y) && split_region_bounds(&rx0, &ry0, &rx1, &ry1))
     {
       rgn_dbg[0] = rx0; rgn_dbg[1] = ry0; rgn_dbg[2] = rx1; rgn_dbg[3] = ry1;
       const s32 rw = (s32)rx1 - (s32)rx0 + 1;
@@ -5809,15 +5882,23 @@ static bool split_pass_window(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1, u32 *oshif
       // A real viewport is a decent fraction of the screen (a 4-player split is
       // still a quarter); anything tinier is a misparse or a render this has no
       // business touching.
-      if (!clipped && rw >= cw / 8 && rh >= ch / 8 && (s32)rx0 < cw && (s32)ry0 < ch)
+      if (rw >= cw / 8 && rh >= ch / 8 && (s32)rx0 < cw && (s32)ry0 < ch)
       {
-        if ((s32)rx0 > x0) { x0 = (s32)rx0; clipped = true; }
-        if ((s32)rx1 < x1) { x1 = (s32)rx1; clipped = true; }
-        if ((s32)ry0 > y0) { y0 = (s32)ry0; clipped = true; }
-        if ((s32)ry1 < y1) { y1 = (s32)ry1; clipped = true; }
+        if (!clip_x)
+        {
+          if ((s32)rx0 > x0) { x0 = (s32)rx0; clip_x = true; }
+          if ((s32)rx1 < x1) { x1 = (s32)rx1; clip_x = true; }
+        }
+        if (!clip_y)
+        {
+          if ((s32)ry0 > y0) { y0 = (s32)ry0; clip_y = true; }
+          if ((s32)ry1 < y1) { y1 = (s32)ry1; clip_y = true; }
+        }
       }
     }
   }
+
+  const bool clipped = clip_x || clip_y;
 
   if (x1 >= cw) x1 = cw - 1;
   if (y1 >= ch) y1 = ch - 1;
@@ -5849,6 +5930,19 @@ static bool split_pass_window(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1, u32 *oshif
   return clipped || shift != 0;
 }
 
+// Does this destination rect touch any band already drawn into the frame in
+// progress? Per-rect, not against their bounding box — see s_cmp_rc.
+static bool split_rect_overlaps(s32 x0, s32 y0, s32 x1, s32 y1)
+{
+  for (u32 i = 0; i < s_cmp_rc_n; i++)
+  {
+    const s32 *r = s_cmp_rc[i];
+    if (!(x0 > r[2] || x1 < r[0] || y0 > r[3] || y1 < r[1]))
+      return true;
+  }
+  return false;
+}
+
 // Put the assembled frame on screen. This is DoRender()'s display tail with the
 // drawing removed: every pass of the frame already went through DoRender, and
 // what they left in the EFB is the finished picture.
@@ -5860,9 +5954,9 @@ static void split_compose_present()
   const bool drawn = (s_cmp_passes != 0) && !s_cmp_skip;
   s_cmp_active = false;
   s_cmp_passes = 0;
-  s_cmp_cov_x0 = 0; s_cmp_cov_y0 = 0;
-  s_cmp_cov_x1 = -1; s_cmp_cov_y1 = -1;
+  s_cmp_rc_n = 0;
   s_cmp_cov_area = 0;
+  s_cmp_vblanks = 0;
   s_cmp_vb_passes = 0xFFFFFFFFu;
   if (!drawn)
     return; // frame was skipped: nothing was rendered into the EFB to show
@@ -8733,6 +8827,7 @@ void VBlank()
   // this frame has not stamped yet and blit stale VRAM over it.
   if (s_cmp_active)
   {
+    s_cmp_vblanks++; // also the "the frame really is over" half of the overlap test
     if (s_cmp_passes == s_cmp_vb_passes)
       split_compose_present();
     else
@@ -9679,21 +9774,36 @@ void StartRender()
     u32 rgn[4] = { 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu }; // "unparsed"
     const bool partial = split_pass_window(&wx0, &wy0, &wx1, &wy1, &shift, rgn);
 
-    // Diagnostic: the first passes after the preset is switched on, then quiet.
-    // Everything the decision was made from is here, so a game using a scheme
-    // this doesn't recognise can be read straight out of /ndclog.txt.
+    // Diagnostic: one line per NOVEL pass shape (see split_log_novel above), so
+    // it survives long enough to catch the split-screen match rather than
+    // burning its budget on the boot logo. Everything the decision was made from
+    // is here, so a game using a scheme this doesn't recognise can be read
+    // straight out of /ndclog.txt.
     {
+      const u32 xc = FB_X_CLIP.full, yc = FB_Y_CLIP.full;
       const int preset_now = get_split_screen_preset();
-      if (preset_now != s_cmp_log_preset) { s_cmp_log_preset = preset_now; s_cmp_log_seen = 0; }
-      if (s_cmp_log_seen < SPLIT_LOG_PASSES)
+      if (preset_now != s_cmp_log_preset)
       {
-        s_cmp_log_seen++;
-        const u32 xc = FB_X_CLIP.full, yc = FB_Y_CLIP.full;
-        printf("[2P] pass=%u frame=%u W_SOF1=%08X R_SOF1=%08X stride=%u "
+        s_cmp_log_preset = preset_now;
+        s_cmp_log_n = 0;
+        s_cmp_log_ring_n = 0;
+      }
+      // Pass shape: what it was clipped to, where it goes, and what we made of
+      // it. NOT the frame counter or the vertex count, which change every frame.
+      const u32 sig = (xc * 2654435761u) ^ (yc * 2246822519u)
+                    ^ ((shift + 1u) * 3266489917u)
+                    ^ ((wx0 << 20) ^ (wx1 << 10) ^ wy0 ^ (wy1 << 5))
+                    ^ (rgn[0] ^ (rgn[1] << 8) ^ (rgn[2] << 16) ^ (rgn[3] << 24))
+                    ^ (partial ? 0x9E3779B9u : 0u)
+                    ^ (s_cmp_active ? 0x85EBCA6Bu : 0u);
+      if (s_cmp_log_n < SPLIT_LOG_MAX && split_log_novel(sig))
+      {
+        s_cmp_log_n++;
+        printf("[2P] #%u frame=%u W_SOF1=%08X R_SOF1=%08X stride=%u "
                "XCLIP=%u..%u YCLIP=%u..%u RGNBASE=%08X rgn=%d..%d,%d..%d "
                "PARAMCFG=%08X canvas=%.0fx%.0f -> win=%u..%u,%u..%u shift=%u %s "
-               "(active=%d passes=%u strips=%d vtx=%u)\n",
-               s_cmp_log_seen, (u32)FrameCount, (u32)FB_W_SOF1, (u32)FB_R_SOF1,
+               "(active=%d passes=%u rects=%u strips=%d vtx=%u)\n",
+               s_cmp_log_n, (u32)FrameCount, (u32)FB_W_SOF1, (u32)FB_R_SOF1,
                (u32)((FB_W_LINESTRIDE & 0x1FF) * 8),
                (u32)(xc & 0x7FF), (u32)((xc >> 16) & 0x7FF),
                (u32)(yc & 0x3FF), (u32)((yc >> 16) & 0x3FF),
@@ -9702,7 +9812,8 @@ void StartRender()
                (u32)FPU_PARAM_CFG,
                s_cmp_canvas_w, s_cmp_canvas_h,
                wx0, wx1, wy0, wy1, shift, partial ? "PARTIAL" : "FULL",
-               (int)s_cmp_active, s_cmp_passes, (int)(curLST - lists), VtxCnt);
+               (int)s_cmp_active, s_cmp_passes, s_cmp_rc_n,
+               (int)(curLST - lists), VtxCnt);
         fflush(stdout); // see the "/ndclog.txt tail is lost without fflush" note
       }
     }
@@ -9712,12 +9823,13 @@ void StartRender()
       s32 dy0 = (s32)wy0 + (s32)shift;
       s32 dy1 = (s32)wy1 + (s32)shift;
 
-      // Landing on ground a pass of the frame in progress already covered means
-      // that frame is finished and this pass belongs to the next one. That is
-      // what ends the frame for a game whose viewports don't tile the canvas.
-      if (s_cmp_active &&
-          !(dy0 > s_cmp_cov_y1 || dy1 < s_cmp_cov_y0 ||
-            (s32)wx0 > s_cmp_cov_x1 || (s32)wx1 < s_cmp_cov_x0))
+      // Does this pass land on a band the frame in progress already drew? On its
+      // own that proves nothing — a game may render the same viewport twice in
+      // one frame (a second Z-keep pass for multi-pass shading) — so it only
+      // ends the frame when something ELSE already says the frame is over: the
+      // write address moved to another buffer, or a vblank has gone by.
+      if (s_cmp_active && split_rect_overlaps((s32)wx0, dy0, (s32)wx1, dy1) &&
+          ((FB_W_SOF1 & VRAM_MASK) != s_cmp_base || s_cmp_vblanks > 0))
         split_compose_present();
 
       if (!s_cmp_active)
@@ -9730,18 +9842,24 @@ void StartRender()
         s_cmp_base     = FB_W_SOF1 & VRAM_MASK;
         s_cmp_passes   = 0;
         s_cmp_skip     = ShouldSkipFrame();
-        s_cmp_cov_x0   = 0x7FFF; s_cmp_cov_y0 = 0x7FFF;
-        s_cmp_cov_x1   = -1;     s_cmp_cov_y1 = -1;
+        s_cmp_rc_n     = 0;
         s_cmp_cov_area = 0;
+        s_cmp_vblanks  = 0;
         shift = 0; dy0 = (s32)wy0; dy1 = (s32)wy1;
       }
 
       s_cmp_passes++;
-      if ((s32)wx0 < s_cmp_cov_x0) s_cmp_cov_x0 = (s32)wx0;
-      if ((s32)wx1 > s_cmp_cov_x1) s_cmp_cov_x1 = (s32)wx1;
-      if (dy0 < s_cmp_cov_y0) s_cmp_cov_y0 = dy0;
-      if (dy1 > s_cmp_cov_y1) s_cmp_cov_y1 = dy1;
-      s_cmp_cov_area += (u32)(wx1 - wx0 + 1) * (u32)(dy1 - dy0 + 1);
+      // Only bands that broke NEW ground count toward coverage, so a repeated
+      // pass over one viewport can't make a frame look finished.
+      if (!split_rect_overlaps((s32)wx0, dy0, (s32)wx1, dy1))
+      {
+        s_cmp_cov_area += (u32)(wx1 - wx0 + 1) * (u32)(dy1 - dy0 + 1);
+        if (s_cmp_rc_n < CMP_MAX_RECTS)
+        {
+          s32 *r = s_cmp_rc[s_cmp_rc_n++];
+          r[0] = (s32)wx0; r[1] = dy0; r[2] = (s32)wx1; r[3] = dy1;
+        }
+      }
 
       if (s_cmp_skip)
       {

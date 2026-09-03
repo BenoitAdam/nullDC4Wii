@@ -361,3 +361,40 @@ Remaining perf ideas (NOT implemented, for a future session):
 - Vertex submission is immediate-mode wgPipe writes (24-28 bytes/vertex);
   GX display lists / indexed arrays would cut CPU per vertex but change the
   FIFO stream layout — high desync risk, do not attempt casually.
+
+ClaudeAI (2026-09, follow-up): the multipass composition above fixed the 2P
+racers (Le Mans, Demolition Racer, Magical Racing Tour — see game_presets.cfg)
+but Quake III Arena still flickered on multipass AND on both. Three real bugs,
+all of which only bite once a game has more than two viewports or renders a
+viewport more than once:
+
+ 1. Coverage was tracked as ONE bounding box. A 4-way split's fourth quadrant
+    then "overlaps" the box of the first three (which is already the whole
+    screen), so the frame was flipped three-quarters drawn — the original
+    flicker, back again on any 3+ viewport game. Now each pass's destination
+    rect is kept individually (s_cmp_rc[8], split_rect_overlaps) and only bands
+    that break NEW ground count toward coverage.
+
+ 2. Overlap alone was treated as proof that a new frame had started. A game may
+    legitimately render the same band twice in one frame (a second Z-keep pass
+    for multi-pass shading, which is exactly how a Quake III shader chain lands
+    on a PVR). An overlap now only ends the frame if something else already
+    said it was over: FB_W_SOF1 moved to another buffer, or a vblank went by
+    (s_cmp_vblanks).
+
+ 3. The region array was consulted only as a FALLBACK, when FB_X/Y_CLIP said
+    nothing. A game that restricts rows with FB_Y_CLIP and columns with the tile
+    list came out as a full-width band with two quadrants in it. Both are now
+    intersected, which is what the hardware does anyway. Trustworthy because the
+    parse validates its own stride, and because it now bounds the tiles that
+    actually PAINT (writeout bit 28 set, at least one non-empty list pointer)
+    rather than the whole array — a game may emit the full tile grid every pass
+    and switch the off-viewport tiles off rather than shortening the array.
+
+The [2P] log was also rebuilt. It used to print the first 80 passes, which is
+the boot logo and the menus — long quiet by the time anyone reaches a 2-player
+match, i.e. useless for exactly the case it exists for. It now prints one line
+per NOVEL pass shape (signature over clips / region bounds / placement /
+verdict, checked against the last 12 seen), so a steady 2- or 4-viewport pattern
+prints 2 or 4 lines and stops, and entering split-screen prints the new shapes
+whenever that happens. Capped at 120 lines per preset change.
