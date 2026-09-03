@@ -991,7 +991,7 @@ https://www.biteyourconsole.net/2026/05/13/nulldc4wii-alpha-v0-22-porta-il-dream
 - gligli (Xbox 360 port)
 - Xeihro (Xiro28 PSP Port)
 - AI because this project would have never existed otherwise lol
-- Probably Reicast Team also
+- Probably Reicast/Flycast Team also
 - Welcome to the IA-age guys and good luck everyone.
 
 All together, let's Cast the Dream.
