@@ -617,6 +617,10 @@ public:
 
 //Paths
 void GetApplicationPath(char* path,u32 size);
+//Directory the emulator was launched from, with a trailing separator.
+//Everything GetEmuPath() builds (data/dc_boot.bin, data/fsca-table.bin,
+//nullDC.cfg, ...) hangs off it.
+void SetApplicationPath(const char* path);
 char* GetEmuPath(const char* subpath);
 
 class VArray

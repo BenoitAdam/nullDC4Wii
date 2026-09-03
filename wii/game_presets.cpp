@@ -1,7 +1,8 @@
 /*
     game_presets.cpp - Per-game preset system for NullDC4Wii
 
-    Config file format (sd:/discs/game_presets.cfg):
+    Config file format (game_presets.cfg — loadGamePresets() in wii/main.cpp
+    picks the folder, on SD or on USB):
 
         ;; comment
         [keyword]           <- case-insensitive substring matched against filename
@@ -530,9 +531,10 @@
     Fields left unset by both [default] and the matched section stay at
     whatever the user selected in the UI.
 
-    The file is never kept in RAM: game_presets_apply() streams it from SD
-    (one pass for [default], one for the per-game match), parsing into a
-    single scratch slot — the old 4096-entry table cost ~2.6 MB of MEM2.
+    The file is never kept in RAM: game_presets_apply() streams it back off
+    the card/drive (one pass for [default], one for the per-game match),
+    parsing into a single scratch slot — the old 4096-entry table cost
+    ~2.6 MB of MEM2.
 
     IMPORTANT: matching is done by lowercasing BOTH the filename and the keyword,
     then using plain strstr() — no strncasecmp needed (avoids devkitPPC/newlib issues).
@@ -706,8 +708,9 @@ struct GamePreset
 };
 
 // Nothing from the .cfg stays in RAM: game_presets_apply() streams the file
-// from SD and parses the one section it needs into this single scratch slot,
-// so the whole system costs ~130 bytes of BSS instead of a MEM2 table.
+// back off the card/drive and parses the one section it needs into this single
+// scratch slot, so the whole system costs ~130 bytes of BSS instead of a
+// MEM2 table.
 static GamePreset s_scratch;
 
 // Path remembered by game_presets_load() for the apply() streaming passes
@@ -1304,7 +1307,7 @@ static bool section_matches(char* s, const char* lower_name, bool want_default,
 // Streaming pass — parse and apply the first section that matches
 // ---------------------------------------------------------------------------
 
-// Re-reads the .cfg from SD and applies the first [default] section
+// Re-reads the .cfg off the card/drive and applies the first [default] section
 // (want_default) or the first section with an alias matching lower_name.
 // Only the matched section's key=value lines are parsed, into s_scratch.
 // Returns true if a section was found and applied.
@@ -1395,8 +1398,8 @@ void game_presets_load(const char* cfg_path)
     s_cfg_path[sizeof(s_cfg_path) - 1] = '\0';
 
     // Nothing is parsed or stored here — apply() streams the file straight
-    // from SD each launch. Just count the sections so the boot log still
-    // shows whether the file was found and how many presets it holds.
+    // back off the card/drive each launch. Just count the sections so the boot
+    // log shows whether the file was found and how many presets it holds.
     FILE* f = fopen(s_cfg_path, "r");
     if (!f)
     {

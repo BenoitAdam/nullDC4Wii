@@ -5,11 +5,20 @@ Github :
 
 https://github.com/BenoitAdam94/nullDC4Wii
 
+Install :
+=========
+
+Runs from SD or from USB - the app finds its files relative to the folder
+boot.dol was launched from.
+
 BIOS :
 ======
 
-Wii :
+Wii, SD install :
 SD:/apps/nullDC4wii/data/
+
+Wii, USB install :
+USB:/apps/nullDC4wii/data/
 
 Dolphin :
 SD:/data/
@@ -18,7 +27,8 @@ SD:/data/
 Game files :
 ============
 
-Put your games in SD:/discs
+Put your games in SD:/discs or USB:/dreamcast
+(either folder name works on either device; press 2 to switch device)
 
 Compatibility :
 ===============

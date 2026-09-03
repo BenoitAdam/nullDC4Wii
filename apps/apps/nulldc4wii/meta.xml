@@ -11,7 +11,9 @@
   Compatiblity guide :
   https://wiibrew.org/wiki/NullDC4Wii/Compatibility
 
-  Put bios in sd:/apps/nulldc4wii/data/
-  Put games in sd:/discs/ or usb:/dreamcast/
+  Runs from SD or USB. Put the bios in the data/ folder next to boot.dol,
+  i.e. sd:/apps/nulldc4wii/data/ or usb:/apps/nulldc4wii/data/.
+  Put games in sd:/discs/ or usb:/dreamcast/ (either name works on
+  either device). Press 2 in the file browser to switch device.
    </long_description> 
 </app>

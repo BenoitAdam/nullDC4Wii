@@ -2,7 +2,10 @@
 
 /*
     game_presets.h - Per-game preset system for NullDC4Wii
-    Place game_presets.cfg on sd:/discs/game_presets.cfg
+    game_presets.cfg lives next to boot.dol (sd:/apps/nulldc4wii/ or
+    usb:/apps/nulldc4wii/) or in the games folder - loadGamePresets() in
+    wii/main.cpp probes both devices and hands the winner to
+    game_presets_load().
 */
 
 #ifdef __cplusplus
@@ -12,9 +15,10 @@ extern "C" {
 /**
  * Remember the preset config file path and log how many sections it holds.
  * Nothing is parsed or stored in RAM — game_presets_apply() streams the
- * file from SD each launch.
+ * file back off the card/drive each launch.
  * Safe to call even if the file doesn't exist (prints a warning, uses defaults).
- * @param cfg_path Full path e.g. "sd:/discs/game_presets.cfg"
+ * @param cfg_path Full path e.g. "sd:/discs/game_presets.cfg" or
+ *                 "usb:/apps/nulldc4wii/game_presets.cfg"
  */
 void game_presets_load(const char* cfg_path);
 

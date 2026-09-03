@@ -737,39 +737,327 @@ bool hasValidExtension(const char *filename)
 }
 
 // ============================================================================
-// STORAGE SWITCHING
+// LAUNCH DEVICE / APPLICATION PATH
+// ============================================================================
+//
+// The app used to work only when installed on the SD card. Two independent
+// reasons, both fixed here:
+//
+//   1) Nothing ever called SetApplicationPath(), so GetEmuPath() returned bare
+//      relative paths ("data/dc_boot.bin") that resolve against the cwd.
+//      libfat sets that cwd from argv[0], but only if the launch device is
+//      already mounted when fatInitDefault() runs - otherwise it silently
+//      falls back to the first device it did mount, i.e. "sd:/", and the BIOS
+//      lookup went to sd:/data/ instead of <device>:/apps/nulldc4wii/data/.
+//   2) SS_Init() calls IOS_ReloadIOS(58) as the very first thing in main().
+//      That tears the USB stack down, so for a USB install the drive is NOT
+//      mounted when fatInitDefault() runs and case (1) is guaranteed to fire.
+//      USB has to be brought back up explicitly, with time to re-enumerate.
+//
+// argv[0] survives the IOS reload (it lives in main memory, not in IOS), so it
+// stays a reliable answer to "which device am I installed on".
 // ============================================================================
 
-bool switchToUSB()
+// "sd" / "usb" (or "usb1"... for a later partition) - empty when the loader
+// passed no argv block, as some forwarders do.
+static char g_launch_device[16] = "";
+// Directory holding boot.dol, with a trailing '/': "usb:/apps/nulldc4wii/".
+static char g_app_dir[512] = "";
+
+// USB volume the browser uses. libfat names the first FAT partition of a USB
+// drive "usb" and any further one "usb1", "usb2"... - so when we were launched
+// off a later partition, that is the volume to talk to, not "usb".
+static char g_usb_device[16] = "usb";
+// "usb:/", built from g_usb_device.
+static char g_usb_root[24] = "usb:/";
+
+// Games folders, resolved once at boot (see resolveGamesRoot). The defaults
+// are the historical layout, so an existing SD install behaves identically.
+static char g_sd_games_root[64]  = "sd:/discs/";
+static char g_usb_games_root[64] = "usb:/dreamcast/";
+
+// stat() on a FAT volume root is not reliable across libfat versions, so a
+// failed stat() falls through to opendir() before giving up.
+static bool dirExists(const char* path)
 {
-  if (!g_usb_mounted)
+  if (!path || !path[0]) return false;
+
+  char tmp[520];
+  snprintf(tmp, sizeof(tmp), "%s", path);
+  size_t len = strlen(tmp);
+  // Strip a trailing '/', but never the one that makes "sd:/" a valid root.
+  if (len > 1 && tmp[len - 1] == '/' && tmp[len - 2] != ':')
+    tmp[len - 1] = '\0';
+
+  struct stat st;
+  if (stat(tmp, &st) == 0)
+    return S_ISDIR(st.st_mode);
+
+  DIR* d = opendir(path);
+  if (d)
   {
-    if (USBStorage_Initialize() == 0)
-    {
-      for (int retry = 0; retry < 30; retry++)
-      {
-        if (fatMountSimple("usb", &__io_usbstorage))
-        {
-          g_usb_mounted = true;
-          break;
-        }
-        usleep(100000);
-      }
-    }
-  }
-  if (g_usb_mounted)
-  {
-    g_storage_source = STORAGE_USB;
-    strcpy(currentPath, "usb:/dreamcast/");
+    closedir(d);
     return true;
   }
   return false;
 }
 
-void switchToSD()
+// Brings the USB mass-storage stack up and mounts g_usb_device. Idempotent.
+// timeout_ms budgets the drive's spin-up/enumeration, which after the IOS58
+// reload can take several seconds on a real hard disk.
+static bool mountUSB(int timeout_ms)
 {
+  if (g_usb_mounted)
+    return true;
+
+  // Already mounted by fatInitDefault() - re-mounting the same name would
+  // only fail, or churn a volume that is working fine.
+  if (dirExists(g_usb_root))
+  {
+    g_usb_mounted = true;
+    return true;
+  }
+
+  for (int waited = 0; waited < timeout_ms; waited += 100)
+  {
+    if (USBStorage_Initialize() == 0)
+    {
+      if (fatMountSimple(g_usb_device, &__io_usbstorage) || dirExists(g_usb_root))
+      {
+        g_usb_mounted = true;
+        return true;
+      }
+
+      // fatMountSimple() only ever claims the first partition. When the volume
+      // we want is a later one ("usb1", "usb2"), fatInitDefault() re-probes the
+      // whole disc and mounts them all.
+      if (g_usb_device[3] != '\0')
+      {
+        fatInitDefault();
+        if (dirExists(g_usb_root))
+        {
+          g_usb_mounted = true;
+          return true;
+        }
+      }
+    }
+    usleep(100 * 1000);
+  }
+  return false;
+}
+
+// Splits argv[0] ("usb:/apps/nulldc4wii/boot.dol") into g_launch_device
+// ("usb") and g_app_dir ("usb:/apps/nulldc4wii/"). Returns false when the
+// loader gave us nothing usable, leaving both empty.
+static bool parseLaunchPath()
+{
+  if (!__system_argv || __system_argv->argvMagic != ARGV_MAGIC)
+    return false;
+  if (__system_argv->argc < 1 || !__system_argv->argv || !__system_argv->argv[0])
+    return false;
+
+  const char* a0    = __system_argv->argv[0];
+  const char* colon = strchr(a0, ':');
+  const char* slash = strrchr(a0, '/');
+  if (!colon || !slash || slash < colon)
+    return false;
+
+  size_t devLen = (size_t)(colon - a0);
+  if (devLen == 0 || devLen >= sizeof(g_launch_device))
+    return false;
+
+  size_t dirLen = (size_t)(slash - a0) + 1;   // keep the trailing '/'
+  if (dirLen >= sizeof(g_app_dir))
+    return false;
+
+  memcpy(g_launch_device, a0, devLen);
+  g_launch_device[devLen] = '\0';
+  memcpy(g_app_dir, a0, dirLen);
+  g_app_dir[dirLen] = '\0';
+  return true;
+}
+
+// Picks the first candidate folder that actually exists, so the games folder
+// can be named either way round on either device. When none exist we keep
+// candidates[0] (the historical default) and the browser just shows
+// "<<NO COMPATIBLE FILE FOUND>>", exactly as before.
+static void resolveGamesRoot(char* out, size_t outSize,
+                             const char* const* candidates, int count)
+{
+  for (int i = 0; i < count; i++)
+  {
+    if (dirExists(candidates[i]))
+    {
+      snprintf(out, outSize, "%s", candidates[i]);
+      return;
+    }
+  }
+  snprintf(out, outSize, "%s", candidates[0]);
+}
+
+// Mounts both devices, pins GetEmuPath()/cwd to the folder the DOL lives in,
+// and points the browser at the launch device. Called once from main(), after
+// SS_Init()'s IOS reload.
+static void initStorage()
+{
+  // Give the hardware a brief moment to stabilize after the HBC handoff and
+  // the IOS58 reload.
+  usleep(500000);
+
+  // Mounts every device it can see and, when the loader passed an argv block,
+  // chdir()s into the launching app's folder. Both of those can come up short
+  // for a USB install, which is what the rest of this function repairs.
+  fatInitDefault();
+
+  parseLaunchPath();
+  const bool launchedFromUSB = (strncmp(g_launch_device, "usb", 3) == 0);
+
+  // Talk to the volume we were actually launched from ("usb1" on a
+  // multi-partition drive), not just whichever one happens to be first.
+  if (launchedFromUSB)
+    snprintf(g_usb_device, sizeof(g_usb_device), "%s", g_launch_device);
+  snprintf(g_usb_root, sizeof(g_usb_root), "%s:/", g_usb_device);
+
+  if (launchedFromUSB)
+  {
+    // We are running off this drive, so it is worth waiting for.
+    if (!mountUSB(10000))
+      printf("WARNING: launched from USB but the drive did not come back\n"
+             "         after the IOS reload. BIOS/games may not be found.\n");
+  }
+  else
+  {
+    // Not urgent - just record whether fatInitDefault() already got it, so
+    // "press 2" does not try to mount an already-mounted volume.
+    g_usb_mounted = dirExists(g_usb_root);
+  }
+
+  // Last resort: the volume holding the app still is not there. Re-probing
+  // every disc costs a moment and rescues the cases neither fatInitDefault()'s
+  // first pass nor mountUSB() managed to name.
+  if (g_app_dir[0] && !dirExists(g_app_dir))
+  {
+    fatInitDefault();
+    if (dirExists(g_usb_root))
+      g_usb_mounted = true;
+  }
+
+  const bool sdOK = dirExists("sd:/");
+
+  printf("Storage: SD %s, USB %s\n",
+         sdOK ? "mounted" : "not found",
+         g_usb_mounted ? "mounted" : "not found");
+
+  // ---- Application path. data/dc_boot.bin, data/fsca-table.bin and
+  // nullDC.cfg go through GetEmuPath(); the VMU saves are a relative fopen()
+  // and follow the cwd. Both are pinned to the folder the DOL lives in.
+  if (g_app_dir[0] && dirExists(g_app_dir))
+  {
+    SetApplicationPath(g_app_dir);
+    chdir(g_app_dir);
+    printf("App folder: %s\n", g_app_dir);
+  }
+  else
+  {
+    // No argv, or its folder is unreachable: keep whatever cwd libfat chose
+    // and let GetEmuPath() stay relative to it - the pre-existing behaviour.
+    printf("App folder: unknown (no argv from loader), using current dir\n");
+    g_app_dir[0] = '\0';
+  }
+
+  // ---- Games folders. Both names are accepted on both devices now, so a USB
+  // install is not forced into "dreamcast" nor an SD one into "discs".
+  static const char* const kSdRoots[] = { "sd:/discs/", "sd:/dreamcast/", "sd:/" };
+  resolveGamesRoot(g_sd_games_root, sizeof(g_sd_games_root), kSdRoots, 3);
+
+  char usbCand[3][64];
+  snprintf(usbCand[0], sizeof(usbCand[0]), "%sdreamcast/", g_usb_root);
+  snprintf(usbCand[1], sizeof(usbCand[1]), "%sdiscs/",     g_usb_root);
+  snprintf(usbCand[2], sizeof(usbCand[2]), "%s",           g_usb_root);
+  const char* const kUsbRoots[] = { usbCand[0], usbCand[1], usbCand[2] };
+  resolveGamesRoot(g_usb_games_root, sizeof(g_usb_games_root), kUsbRoots, 3);
+
+  // ---- Where the browser opens: the device we were launched from, so a USB
+  // install does not open on an SD card that may not even be inserted.
+  if (launchedFromUSB && g_usb_mounted)
+  {
+    g_storage_source = STORAGE_USB;
+    strcpy(currentPath, g_usb_games_root);
+  }
+  else if (sdOK)
+  {
+    g_storage_source = STORAGE_SD;
+    strcpy(currentPath, g_sd_games_root);
+  }
+  else if (g_usb_mounted)
+  {
+    g_storage_source = STORAGE_USB;
+    strcpy(currentPath, g_usb_games_root);
+  }
+  else
+  {
+    printf("WARNING: no SD card and no USB device could be mounted.\n");
+    usleep(2000000);
+  }
+}
+
+// game_presets.cfg used to be hardcoded to sd:/discs/. Look next to the DOL
+// first (works wherever the app is installed), then in the games folder of
+// each device, so the historical sd:/discs/game_presets.cfg still wins for an
+// existing SD install.
+static void loadGamePresets()
+{
+  const char* dirs[4];
+  int n = 0;
+
+  if (g_app_dir[0])
+    dirs[n++] = g_app_dir;
+  dirs[n++] = (g_storage_source == STORAGE_USB) ? g_usb_games_root : g_sd_games_root;
+  dirs[n++] = g_sd_games_root;
+  dirs[n++] = g_usb_games_root;
+
+  char path[640];
+  for (int i = 0; i < n; i++)
+  {
+    snprintf(path, sizeof(path), "%sgame_presets.cfg", dirs[i]);
+
+    FILE* f = fopen(path, "r");
+    if (!f)
+      continue;
+    fclose(f);
+
+    game_presets_load(path);
+    printf("Game presets: %s\n", path);
+    return;
+  }
+
+  printf("Game presets: none found\n");
+}
+
+// ============================================================================
+// STORAGE SWITCHING
+// ============================================================================
+
+bool switchToUSB()
+{
+  // Shorter budget than the boot path: the user is waiting in front of the
+  // menu, and a drive that is present has normally settled by now.
+  if (!mountUSB(3000))
+    return false;
+
+  g_storage_source = STORAGE_USB;
+  strcpy(currentPath, g_usb_games_root);
+  return true;
+}
+
+bool switchToSD()
+{
+  if (!dirExists("sd:/"))
+    return false;
+
   g_storage_source = STORAGE_SD;
-  strcpy(currentPath, "sd:/discs/");
+  strcpy(currentPath, g_sd_games_root);
+  return true;
 }
 
 // ============================================================================
@@ -1085,10 +1373,11 @@ static u32 SS_ButtonsHeldWPAD()
 // ============================================================================
 //
 // Checks for the presence of dc_boot.bin and dc_flash.bin in the data/
-// folder (same location used by GetEmuPath()/LoadBiosFiles() in dc.cpp).
-// Prints "missing BIOS file <name>" for each missing file, then pauses
-// and waits for a button press so the message is actually seen before
-// the file browser clears the screen.
+// folder (same location used by GetEmuPath()/LoadBiosFiles() in dc.cpp),
+// which initStorage() has pinned to the folder boot.dol was launched from -
+// on SD or on USB. Prints "missing BIOS file <name>" for each missing file,
+// then pauses and waits for a button press so the message is actually seen
+// before the file browser clears the screen.
 // ============================================================================
 
 void checkBiosFiles()
@@ -1124,7 +1413,13 @@ void checkBiosFiles()
 
   if (anyMissing)
   {
-    printf("\nPlace the missing file(s) in the data/ folder.\n");
+    // Spell the folder out: on a USB install this is the single most useful
+    // line on screen, because it says exactly where the app looked.
+    char* dataDir = GetEmuPath("data/");
+    printf("\nPlace the missing file(s) in:\n  %s\n",
+           dataDir ? dataDir : "data/");
+    if (dataDir)
+      free(dataDir);
     printf("Press any button to continue...\n");
 
     VIDEO_SetNextFramebuffer(xfb[fb]);
@@ -2676,7 +2971,7 @@ int displayMenuAndSelectFile()
                      rmode->fbWidth * VI_DISPLAY_PIX_SZ);
 
         if (switchToUSB())
-          printf("USB mounted! Loading usb:/dreamcast/ ...\n");
+          printf("USB mounted! Loading %s ...\n", currentPath);
         else
         {
           printf("ERROR: Could not mount USB device.\n");
@@ -2685,9 +2980,13 @@ int displayMenuAndSelectFile()
       }
       else
       {
-        switchToSD();
-        printf("Switched back to SD card.\n");
-        usleep(500000);
+        if (switchToSD())
+          printf("Switched back to SD card (%s).\n", currentPath);
+        else
+        {
+          printf("ERROR: No SD card mounted.\n");
+          usleep(2000000);
+        }
       }
       listFilesInDirectory(currentPath);
       selectedIndex = 0;
@@ -2749,7 +3048,7 @@ int displayMenuAndSelectFile()
     else if (pressed & WPAD_BUTTON_B)
     {
       const char *rootPath = (g_storage_source == STORAGE_SD)
-        ? "sd:/discs/" : "usb:/dreamcast/";
+        ? g_sd_games_root : g_usb_games_root;
       if (strcmp(currentPath, rootPath) != 0)
       {
         char *lastSlash = strrchr(currentPath, '/');
@@ -2778,8 +3077,6 @@ int displayMenuAndSelectFile()
 
   return selectedIndex;
 }
-
-void SetApplicationPath(wchar *path);
 
 // ============================================================================
 // BIOS BOOT HELPER
@@ -2872,28 +3169,17 @@ int main(int argc, wchar *argv[])
 #endif
 
   // ---------------------------------------------------------------------------
-  // Mount SD card
+  // Mount storage
   // ---------------------------------------------------------------------------
-  // Give hardware a brief moment to stabilize after HBC handoff
-  
-  usleep(500000); // 0.5 sec delay
-  if (fatInitDefault())
-  {
-    printf("SD card mounted!\n");
-  }
-  else
-  {
-    printf("WARNING: Could not mount SD card.\n");
-    printf("You can press 2 in the file browser to switch to USB.\n");
-    usleep(2000000);
-  }
+  // Mounts SD and USB, works out which device this DOL was launched from and
+  // pins GetEmuPath()/cwd to its folder, then points the file browser at that
+  // same device. Must run after SS_Init(), whose IOS58 reload resets USB.
+  initStorage();
 
   // ---------------------------------------------------------------------------
   // Load game presets  (optional — missing file is silently ignored)
   // ---------------------------------------------------------------------------
-  game_presets_load("sd:/discs/game_presets.cfg");
-
-  void SetApplicationPath(const wchar *path);
+  loadGamePresets();
 
   // ---------------------------------------------------------------------------
   // Check for required BIOS files before showing the file browser.
