@@ -807,8 +807,10 @@ https://wiibrew.org/wiki/DevkitPPC
 Activate :
 - SD Card
 - Display FPS
-- Advanced > Debug > Texture Format Overlay
-- VSync evenutally
+- For log, in config.ini add "DebugModeEnabled = True" under [Interface]
+- (optional) VSync eventually
+- (optional) Advanced > Debug > Texture Format Overlay
+
 
 <img width="1366" height="728" alt="image" src="https://github.com/user-attachments/assets/4e1e3f65-2638-40c6-85a0-bcca3e4f43da" />
 
