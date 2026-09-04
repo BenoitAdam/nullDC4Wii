@@ -429,10 +429,21 @@ extern "C" int get_hokuto_hack_preset();
 // and the 64K-pixel sweep are far too expensive to leave in a shipping build,
 // and at 0 none of it is compiled at all. Flip to 1 to re-arm.
 //
-// NOTE (Dolphin): with "Store EFB Copies to Texture Only" on — its default —
-// Dolphin never writes EFB copies to emulated RAM, so every RTT read-back comes
-// back empty no matter how correct this code is. Uncheck that and "Skip EFB
-// Access from CPU" before concluding anything about render-to-texture there.
+// NOTE (Dolphin): THREE settings on the Hacks tab can each independently make
+// every EFB read-back come back empty, no matter how correct this code is.
+// Uncheck all three before concluding anything about render-to-texture — or
+// about AUTOSORT()'s depth snapshot — there:
+//   * "Store EFB Copies to Texture Only"  (copies never reach emulated RAM)
+//   * "Skip EFB Access from CPU"          (CPU reads of the EFB are dropped)
+//   * "Defer EFB Copies to RAM"           (copies sit in the texture cache and
+//     are flushed later, so a copy->DrawDone->read in the same batch sees
+//     nothing). This one is ON by default and it is the one that cost a whole
+//     debugging session in 2026-09: it produced a perfectly consistent "the Z
+//     copy never lands" result across five captures, MEM1 and MEM2 alike.
+// Also set Texture Cache Accuracy to Safe (on Fast, Dolphin can miss that a
+// snapshot texture changed between peels and hand the TEV a stale one) and turn
+// OFF "Fast Depth Calculation" (depth peeling needs exact depth: the draw pass
+// re-rasterizes the same geometry and relies on GX_EQUAL matching bit for bit).
 #define RTT_DEBUG_LOG 0
 
 // ── [LOGO] boot/2D-screen probe ────────────────────────────────────────────
@@ -6054,6 +6065,93 @@ static void split_compose_present()
 
 #define AS_MAX_PEELS 4
 
+// ── [AS] probe: is the peeling running, and does the Z snapshot hold Z? ─────
+// The peeling has never been observed WORKING on hardware. The only Wii test
+// was Hokuto no Ken, where AUTOSORT() self-gates OFF (LAYER_SORT), so "autosort
+// does nothing" still has four indistinguishable explanations. This probe
+// separates them in ONE run: it prints the frame gate, then reads each peel's
+// Z snapshot back on the CPU right after the EFB copy and says what is in it.
+//
+//   [AS] f=... line      peels=0 means the preset never reached the walk at
+//                        all -- the reason is on the same line (ready=0 = the
+//                        MEM2/Z24 init failed, TR=0 = no translucent list,
+//                        rtt=1 / layer_sort=1 = a gate took it).
+//   peel0 snapshot       is the OPAQUE depth. z16=0..0 (far0 = every sample)
+//                        means no depth survived the opaque pass, OR the
+//                        Z8/Z8M copies do not do what the code assumes
+//                        (hardware assumption 2) -- in which case peel 0's
+//                        compare is meaningless and every TR fragment passes.
+//   peelN snapshot       is peel N-1's SELECTION. Read it against the park
+//                        value printed on the same line:
+//                          atPark ~= n   the select pass killed EVERYTHING;
+//                                        the TEV GR16 compare (hardware
+//                                        assumption 1) is the suspect.
+//                          same as peel0 the near-park quad never landed.
+//                          a real spread selection WORKS.
+//
+// VERDICT (2026-09-04, autosort=4): THE PEELING WORKS. Puyo's menu frame
+// (W=99.9..466.5) walked the layers exactly as designed --
+//   peel0 ref avg=0     atPark=0    opaque depth, far everywhere
+//   peel1 ref avg=12541 atPark=147  621/768 samples got a 1st layer
+//   peel2 ref avg=40307 atPark=455  313/768 got a 2nd, all strictly NEARER
+//   peel3 ref avg=64082 atPark=750   18/768 got a 3rd
+// -- monotonically nearer each peel with a shrinking pixel count, which is the
+// signature of real depth peeling and confirms the TEV GR16 compare (hardware
+// assumption 1) reads the stage's COLOUR a/b inputs as the code assumes. All
+// three original hardware assumptions are now settled; none was wrong.
+//
+// The same capture also explains why this preset looks like it does nothing on
+// the two games it has ever been tried on: Hokuto no Ken reports
+// "peel1 ref: z16=6..6 atPark=0" -- the ENTIRE screen at one depth value, so
+// peel 1 finds nothing and peeling degenerates to a single layer. Puyo's
+// gameplay frames sit in the degenerate W=0.0001..100100 guard range for the
+// same reason. Neither game can be ordered by depth by any means; that is what
+// layer_sort/list_order/layer_back_tex are for. Judge this preset on a game
+// with genuine translucent overlaps at DIFFERENT depths.
+//
+// Flip to 1 and rebuild to arm it; nothing else needs changing, and it
+// self-quiets to one burst every AS_DBG_QUIET frames (see
+// feedback-quiet-diagnostics in project memory). The readback forces a
+// GX_DrawDone() per peel, so expect it to be slow while armed.
+#define AUTOSORT_DEBUG_LOG 0
+#define AS_DBG_BURST     2    // frames per burst
+#define AS_DBG_QUIET   240    // frames of silence between bursts
+#define AS_DBG_GRID_X   32    // census sample grid across the EFB
+#define AS_DBG_GRID_Y   24
+// Round 2. The first capture came back with the reference all zero on BOTH
+// peels, which has exactly two explanations and they need opposite fixes:
+//   * the EFB->MEM2 Z copy never lands, so every compare is against 0 (the
+//     buffers still hold as_init()'s memset) -- the peeling is dead, and this
+//     is the bug;
+//   * the copy is fine and the scene genuinely sits at screen depth 0 (a
+//     full-screen TR quad at the far plane, which by definition is where
+//     vtx_max_Z is) -- the peeling is working and the problem is elsewhere.
+// This re-copies the Z buffer immediately after the near-park quad, which just
+// wrote a KNOWN depth to every pixel. Reads back park => the copy path works.
+// Reads back 0 => the copy is the bug.
+//
+// ANSWERED (2026-09-04). "PARKED Z: z16=65503..65503 atPark=768 poison=0" —
+// the near-park quad writes Z correctly and the EFB->MEM2 copy lands exactly.
+// The zeros that started this hunt were DOLPHIN, not this code: "Defer EFB
+// Copies to RAM" (Hacks tab, on by default) keeps EFB copies in the texture
+// cache and never writes the RAM the CPU then reads. See the [RTT] note above.
+// Also settled in the same capture:
+//   * GX_TF_Z8 / GX_CTF_Z8M do work; Z24X8 was never needed. The probe read
+//     ARGB ff ff df 40 against park=65503=0xFFDF, so Z24 = 0xFFDF40 and the
+//     channel order is R=Z[23:16], G=Z[15:8], B=Z[7:0], A=ff — worth keeping
+//     for the exact-16-bit ramp rework, which wants one lookup instead of two.
+//   * peel0's reference reads 0 (far) across the whole screen in these scenes:
+//     nothing opaque stamps depth, so every TR fragment correctly passes the
+//     "in front of opaque" test.
+//
+// Now OFF, and it must stay off to measure the peeling: the copy it does lands
+// in the very buffers the select pass compares against, replacing the real
+// reference with the park value (~65503) — against which almost no fragment can
+// compare GREATER, so the kill wipes out every fragment and nothing is ever
+// selected. Any "peel1 ref" line captured with this at 1 says nothing about
+// whether the peeling works.
+#define AS_DBG_PARK_CHECK 0
+
 // Z snapshot of the compare reference: opaque depth for peel 0, previous
 // peel's selection for peels 1+. Two 8-bit planes (EFB Z bits 23:16 and
 // 15:8) instead of one Z16 copy: 8-bit copies sample as I8 (R=G=B=byte),
@@ -6075,6 +6173,223 @@ static u8 *s_as_ramp_gt;
 static u8 *s_as_ramp_ge;
 static GXTexObj s_as_tex_zhi, s_as_tex_zmid, s_as_tex_rgt, s_as_tex_rge;
 static bool s_as_ready = false;
+
+#if AUTOSORT_DEBUG_LOG
+static u32  s_as_dbg_frame = 0;
+static u32  s_as_dbg_burst = 0;
+static u32  s_as_dbg_quiet_until = 0; // 0 => armed on the very first frame
+static bool s_as_dbg_armed = false;   // decided once per frame in DoRender()
+
+// I8/Z8 textures are 8x4 tiles of 32 bytes, row-major inside the tile and
+// tile-row-major across the surface. Same layout the GX copy writes.
+static inline u8 as_dbg_texel(const u8 *tex, u32 w, u32 x, u32 y)
+{
+  const u32 tiles_per_row = (w + 7) >> 3;
+  return tex[(((y >> 2) * tiles_per_row + (x >> 3)) << 5) + ((y & 3) << 3) + (x & 7)];
+}
+
+// Grid census of the snapshot the select pass is about to compare against.
+// park16 is the 16-bit depth the near-park quad writes, so "atPark" counts the
+// samples where NOTHING was selected.
+static void as_dbg_census(int peel, u32 park16)
+{
+  GX_DrawDone(); // the copies are FIFO commands; make them land in RAM first
+  const u32 w = rmode->fbWidth, h = rmode->efbHeight;
+  const u32 bytes = ((w + 7) & ~7u) * ((h + 3) & ~3u);
+  DCInvalidateRange(s_as_zref_hi, bytes);
+  DCInvalidateRange(s_as_zref_mid, bytes);
+  u32 n = 0, at_park = 0, at_far = 0, poisoned = 0, zmin = 0xFFFFFFFF, zmax = 0;
+  double sum = 0.0;
+  for (u32 gy = 0; gy < AS_DBG_GRID_Y; gy++)
+    for (u32 gx = 0; gx < AS_DBG_GRID_X; gx++)
+    {
+      const u32 x = (gx * w) / AS_DBG_GRID_X, y = (gy * h) / AS_DBG_GRID_Y;
+      const u32 z16 = ((u32)as_dbg_texel(s_as_zref_hi,  w, x, y) << 8)
+                    |  (u32)as_dbg_texel(s_as_zref_mid, w, x, y);
+      if (z16 < zmin) zmin = z16;
+      if (z16 > zmax) zmax = z16;
+      if (z16 == 0) at_far++;
+      if (z16 == 0xA5A5) poisoned++; // as_dbg_poison_refs() ran before the copy
+      if ((z16 > park16 ? z16 - park16 : park16 - z16) <= 64) at_park++;
+      sum += (double)z16;
+      n++;
+    }
+  // poison==n is the decisive one: the buffers are filled with A5A5 immediately
+  // before every copy, so it means the copy did not write these bytes AT ALL --
+  // as opposed to far0==n, which means it wrote a legitimate zero depth. Round 4
+  // cleared to zero instead and could not tell those two apart.
+  if (peel < 0)
+    printf("[AS]  PARKED Z:  n=%u z16=%u..%u avg=%u park=%u atPark=%u far0=%u poison=%u\n",
+           n, zmin, zmax, (u32)(sum / (double)n), park16, at_park, at_far, poisoned);
+  else
+    printf("[AS]  peel%d ref: n=%u z16=%u..%u avg=%u park=%u atPark=%u far0=%u poison=%u\n",
+           peel, n, zmin, zmax, (u32)(sum / (double)n), park16, at_park, at_far, poisoned);
+  fflush(stdout);
+}
+
+// Fill both snapshot buffers with A5 so the census afterwards can tell "the
+// copy never wrote" (poison survives) from "the copy wrote zeros" (poison
+// gone, value 0). The RTT probe above has always poisoned for this reason.
+static void as_dbg_poison_refs(void)
+{
+  const u32 bytes = ((rmode->fbWidth + 7) & ~7u) * ((rmode->efbHeight + 3) & ~3u);
+  memset(s_as_zref_hi, 0xA5, bytes);
+  memset(s_as_zref_mid, 0xA5, bytes);
+  DCFlushRange(s_as_zref_hi, bytes);
+  DCFlushRange(s_as_zref_mid, bytes);
+}
+
+#if AS_DBG_PARK_CHECK // everything below is only reachable from the park check
+// One-shot copy probe. Round 3 showed the COLOUR control copy coming back zero
+// as well, so the Z format was a red herring: no EFB copy of any kind reaches
+// these buffers. Round 4 then established that the memory itself is fine (the
+// cpu wr/rd line) and that MEM1 destinations fail identically, which retires
+// as_arena2_alloc() and the data cache as suspects. What it could NOT tell --
+// because it cleared the destinations to zero -- is whether the copy never ran
+// or ran and wrote black. Round 5 poisons with A5 instead, and copies from the
+// CENTRE of the EFB rather than the top-left corner, which a pillarboxed
+// viewport (GX_SetViewport's vp_x/vp_y) may not cover at all.
+//
+//   cpu wr/rd MEM2   a byte written and read straight back by the CPU. Not
+//                    "a5 5a" would mean the pointer is not usable memory.
+//   poison=<all>     the copy did not write these bytes AT ALL.
+//   zero=<all>       the copy ran and wrote black/far -- a real result, and a
+//                    completely different hunt (start at the viewport rect).
+//   data=<some>      the copy works; whichever row shows it says where.
+//   MEM2 vs MEM1     both destinations, each read through the normal pointer
+//                    and the uncached mirror, so an arena problem and a cache
+//                    problem land on different rows.
+//   Z8 / Z24X8       on MEM1, so a working copy engine also tells us which Z
+//                    format to use without spending another run on it.
+//
+// Runs once per session and clobbers the snapshot buffers, so exactly one frame
+// renders wrong. Prints raw counts: interpretation belongs in the log, not here.
+static u8 s_as_dbg_mem1[64 * 64 * 4] ATTRIBUTE_ALIGN(32); // MEM1 control dst (RGBA8-sized)
+
+static const u8 s_as_dbg_sx[8] = { 0, 1, 7, 8, 16, 31, 32, 63 };
+static const u8 s_as_dbg_sy[8] = { 0, 1, 3, 4,  8, 15, 32, 63 };
+
+// Sample texels from an RGBA8 destination (4x4 tiles: 32B AR plane then 32B GB
+// plane), so the Z24X8 byte->channel order can be read off the log directly
+// rather than assumed.
+static void as_dbg_hexrow_rgba(const char *label, const u8 *p, u32 w)
+{
+  char buf[128];
+  int o = 0;
+  for (int i = 0; i < 8; i++)
+  {
+    const u32 x = s_as_dbg_sx[i], y = s_as_dbg_sy[i];
+    const u8 *tile = p + (((y >> 2) * (w >> 2)) + (x >> 2)) * 64;
+    const u32 t = (((y & 3) << 2) + (x & 3)) << 1;
+    o += sprintf(buf + o, " %02x%02x%02x%02x",
+                 tile[t], tile[t + 1], tile[32 + t], tile[32 + t + 1]);
+  }
+  printf("[AS]   %-16s:%s\n", label, buf);
+}
+
+// Counts over the WHOLE copied block, not 8 samples: a5 survivors mean the copy
+// never touched that byte, zeros mean it wrote a real zero, "other" means real
+// data. This is the line that actually answers the question.
+static void as_dbg_tally(const char *label, const u8 *p, u32 bytes)
+{
+  u32 poison = 0, zero = 0, other = 0, first = 0;
+  u32 firsti = 0;
+  for (u32 i = 0; i < bytes; i++)
+  {
+    const u8 v = p[i];
+    if (v == 0xA5) poison++;
+    else if (v == 0) zero++;
+    else { if (!other) { first = v; firsti = i; } other++; }
+  }
+  printf("[AS]   %-16s: poison=%u zero=%u data=%u of %u  first=%02x@%u\n",
+         label, poison, zero, other, bytes, first, firsti);
+}
+
+static void as_dbg_copy_probe(float parkW)
+{
+  static bool done = false;
+  if (done) return;
+  done = true;
+
+  // Round 5. Round 4 cleared the destinations to ZERO, so "all 00" could not
+  // distinguish a copy that never ran from a copy that wrote black -- and it
+  // sampled the top-left EFB corner, which the viewport may not even cover
+  // (GX_SetViewport uses vp_x/vp_y, so pillarboxed output leaves the corner
+  // cleared). Both are fixed here: poison with A5, and copy from the CENTRE.
+  const u32 CW = 64, CH = 64;
+  const u32 i8sz = CW * CH, rgbasz = CW * CH * 4;
+  const u16 cx = (u16)(((rmode->fbWidth  / 2) - (CW / 2)) & ~1u);
+  const u16 cy = (u16)(((rmode->efbHeight / 2) - (CH / 2)) & ~1u);
+
+  printf("[AS] COPY PROBE (round 5): src=(%u,%u) %ux%u  zhi=%p phys=%08x "
+         "mem1=%p arena2=%p..%p parkW=%.6f\n",
+         cx, cy, CW, CH, s_as_zref_hi, (u32)MEM_VIRTUAL_TO_PHYSICAL(s_as_zref_hi),
+         s_as_dbg_mem1, SYS_GetArena2Lo(), SYS_GetArena2Hi(), parkW);
+
+  s_as_zref_hi[0] = 0xA5;
+  s_as_zref_hi[1] = 0x5A;
+  DCFlushRange(s_as_zref_hi, 32);
+  printf("[AS]   cpu wr/rd MEM2 : %02x %02x   (expect a5 5a)\n",
+         s_as_zref_hi[0], s_as_zref_hi[1]);
+
+  // COLOUR -> I8, MEM2 then MEM1. The centre of the EFB is inside the viewport
+  // and the scene is visibly rendering, so a copy that lands cannot be all zero.
+  memset(s_as_zref_hi, 0xA5, i8sz);
+  DCFlushRange(s_as_zref_hi, i8sz);
+  memset(s_as_dbg_mem1, 0xA5, rgbasz);
+  DCFlushRange(s_as_dbg_mem1, rgbasz);
+
+  GX_SetCopyFilter(GX_FALSE, NULL, GX_FALSE, NULL);
+  GX_PixModeSync();
+  GX_SetTexCopySrc(cx, cy, CW, CH);
+  GX_SetTexCopyDst(CW, CH, GX_TF_I8, GX_FALSE);
+  GX_CopyTex(s_as_zref_hi, GX_FALSE);
+  GX_PixModeSync();
+  GX_DrawDone();
+  DCInvalidateRange(s_as_zref_hi, i8sz);
+  as_dbg_tally("MEM2 colour", s_as_zref_hi, i8sz);
+  as_dbg_tally("MEM2 col uncach", (const u8 *)MEM_K0_TO_K1(s_as_zref_hi), i8sz);
+
+  GX_PixModeSync();
+  GX_SetTexCopySrc(cx, cy, CW, CH);
+  GX_SetTexCopyDst(CW, CH, GX_TF_I8, GX_FALSE);
+  GX_CopyTex(s_as_dbg_mem1, GX_FALSE);
+  GX_PixModeSync();
+  GX_DrawDone();
+  DCInvalidateRange(s_as_dbg_mem1, i8sz);
+  as_dbg_tally("MEM1 colour", s_as_dbg_mem1, i8sz);
+  as_dbg_tally("MEM1 col uncach", (const u8 *)MEM_K0_TO_K1(s_as_dbg_mem1), i8sz);
+
+  // Z formats into MEM1: if the copy engine works, this says which one to use.
+  memset(s_as_dbg_mem1, 0xA5, rgbasz);
+  DCFlushRange(s_as_dbg_mem1, rgbasz);
+  GX_PixModeSync();
+  GX_SetTexCopySrc(cx, cy, CW, CH);
+  GX_SetTexCopyDst(CW, CH, GX_TF_Z8, GX_FALSE);
+  GX_CopyTex(s_as_dbg_mem1, GX_FALSE);
+  GX_PixModeSync();
+  GX_DrawDone();
+  DCInvalidateRange(s_as_dbg_mem1, i8sz);
+  as_dbg_tally("MEM1 Z8", (const u8 *)MEM_K0_TO_K1(s_as_dbg_mem1), i8sz);
+
+  memset(s_as_dbg_mem1, 0xA5, rgbasz);
+  DCFlushRange(s_as_dbg_mem1, rgbasz);
+  GX_PixModeSync();
+  GX_SetTexCopySrc(cx, cy, CW, CH);
+  GX_SetTexCopyDst(CW, CH, GX_TF_Z24X8, GX_FALSE);
+  GX_CopyTex(s_as_dbg_mem1, GX_FALSE);
+  GX_PixModeSync();
+  GX_DrawDone();
+  DCInvalidateRange(s_as_dbg_mem1, rgbasz);
+  as_dbg_tally("MEM1 Z24X8", (const u8 *)MEM_K0_TO_K1(s_as_dbg_mem1), rgbasz);
+  as_dbg_hexrow_rgba("MEM1 Z24X8 ARGB", (const u8 *)MEM_K0_TO_K1(s_as_dbg_mem1), CW);
+
+  GX_SetCopyFilter(rmode->aa, rmode->sample_pattern, GX_TRUE, rmode->vfilter);
+  GX_InvalidateTexAll();
+  fflush(stdout);
+}
+#endif // AS_DBG_PARK_CHECK
+#endif
 
 // RGBA8 tile write, row 0 only (ramps are 1024x1). 4x4 RGBA8 tiles hold a
 // 32-byte AR plane then a 32-byte GB plane.
@@ -7323,6 +7638,27 @@ void DoRender()
   if (as_frame_peels)
     as_setup_frame(p5, p6); // texgen matrices + GR16 mask konsts
 
+#if AUTOSORT_DEBUG_LOG
+  // Frame gate, printed whether peeling ran or not: "peels=0" with the reason
+  // beside it is the answer to "the preset does nothing" half the time.
+  s_as_dbg_armed = false;
+  if (++s_as_dbg_frame >= s_as_dbg_quiet_until)
+  {
+    s_as_dbg_armed = true;
+    if (++s_as_dbg_burst >= AS_DBG_BURST)
+    {
+      s_as_dbg_burst = 0;
+      s_as_dbg_quiet_until = s_as_dbg_frame + AS_DBG_QUIET;
+    }
+    printf("[AS] f=%u preset=%d peels=%d ready=%d rtt=%d TR=%d layer_sort=%d "
+           "aa=%d W=%.5f..%.5f p5=%.6f p6=%.6f\n",
+           (u32)FrameCount, AUTOSORT(), as_frame_peels, (int)s_as_ready,
+           (int)s_rtt_pass, TransLST ? 1 : 0, (int)LAYER_SORT(),
+           (int)rmode->aa, vtx_min_Z, vtx_max_Z, p5, p6);
+    fflush(stdout);
+  }
+#endif
+
   // layer_back_tex implies the sort too: it IS a tier rule, and without the
   // sort running there is nothing to reorder.
   const u32 layer_back_tex = LAYER_BACK_TEX();
@@ -7644,7 +7980,14 @@ void DoRender()
       // them writes no Z, so the selection is still intact). The copy filter
       // must not blend rows into a depth snapshot; restore it right after
       // for the end-of-frame display copy.
+#if AUTOSORT_DEBUG_LOG
+      if (s_as_dbg_armed) as_dbg_poison_refs();
+#endif
       GX_SetCopyFilter(GX_FALSE, NULL, GX_FALSE, NULL);
+      // PixModeSync BEFORE the copy, so the pixel engine has retired the writes
+      // this pass just made instead of the copy lifting stale tiles. This is
+      // what the (working) RTT grab does; the snapshot only synced afterwards.
+      GX_PixModeSync();
       GX_SetTexCopySrc(0, 0, rmode->fbWidth, rmode->efbHeight);
       GX_SetTexCopyDst(rmode->fbWidth, rmode->efbHeight, GX_TF_Z8, GX_FALSE);
       GX_CopyTex(s_as_zref_hi, GX_FALSE);
@@ -7653,6 +7996,19 @@ void DoRender()
       GX_PixModeSync();
       GX_SetCopyFilter(rmode->aa, rmode->sample_pattern, GX_TRUE, rmode->vfilter);
       GX_InvalidateTexAll(); // fresh snapshot must not hit stale TMEM lines
+
+#if AUTOSORT_DEBUG_LOG
+      if (s_as_dbg_armed)
+      {
+        // The depth the near-park quad below writes, in the same 16-bit units
+        // the snapshot holds: screen z = 1 - p5 + p6/W, times 65536.
+        const float park_z = 1.0f - p5 + p6 / (vtx_min_Z * 1.0005f);
+        float park_f = park_z * 65536.0f;
+        if (park_f < 0.0f) park_f = 0.0f;
+        if (park_f > 65535.0f) park_f = 65535.0f;
+        as_dbg_census((int)segs[seg].as_peel, (u32)park_f);
+      }
+#endif
 
       // 2. Park the Z buffer just inside the near plane so the GX_LESS walk
       // can hunt for the minimum (= farthest fragment). 1.0005 keeps the
@@ -7669,6 +8025,31 @@ void DoRender()
       GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORDNULL, GX_TEXMAP_NULL, GX_COLOR0A0);
       GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
       as_submit_zquad(dc_width, dc_height, vtx_min_Z * 1.0005f, emit_clr1);
+
+#if AUTOSORT_DEBUG_LOG && AS_DBG_PARK_CHECK
+      if (s_as_dbg_armed)
+      {
+        // Every pixel now holds a depth we computed ourselves. Copy it straight
+        // back out: this is the EFB Z copy path under test with a known answer.
+        const float park_z = 1.0f - p5 + p6 / (vtx_min_Z * 1.0005f);
+        float park_f = park_z * 65536.0f;
+        if (park_f < 0.0f) park_f = 0.0f;
+        if (park_f > 65535.0f) park_f = 65535.0f;
+        as_dbg_poison_refs();
+        GX_SetCopyFilter(GX_FALSE, NULL, GX_FALSE, NULL);
+        GX_PixModeSync();
+        GX_SetTexCopySrc(0, 0, rmode->fbWidth, rmode->efbHeight);
+        GX_SetTexCopyDst(rmode->fbWidth, rmode->efbHeight, GX_TF_Z8, GX_FALSE);
+        GX_CopyTex(s_as_zref_hi, GX_FALSE);
+        GX_SetTexCopyDst(rmode->fbWidth, rmode->efbHeight, GX_CTF_Z8M, GX_FALSE);
+        GX_CopyTex(s_as_zref_mid, GX_FALSE);
+        GX_PixModeSync();
+        GX_SetCopyFilter(rmode->aa, rmode->sample_pattern, GX_TRUE, rmode->vfilter);
+        GX_InvalidateTexAll();
+        as_dbg_census(-1, (u32)park_f);
+        as_dbg_copy_probe(vtx_min_Z * 1.0005f);
+      }
+#endif
 
       // 3. Select pipeline: TEV depth-compare kill + minimum-Z walk.
       as_setup_select_tev(first_peel);
@@ -10704,6 +11085,13 @@ bool InitRenderer()
   // SCOPE_DEBUG_LOG and there is no point looking for [SS] lines at all.
   printf("[SS] scope pass logger ARMED (burst=%d, quiet=%d passes, heartbeat=%d)\n",
          SS_BURST, SS_QUIET_PASSES, SS_HEARTBEAT);
+  fflush(stdout);
+#endif
+#if AUTOSORT_DEBUG_LOG
+  // If this line is missing from ndclog.txt the build did not pick up
+  // AUTOSORT_DEBUG_LOG and there is no point looking for [AS] lines.
+  printf("[AS] autosort probe ARMED (burst=%d, quiet=%d frames, grid=%dx%d)\n",
+         AS_DBG_BURST, AS_DBG_QUIET, AS_DBG_GRID_X, AS_DBG_GRID_Y);
   fflush(stdout);
 #endif
 #if LOGO_DEBUG_LOG
