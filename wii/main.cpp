@@ -698,16 +698,32 @@ extern "C" { int get_debug_skip_tex() { return g_debug_skip_tex; } }
 // texture that is a BACKDROP — its translucent strips sort behind every other
 // one at the same depth instead of painting over them. 0 = off. Unlike
 // debug_skip_tex this is a real fix, not a diagnostic: set it per game in the
-// cfg (Puyo Puyo 4: 0x118000, its two playfields).
-int g_layer_back_tex = 0;
-extern "C" { int get_layer_back_tex() { return g_layer_back_tex; } }
+// cfg as a comma list of up to 4 addresses, e.g. layer_back_tex=0x118000.
+// General/cfg-driven mechanism only — a per-game hack with its own hardcoded
+// addresses (like Puyo Puyo 4's) does NOT live in this array or in this file:
+// see PUYO_HACK() below, whose addresses live in gxRend.cpp and get merged
+// into this same list at read time instead.
+#define LAYER_BACK_TEX_MAX 4
+int g_layer_back_tex[LAYER_BACK_TEX_MAX] = { 0, 0, 0, 0 };
+extern "C" {
+  // Slot 0 is what the boot dump and gxRend's "is this preset on at all" gate
+  // read; get_layer_back_tex_n() is what the strip walk actually compares
+  // against, all 4 slots.
+  int get_layer_back_tex()        { return g_layer_back_tex[0]; }
+  int get_layer_back_tex_n(int i) { return (i >= 0 && i < LAYER_BACK_TEX_MAX)
+                                           ? g_layer_back_tex[i] : 0; }
+}
 
-// puyo_hack: the one address layer_back_tex needs for Puyo Puyo 4 — its two
-// playfields, which the game submits AFTER the puyos standing in them. Named as
-// a per-game hack (like hokuto_hack / dino_crisis_inventory_hack) because that
-// is what it is: layer_back_tex itself is the general mechanism, this is just
-// the menu switch that fills in this game's value without touching the cfg.
-#define PUYO_BACKDROP_TEX 0x118000
+int g_puyo_hack_preset = 0;
+// 0=off, 1=on (Puyo Puyo 4's two hardcoded backdrop VRAM addresses — the
+//   gameplay playfields AND the intro/main screen background, both submitted
+//   AFTER the content standing in them. The addresses themselves live in
+//   gxRend.cpp right next to PUYO_HACK(), not here: a hack's RAM addresses
+//   belong with the renderer that reads them, this is just the page-6 on/off
+//   switch, same shape as hokuto_hack — see gxRend.cpp PUYO_HACK())
+extern "C" {
+  int get_puyo_hack_preset() { return g_puyo_hack_preset; }
+}
 
 // FRAMEBUFFER_2D candidate detector (gxRend.cpp, StartRender's bit-24 branch).
 // The [PATH] 2D-blit / 2D-after-3D lines only ever printed from INSIDE the
@@ -2468,18 +2484,18 @@ bool displayOptionsMenu()
     printf(" Hokuto no Ken : specific hack");
     printf("\n");
 
-    // --- Row: Puyo Puyo playfield backdrop (fills in layer_back_tex) ---
-    // The game submits its two playfields AFTER the puyos standing in them, so
-    // painter order paints the backdrop over its own contents and every puyo in
-    // a field goes dim behind the grid. This sorts that texture back.
+    // --- Row: Puyo Puyo backdrops (PUYO_HACK() in gxRend.cpp; the two
+    // hardcoded addresses live there, not here) ---
+    // Two unrelated backdrops, both submitted AFTER the content standing in
+    // them: the gameplay playfields (puyos go dim behind the grid) and the
+    // intro/main screen background (fading UI/logo pieces get buried under
+    // it). This sorts both textures back behind everything else at their tier.
     printf("%s PUYO HACK      : ", (selectedRow == OPT_PUYO_HACK) ? ">" : " ");
-    if (g_layer_back_tex == PUYO_BACKDROP_TEX)
-      printf("[< ON (BG BEHIND)    >]");
-    else if (g_layer_back_tex)
-      printf("[< OFF (CFG %06X) >]", (unsigned)g_layer_back_tex);
-    else
-      printf("[< OFF               >]");
-    printf(" Puyo Puyo : puyos dim behind grid");
+    switch (g_puyo_hack_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (RAM hack)     >]"); break;
+    }
+    printf(" Puyo Puyo : Intro + Gameplay");
     printf("\n");
 
     // --- Row: Dino Crisis inventory preview icon redecode hack (gxRend.cpp DINO_CRISIS_INVENTORY_HACK) ---
@@ -2644,9 +2660,7 @@ bool displayOptionsMenu()
           break;
         case OPT_LAYER_SORT:  g_layer_sort_preset     = (g_layer_sort_preset       + 1) % 2; break;
         case OPT_LIST_ORDER:  g_list_order_preset     = (g_list_order_preset       + 1) % 2; break;
-        case OPT_PUYO_HACK:
-          g_layer_back_tex = (g_layer_back_tex == PUYO_BACKDROP_TEX) ? 0 : PUYO_BACKDROP_TEX;
-          break;
+        case OPT_PUYO_HACK:    g_puyo_hack_preset      = (g_puyo_hack_preset       + 1) % 2; break;
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 2) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
@@ -2737,9 +2751,7 @@ bool displayOptionsMenu()
           break;
         case OPT_LAYER_SORT:  g_layer_sort_preset     = (g_layer_sort_preset       + 1) % 2; break;
         case OPT_LIST_ORDER:  g_list_order_preset     = (g_list_order_preset       + 1) % 2; break;
-        case OPT_PUYO_HACK:
-          g_layer_back_tex = (g_layer_back_tex == PUYO_BACKDROP_TEX) ? 0 : PUYO_BACKDROP_TEX;
-          break;
+        case OPT_PUYO_HACK:    g_puyo_hack_preset      = (g_puyo_hack_preset       + 1) % 2; break;
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 1) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
@@ -3592,6 +3604,7 @@ int main(int argc, wchar *argv[])
     else
       printf("Canvas Width   : %d\n", g_canvas_width_preset);
     printf("Hokuto Hack    : %s\n", g_hokuto_hack_preset ? "ON (TR TIER SORT)" : "OFF (LEGACY)");
+    printf("Puyo Hack      : %s\n", g_puyo_hack_preset ? "ON (RAM hack)" : "OFF (LEGACY)");
     printf("ISP Depth Func : %s\n", g_isp_depth_func_preset == 0 ? "OFF (LEGACY)"
                                   : (g_isp_depth_func_preset == 1 ? "ON (OPAQUE/PT)" : "ON (ALL LISTS)"));
     printf("ISP Cull       : %s\n", g_isp_cull_preset == 0 ? "OFF (LEGACY)"

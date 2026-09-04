@@ -589,7 +589,8 @@ extern int g_vtx_alpha_preset;
 extern int g_list_order_preset;
 extern int g_debug_skip_tex;
 extern int g_debug_skip_tex_saved;
-extern int g_layer_back_tex;
+#define LAYER_BACK_TEX_MAX 4
+extern int g_layer_back_tex[LAYER_BACK_TEX_MAX];
 extern int g_x_scaler_preset;
 extern int g_y_scaler_preset;
 extern int g_h_scaler_preset;
@@ -630,6 +631,7 @@ extern int g_mute_pcm16_preset;
 extern int g_bg_poly_preset;
 extern int g_layer_sort_preset;
 extern int g_hokuto_hack_preset;
+extern int g_puyo_hack_preset;
 extern int g_isp_depth_func_preset;
 extern int g_isp_cull_preset;
 extern int g_subpass_zclear_preset;
@@ -685,7 +687,8 @@ struct GamePreset
     int vtx_alpha;
     int list_order;
     int debug_skip_tex;
-    int layer_back_tex;
+    int layer_back_tex[LAYER_BACK_TEX_MAX];
+    int layer_back_tex_n; // -1 = key absent, else how many slots were given
     int x_scaler;
     int y_scaler;
     int h_scaler;
@@ -730,6 +733,7 @@ struct GamePreset
     int bg_poly;
     int layer_sort;
     int hokuto_hack;
+    int puyo_hack;
     int isp_depth_func;
     int isp_cull;
     int subpass_zclear;
@@ -1002,6 +1006,30 @@ static int parse_mipmap(const char* v)
     return -1;
 }
 
+// Comma-separated VRAM address list, e.g. "0x118000,0x054000" — one game can
+// have more than one backdrop texture (Puyo Puyo 4: the gameplay playfields
+// AND a separate plate on the intro/main screen). Each element goes through
+// strtol(,,0) so hex and decimal both work, same as the old single-value form,
+// which stays valid: a list of one. Zero and unparseable elements are dropped
+// rather than stored, so a stray comma cannot turn into a match on address 0
+// (every untextured strip would qualify). Returns how many were stored.
+static int parse_addr_list(const char* v, int* out, int max)
+{
+    int n = 0;
+    while (*v && n < max)
+    {
+        while (*v == ',' || isspace((unsigned char)*v)) v++;
+        if (!*v) break;
+        char* end = 0;
+        long a = strtol(v, &end, 0);
+        if (end == v) break;             // no digits consumed: stop, don't spin
+        if (a > 0) out[n++] = (int)a;
+        v = end;
+        while (*v && *v != ',') v++;     // skip anything trailing this element
+    }
+    return n;
+}
+
 // -1 is itself a valid, meaningful audio_buffers value (DEFAULT/SAVED — leave
 // settings.emulator.AudioBuffers alone), unlike every other field where -1 is
 // only ever the "key absent from this section" sentinel. So this field uses
@@ -1074,7 +1102,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     // base 0: takes "0x52C000" straight off a [SCN] census addr= field, and
     // plain decimal too. Diagnostic only — it removes geometry.
     else if (key_eq(key, "debug_skip_tex")) p->debug_skip_tex = (int)strtol(val, 0, 0);
-    else if (key_eq(key, "layer_back_tex")) p->layer_back_tex = (int)strtol(val, 0, 0);
+    else if (key_eq(key, "layer_back_tex")) p->layer_back_tex_n = parse_addr_list(val, p->layer_back_tex, LAYER_BACK_TEX_MAX);
     else if (key_eq(key, "x_scaler"))   p->x_scaler   = parse_bool(val);
     else if (key_eq(key, "y_scaler"))   p->y_scaler   = parse_bool(val);
     else if (key_eq(key, "h_scaler"))   p->h_scaler   = parse_bool(val);
@@ -1119,6 +1147,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
     else if (key_eq(key, "layer_sort"))     p->layer_sort     = parse_bool(val);
     else if (key_eq(key, "hokuto_hack"))    p->hokuto_hack    = parse_bool(val);
+    else if (key_eq(key, "puyo_hack"))      p->puyo_hack      = parse_bool(val);
     else if (key_eq(key, "isp_depth_func")) p->isp_depth_func = atoi(val);
     else if (key_eq(key, "isp_cull"))       p->isp_cull       = atoi(val);
     else if (key_eq(key, "subpass_zclear")) p->subpass_zclear = parse_bool(val);
@@ -1160,7 +1189,8 @@ static void preset_clear(GamePreset* cur)
     cur->vtx_alpha = -1;
     cur->list_order = -1;
     cur->debug_skip_tex = -1;
-    cur->layer_back_tex = -1;
+    cur->layer_back_tex_n = -1;
+    for (int i = 0; i < LAYER_BACK_TEX_MAX; i++) cur->layer_back_tex[i] = 0;
     cur->x_scaler = -1;
     cur->y_scaler = -1;
     cur->h_scaler = -1;
@@ -1195,6 +1225,7 @@ static void preset_clear(GamePreset* cur)
     cur->bg_poly = -1;
     cur->layer_sort = -1;
     cur->hokuto_hack = -1;
+    cur->puyo_hack = -1;
     cur->isp_depth_func = -1;
     cur->isp_cull = -1;
     cur->subpass_zclear = -1;
@@ -1234,8 +1265,14 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->list_order   >= 0) { g_list_order_preset   = p->list_order;   printf("  list_order   -> %d\n", p->list_order); }
     if (p->debug_skip_tex > 0) { g_debug_skip_tex = p->debug_skip_tex; g_debug_skip_tex_saved = p->debug_skip_tex;
                                  printf("  debug_skip_tex -> %06X (DIAGNOSTIC: strips hidden)\n", (unsigned)p->debug_skip_tex); }
-    if (p->layer_back_tex > 0) { g_layer_back_tex = p->layer_back_tex;
-                                 printf("  layer_back_tex -> %06X\n", (unsigned)p->layer_back_tex); }
+    if (p->layer_back_tex_n >= 0) {
+        for (int i = 0; i < LAYER_BACK_TEX_MAX; i++)
+            g_layer_back_tex[i] = (i < p->layer_back_tex_n) ? p->layer_back_tex[i] : 0;
+        printf("  layer_back_tex ->");
+        if (p->layer_back_tex_n == 0) printf(" off");
+        for (int i = 0; i < p->layer_back_tex_n; i++) printf(" %06X", (unsigned)p->layer_back_tex[i]);
+        printf("\n");
+    }
     if (p->x_scaler   >= 0) { g_x_scaler_preset       = p->x_scaler;   printf("  x_scaler   -> %d\n", p->x_scaler);   }
     if (p->y_scaler   >= 0) { g_y_scaler_preset       = p->y_scaler;   printf("  y_scaler   -> %d\n", p->y_scaler);   }
     if (p->h_scaler   >= 0) { g_h_scaler_preset       = p->h_scaler;   printf("  h_scaler   -> %d\n", p->h_scaler);   }
@@ -1280,6 +1317,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
     if (p->layer_sort     >= 0) { g_layer_sort_preset    = p->layer_sort;      printf("  layer_sort     -> %d\n", p->layer_sort);     }
     if (p->hokuto_hack    >= 0) { g_hokuto_hack_preset   = p->hokuto_hack;     printf("  hokuto_hack    -> %d\n", p->hokuto_hack);    }
+    if (p->puyo_hack      >= 0) { g_puyo_hack_preset     = p->puyo_hack;       printf("  puyo_hack      -> %d\n", p->puyo_hack);      }
     if (p->isp_depth_func >= 0) { g_isp_depth_func_preset = p->isp_depth_func; printf("  isp_depth_func -> %d\n", p->isp_depth_func); }
     if (p->isp_cull       >= 0) { g_isp_cull_preset      = p->isp_cull;        printf("  isp_cull       -> %d\n", p->isp_cull);       }
     if (p->subpass_zclear >= 0) { g_subpass_zclear_preset = p->subpass_zclear; printf("  subpass_zclear -> %d\n", p->subpass_zclear); }

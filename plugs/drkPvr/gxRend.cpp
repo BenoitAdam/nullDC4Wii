@@ -118,8 +118,24 @@ extern "C" int get_debug_skip_tex();
 // Implies the translucent sort (it IS a tier rule, so the sort has to run).
 // Matching strips get tier 4 — above every LAYER_SORT() tier — so they draw
 // first and everything else composites on top in its normal submission order.
-extern "C" int get_layer_back_tex();
+// Up to LAYER_BACK_TEX_MAX addresses: one game can have more than one backdrop
+// (Puyo Puyo 4 has the two gameplay playfields at 0x118000 AND a separate plate
+// on the intro/main screen), and one slot cannot express that. Written in the
+// cfg as a comma list, `layer_back_tex=0x118000,0x054000`; a single address
+// still works, it is a list of one. Slot 0 is what the boot dump prints.
+#define LAYER_BACK_TEX_MAX 4
+extern "C" int get_layer_back_tex();        // slot 0 only
+extern "C" int get_layer_back_tex_n(int i); // slot i, 0 when unset
 #define LAYER_BACK_TEX() ((u32)get_layer_back_tex())
+
+// puyo_hack: Puyo Puyo 4's own two backdrop addresses, folded into the
+// layer_back_tex list above when this per-game switch (page 6, PUYO HACK) is
+// on. Cfg/menu never carries a raw hex address for this game -- the addresses
+// are hardcoded here, right next to the getter that gates them, the same way
+// HOKUTO_DEBRIS_TEX_ADDR_* sit next to HOKUTO_HACK() further down this file.
+// See where they're defined (near trans_strip_cmp()) for what each one is.
+extern "C" int get_puyo_hack_preset();
+#define PUYO_HACK() (get_puyo_hack_preset() == 1)
 
 // Specific debug for FMV
 int fmv_debug = 0;
@@ -549,14 +565,27 @@ static unsigned s_logo_draw_n = 0; // per-pass counter for the draw-time lines
 // LOGO_DEBUG_LOG above: the per-strip bbox scan is too expensive for a
 // shipping build, and at 0 none of it is compiled at all.
 //
-// OFF: it did its job on Puyo Puyo 4 (2026-09-04) and both bugs it was built to
-// find are fixed. What it established, so the next capture does not have to:
+// OFF: round 3 (2026-09-04) found what it was re-armed for. Puyo21.txt caught
+// the intro/main screen's THIRD layering bug in one 9-strip frame: `054000`
+// (ARGB1555 1024x512, full-screen) is the LAST strip submitted, col=FFFFFFFF
+// (opaque at the source — not an alpha-forcing bug, `vtx_alpha=on` correctly
+// did nothing), while the other 8 strips are small UI/logo pieces mid fade-in
+// (col alpha 00/77/FF across the frame) that should sit ON TOP of it.
+// Submission order buries them under the backdrop every frame instead — the
+// same shape as the `118000` gameplay-playfield bug, different screen. Fixed
+// by adding `054000` as a second `layer_back_tex` slot; its own address
+// convention got proven twice now: Deecy's "Address: 0000A800" is the RAW
+// pre-shift TexAddr, `0xA800<<3 = 0x54000`, exact match to the census line.
+// What all three rounds on this game established, so the next capture does
+// not have to re-derive it:
 //   * TRat=0 with lt=0 strips at the END of the walk = the game opens its
 //     TRANSLUCENT list first and its OPAQUE list last -> `list_order`.
 //   * The two `118000` quads (x=0..256 and x=384..640) are the PLAYFIELDS, and
 //     they are submitted after the puyos standing in them -> `layer_back_tex`.
 //   * The whole scene sits at one depth, W=10000 for every strip, so nothing
 //     depth-based (trans_sort, autosort) can order this content.
+//   * `col=` in the per-strip line is the vertex colour BEFORE any alpha
+//     forcing — read it before blaming `vtx_alpha` a second time.
 // Flip to 1 and rebuild to re-arm it for the next game; nothing else needs
 // changing (see feedback-quiet-diagnostics in project memory).
 #define SCENE_DEBUG_LOG 0
@@ -5683,6 +5712,16 @@ static int trans_strip_cmp(const void *a, const void *b)
   return 0;
 }
 
+// puyo_hack: Puyo Puyo 4's own two backdrop VRAM addresses (see PUYO_HACK()'s
+// doc near LAYER_BACK_TEX() above). Two UNRELATED backdrops on two different
+// screens, both submitted AFTER the content standing in them, so both need
+// layer_back_tex's tier-4 treatment. Meaningless -- and could mis-fire -- in
+// any other game, which is why they live behind their own preset instead of
+// the general layer_back_tex cfg key, exactly like HOKUTO_DEBRIS_TEX_ADDR_*
+// above lives behind HOKUTO_HACK().
+#define PUYO_BACKDROP_TEX_PLAYFIELDS 0x118000u // gameplay: the two playfields, puyos go dim behind the grid
+#define PUYO_BACKDROP_TEX_INTRO      0x054000u // intro/main screen: fading UI/logo pieces get buried under it
+
 // Fixed GX scratch texture, always 640x480 RGB565 (4x4 tiled), 32-byte aligned
 // as EFB-copy destinations must be. Shared (file scope) between
 // PresentFramebuffer() below — which decodes the DC framebuffer into it — and
@@ -7660,9 +7699,34 @@ void DoRender()
 #endif
 
   // layer_back_tex implies the sort too: it IS a tier rule, and without the
-  // sort running there is nothing to reorder.
-  const u32 layer_back_tex = LAYER_BACK_TEX();
-  const bool trans_sort = (TRANS_SORT() || LAYER_SORT() || layer_back_tex) && !as_frame_peels; // read once per frame
+  // sort running there is nothing to reorder. Read once per frame (preset reads
+  // are per-frame, never per-strip) and compacted so the strip walk only ever
+  // scans the slots that are actually set.
+  u32 layer_back_tex[LAYER_BACK_TEX_MAX];
+  int layer_back_tex_n = 0;
+  for (int i = 0; i < LAYER_BACK_TEX_MAX; i++)
+  {
+    const u32 a = (u32)get_layer_back_tex_n(i);
+    if (a)
+      layer_back_tex[layer_back_tex_n++] = a;
+  }
+  // puyo_hack: fold this game's two hardcoded addresses into the same list,
+  // deduped against whatever the cfg already put there (harmless overlap,
+  // just don't waste a slot on it) and capped at LAYER_BACK_TEX_MAX like
+  // every other source of an address here.
+  if (PUYO_HACK())
+  {
+    const u32 hack[2] = { PUYO_BACKDROP_TEX_PLAYFIELDS, PUYO_BACKDROP_TEX_INTRO };
+    for (int h = 0; h < 2 && layer_back_tex_n < LAYER_BACK_TEX_MAX; h++)
+    {
+      bool dup = false;
+      for (int i = 0; i < layer_back_tex_n; i++)
+        if (layer_back_tex[i] == hack[h]) { dup = true; break; }
+      if (!dup)
+        layer_back_tex[layer_back_tex_n++] = hack[h];
+    }
+  }
+  const bool trans_sort = (TRANS_SORT() || LAYER_SORT() || layer_back_tex_n) && !as_frame_peels; // read once per frame
   bool ts_active = false;
   int ts_idx = 0;
   int ts_count = 0;
@@ -8232,10 +8296,20 @@ void DoRender()
             // tier above every other, so it draws first and everything else
             // composites on top of it. See the macro doc at the top of the file
             // for why this is address-keyed rather than inferred.
-            if (layer_back_tex && cur_mod->pcw.Texture &&
-                (u32)((cur_mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) == layer_back_tex)
-              tclass = 4;
-            else if (isp_tier && cur_mod->pcw.Texture)
+            if (layer_back_tex_n && cur_mod->pcw.Texture)
+            {
+              const u32 a = (u32)((cur_mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
+              for (int i = 0; i < layer_back_tex_n; i++)
+                if (a == layer_back_tex[i])
+                {
+                  tclass = 4;
+                  break;
+                }
+            }
+            // tclass != 4: a backdrop match above wins outright. This was an
+            // `else if` on the single-address test; with the test now a loop it
+            // has to re-check the result instead.
+            if (tclass != 4 && isp_tier && cur_mod->pcw.Texture)
             {
               if (cur_mod->tcw.NO_PAL.PixelFmt == 2 && cur_mod->tcw.NO_PAL.VQ_Comp)
                 tclass = 2; // VQ stage art: bottom layer
@@ -10171,8 +10245,12 @@ static void scene_dump_pass()
       const char *cls = (lt == 0) ? "OP" : (lt == 2) ? "TR"
                       : (lt == 4) ? "PT" : "MV";
       const u32 tex_addr = (u32)((cur->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
+      // ct = PCW.Col_Type (0 packed, 1 float, 2 intensity mode 1, 3 mode 2).
+      // Printed so a strip here can be matched against an external dump by its
+      // full render STATE, the one identifier that does not depend on either
+      // tool's address convention.
       printf("[SCN] #%03d %s lt=%d cnt=%2d tex=%d addr=%06X fmt=%d vq=%d pal=%d %dx%d "
-             "src=%d dst=%d shad=%d usea=%d ita=%d zw=%d dm=%d cull=%d col=%08X "
+             "src=%d dst=%d shad=%d usea=%d ita=%d zw=%d dm=%d cull=%d ct=%d col=%08X "
              "x=%.0f..%.0f y=%.0f..%.0f W=%.5f..%.2f\n",
              idx, cls, (int)cur->pcw.ListType, (int)c, (int)cur->pcw.Texture,
              tex_addr, (int)cur->tcw.NO_PAL.PixelFmt, (int)cur->tcw.NO_PAL.VQ_Comp,
@@ -10181,7 +10259,7 @@ static void scene_dump_pass()
              (int)cur->tsp.SrcInstr, (int)cur->tsp.DstInstr,
              (int)cur->tsp.ShadInstr, (int)cur->tsp.UseAlpha, (int)cur->tsp.IgnoreTexA,
              (int)cur->isp.ZWriteDis, (int)cur->isp.DepthMode, (int)cur->isp.CullMode,
-             vtx[0].col,
+             (int)cur->pcw.Col_Type, vtx[0].col,
              minx, maxx, miny, maxy, minw, maxw);
     }
     vtx += c;
