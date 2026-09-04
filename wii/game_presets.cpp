@@ -586,6 +586,7 @@ extern int g_ppz_write_preset;
 extern int g_trans_zwrite_preset;
 extern int g_sprite_color_preset;
 extern int g_vtx_alpha_preset;
+extern int g_list_order_preset;
 extern int g_x_scaler_preset;
 extern int g_y_scaler_preset;
 extern int g_h_scaler_preset;
@@ -679,6 +680,7 @@ struct GamePreset
     int trans_zwrite;
     int sprite_color;
     int vtx_alpha;
+    int list_order;
     int x_scaler;
     int y_scaler;
     int h_scaler;
@@ -1063,6 +1065,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "trans_zwrite")) p->trans_zwrite = parse_bool(val);
     else if (key_eq(key, "sprite_color")) p->sprite_color = parse_bool(val);
     else if (key_eq(key, "vtx_alpha"))    p->vtx_alpha    = parse_bool(val);
+    else if (key_eq(key, "list_order"))   p->list_order   = parse_bool(val);
     else if (key_eq(key, "x_scaler"))   p->x_scaler   = parse_bool(val);
     else if (key_eq(key, "y_scaler"))   p->y_scaler   = parse_bool(val);
     else if (key_eq(key, "h_scaler"))   p->h_scaler   = parse_bool(val);
@@ -1146,6 +1149,7 @@ static void preset_clear(GamePreset* cur)
     cur->trans_zwrite = -1;
     cur->sprite_color = -1;
     cur->vtx_alpha = -1;
+    cur->list_order = -1;
     cur->x_scaler = -1;
     cur->y_scaler = -1;
     cur->h_scaler = -1;
@@ -1216,6 +1220,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->trans_zwrite >= 0) { g_trans_zwrite_preset = p->trans_zwrite; printf("  trans_zwrite -> %d\n", p->trans_zwrite); }
     if (p->sprite_color >= 0) { g_sprite_color_preset = p->sprite_color; printf("  sprite_color -> %d\n", p->sprite_color); }
     if (p->vtx_alpha    >= 0) { g_vtx_alpha_preset    = p->vtx_alpha;    printf("  vtx_alpha    -> %d\n", p->vtx_alpha); }
+    if (p->list_order   >= 0) { g_list_order_preset   = p->list_order;   printf("  list_order   -> %d\n", p->list_order); }
     if (p->x_scaler   >= 0) { g_x_scaler_preset       = p->x_scaler;   printf("  x_scaler   -> %d\n", p->x_scaler);   }
     if (p->y_scaler   >= 0) { g_y_scaler_preset       = p->y_scaler;   printf("  y_scaler   -> %d\n", p->y_scaler);   }
     if (p->h_scaler   >= 0) { g_h_scaler_preset       = p->h_scaler;   printf("  h_scaler   -> %d\n", p->h_scaler);   }

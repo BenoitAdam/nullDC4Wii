@@ -233,9 +233,17 @@ int g_sprite_color_preset = 1;
 // font needs it); 1 = honour TSP.UseAlpha, so vertex-alpha fades work.
 int g_vtx_alpha_preset = 0;
 
+// PVR list-type render order (see LIST_ORDER in gxRend.cpp). 0 = legacy, the
+// flat strip buffer is drawn in TA submission order; 1 = when a game opens its
+// OPAQUE list AFTER its translucent one, draw the opaque range first, like real
+// PVR does (Puyo Puyo 4 submits its background plates last and they cover the
+// whole game). No-op for every game that submits OP first.
+int g_list_order_preset = 0;
+
 extern "C" {
   int get_sprite_color_preset() { return g_sprite_color_preset; }
   int get_vtx_alpha_preset()    { return g_vtx_alpha_preset; }
+  int get_list_order_preset()   { return g_list_order_preset; }
 }
 
 extern "C" {
@@ -1542,6 +1550,7 @@ void checkBiosFiles()
 #define OPT_DEBUG_MESSAGE 75  // shown on Page 6 (EXPERIMENTAL), debug block at the end
 #define OPT_DEBUG_LOOP   76   // shown on Page 6 (EXPERIMENTAL), debug block at the end
 #define OPT_DEBUG_GDROM  77   // shown on Page 6 (EXPERIMENTAL), debug block at the end
+#define OPT_LIST_ORDER   78   // shown on Page 3 (DEPTH & WIDTH), under LAYER SORT
 #define OPT_DINO_CRISIS_INVENTORY_HACK 72 // shown on Page 5 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_ROW_COUNT   66
 
@@ -1615,6 +1624,7 @@ static const int OPT_PAGE2_ROWS[] = {
   OPT_ISP_CULL,
   OPT_AUTOSORT,
   OPT_LAYER_SORT,
+  OPT_LIST_ORDER,
   OPT_X_SCALER,
   OPT_Y_SCALER,
   OPT_H_SCALER,
@@ -2180,6 +2190,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (TR TIER SORT) >]"); break;
     }
     printf(" for 2D scenes drawn at ONE depth");
+    printf("\n");
+
+    // --- Row: PVR list-type render order (OP before TR, whatever the TA order) ---
+    printf("%s LIST ORDER     : ", (selectedRow == OPT_LIST_ORDER) ? ">" : " ");
+    switch (g_list_order_preset) {
+      case 0: printf("[< OFF (TA ORDER)    >]"); break;
+      case 1: printf("[< ON (OPAQUE FIRST) >]"); break;
+    }
+    printf(" if bg covers the game (Puyo Puyo)");
     printf("\n\n");
 
     // --- Row: PVR horizontal X-Scaler ---
@@ -2569,6 +2588,7 @@ bool displayOptionsMenu()
           else                                   g_canvas_width_preset -= 16;
           break;
         case OPT_LAYER_SORT:  g_layer_sort_preset     = (g_layer_sort_preset       + 1) % 2; break;
+        case OPT_LIST_ORDER:  g_list_order_preset     = (g_list_order_preset       + 1) % 2; break;
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 2) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
@@ -2652,6 +2672,7 @@ bool displayOptionsMenu()
           else                                    g_canvas_width_preset += 16;
           break;
         case OPT_LAYER_SORT:  g_layer_sort_preset     = (g_layer_sort_preset       + 1) % 2; break;
+        case OPT_LIST_ORDER:  g_list_order_preset     = (g_list_order_preset       + 1) % 2; break;
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 1) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
@@ -3359,6 +3380,7 @@ int main(int argc, wchar *argv[])
     printf("PPZ_WRITE      : %s\n", g_ppz_write_preset ? "YES" : "NO");
     printf("Sprite Color   : %s\n", g_sprite_color_preset ? "YES (BaseCol)" : "NO (white)");
     printf("Vtx Alpha      : %s\n", g_vtx_alpha_preset ? "YES (TSP.UseAlpha)" : "NO (force opaque)");
+    printf("List Order     : %s\n", g_list_order_preset ? "ON (opaque list first)" : "OFF (TA order)");
     printf("TRANS ZWRITE   : %s\n", g_trans_zwrite_preset ? "ON (default)" : "OFF (debug)");
     printf("Poly Offset    : ");
     switch (g_poly_offset_preset) {

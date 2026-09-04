@@ -457,6 +457,41 @@ static unsigned s_logo_draw_n = 0; // per-pass counter for the draw-time lines
 #define LOGO_ARMED() (false)
 #endif
 
+// ── SCENE_DEBUG_LOG: "is anything being drawn at all, during ordinary
+//    gameplay" probe ──────────────────────────────────────────────────────
+// Unlike [SS] (triggered by a bit-24 pass) and [LOGO] (triggered by a boot
+// window + a specific texture address), this is for a game that goes BLANK
+// well into ordinary gameplay, with no known trigger to key off — so it just
+// samples StartRender passes periodically, forever, for as long as the game
+// runs. First target: Puyo Puyo 4/Fever, reported "can't see anything during
+// gameplay" (suspected the same class of bug as the Hokuto no Ken
+// missing-graphics hunt — see project memory). One capture answers:
+//   1. Does StartRender even run while the screen is blank, and how often is
+//      FB_W_SOF1 bit 24 (RTT/2D) set vs a plain 3D pass? -> [SCN] heartbeat
+//      line, unconditional, even while the burst dump below is quiet. Also
+//      turn on the existing "Debug Message" menu option for this capture —
+//      it prints the precise RTT / RTT-carry / 2D-after-3D / 2D-blit / 3D
+//      branch StartRender actually took on each pass, which this probe does
+//      not duplicate.
+//   2. Is any geometry submitted at all? VtxCnt==0 forever means the loss is
+//      upstream of the renderer (TA/list parsing), not in gxRend.cpp.
+//      -> heartbeat's strips=/vtx= fields.
+//   3. If strips exist, where do they land and what do they look like
+//      (texture addr/fmt, blend, alpha, first vertex colour)? All-off-screen,
+//      all-zero-alpha or all-clear-colour geometry reads as "blank" on a real
+//      TV despite being submitted correctly. -> [SCN] per-strip lines.
+// Compile-time, not DEBUG_MESSAGE()-gated, exactly like SCOPE_DEBUG_LOG /
+// LOGO_DEBUG_LOG above: the per-strip bbox scan is too expensive for a
+// shipping build, and at 0 none of it is compiled at all.
+// Flip to 0 and rebuild once the capture has been read (see
+// feedback-quiet-diagnostics in project memory — don't leave this on).
+#define SCENE_DEBUG_LOG 1
+
+#define SCN_BURST        8    // passes per burst
+#define SCN_QUIET_PASSES 200  // render passes of quiet between bursts
+#define SCN_HEARTBEAT    120  // proof-of-life line every N passes, always
+#define SCN_MAX_STRIPS   40   // per-strip lines per dumped pass
+
 // Where the [SS] output goes. InitRenderer() normally does
 // freopen("/ndclog.txt", "w", stdout) the moment the renderer starts, so EVERY
 // printf from gameplay onward disappears into a file on the SD card — which is
@@ -569,6 +604,34 @@ extern "C" int get_trans_sort_preset();
 //     depth_clip=1 (default; keeps the near-parked Z init off-plane).
 extern "C" int get_autosort_preset();
 #define AUTOSORT() (get_autosort_preset())
+
+// ── list_order: honour PVR list-type render order, not TA submission order ──
+// Real PVR2 sorts every polygon into a per-tile OPAQUE / PUNCH-THROUGH /
+// TRANSLUCENT list and renders them OP -> PT -> TR, no matter which order the
+// game handed the lists to the TA. This renderer keeps one flat strip buffer
+// and walks it in SUBMISSION order, with TransLST/PTLST marking where each
+// list opened -- which silently assumes the game submits OP first. A game that
+// opens the translucent list first and its opaque list afterwards therefore
+// gets its opaque geometry drawn LAST, painting over the whole scene.
+//
+// Puyo Puyo 4 (Puyo Puyo DA!) does exactly that: the gameplay sprites go out
+// as the TR list, then the two opaque full-screen background plates
+// (ARGB1555 512x512 at 058000 + 256x512 at 0D8000, SrcInstr=One/DstInstr=Zero)
+// follow in the OPAQUE list -- so the background covers the game after the
+// first frames. The [SCN] census shows this as TRat=0 with lt=0 strips at the
+// END of the walk.
+//
+//   0 = off  legacy submission-order walk (bit-identical for every game whose
+//            opaque list opens before its translucent one -- the condition
+//            below simply never fires, so this is a no-op for them).
+//   1 = on   when the opaque list opened AFTER the translucent one, its range
+//            is drawn as its own segment FIRST, then the rest of the frame.
+//
+// Only the plain (no punch-through split, no autosort peel) walk is reordered:
+// those two paths already rebuild the segment list from the same cursors and
+// are not needed by the games this fixes (Puyo Puyo submits no PT list at all).
+extern "C" int get_list_order_preset();
+#define LIST_ORDER() (get_list_order_preset() == 1)
 
 // Render-to-texture. May behave differently depending on FRAMEBUFFER_2D()
 //
@@ -1858,6 +1921,13 @@ Vertex *TransVTX = 0;
 PolyParam *TransMod = 0;
 Vertex *PT_VTX = 0;
 PolyParam *PT_Mod = 0;
+// LIST_ORDER(): same bookkeeping for the OPAQUE list. Only ever consulted when
+// the game opened the opaque list AFTER the translucent one — real PVR renders
+// OP -> PT -> TR per tile whatever order the TA received the lists in, while
+// this renderer's flat buffer is walked in submission order. See the macro doc.
+VertexList *OpaqueLST = 0;
+Vertex *OpaqueVTX = 0;
+PolyParam *OpaqueMod = 0;
 PolyParam *curMod = listModes;
 bool global_regd;
 
@@ -2292,6 +2362,9 @@ void reset_vtx_state()
   TransMod = 0;
   PT_VTX = 0;
   PT_Mod = 0;
+  OpaqueLST = 0;
+  OpaqueVTX = 0;
+  OpaqueMod = 0;
   // RTT_CARRY_OVERLAY(): a carried pass only ever survives into the ONE display
   // frame that follows it, so the frame origin goes back to the buffer origin
   // here like everything else.
@@ -7366,6 +7439,28 @@ void DoRender()
       segs[seg_count].as_tail = 1; seg_count++;
     }
   }
+  else if (LIST_ORDER() && OpaqueLST && TransLST &&
+           OpaqueLST > TransLST && OpaqueLST > carry_frame_lst &&
+           OpaqueLST < crLST)
+  {
+    // ── list_order: the game opened its OPAQUE list after its TRANSLUCENT one
+    // (see the macro doc at the top of the file). Draw the opaque range first,
+    // as real PVR would, then the rest of the frame in submission order.
+    //
+    // Segment 0 starts past TransLST, so the "flip into the translucent blend
+    // state" test (drawLST == seg_trans_begin, further down) never fires for
+    // it and the range draws opaque, which is exactly what its list type asks
+    // for. Segment 1 still begins at the frame origin, so any opaque strips
+    // submitted BEFORE the TR list keep their normal place ahead of the
+    // boundary, and trans_sort's range math clamps itself to seg_end.
+    segs[seg_count].begin = OpaqueLST;  segs[seg_count].end = crLST;
+    segs[seg_count].vtx = OpaqueVTX;    segs[seg_count].mod = OpaqueMod;
+    segs[seg_count].punch_through = false; seg_count++;
+
+    segs[seg_count].begin = carry_frame_lst; segs[seg_count].end = OpaqueLST;
+    segs[seg_count].vtx = carry_frame_vtx;   segs[seg_count].mod = carry_frame_mod;
+    segs[seg_count].punch_through = false; seg_count++;
+  }
   else
   {
     segs[seg_count].begin = carry_frame_lst; segs[seg_count].end = crLST;
@@ -9496,6 +9591,146 @@ static void fb2d_log_candidate(bool after_3d, u32 VtxCnt)
   fflush(stdout);
 }
 
+#if SCENE_DEBUG_LOG
+static u32 s_scn_pass_no     = 0; // every StartRender, ever
+static u32 s_scn_burst       = 0; // passes logged in the current burst
+static u32 s_scn_quiet_until = 0; // pass number the next burst may start at
+
+// This walks the whole frame, [lists, curLST), rather than tracking cursors
+// from the previous dump the way ss_dump_pass() does. DoRender() ends in
+// reset_vtx_state() (RTT_KEEP_LIST aside), so a pass always starts at the
+// buffer origin and this IS the pass's geometry — the same span StartRender's
+// own VtxCnt measures. The cursor scheme was a trap here: it only notices a
+// rewind when the new pass is SHORTER than the last one, so a frame that grew
+// would be reported with just the difference.
+static void scene_dump_pass()
+{
+  s_scn_pass_no++;
+  const bool b24 = (FB_W_SOF1 & 0x1000000) != 0;
+
+  // Heartbeat: unconditional, cheap, and the single most useful line if the
+  // burst dump below never appears — it proves StartRender is running at all,
+  // and whether geometry is reaching it, even while the game shows nothing.
+  if ((s_scn_pass_no % SCN_HEARTBEAT) == 0)
+  {
+    printf("[SCN] alive pass=%u frame=%u bit24=%d W_SOF1=%08X R_SOF1=%08X fb_depth=%d "
+           "strips=%d vtx=%d TRat=%d PTat=%d fb2d_preset=%d rtt_preset=%d\n",
+           s_scn_pass_no, (u32)FrameCount, b24 ? 1 : 0, (u32)FB_W_SOF1, (u32)FB_R_SOF1,
+           (int)FB_R_CTRL.fb_depth,
+           (int)(curLST - lists), (int)(curVTX - vertices),
+           TransLST ? (int)(TransLST - lists) : -1,
+           PTLST    ? (int)(PTLST    - lists) : -1,
+           get_framebuffer_2d(), get_render_to_texture_preset());
+    fflush(stdout);
+  }
+
+  // Burst trigger: finish one already running, otherwise start a fresh one the
+  // moment the quiet window elapses — no event to wait for, unlike [SS]/[LOGO]:
+  // this is meant to keep sampling ordinary gameplay indefinitely, not just a
+  // boot window or an RTT moment.
+  bool want = (s_scn_burst != 0) || (s_scn_pass_no >= s_scn_quiet_until);
+
+  if (!want)
+    return;
+
+  printf("[SCN] === pass=%u (burst %u/%d) frame=%u bit24=%d W_SOF1=%08X R_SOF1=%08X fb_depth=%d\n",
+         s_scn_pass_no, s_scn_burst + 1, SCN_BURST, (u32)FrameCount, b24 ? 1 : 0,
+         (u32)FB_W_SOF1, (u32)FB_R_SOF1, (int)FB_R_CTRL.fb_depth);
+
+  const VertexList *l   = lists;
+  const Vertex     *vtx = vertices;
+  const PolyParam  *mod = listModes;
+  const PolyParam  *cur = mod;
+
+  // OPat is the LIST_ORDER() signal: an opaque list that opened AFTER the
+  // translucent one (OPat > TRat) is drawn last by the submission-order walk,
+  // so its geometry paints over the whole scene. TRat=0 with lt=0 strips at the
+  // end of the dump below is the same story seen from the other side.
+  printf("[SCN]     strips=%d verts=%d TRat=%d PTat=%d OPat=%d minW=%.5f maxW=%.2f "
+         "fb2d_preset=%d rtt_preset=%d list_order=%d\n",
+         (int)(curLST - l), (int)(curVTX - vtx),
+         TransLST  ? (int)(TransLST  - lists) : -1,
+         PTLST     ? (int)(PTLST     - lists) : -1,
+         OpaqueLST ? (int)(OpaqueLST - lists) : -1,
+         vtx_min_Z, vtx_max_Z,
+         get_framebuffer_2d(), get_render_to_texture_preset(),
+         get_list_order_preset());
+
+  u32 lt_count[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+
+  int idx = 0;
+  for (; l != curLST; l++, idx++)
+  {
+    s32 c = l->count;
+    if (c < 0)
+      cur = mod++;
+    c &= 0x7FFF;
+
+    lt_count[cur->pcw.ListType & 7]++;
+
+    if (idx < SCN_MAX_STRIPS)
+    {
+      // Screen bbox: x,y are W-prescaled (screen x = x/W), same math the
+      // [SS]/[LOGO] dumps use. W is the raw view depth (larger = farther).
+      float minx = 1e30f, maxx = -1e30f, miny = 1e30f, maxy = -1e30f;
+      float minw = 1e30f, maxw = -1e30f;
+      for (s32 i = 0; i < c; i++)
+      {
+        const float z  = vtx[i].z;
+        const float iw = (z != 0.0f) ? 1.0f / z : 0.0f;
+        const float sx = vtx[i].x * iw, sy = vtx[i].y * iw;
+        if (sx < minx) minx = sx;
+        if (sx > maxx) maxx = sx;
+        if (sy < miny) miny = sy;
+        if (sy > maxy) maxy = sy;
+        if (z  < minw) minw = z;
+        if (z  > maxw) maxw = z;
+      }
+      // Class comes from the strip's OWN PCW.ListType, not from where it sits
+      // relative to TransLST/PTLST: a game that opens the TR list first puts
+      // TransLST at the buffer origin, and a position-based label then calls
+      // every strip "TR" — including the opaque ones (that is exactly how the
+      // Puyo Puyo background hid in the first capture).
+      const u32 lt = cur->pcw.ListType & 7;
+      const char *cls = (lt == 0) ? "OP" : (lt == 2) ? "TR"
+                      : (lt == 4) ? "PT" : "MV";
+      const u32 tex_addr = (u32)((cur->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
+      printf("[SCN] #%03d %s lt=%d cnt=%2d tex=%d addr=%06X fmt=%d vq=%d pal=%d %dx%d "
+             "src=%d dst=%d shad=%d usea=%d ita=%d zw=%d dm=%d cull=%d col=%08X "
+             "x=%.0f..%.0f y=%.0f..%.0f W=%.5f..%.2f\n",
+             idx, cls, (int)cur->pcw.ListType, (int)c, (int)cur->pcw.Texture,
+             tex_addr, (int)cur->tcw.NO_PAL.PixelFmt, (int)cur->tcw.NO_PAL.VQ_Comp,
+             (int)cur->tcw.PAL.PalSelect,
+             8 << cur->tsp.TexU, 8 << cur->tsp.TexV,
+             (int)cur->tsp.SrcInstr, (int)cur->tsp.DstInstr,
+             (int)cur->tsp.ShadInstr, (int)cur->tsp.UseAlpha, (int)cur->tsp.IgnoreTexA,
+             (int)cur->isp.ZWriteDis, (int)cur->isp.DepthMode, (int)cur->isp.CullMode,
+             vtx[0].col,
+             minx, maxx, miny, maxy, minw, maxw);
+    }
+    vtx += c;
+  }
+  if (idx > SCN_MAX_STRIPS)
+    printf("[SCN]  ... %d more strips not shown\n", idx - SCN_MAX_STRIPS);
+  // PT is ListType 4 (ta.h), not 3 — 3 is the translucent modifier volume.
+  printf("[SCN]     SUMMARY lt: OP=%u TR=%u PT=%u modvol=%u other=%u\n",
+         lt_count[0], lt_count[2], lt_count[4], lt_count[1] + lt_count[3],
+         lt_count[5] + lt_count[6] + lt_count[7]);
+
+  // stdout is a FILE on the SD card (InitRenderer freopens it to /ndclog.txt),
+  // so it is fully buffered — without this, everything logged since the last
+  // block boundary is lost if the console is powered off instead of exited
+  // cleanly, which is exactly how you leave a stuck/blank scene.
+  fflush(stdout);
+
+  if (++s_scn_burst >= SCN_BURST)
+  {
+    s_scn_burst = 0;
+    s_scn_quiet_until = s_scn_pass_no + SCN_QUIET_PASSES;
+  }
+}
+#endif // SCENE_DEBUG_LOG
+
 void StartRender()
 {
   u32 VtxCnt = curVTX - vertices;
@@ -9507,6 +9742,10 @@ void StartRender()
 
 #if LOGO_DEBUG_LOG
   logo_dump_pass(); // same rule: must run BEFORE any path below returns
+#endif
+
+#if SCENE_DEBUG_LOG
+  scene_dump_pass(); // same rule: must run BEFORE any path below returns
 #endif
 
   if (RENDER_DELAY())
@@ -9813,6 +10052,15 @@ struct VertexDecoder
       PTLST = curLST;
       PT_VTX = curVTX;
       PT_Mod = curMod;
+    }
+    else if (ListType == ListType_Opaque)
+    {
+      // LIST_ORDER(): only meaningful when this fires AFTER the translucent
+      // list has already opened — a game submitting OP first (the usual order)
+      // leaves OpaqueLST below TransLST and the draw path ignores it entirely.
+      OpaqueLST = curLST;
+      OpaqueVTX = curVTX;
+      OpaqueMod = curMod;
     }
   }
   __forceinline static void EndList(u32 ListType) {}
@@ -10368,6 +10616,13 @@ bool InitRenderer()
   // LOGO_DEBUG_LOG and there is no point looking for [LOGO] lines.
   printf("[LOGO] boot-screen probe ARMED (every pass up to %d, then 1 in %d until pass %d, heartbeat=%d)\n",
          LOGO_HEAD_PASSES, LOGO_EVERY, LOGO_LAST_PASS, LOGO_HEARTBEAT);
+  fflush(stdout);
+#endif
+#if SCENE_DEBUG_LOG
+  // If this line is missing from ndclog.txt the build did not pick up
+  // SCENE_DEBUG_LOG and there is no point looking for [SCN] lines.
+  printf("[SCN] scene pass logger ARMED (burst=%d, quiet=%d passes, heartbeat=%d)\n",
+         SCN_BURST, SCN_QUIET_PASSES, SCN_HEARTBEAT);
   fflush(stdout);
 #endif
   // Obtain the preferred video mode from the system
