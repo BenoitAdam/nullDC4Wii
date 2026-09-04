@@ -67,6 +67,60 @@ extern "C" int get_debug_loop();
 extern "C" int get_debug_fb2d();
 #define DEBUG_FB2D() (get_debug_fb2d() == 1)
 
+// debug_skip_tex: drop every strip that samples ONE texture, by VRAM byte
+// address (0 = off). A bisection aid, not a fix — the same technique that
+// finally cracked the Hokuto no Ken layering hunt, where skipping the VQ strips
+// made the "missing" sprites appear and proved they were being overdrawn rather
+// than lost. Take an address straight off a [SCN] census line (addr=......),
+// put it in the cfg as `debug_skip_tex=0x52C000`, and the in-game menu row
+// toggles it so a scene can be A/B'd without a rebuild.
+//
+// Answers, without any guessing: is element X missing/dim because something is
+// painted over it (skip the suspect -> X appears correctly), or because X
+// itself is drawn wrong (skip everything around it -> X is still wrong)?
+extern "C" int get_debug_skip_tex();
+#define DEBUG_SKIP_TEX() ((u32)get_debug_skip_tex())
+
+// Puyo Puyo 4 addresses identified with this tool (2026-09-04), kept as a
+// worked example of what a bisection session produces:
+//   0x52C000 = score board      0x694000 = CPU character
+//   0x058000 = background       0x118000 = the two PLAYFIELDS  <- the culprit
+// (a hardcoded `#define DEBUG_SKIP_TEX() (0x118000)` is the quickest way to
+// test one address without touching the cfg — just restore this line after.)
+
+// ── layer_back_tex: one named texture is a BACKDROP, not an overlay ─────────
+// For a 2D game that submits its playfield backdrop LATE in the translucent
+// list, at the same depth as the sprites already standing in it. Painter order
+// then paints the backdrop over its own contents; since it is alpha-blended the
+// sprites don't vanish, they just go dim — "I can see the puyos behind the
+// translucent grid".
+//
+// Puyo Puyo 4 does exactly this: `118000` (ARGB4444 256x512, blend 4/5) is
+// submitted around strip #039 as two quads, x=0..256 and x=384..640 — the two
+// playfields — long after the puyos standing in them (which come from the
+// `554000` sprite atlas, ~#028-#032). Proof: the next-piece puyos in the middle
+// column (x=256..384, the gap between the two quads) render bright while the
+// ones inside the fields are dimmed — same texture, same blend, the only
+// difference is whether a 118000 quad covers them.
+//
+// Why keyed on a texture ADDRESS rather than inferred: the whole scene sits at
+// ONE depth (W=10000 for every strip), so there is no depth signal to sort on,
+// and the backdrop is indistinguishable from an ordinary sprite by blend, list,
+// format or size. LAYER_SORT()'s heuristic tiers (VQ, palette bank) don't match
+// it either. The Hokuto no Ken hunt spent v1..v11 proving that guessing a
+// signature for this class of bug does not converge; naming the texture does,
+// costs one compare per strip, and cannot mis-fire on another game.
+//
+//   0 = off. Otherwise the VRAM byte address, e.g. layer_back_tex=0x118000,
+//   taken straight off a [SCN] census addr= field. debug_skip_tex above is the
+//   tool for finding WHICH address: hide one and see what stops being covered.
+//
+// Implies the translucent sort (it IS a tier rule, so the sort has to run).
+// Matching strips get tier 4 — above every LAYER_SORT() tier — so they draw
+// first and everything else composites on top in its normal submission order.
+extern "C" int get_layer_back_tex();
+#define LAYER_BACK_TEX() ((u32)get_layer_back_tex())
+
 // Specific debug for FMV
 int fmv_debug = 0;
 
@@ -483,14 +537,29 @@ static unsigned s_logo_draw_n = 0; // per-pass counter for the draw-time lines
 // Compile-time, not DEBUG_MESSAGE()-gated, exactly like SCOPE_DEBUG_LOG /
 // LOGO_DEBUG_LOG above: the per-strip bbox scan is too expensive for a
 // shipping build, and at 0 none of it is compiled at all.
-// Flip to 0 and rebuild once the capture has been read (see
-// feedback-quiet-diagnostics in project memory — don't leave this on).
-#define SCENE_DEBUG_LOG 1
+//
+// OFF: it did its job on Puyo Puyo 4 (2026-09-04) and both bugs it was built to
+// find are fixed. What it established, so the next capture does not have to:
+//   * TRat=0 with lt=0 strips at the END of the walk = the game opens its
+//     TRANSLUCENT list first and its OPAQUE list last -> `list_order`.
+//   * The two `118000` quads (x=0..256 and x=384..640) are the PLAYFIELDS, and
+//     they are submitted after the puyos standing in them -> `layer_back_tex`.
+//   * The whole scene sits at one depth, W=10000 for every strip, so nothing
+//     depth-based (trans_sort, autosort) can order this content.
+// Flip to 1 and rebuild to re-arm it for the next game; nothing else needs
+// changing (see feedback-quiet-diagnostics in project memory).
+#define SCENE_DEBUG_LOG 0
 
-#define SCN_BURST        8    // passes per burst
+#define SCN_BURST        4    // passes per burst (consecutive passes are nearly
+                              // identical; 4 is plenty and keeps the SD log small)
 #define SCN_QUIET_PASSES 200  // render passes of quiet between bursts
 #define SCN_HEARTBEAT    120  // proof-of-life line every N passes, always
-#define SCN_MAX_STRIPS   40   // per-strip lines per dumped pass
+#define SCN_MAX_STRIPS   128  // per-strip lines per dumped pass. Was 40, which
+                              // truncated Puyo Puyo's ~73-strip frames right
+                              // where the interesting geometry lives: a strip
+                              // drawn ON TOP of everything is by definition the
+                              // LAST one submitted, so a head-only cap hides
+                              // exactly the strip you are hunting.
 
 // Where the [SS] output goes. InitRenderer() normally does
 // freopen("/ndclog.txt", "w", stdout) the moment the renderer starts, so EVERY
@@ -5507,9 +5576,10 @@ struct TransStripRec
   Vertex *vtx;     // first vertex of the strip
   PolyParam *mod;  // render state in effect for this strip
   u16 count;       // vertex count (sign bit already consumed)
-  u16 tr_class;    // LAYER_SORT() layer tier at equal depth (0 otherwise):
-                   // 3 = full-screen plate, 2 = VQ stage art,
-                   // 1 = 8bpp bank 32-47 (stage sprites), 0 = rest
+  u16 tr_class;    // layer tier at equal depth (0 otherwise):
+                   // 4 = LAYER_BACK_TEX() named backdrop (behind everything),
+                   // then LAYER_SORT()'s tiers: 3 = full-screen plate,
+                   // 2 = VQ stage art, 1 = 8bpp bank 32-47, 0 = rest
 };
 
 static TransStripRec trans_sort_recs[8 * 1024];
@@ -7227,6 +7297,11 @@ void DoRender()
   int last_src_blend = -1;
   int last_dst_blend = -1;
 
+  // DEBUG_SKIP_TEX(): read once per frame (preset reads are per-frame, never
+  // per-strip), plus the param tracker the per-strip test needs.
+  const u32  dbg_skip_tex = DEBUG_SKIP_TEX();
+  PolyParam *dbg_skip_mod = 0;
+
   // TRANS_SORT() state. While ts_active, strips are fetched from
   // trans_sort_recs[] (sorted back-to-front) instead of the sequential
   // lists/vertices/listModes walk; ts_end_* are the walk cursors at the end
@@ -7248,7 +7323,10 @@ void DoRender()
   if (as_frame_peels)
     as_setup_frame(p5, p6); // texgen matrices + GR16 mask konsts
 
-  const bool trans_sort = (TRANS_SORT() || LAYER_SORT()) && !as_frame_peels; // read once per frame (layer_sort implies the sort)
+  // layer_back_tex implies the sort too: it IS a tier rule, and without the
+  // sort running there is nothing to reorder.
+  const u32 layer_back_tex = LAYER_BACK_TEX();
+  const bool trans_sort = (TRANS_SORT() || LAYER_SORT() || layer_back_tex) && !as_frame_peels; // read once per frame
   bool ts_active = false;
   int ts_idx = 0;
   int ts_count = 0;
@@ -7769,7 +7847,14 @@ void DoRender()
             // low/high VRAM split was tried and broke the character-select
             // screen by reordering VQ against VQ).
             u16 tclass = 0;
-            if (isp_tier && cur_mod->pcw.Texture)
+            // LAYER_BACK_TEX(): one named texture is a BACKDROP — park it in a
+            // tier above every other, so it draws first and everything else
+            // composites on top of it. See the macro doc at the top of the file
+            // for why this is address-keyed rather than inferred.
+            if (layer_back_tex && cur_mod->pcw.Texture &&
+                (u32)((cur_mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) == layer_back_tex)
+              tclass = 4;
+            else if (isp_tier && cur_mod->pcw.Texture)
             {
               if (cur_mod->tcw.NO_PAL.PixelFmt == 2 && cur_mod->tcw.NO_PAL.VQ_Comp)
                 tclass = 2; // VQ stage art: bottom layer
@@ -7948,6 +8033,16 @@ void DoRender()
         strip_skip = s_rtt_pass ? !tile_clipped
                                 : (tile_clipped && drawLST < rtt_lst_end);
       }
+
+      // DEBUG_SKIP_TEX(): bisection aid (see the macro doc at the top of the
+      // file). Only strips that carry a header bring a new param, so the one in
+      // effect has to be tracked to test every strip. Reuses the skip path
+      // above, which already withholds the vertices and advances the cursor.
+      if (stripMod)
+        dbg_skip_mod = stripMod;
+      if (dbg_skip_tex && dbg_skip_mod && dbg_skip_mod->pcw.Texture &&
+          (u32)((dbg_skip_mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) == dbg_skip_tex)
+        strip_skip = true;
 
       // SUBPASS_ZCLEAR(): the FIRST time this frame a strip actually needs
       // hud_pass rescue, re-park the whole Z buffer at the far plane before

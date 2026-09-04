@@ -685,6 +685,30 @@ extern "C" { int get_debug_message() { return g_debug_message; } }
 int g_debug_gdrom = 0;
 extern "C" { int get_debug_gdrom()   { return g_debug_gdrom;   } }
 
+// debug_skip_tex (see DEBUG_SKIP_TEX in gxRend.cpp): VRAM byte address of one
+// texture whose strips are dropped, 0 = off. Set from the cfg (hex accepted,
+// e.g. debug_skip_tex=0x52C000) with an address read off a [SCN] census line;
+// the menu row toggles it against g_debug_skip_tex_saved so a scene can be A/B'd
+// in place. Pure diagnostic: it REMOVES geometry, it never fixes anything.
+int g_debug_skip_tex = 0;
+int g_debug_skip_tex_saved = 0; // last non-zero value, so the toggle can restore it
+extern "C" { int get_debug_skip_tex() { return g_debug_skip_tex; } }
+
+// layer_back_tex (see LAYER_BACK_TEX in gxRend.cpp): VRAM byte address of a
+// texture that is a BACKDROP — its translucent strips sort behind every other
+// one at the same depth instead of painting over them. 0 = off. Unlike
+// debug_skip_tex this is a real fix, not a diagnostic: set it per game in the
+// cfg (Puyo Puyo 4: 0x118000, its two playfields).
+int g_layer_back_tex = 0;
+extern "C" { int get_layer_back_tex() { return g_layer_back_tex; } }
+
+// puyo_hack: the one address layer_back_tex needs for Puyo Puyo 4 — its two
+// playfields, which the game submits AFTER the puyos standing in them. Named as
+// a per-game hack (like hokuto_hack / dino_crisis_inventory_hack) because that
+// is what it is: layer_back_tex itself is the general mechanism, this is just
+// the menu switch that fills in this game's value without touching the cfg.
+#define PUYO_BACKDROP_TEX 0x118000
+
 // FRAMEBUFFER_2D candidate detector (gxRend.cpp, StartRender's bit-24 branch).
 // The [PATH] 2D-blit / 2D-after-3D lines only ever printed from INSIDE the
 // FRAMEBUFFER_2D() branch, i.e. only once the preset was already on — so the
@@ -1551,6 +1575,8 @@ void checkBiosFiles()
 #define OPT_DEBUG_LOOP   76   // shown on Page 6 (EXPERIMENTAL), debug block at the end
 #define OPT_DEBUG_GDROM  77   // shown on Page 6 (EXPERIMENTAL), debug block at the end
 #define OPT_LIST_ORDER   78   // shown on Page 3 (DEPTH & WIDTH), under LAYER SORT
+#define OPT_DEBUG_SKIP_TEX 79 // shown on Page 6 (EXPERIMENTAL), debug block at the end
+#define OPT_PUYO_HACK    80   // shown on Page 6 (EXPERIMENTAL), with the other per-game hacks
 #define OPT_DINO_CRISIS_INVENTORY_HACK 72 // shown on Page 5 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_ROW_COUNT   66
 
@@ -1664,13 +1690,15 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_SCHED,
   OPT_TRANS_ZWRITE,
   OPT_HOKUTO_HACK,
+  OPT_PUYO_HACK,
   OPT_DINO_CRISIS_INVENTORY_HACK,
   OPT_DYNAREC,
   OPT_DEBUG_FB2D,
   // --- debug log block, always last on this page ---
   OPT_DEBUG_MESSAGE,
   OPT_DEBUG_LOOP,
-  OPT_DEBUG_GDROM
+  OPT_DEBUG_GDROM,
+  OPT_DEBUG_SKIP_TEX
 };
 
 static const int *opt_page_rows(int page, int *count)
@@ -2199,7 +2227,9 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (OPAQUE FIRST) >]"); break;
     }
     printf(" if bg covers the game (Puyo Puyo)");
-    printf("\n\n");
+    printf("\n");
+
+    printf("\n");
 
     // --- Row: PVR horizontal X-Scaler ---
     printf("%s X SCALER       : ", (selectedRow == OPT_X_SCALER) ? ">" : " ");
@@ -2438,6 +2468,20 @@ bool displayOptionsMenu()
     printf(" Hokuto no Ken : specific hack");
     printf("\n");
 
+    // --- Row: Puyo Puyo playfield backdrop (fills in layer_back_tex) ---
+    // The game submits its two playfields AFTER the puyos standing in them, so
+    // painter order paints the backdrop over its own contents and every puyo in
+    // a field goes dim behind the grid. This sorts that texture back.
+    printf("%s PUYO HACK      : ", (selectedRow == OPT_PUYO_HACK) ? ">" : " ");
+    if (g_layer_back_tex == PUYO_BACKDROP_TEX)
+      printf("[< ON (BG BEHIND)    >]");
+    else if (g_layer_back_tex)
+      printf("[< OFF (CFG %06X) >]", (unsigned)g_layer_back_tex);
+    else
+      printf("[< OFF               >]");
+    printf(" Puyo Puyo : puyos dim behind grid");
+    printf("\n");
+
     // --- Row: Dino Crisis inventory preview icon redecode hack (gxRend.cpp DINO_CRISIS_INVENTORY_HACK) ---
     printf("%s REGINA HACK    : ", (selectedRow == OPT_DINO_CRISIS_INVENTORY_HACK) ? ">" : " ");
     switch (g_dino_crisis_inventory_hack_preset) {
@@ -2491,6 +2535,17 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (SPI CMDS)     >]"); break;
     }
     printf(" GD-ROM / CDDA command trace");
+    printf("\n");
+
+    // --- Row: skip one texture's strips (bisection aid, address from the cfg) ---
+    printf("%s SKIP TEXTURE   : ", (selectedRow == OPT_DEBUG_SKIP_TEX) ? ">" : " ");
+    if (g_debug_skip_tex)
+      printf("[< SKIP %06X      >]", (unsigned)g_debug_skip_tex);
+    else if (g_debug_skip_tex_saved)
+      printf("[< OFF (%06X)     >]", (unsigned)g_debug_skip_tex_saved);
+    else
+      printf("[< OFF (SET IN CFG)  >]");
+    printf(" hide one texture to see what covers it");
     printf("\n");
     printf("                  (logs are written to /ndclog.txt on the card)");
     printf("\n\n");
@@ -2589,6 +2644,9 @@ bool displayOptionsMenu()
           break;
         case OPT_LAYER_SORT:  g_layer_sort_preset     = (g_layer_sort_preset       + 1) % 2; break;
         case OPT_LIST_ORDER:  g_list_order_preset     = (g_list_order_preset       + 1) % 2; break;
+        case OPT_PUYO_HACK:
+          g_layer_back_tex = (g_layer_back_tex == PUYO_BACKDROP_TEX) ? 0 : PUYO_BACKDROP_TEX;
+          break;
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 2) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
@@ -2614,6 +2672,12 @@ bool displayOptionsMenu()
         case OPT_DEBUG_MESSAGE:  g_debug_message          = (g_debug_message          + 1) % 2; break;
         case OPT_DEBUG_LOOP:     g_debug_loop             = (g_debug_loop             + 1) % 2; break;
         case OPT_DEBUG_GDROM:    g_debug_gdrom            = (g_debug_gdrom            + 1) % 2; break;
+        // Toggles against the cfg-supplied address, so the same scene can be
+        // compared with and without that texture without leaving the game.
+        case OPT_DEBUG_SKIP_TEX:
+          if (g_debug_skip_tex) { g_debug_skip_tex_saved = g_debug_skip_tex; g_debug_skip_tex = 0; }
+          else                  { g_debug_skip_tex = g_debug_skip_tex_saved; }
+          break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
         default: break;
       }
@@ -2673,6 +2737,9 @@ bool displayOptionsMenu()
           break;
         case OPT_LAYER_SORT:  g_layer_sort_preset     = (g_layer_sort_preset       + 1) % 2; break;
         case OPT_LIST_ORDER:  g_list_order_preset     = (g_list_order_preset       + 1) % 2; break;
+        case OPT_PUYO_HACK:
+          g_layer_back_tex = (g_layer_back_tex == PUYO_BACKDROP_TEX) ? 0 : PUYO_BACKDROP_TEX;
+          break;
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 1) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
@@ -2698,6 +2765,12 @@ bool displayOptionsMenu()
         case OPT_DEBUG_MESSAGE:  g_debug_message          = (g_debug_message          + 1) % 2; break;
         case OPT_DEBUG_LOOP:     g_debug_loop             = (g_debug_loop             + 1) % 2; break;
         case OPT_DEBUG_GDROM:    g_debug_gdrom            = (g_debug_gdrom            + 1) % 2; break;
+        // Toggles against the cfg-supplied address, so the same scene can be
+        // compared with and without that texture without leaving the game.
+        case OPT_DEBUG_SKIP_TEX:
+          if (g_debug_skip_tex) { g_debug_skip_tex_saved = g_debug_skip_tex; g_debug_skip_tex = 0; }
+          else                  { g_debug_skip_tex = g_debug_skip_tex_saved; }
+          break;
         case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
         default: break;
       }
