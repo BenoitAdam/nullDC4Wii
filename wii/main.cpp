@@ -681,21 +681,40 @@ extern "C" {
   int get_ifb_probe_preset() { return g_ifb_probe_preset; }
 }
 
-// JIT_NEWOPS — dynarec eight opcodes that had always fallen back to the
-// interpreter (dc/sh4/rec_v2/decoder.cpp dec_is_newop): stc.l SR / ldc.l SR /
-// ldc SR, lds FPSCR / lds.l FPSCR, rotcl, rotcr and tas.b. Hand-written decoder
-// handlers for all eight already existed in decoder.cpp but were never
-// referenced from the opcode table, so the code sat dead and every execution
-// took the shop_ifb path (a full call-out plus the register bracket IFB_FLUSH
-// narrows). rotcl is the interesting one: it is half of the 32-step software
-// division idiom, and only the runs the DIV0 matcher fails to collapse reach
-// here. Changes SH4 core codegen, so it is off by default — A/B per game, and
-// use IFB_PROBE to see whether a given game issues enough of these to care.
-// 0=off (legacy, default), 1=on.
+// JIT_NEWOPS — dynarec nine opcodes that had always fallen back to the
+// interpreter (dc/sh4/rec_v2/decoder.cpp dec_is_newop): stc SR, stc.l SR,
+// ldc.l SR, ldc SR, lds FPSCR, lds.l FPSCR, rotcl, rotcr and tas.b. In every
+// case the code to compile them already existed and simply was not reachable —
+// eight had hand-written decoder handlers never referenced from the opcode
+// table, and stc SR,<REG_N> had dec_generic's DM_ReadSRF mode with no table row
+// pointing at it — so each execution paid a shop_ifb call-out plus the register
+// bracket IFB_FLUSH narrows. stc SR is the one that measured: it is the top
+// fallback in several ChuChu Rocket scenes at up to 96k/s (~0.4% there, ~0 in
+// that game's slow vertex-bound scenes). Changes SH4 core codegen, so it is off
+// by default — A/B per game, and use IFB_PROBE to see whether a given game
+// issues enough of these to care. 0=off (legacy, default), 1=on.
 int g_jit_newops_preset = 0;
 
 extern "C" {
   int get_jit_newops_preset() { return g_jit_newops_preset; }
+}
+
+// JIT_HOTBLOCKS — count executions per compiled SH4 block and print the hottest
+// ones once a second to /ndclog.txt (dc/sh4/rec_v2/wii_driver.cpp
+// hotblocks_dump, called from plugs/drkPvr/SPG.cpp's stats block), with the
+// codegen density of each — PPC bytes emitted per SH4 opcode — plus a full SH4
+// + PPC dump of the top block twice per session. This is the tool for asking
+// "where is the dynarec actually spending the frame, and is the code it emitted
+// any good", instead of guessing from opcode-frequency counts. IFB_PROBE
+// answers the same question for the interpreter-fallback path; this one covers
+// everything else, which is the ~99% of it.
+// Costs 4 instructions at every block entry, so turn it OFF for timing runs.
+// The block table (48 KB) is allocated lazily, so it costs no MEM1 while off.
+// Read at CODEGEN time: set it before launching. 0=off (default), 1=on.
+int g_hotblocks_preset = 0;
+
+extern "C" {
+  int get_hotblocks_preset() { return g_hotblocks_preset; }
 }
 
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
@@ -1721,6 +1740,7 @@ void checkBiosFiles()
 #define OPT_IFB_FLUSH   82   // shown on Page 4 (CORE), under JIT ALIGN
 #define OPT_IFB_PROBE   83   // shown on Page 4 (CORE), under JIT IFB FLUSH
 #define OPT_JIT_NEWOPS  84   // shown on Page 4 (CORE), under JIT IFB PROBE
+#define OPT_JIT_HOTBLOCKS 85 // shown on Page 4 (CORE), under JIT NEW OPS
 #define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
@@ -1826,7 +1846,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_JIT_ALIGN,
   OPT_IFB_FLUSH,
   OPT_IFB_PROBE,
-  OPT_JIT_NEWOPS
+  OPT_JIT_NEWOPS,
+  OPT_JIT_HOTBLOCKS
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -2597,9 +2618,18 @@ bool displayOptionsMenu()
     printf("%s JIT NEW OPS    : ", (selectedRow == OPT_JIT_NEWOPS) ? ">" : " ");
     switch (g_jit_newops_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (8 OPS JITTED) >]"); break;
+      case 1: printf("[< ON (9 OPS JITTED) >]"); break;
     }
     printf(" jit rotcl/rotcr/tas.b/sr/fpscr");
+    printf("\n");
+
+    // --- Row: JIT_HOTBLOCKS - per-block execution counts + codegen dump ---
+    printf("%s JIT HOTBLOCKS  : ", (selectedRow == OPT_JIT_HOTBLOCKS) ? ">" : " ");
+    switch (g_hotblocks_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOGS [HOT])   >]"); break;
+    }
+    printf(" hot blocks + ppc bytes per op");
     printf("\n\n");
 
     printOptionsFooter();
@@ -2847,6 +2877,7 @@ bool displayOptionsMenu()
         case OPT_IFB_FLUSH:      g_ifb_flush_preset       = (g_ifb_flush_preset       + 1) % 2; break;
         case OPT_IFB_PROBE:      g_ifb_probe_preset       = (g_ifb_probe_preset       + 1) % 2; break;
         case OPT_JIT_NEWOPS:     g_jit_newops_preset      = (g_jit_newops_preset      + 1) % 2; break;
+        case OPT_JIT_HOTBLOCKS:  g_hotblocks_preset       = (g_hotblocks_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
@@ -2942,6 +2973,7 @@ bool displayOptionsMenu()
         case OPT_IFB_FLUSH:      g_ifb_flush_preset       = (g_ifb_flush_preset       + 1) % 2; break;
         case OPT_IFB_PROBE:      g_ifb_probe_preset       = (g_ifb_probe_preset       + 1) % 2; break;
         case OPT_JIT_NEWOPS:     g_jit_newops_preset      = (g_jit_newops_preset      + 1) % 2; break;
+        case OPT_JIT_HOTBLOCKS:  g_hotblocks_preset       = (g_hotblocks_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
@@ -3790,7 +3822,8 @@ int main(int argc, wchar *argv[])
     printf("JIT Align      : %s\n", g_jit_align_preset ? "ON (32B LINES)" : "OFF (LEGACY)");
     printf("JIT Ifb Flush  : %s\n", g_ifb_flush_preset ? "ON (SELECTIVE)" : "OFF (FULL SPILL)");
     printf("JIT Ifb Probe  : %s\n", g_ifb_probe_preset ? "ON (LOGS [IFB])" : "OFF");
-    printf("JIT New Ops    : %s\n", g_jit_newops_preset ? "ON (8 OPS JITTED)" : "OFF (LEGACY)");
+    printf("JIT New Ops    : %s\n", g_jit_newops_preset ? "ON (9 OPS JITTED)" : "OFF (LEGACY)");
+    printf("JIT Hotblocks  : %s\n", g_hotblocks_preset ? "ON (LOGS [HOT])" : "OFF");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Dino Crisis Fix: %s\n", g_dino_crisis_inventory_hack_preset ? "ON (REDECODE)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");

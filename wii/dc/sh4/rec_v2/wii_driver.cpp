@@ -45,6 +45,7 @@
 #include "types.h"
 #include <stddef.h>	// offsetof — used for jit_scratch context slot addressing
 #include <math.h>	// sqrtf — fsqrt/fsrra native call targets
+#include <stdlib.h>	// malloc — JIT_HOTBLOCKS lazily allocates its block table
 #include "dc\sh4\sh4_opcode_list.h"
 #include "dc\sh4\sh4_interpreter.h"	// sh4_GetTimeslice — preset-latched timeslice
 
@@ -1652,6 +1653,182 @@ extern "C" void ifb_probe_dump(double seconds)
 	fflush(stdout);
 }
 
+// ---------------------------------------------------------------------------
+// JIT_HOTBLOCKS probe (wii/main.cpp preset)
+//
+// Counts executions per compiled block, and once a second prints the hottest
+// ones with their codegen density — PPC bytes emitted per SH4 opcode — then
+// dumps the SH4 source and the generated PPC of the top block so the real
+// hot-path codegen can be READ instead of guessed at.
+//
+// Costs 4 instructions at each block entry, so it is a diagnostic: leave it off
+// for timing runs. The table is allocated lazily, so nothing costs MEM1 while
+// the preset is off, and it is dropped whenever the code cache is flushed —
+// every recorded ppc_start points into the cache that just went away.
+// ---------------------------------------------------------------------------
+extern "C" int get_hotblocks_preset();
+
+struct HotBlock
+{
+	u32 sh4_pc;
+	u32 sh4_size;	// bytes of SH4 source the block consumed
+	u32 sh4_ops;
+	u8* ppc_start;
+	u32 ppc_size;	// bytes of PPC emitted (filled in at the end of ngen_Compile)
+	u32 hits;		// bumped by the emitted counter; reset each dump
+};
+
+// ChuChu compiles ~10k blocks between cache clears; at 2048 the first run left
+// 7894 untracked, which biases the census toward whatever compiled first.
+// 16384 * 24 B = 384 KB, allocated only when the preset is on.
+#define HOT_MAX 16384
+static HotBlock* s_hb = 0;
+static u32 s_hb_n = 0;
+static u32 s_hb_overflow = 0;
+static u32 s_hb_disasm_left = 2;	// full disassembly dumps per session
+
+// Called from recSh4_ClearCache (dc/sh4/rec_v2/driver.cpp): the compiled code
+// these entries describe no longer exists.
+extern "C" void hotblocks_reset()
+{
+	s_hb_n = 0;
+	s_hb_overflow = 0;
+}
+
+// Compile time: claim a slot for this block, or 0 if unavailable.
+static HotBlock* hotblocks_slot(DecodedBlock* block)
+{
+	if (!get_hotblocks_preset())
+		return 0;
+
+	if (!s_hb)
+	{
+		s_hb = (HotBlock*)malloc(sizeof(HotBlock)*HOT_MAX);
+		if (!s_hb)
+			return 0;
+	}
+
+	if (s_hb_n >= HOT_MAX)
+	{
+		s_hb_overflow++;
+		return 0;
+	}
+
+	HotBlock* h = &s_hb[s_hb_n++];
+	h->sh4_pc    = block->start;
+	h->sh4_size  = block->sh4_code_size;
+	h->sh4_ops   = block->opcodes;
+	h->ppc_start = 0;
+	h->ppc_size  = 0;
+	h->hits      = 0;
+	return h;
+}
+
+static void hotblocks_disasm(const HotBlock& h)
+{
+	printf("[HOT] --- disasm pc=%08X : %u SH4 ops / %u B  ->  %u B PPC ---\n",
+		h.sh4_pc, h.sh4_ops, h.sh4_size, h.ppc_size);
+
+	printf("[HOT] SH4:\n");
+	u32 n = h.sh4_size/2;
+	if (n > 64) n = 64;
+	for (u32 i=0;i<n;i++)
+	{
+		u32 a = h.sh4_pc + i*2;
+		u16 o = ReadMem16(a);
+		printf("[HOT]   %08X: %04X  %s\n", a, o, OpDesc[o]->diss);
+	}
+	if (h.sh4_size/2 > n)
+		printf("[HOT]   ... (%u more)\n", h.sh4_size/2 - n);
+
+	printf("[HOT] PPC (%u B):\n", h.ppc_size);
+	if (h.ppc_start)
+	{
+		const u32* w = (const u32*)h.ppc_start;
+		u32 wn = h.ppc_size/4;
+		if (wn > 160) wn = 160;
+		for (u32 i=0;i<wn;i+=4)
+		{
+			printf("[HOT]   +%04X:", i*4);
+			for (u32 j=0;j<4 && (i+j)<wn;j++)
+				printf(" %08X", w[i+j]);
+			printf("\n");
+		}
+		if (h.ppc_size/4 > wn)
+			printf("[HOT]   ... (%u more words)\n", h.ppc_size/4 - wn);
+	}
+}
+
+extern "C" void hotblocks_dump(double seconds)
+{
+	if (!get_hotblocks_preset() || !s_hb || s_hb_n==0 || seconds<=0.0)
+		return;
+
+	// Totals first, so a block's share of all executed blocks is visible.
+	double all_hits = 0.0, all_ppc = 0.0, all_ops = 0.0;
+	for (u32 i=0;i<s_hb_n;i++)
+	{
+		all_hits += s_hb[i].hits;
+		all_ppc  += (double)s_hb[i].hits * s_hb[i].ppc_size;
+		all_ops  += (double)s_hb[i].hits * s_hb[i].sh4_ops;
+	}
+
+	if (all_hits <= 0.0)
+		return;
+
+	printf("[HOT] %.2fs  %u blocks tracked, %.0f entries/s, %.1f PPC B per SH4 op (execution-weighted)\n",
+		seconds, s_hb_n, all_hits/seconds, all_ops>0.0?(all_ppc/all_ops):0.0);
+
+	// Top 8 by hits. Repeated max-scan — 8 passes over <=2048 entries once a
+	// second is free and avoids dragging a sort in.
+	u32 top[8];
+	u32 tn = 0;
+	for (u32 a=0;a<8;a++)
+	{
+		u32 best = 0xFFFFFFFF;
+		for (u32 i=0;i<s_hb_n;i++)
+		{
+			if (!s_hb[i].hits)
+				continue;
+			bool taken = false;
+			for (u32 k=0;k<tn;k++)
+				if (top[k]==i) { taken=true; break; }
+			if (taken)
+				continue;
+			if (best==0xFFFFFFFF || s_hb[i].hits > s_hb[best].hits)
+				best = i;
+		}
+		if (best==0xFFFFFFFF)
+			break;
+		top[tn++] = best;
+	}
+
+	for (u32 a=0;a<tn;a++)
+	{
+		const HotBlock& h = s_hb[top[a]];
+		printf("[HOT]   %u: pc=%08X %8u (%7.0f/s) %5.1f%%  sh4 %3u ops  ppc %5u B  %5.1f B/op\n",
+			a+1, h.sh4_pc, h.hits, h.hits/seconds,
+			h.hits*100.0/all_hits,
+			h.sh4_ops, h.ppc_size,
+			h.sh4_ops?((double)h.ppc_size/h.sh4_ops):0.0);
+	}
+
+	if (s_hb_overflow)
+		printf("[HOT]   (%u blocks did not fit the %u-entry table)\n", s_hb_overflow, (u32)HOT_MAX);
+
+	// Full disassembly of the current #1, a couple of times per session.
+	if (tn && s_hb_disasm_left)
+	{
+		s_hb_disasm_left--;
+		hotblocks_disasm(s_hb[top[0]]);
+	}
+
+	for (u32 i=0;i<s_hb_n;i++)
+		s_hb[i].hits = 0;
+
+	fflush(stdout);
+}
+
 void FASTCALL do_sqw_mmu(u32 dst);
 void FASTCALL do_sqw_nommu(u32 dst);
 
@@ -2136,6 +2313,19 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 	ColdReset();          // mem-op cold (slow) fragments deferred to block end
 	ngen_Begin(block,force_checks);
+
+	// JIT_HOTBLOCKS: bump this block's execution counter. Emitted AFTER
+	// ngen_Begin so it counts real body executions — past the SMC check and the
+	// cycle-underflow exit — at a point where rarg0/rarg1 are still scratch
+	// (same reasoning as the block-check guard inside ngen_Begin).
+	HotBlock* hb = hotblocks_slot(block);
+	if (hb)
+	{
+		u32 lo = ppc_addr_high(ppc_rarg1,(void*)&hb->hits);
+		ppc_lwz(ppc_rarg0,ppc_rarg1,lo);
+		ppc_addi(ppc_rarg0,ppc_rarg0,1);
+		ppc_stw(ppc_rarg0,ppc_rarg1,lo);
+	}
 
 	for (size_t i = 0; i < block->oplist.size(); i++)
 	{
@@ -3355,6 +3545,19 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 	FlushCold();          // emit the out-of-line mem slow paths after the block tail
 	make_address_range_executable((u8*)rv, (u8*)emit_GetCCPtr()-(u8*)rv);
+
+	// Now that the tail and the cold fragments are emitted, this block's real
+	// footprint is known — that is the number the B/op density is built on.
+	if (hb)
+	{
+		u32 sz = (u32)((u8*)emit_GetCCPtr()-(u8*)rv);
+		// Discount the probe's own 4-instruction counter so the B/op figure
+		// describes the codegen, not the measurement. On a 3-op block those
+		// 16 bytes are 5 B/op of pure observer effect.
+		hb->ppc_start = (u8*)rv;
+		hb->ppc_size  = sz>16 ? sz-16 : sz;
+	}
+
 	return rv;
 }
 

@@ -250,7 +250,7 @@ sh4_opcodelistentry opcodes[]=
 	{0							,i0100_nnnn_1mmm_0111	,Mask_n_ml3bit,0x4087,Normal			,"ldc.l @<REG_N>+,RM_BANK"				,1,1,CO,fix_none	,dec_LDM(PRM_CREG)},	//ldc.l @<REG_N>+,RM_BANK
 
 	//sts : rn
-	{0							,i0000_nnnn_0000_0010	,Mask_n		,0x0002	,Normal				,"stc SR,<REG_N>"						,2,2,CO,fix_none},	//stc SR,<REG_N>
+	{0							,i0000_nnnn_0000_0010	,Mask_n		,0x0002	,Normal				,"stc SR,<REG_N>"						,2,2,CO,fix_none	,dec_Fill(DM_ReadSRF,PRM_RN,PRM_RN,shop_mov32)},	//stc SR,<REG_N>
 	{0							,i0000_nnnn_0001_0010	,Mask_n		,0x0012	,Normal				,"stc GBR,<REG_N>"						,2,2,CO,fix_none	,dec_ST(PRM_CREG)},	//stc GBR,<REG_N>
 	{0							,i0000_nnnn_0010_0010	,Mask_n		,0x0022	,Normal				,"stc VBR,<REG_N>"						,2,2,CO,fix_none	,dec_ST(PRM_CREG)},	//stc VBR,<REG_N>
 	{0							,i0000_nnnn_0011_0010	,Mask_n		,0x0032	,Normal				,"stc SSR,<REG_N>"						,2,2,CO,fix_none	,dec_ST(PRM_CREG)},	//stc SSR,<REG_N>

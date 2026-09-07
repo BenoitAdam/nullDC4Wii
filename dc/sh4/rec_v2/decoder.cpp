@@ -108,18 +108,20 @@ static void dec_fallback(u32 op)
 	block.oplist.push_back(opcd);
 }
 
-// JIT_NEWOPS preset (wii/main.cpp). The eight opcodes below have hand-written
-// decoder handlers further down this file that were never referenced from
-// OpDesc[].rec_oph, so despite the code existing they always took the shop_ifb
-// interpreter path. Wiring them up changes SH4 core codegen, so it ships behind
-// a preset: with the preset off the dispatch in dec_DecodeBlock ignores their
-// rec_oph and they fall back exactly as they did before.
+// JIT_NEWOPS preset (wii/main.cpp). Nine opcodes that always took the shop_ifb
+// interpreter path despite the code to compile them already existing. Eight
+// have hand-written decoder handlers further down this file that were never
+// referenced from OpDesc[].rec_oph; the ninth, stc SR,<REG_N>, reaches
+// dec_generic's DM_ReadSRF mode, which likewise had no table row pointing at
+// it. Both dispatch paths consult this list, so with the preset off all nine
+// fall back exactly as they did before.
 extern "C" int get_jit_newops_preset();
 
 static bool dec_is_newop(u32 op)
 {
 	switch(op&0xF0FF)
 	{
+	case 0x0002:	//stc SR,<REG_N>   (via dec_generic's DM_ReadSRF, not a rec_oph)
 	case 0x4003:	//stc.l SR,@-<REG_N>
 	case 0x4007:	//ldc.l @<REG_N>+,SR
 	case 0x400E:	//ldc <REG_N>,SR
@@ -791,6 +793,9 @@ static u32 MatchDiv32(u32 pc, Sh4RegType& reg1, Sh4RegType& reg2, Sh4RegType& re
 	return match;
 }
 
+// How far the last MatchDiv32 got before it broke, for the [DIV1] probe below.
+static u32 s_div_match_len = 0;
+
 static bool MatchDiv32u(u32 op, u32 pc)
 {
 	if (settings.dynarec.safemode)
@@ -801,7 +806,8 @@ static bool MatchDiv32u(u32 op, u32 pc)
 	div_som_reg3 = NoReg;
 
 	// 1 (div0u) + 32 rotcl + 32 div1 = 65 on a perfect match
-	return MatchDiv32(pc + 2, div_som_reg1, div_som_reg2, div_som_reg3) == 65;
+	s_div_match_len = MatchDiv32(pc + 2, div_som_reg1, div_som_reg2, div_som_reg3);
+	return s_div_match_len == 65;
 }
 
 static bool MatchDiv32s(u32 op, u32 pc)
@@ -814,7 +820,74 @@ static bool MatchDiv32s(u32 op, u32 pc)
 	div_som_reg2 = (Sh4RegType)GetM(op);
 	div_som_reg3 = (Sh4RegType)GetN(op);
 
-	return MatchDiv32(pc + 2, div_som_reg1, div_som_reg2, div_som_reg3) == 65;
+	s_div_match_len = MatchDiv32(pc + 2, div_som_reg1, div_som_reg2, div_som_reg3);
+	return s_div_match_len == 65;
+}
+
+// ---------------------------------------------------------------------------
+// [DIV1] probe. When the idiom above matches, all 64 guest opcodes collapse
+// into one native divide and no div1 ever reaches the interpreter. Castlevania
+// issues ~11.5k div1/s through the shop_ifb path, so its divisions are NOT the
+// shape MatchDiv32 expects. This dumps the real instruction window around the
+// first few offending sites, plus how far the matcher got, so the actual shape
+// can be identified. Shares the ifb_probe preset — the same runs that want the
+// [IFB] breakdown want this. Self-quieting: DIV1_DUMP_MAX sites, then silent.
+// ---------------------------------------------------------------------------
+extern "C" int get_ifb_probe_preset();
+
+// One line per distinct site, matches included — the whole point is to see
+// whether the real 32-step loops collapse, which a failure-only probe cannot
+// show. Separate budgets so div0 sites and div1 sites can't starve each other.
+#define DIV_SITE_MAX 16
+static u32 s_div0_sites[DIV_SITE_MAX];
+static u32 s_div1_sites[DIV_SITE_MAX];
+static u32 s_div0_site_n = 0;
+static u32 s_div1_site_n = 0;
+
+// Returns true the first time this pc is seen (and records it).
+static bool dec_div_site_new(u32* tab, u32& n, u32 pc)
+{
+	for (u32 i=0;i<n;i++)
+		if (tab[i]==pc)
+			return false;
+	if (n>=DIV_SITE_MAX)
+		return false;
+	tab[n++]=pc;
+	return true;
+}
+
+// Every div0u/div0s the decoder sees, matched or not.
+static void dec_div0_probe(u32 pc, bool is_unsigned, bool matched)
+{
+	if (!get_ifb_probe_preset())
+		return;
+	if (!dec_div_site_new(s_div0_sites, s_div0_site_n, pc))
+		return;
+
+	if (matched)
+	{
+		printf("[DIV] div0%c pc=%08X MATCHED 65/65 -> native divide (reg1=%d reg2=%d reg3=%d)\n",
+			is_unsigned ? 'u' : 's', pc,
+			(int)div_som_reg1, (int)div_som_reg2, (int)div_som_reg3);
+	}
+	else
+	{
+		printf("[DIV] div0%c pc=%08X failed at %u/65 -> next op %04X (%s)\n",
+			is_unsigned ? 'u' : 's', pc, s_div_match_len,
+			ReadMem16(pc+2), OpDesc[ReadMem16(pc+2)]->diss);
+	}
+}
+
+// A div1 about to take the interpreter path.
+static void dec_div1_probe(u32 op, u32 pc)
+{
+	if ((op & DIV_MASK_N_M) != DIV1_KEY || !get_ifb_probe_preset())
+		return;
+	if (!dec_div_site_new(s_div1_sites, s_div1_site_n, pc))
+		return;
+
+	printf("[DIV] div1 ifb pc=%08X (prev %04X, next %04X)\n",
+		pc, ReadMem16(pc-2), ReadMem16(pc+2));
 }
 
 bool dec_generic(u32 op)
@@ -822,7 +895,13 @@ bool dec_generic(u32 op)
 	DecMode mode;DecParam d;DecParam s;shilop natop;u32 e;
 	if (OpDesc[op]->decode==0)
 		return false;
-	
+
+	// JIT_NEWOPS gate for the opcodes this preset enables through the generic
+	// decoder rather than a rec_oph handler (stc SR,<REG_N> -> DM_ReadSRF).
+	// Off => fall back to the interpreter exactly as before.
+	if (dec_is_newop(op) && !get_jit_newops_preset())
+		return false;
+
 	u64 inf=OpDesc[op]->decode;
 
 	e=(u32)(inf>>32);
@@ -1030,6 +1109,10 @@ bool dec_generic(u32 op)
 				(e==1 ? MatchDiv32u(op, state.cpu.rpc)
 				      : MatchDiv32s(op, state.cpu.rpc));
 
+			// s_div_match_len is only meaningful if the matcher actually ran
+			if (!state.cpu.is_delayslot)
+				dec_div0_probe(state.cpu.rpc, e==1, matched);
+
 			if (matched)
 			{
 				if (e==1)
@@ -1150,6 +1233,7 @@ DecodedBlock* dec_DecodeBlock(u32 startpc,fpscr_type fpu_cfg,u32 max_cycles)
 					{
 						if (state.ngen.InterpreterFallback || !dec_generic(op))
 						{
+							dec_div1_probe(op,state.cpu.rpc);
 							dec_fallback(op);
 							if (OpDesc[op]->SetPC())
 							{

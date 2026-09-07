@@ -56,6 +56,9 @@ extern "C" int get_debug_loop();
 // Defined in main.cpp (JIT_SBP preset) — 0=off (zero protection, legacy),
 // 1=known self-modifying addresses (default), 2=all RAM blocks
 extern "C" int get_jit_sbp_preset();
+// JIT_HOTBLOCKS probe (wii_driver.cpp) — drop the tracked-block table when the
+// code cache it describes is thrown away. No-op unless the preset is on.
+extern "C" void hotblocks_reset();
 
 // ============================================================================
 // Optional performance counters
@@ -239,6 +242,10 @@ void recSh4_ClearCache()
 
 	LastAddr = LastAddr_min;
 	bm_Reset();
+
+	// JIT_HOTBLOCKS: every tracked block described code in the cache we just
+	// dropped, so its counters and code pointers are meaningless now.
+	hotblocks_reset();
 
 #if HOST_OS == OS_WII
 	// Invalidate the entire I-cache region we may have written into.

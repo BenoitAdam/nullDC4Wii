@@ -25,6 +25,7 @@ extern "C" int get_render_delay_preset();
 // preset is off; piggybacks on the once-a-second stats block below so it gets
 // the same fflush and the same time base.
 extern "C" void ifb_probe_dump(double seconds);
+extern "C" void hotblocks_dump(double seconds);
 
 u32 spg_InVblank = 0;
 s32 spg_ScanlineSh4CycleCounter = 0;
@@ -348,6 +349,7 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 fflush(stdout); // once per 1s: keep the log tail intact if the Wii is powered off
 
                 ifb_probe_dump(tdiff);   // no-op unless the IFB PROBE preset is on
+                hotblocks_dump(tdiff);   // no-op unless the JIT HOTBLOCKS preset is on
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
             }

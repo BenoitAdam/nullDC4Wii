@@ -237,23 +237,37 @@
                                 ifb_flush is worth testing on a given game.
                                 Costs 4 instructions per fallback site, so turn
                                 it off for timing runs. Diagnostic, default off.
-        jit_newops=on       <- on/off, dynarecs eight opcodes that had always
-                                fallen back to the interpreter: stc.l SR,
-                                ldc.l SR, ldc SR, lds FPSCR, lds.l FPSCR,
-                                rotcl, rotcr and tas.b. Hand-written decoder
-                                handlers for all eight already existed in
-                                dc/sh4/rec_v2/decoder.cpp but were never
-                                referenced from the opcode table, so the code
-                                sat dead and every execution paid a shop_ifb
-                                call-out plus its register bracket. rotcl is
-                                the interesting one — it is half of the 32-step
-                                software division idiom, and the runs the DIV0
-                                matcher fails to collapse land here. With this
-                                on, those eight stop reaching ifb_flush's
+        jit_newops=on       <- on/off, dynarecs nine opcodes that had always
+                                fallen back to the interpreter: stc SR, stc.l
+                                SR, ldc.l SR, ldc SR, lds FPSCR, lds.l FPSCR,
+                                rotcl, rotcr and tas.b. In every case the code
+                                to compile them already existed and simply was
+                                not reachable — eight had hand-written decoder
+                                handlers in dc/sh4/rec_v2/decoder.cpp never
+                                referenced from the opcode table, and stc SR
+                                had dec_generic's DM_ReadSRF mode with no table
+                                row pointing at it — so each execution paid a
+                                shop_ifb call-out plus its register bracket.
+                                stc SR is the one that measured: top fallback in
+                                several ChuChu Rocket scenes at up to 96k/s.
+                                With this on, all nine stop reaching ifb_flush's
                                 allow-list entirely. Changes SH4 core codegen,
                                 so default off — A/B per game, and use
                                 ifb_probe first to see if a game issues enough
                                 of these to be worth it.
+        jit_hotblocks=on    <- on/off, diagnostic. Counts executions per
+                                compiled SH4 block and prints the hottest ones
+                                to /ndclog.txt once a second as [HOT] lines,
+                                each with its codegen density — PPC bytes
+                                emitted per SH4 opcode — plus a full SH4 + PPC
+                                dump of the top block twice per session. Use it
+                                to find where the dynarec actually spends the
+                                frame and whether the code it emitted for that
+                                block is any good; ifb_probe answers the same
+                                question for the interpreter-fallback path,
+                                this covers everything else. Costs 4
+                                instructions at every block entry, so turn it
+                                off for timing runs. Default off.
         sched=on            <- on/off, unified cycle-deadline event scheduler
                                 (dc/sh4/sh4_sched.cpp). Fires the completion/IRQ
                                 events whose RELATIVE ordering matters (GD-ROM
@@ -737,6 +751,7 @@ extern int g_jit_align_preset;
 extern int g_ifb_flush_preset;
 extern int g_ifb_probe_preset;
 extern int g_jit_newops_preset;
+extern int g_hotblocks_preset;
 extern int g_sched_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -844,6 +859,7 @@ struct GamePreset
     int ifb_flush;
     int ifb_probe;
     int jit_newops;
+    int hotblocks;
     int sched;
     int debug_fb2d;
     int debug_message;
@@ -1264,6 +1280,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "ifb_flush"))      p->ifb_flush      = parse_bool(val);
     else if (key_eq(key, "ifb_probe"))      p->ifb_probe      = parse_bool(val);
     else if (key_eq(key, "jit_newops"))     p->jit_newops     = parse_bool(val);
+    else if (key_eq(key, "jit_hotblocks"))  p->hotblocks      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
@@ -1347,6 +1364,7 @@ static void preset_clear(GamePreset* cur)
     cur->ifb_flush = -1;
     cur->ifb_probe = -1;
     cur->jit_newops = -1;
+    cur->hotblocks = -1;
     cur->sched = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
@@ -1452,6 +1470,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->ifb_flush      >= 0) { g_ifb_flush_preset      = p->ifb_flush;      printf("  ifb_flush      -> %d\n", p->ifb_flush);      }
     if (p->ifb_probe      >= 0) { g_ifb_probe_preset      = p->ifb_probe;      printf("  ifb_probe      -> %d\n", p->ifb_probe);      }
     if (p->jit_newops     >= 0) { g_jit_newops_preset     = p->jit_newops;     printf("  jit_newops     -> %d\n", p->jit_newops);     }
+    if (p->hotblocks      >= 0) { g_hotblocks_preset      = p->hotblocks;      printf("  jit_hotblocks  -> %d\n", p->hotblocks);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }
