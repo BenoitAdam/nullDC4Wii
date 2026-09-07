@@ -10378,7 +10378,7 @@ void StartRender()
       s_rtt_w = rtt_w;           // always, 0,0)
       s_rtt_h = rtt_h;
       s_rtt_pass = true;
-      DoRender();
+      { const u64 _rt0 = PERF_TICKS(); DoRender(); RenderTicks += PERF_TICKS() - _rt0; }
       s_rtt_pass = false;
       return; // not a presented frame: no FrameCount++, display untouched
     }
@@ -10551,7 +10551,7 @@ void StartRender()
       s_cmp_dy0 = (u32)dy0; s_cmp_dy1 = (u32)dy1;
       s_cmp_shift_y = (float)shift;
       s_cmp_pass = true;
-      DoRender();          // draws into the band; no copy, no present
+      { const u64 _rt0 = PERF_TICKS(); DoRender(); RenderTicks += PERF_TICKS() - _rt0; }          // draws into the band; no copy, no present
       s_cmp_pass = false;
       s_cmp_scissor_on = false;
 
@@ -10582,7 +10582,7 @@ void StartRender()
   if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[PATH] 3D: FB_W_SOF1=%08X FB_R_SOF1=%08X VtxCnt=%d lists=%d\n",
     FB_W_SOF1, FB_R_SOF1, VtxCnt, (int)(curLST - lists));
 
-  DoRender();
+  { const u64 _rt0 = PERF_TICKS(); DoRender(); RenderTicks += PERF_TICKS() - _rt0; }
 
   FrameCount++;
 }

@@ -1,4 +1,5 @@
 #include "ta.h"
+#include "Renderer_if.h"	// TaTicks / TaCalls / PERF_TICKS — see the split doc there
 
 // Tile Accelerator (TA) state machine for PowerVR2 (Dreamcast) emulation
 // Handles DMA and Store Queue writes, dispatches polygon/vertex/control params
@@ -15,8 +16,11 @@ using namespace TASplitter;
 void libPvr_TaSQ(u32* data)
 {
     verify(TaCmd != nullptr);
+    const u64 _t0 = PERF_TICKS();
     Ta_Dma* t = (Ta_Dma*)data;
     TaCmd(t, t);
+    TaTicks += PERF_TICKS() - _t0;
+    TaCalls++;
 }
 
 // DMA path: process a contiguous block of 32-byte TA entries
@@ -26,6 +30,8 @@ void libPvr_TaDMA(u32* data, u32 size)
     verify(TaCmd != nullptr);
     verify(size > 0);
 
+    const u64 _t0 = PERF_TICKS();
+
     Ta_Dma* ta_data     = (Ta_Dma*)data;
     Ta_Dma* ta_data_end = ta_data + size - 1;
 
@@ -34,6 +40,9 @@ void libPvr_TaDMA(u32* data, u32 size)
         ta_data = TaCmd(ta_data, ta_data_end);
     }
     while (ta_data <= ta_data_end);
+
+    TaTicks += PERF_TICKS() - _t0;
+    TaCalls++;
 }
 
 namespace TASplitter

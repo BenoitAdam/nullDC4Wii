@@ -307,8 +307,18 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 // per-STRIP cost or its per-VERTEX cost is the thing to attack.
                 double vps     = StripCount ? (double)VertexCount / StripCount : 0.0;
 
+                // Share of WALL time spent inside DoRender() and inside the TA
+                // decoder. ta_kps is the TA call rate, so the per-call cost of
+                // the TA bracket itself stays visible instead of hidden.
+                double rnd_pct = PERF_TICKS_US(RenderTicks) / 1e6 / tdiff * 100.0;
+                double ta_pct  = PERF_TICKS_US(TaTicks)     / 1e6 / tdiff * 100.0;
+                double ta_kps  = TaCalls / tdiff / 1000.0;
+
                 VertexCount     = 0;
                 StripCount      = 0;
+                RenderTicks     = 0;
+                TaTicks         = 0;
+                TaCalls         = 0;
                 FrameCount      = 0;
                 spg_VblankCount = 0;
 
@@ -344,13 +354,13 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
 
 #ifndef TARGET_PSP
                 printf(
-                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK v/st:%.1f\n",
+                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK v/st:%.1f rnd:%.1f%% ta:%.1f%%(%.0fk/s)\n",
                     spd_cpu * 100.0 / 200.0, spd_vbs,
                     mode, res, fullvbs,
                     spd_fps,
                     (spd_fps > 0.0 ? mv / spd_fps / tdiff : 0.0),
                     mv / tdiff,
-                    vps);
+                    vps, rnd_pct, ta_pct, ta_kps);
                 fflush(stdout); // once per 1s: keep the log tail intact if the Wii is powered off
 
                 ifb_probe_dump(tdiff);   // no-op unless the IFB PROBE preset is on
