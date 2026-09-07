@@ -661,7 +661,7 @@ extern "C" {
 // unlisted opcode is slow, never wrong.
 // Read at CODEGEN time: set it before launching, not mid-game.
 // 0=off (default, legacy full spill), 1=on (selective).
-int g_ifb_flush_preset = 0;
+int g_ifb_flush_preset = 1;
 
 extern "C" {
   int get_ifb_flush_preset() { return g_ifb_flush_preset; }
