@@ -717,6 +717,25 @@ extern "C" {
   int get_hotblocks_preset() { return g_hotblocks_preset; }
 }
 
+// JIT_TFWD — forward the SH4 T bit from the register it was just computed in
+// straight to the branch that consumes it, instead of storing it to the context
+// and immediately loading it back (dc/sh4/rec_v2/wii_driver.cpp, compile_state
+// t_in_rarg0). sr_T is not pinned — GetIntReg only covers r0..r15 minus r11 —
+// so the commonest shape on SH4, a compare followed by bt/bf, was emitting
+//     stw r3,0x118(r30)   ;  lwz r3,0x118(r30)
+// back to back: same address, same register, a load-hit-store stall on Broadway
+// to recover a value that never left. Found with JIT_HOTBLOCKS on the #1 block
+// of a ChuChu Rocket scene. The store stays (sr_T is architectural state a
+// later block may read); only the reload goes. Applies to the block-end
+// conditional and to the shop_jcond of a delay-slot branch, and only when the
+// producer is the immediately preceding op — anything in between invalidates
+// it automatically. 0=off (legacy, default), 1=on.
+int g_jit_tfwd_preset = 0;
+
+extern "C" {
+  int get_jit_tfwd_preset() { return g_jit_tfwd_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -1741,6 +1760,7 @@ void checkBiosFiles()
 #define OPT_IFB_PROBE   83   // shown on Page 4 (CORE), under JIT IFB FLUSH
 #define OPT_JIT_NEWOPS  84   // shown on Page 4 (CORE), under JIT IFB PROBE
 #define OPT_JIT_HOTBLOCKS 85 // shown on Page 4 (CORE), under JIT NEW OPS
+#define OPT_JIT_TFWD    86   // shown on Page 4 (CORE), under JIT HOTBLOCKS
 #define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
@@ -1847,7 +1867,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_IFB_FLUSH,
   OPT_IFB_PROBE,
   OPT_JIT_NEWOPS,
-  OPT_JIT_HOTBLOCKS
+  OPT_JIT_HOTBLOCKS,
+  OPT_JIT_TFWD
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -2630,6 +2651,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (LOGS [HOT])   >]"); break;
     }
     printf(" hot blocks + ppc bytes per op");
+    printf("\n");
+
+    // --- Row: JIT_TFWD - forward T to its branch instead of reloading it ---
+    printf("%s JIT T-FORWARD  : ", (selectedRow == OPT_JIT_TFWD) ? ">" : " ");
+    switch (g_jit_tfwd_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (NO T RELOAD)  >]"); break;
+    }
+    printf(" skip the T store/reload on cmp+bt");
     printf("\n\n");
 
     printOptionsFooter();
@@ -2878,6 +2908,7 @@ bool displayOptionsMenu()
         case OPT_IFB_PROBE:      g_ifb_probe_preset       = (g_ifb_probe_preset       + 1) % 2; break;
         case OPT_JIT_NEWOPS:     g_jit_newops_preset      = (g_jit_newops_preset      + 1) % 2; break;
         case OPT_JIT_HOTBLOCKS:  g_hotblocks_preset       = (g_hotblocks_preset       + 1) % 2; break;
+        case OPT_JIT_TFWD:       g_jit_tfwd_preset        = (g_jit_tfwd_preset        + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
@@ -2974,6 +3005,7 @@ bool displayOptionsMenu()
         case OPT_IFB_PROBE:      g_ifb_probe_preset       = (g_ifb_probe_preset       + 1) % 2; break;
         case OPT_JIT_NEWOPS:     g_jit_newops_preset      = (g_jit_newops_preset      + 1) % 2; break;
         case OPT_JIT_HOTBLOCKS:  g_hotblocks_preset       = (g_hotblocks_preset       + 1) % 2; break;
+        case OPT_JIT_TFWD:       g_jit_tfwd_preset        = (g_jit_tfwd_preset        + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;

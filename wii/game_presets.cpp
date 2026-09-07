@@ -268,6 +268,19 @@
                                 this covers everything else. Costs 4
                                 instructions at every block entry, so turn it
                                 off for timing runs. Default off.
+        jit_tfwd=on         <- on/off, forwards the SH4 T bit from the register
+                                it was just computed in straight to the branch
+                                that consumes it. sr_T is not pinned, so a
+                                compare followed by bt/bf — the commonest shape
+                                there is on SH4 — was emitting "stw T; lwz T"
+                                back to back: same address, same register, a
+                                load-hit-store stall on Broadway to recover a
+                                value that never left. Found with jit_hotblocks
+                                on the #1 block of a ChuChu scene. The store
+                                stays (a later block may read T); only the
+                                reload goes, and only when the compare is the
+                                immediately preceding op. Perf preset, changes
+                                SH4 codegen — default off, A/B per game.
         sched=on            <- on/off, unified cycle-deadline event scheduler
                                 (dc/sh4/sh4_sched.cpp). Fires the completion/IRQ
                                 events whose RELATIVE ordering matters (GD-ROM
@@ -752,6 +765,7 @@ extern int g_ifb_flush_preset;
 extern int g_ifb_probe_preset;
 extern int g_jit_newops_preset;
 extern int g_hotblocks_preset;
+extern int g_jit_tfwd_preset;
 extern int g_sched_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -860,6 +874,7 @@ struct GamePreset
     int ifb_probe;
     int jit_newops;
     int hotblocks;
+    int jit_tfwd;
     int sched;
     int debug_fb2d;
     int debug_message;
@@ -1281,6 +1296,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "ifb_probe"))      p->ifb_probe      = parse_bool(val);
     else if (key_eq(key, "jit_newops"))     p->jit_newops     = parse_bool(val);
     else if (key_eq(key, "jit_hotblocks"))  p->hotblocks      = parse_bool(val);
+    else if (key_eq(key, "jit_tfwd"))       p->jit_tfwd       = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
@@ -1365,6 +1381,7 @@ static void preset_clear(GamePreset* cur)
     cur->ifb_probe = -1;
     cur->jit_newops = -1;
     cur->hotblocks = -1;
+    cur->jit_tfwd = -1;
     cur->sched = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
@@ -1471,6 +1488,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->ifb_probe      >= 0) { g_ifb_probe_preset      = p->ifb_probe;      printf("  ifb_probe      -> %d\n", p->ifb_probe);      }
     if (p->jit_newops     >= 0) { g_jit_newops_preset     = p->jit_newops;     printf("  jit_newops     -> %d\n", p->jit_newops);     }
     if (p->hotblocks      >= 0) { g_hotblocks_preset      = p->hotblocks;      printf("  jit_hotblocks  -> %d\n", p->hotblocks);      }
+    if (p->jit_tfwd       >= 0) { g_jit_tfwd_preset       = p->jit_tfwd;       printf("  jit_tfwd       -> %d\n", p->jit_tfwd);       }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }

@@ -212,12 +212,33 @@ struct
 {
 	bool has_jcond;
 
+	// T-FORWARDING. The SH4's commonest shape by far is a flag producer
+	// (cmp/tst/dt) immediately followed by a consumer (bt/bf, or the shop_jcond
+	// of a delay-slot branch). sr_T is not pinned — GetIntReg only covers
+	// r0..r15 minus r11 — so the producer stored T to the context and the
+	// consumer loaded it straight back:
+	//     stw r3,0x118(r30)      <- producer (value still in rarg0!)
+	//     lwz r3,0x118(r30)      <- consumer, same address, same register
+	// which is a load-hit-store stall on Broadway to recover a value that never
+	// left the register. Set true by binop_end when it has just written sr_T,
+	// and cleared before EVERY shil op, so it can only ever describe the
+	// immediately preceding one — no cross-op liveness reasoning needed, and no
+	// way for an intervening op to have clobbered rarg0 behind our back.
+	// The store stays: sr_T is architectural state a later block may read.
+	bool t_in_rarg0;
+
 	void Reset()
 	{
 		has_jcond=false;
+		t_in_rarg0=false;
 	}
 } compile_state;
 u32 last_block;
+
+// JIT_TFWD preset (main.cpp): forward sr_T from rarg0 to the branch that
+// consumes it instead of storing then immediately reloading it. See the
+// t_in_rarg0 comment in compile_state.
+extern "C" int get_jit_tfwd_preset();
 
 // Forward decls: GPR/FPR allocation maps + flush/reload (defined later in this file).
 ppc_ireg GetIntReg(u32 reg);
@@ -607,6 +628,13 @@ void binop_start(shil_opcode* op)
 void binop_end(shil_opcode* op)
 {
 	ppc_sh_store(ppc_rarg0,op->rd);
+
+	// ppc_sh_store reads rarg0, never writes it, so for an unpinned dest like
+	// sr_T the value is still sitting in rarg0 for the next op to use. Gating
+	// the flag HERE gates the whole optimisation: with JIT_TFWD off it never
+	// gets set, and both consumers fall back to their original reload.
+	compile_state.t_in_rarg0 = get_jit_tfwd_preset() &&
+		op->rd.is_reg() && op->rd._reg==reg_sr_T;
 }
 
 // ---------------------------------------------------------------------------
@@ -995,6 +1023,13 @@ void ngen_End(DecodedBlock* block)
 			if (compile_state.has_jcond)
 			{
 				reg=ppc_djump;
+			}
+			else if (compile_state.t_in_rarg0)
+			{
+				// The block's last op was the compare that produced T, and
+				// nothing has run since — it is still in rarg0. Skip reloading
+				// the value we stored two instructions ago (see t_in_rarg0).
+				reg=ppc_rarg0;
 			}
 			else
 			{
@@ -2330,6 +2365,14 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 	for (size_t i = 0; i < block->oplist.size(); i++)
 	{
 		shil_opcode* op=&block->oplist[i];
+
+		// T-FORWARDING: latch whether the PREVIOUS op left sr_T in rarg0, then
+		// clear, so this op starts clean and only its own binop_end can set the
+		// flag again. Anything that runs between a producer and a consumer
+		// therefore invalidates the forward automatically.
+		const bool t_prev = compile_state.t_in_rarg0;
+		compile_state.t_in_rarg0 = false;
+
 		switch(op->op)
 		{
 
@@ -2953,7 +2996,14 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		case shop_jcond:
 			{
 				compile_state.has_jcond=true;
-				ppc_sh_load(ppc_djump,op->rs1);
+				// Delay-slot branches capture T here, before the delay slot runs.
+				// When the compare that produced it is the op right before this
+				// one, it is still in rarg0 — take it from there instead of
+				// reloading the value we just stored.
+				if (t_prev && op->rs1.is_reg() && op->rs1._reg==reg_sr_T)
+					ppc_ori(ppc_djump,ppc_rarg0,0);		// mr djump,rarg0
+				else
+					ppc_sh_load(ppc_djump,op->rs1);
 			}
 			break;
 			
