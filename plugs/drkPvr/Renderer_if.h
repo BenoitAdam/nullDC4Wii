@@ -4,6 +4,7 @@
 //#include "TexCache.h"
 
 extern u32 VertexCount;
+extern u32 StripCount;
 extern u32 FrameCount;
 
 // #include "gsRend.h" // PS2

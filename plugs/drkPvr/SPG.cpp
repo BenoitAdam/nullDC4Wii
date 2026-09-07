@@ -303,8 +303,12 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 double spd_cpu = (spd_vbs * spg_FrameSh4Cycles) / 1000000.0;
                 double fullvbs = (spd_vbs / spd_cpu) * 200.0;
                 double mv      = VertexCount  / 1000.0;
+                // Vertices per strip: decides whether the render loop's fixed
+                // per-STRIP cost or its per-VERTEX cost is the thing to attack.
+                double vps     = StripCount ? (double)VertexCount / StripCount : 0.0;
 
                 VertexCount     = 0;
+                StripCount      = 0;
                 FrameCount      = 0;
                 spg_VblankCount = 0;
 
@@ -340,12 +344,13 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
 
 #ifndef TARGET_PSP
                 printf(
-                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK\n",
+                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK v/st:%.1f\n",
                     spd_cpu * 100.0 / 200.0, spd_vbs,
                     mode, res, fullvbs,
                     spd_fps,
                     (spd_fps > 0.0 ? mv / spd_fps / tdiff : 0.0),
-                    mv / tdiff);
+                    mv / tdiff,
+                    vps);
                 fflush(stdout); // once per 1s: keep the log tail intact if the Wii is powered off
 
                 ifb_probe_dump(tdiff);   // no-op unless the IFB PROBE preset is on

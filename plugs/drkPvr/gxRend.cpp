@@ -10289,6 +10289,11 @@ void StartRender()
 {
   u32 VtxCnt = curVTX - vertices;
   VertexCount += VtxCnt;
+  // Strips this pass. Pointer arithmetic once per render -- no per-strip or
+  // per-vertex cost, so unlike the hotblocks probe this can stay on during a
+  // timing run. vertices-per-strip is what decides whether the render loop's
+  // per-STRIP work or its per-VERTEX work is worth attacking.
+  StripCount += (u32)(curLST - lists);
 
 #if SCOPE_DEBUG_LOG
   ss_dump_pass();   // must run BEFORE any path below returns
