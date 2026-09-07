@@ -1700,6 +1700,17 @@ extern "C" void ifb_probe_dump(double seconds)
 // for timing runs. The table is allocated lazily, so nothing costs MEM1 while
 // the preset is off, and it is dropped whenever the code cache is flushed —
 // every recorded ppc_start points into the cache that just went away.
+//
+// OBSERVER EFFECT: the counters live in their OWN dense u32 array, not inside
+// the descriptor struct. ChuChu runs 5-10M block entries/s, so the emitted
+// load/increment/store is touched millions of times a second; with the counter
+// embedded in a 24-byte struct the working set was HOT_MAX*24 = 384 KB, past
+// Broadway's 256 KB L2, and a good share of those accesses went to main memory.
+// Split out, the hot array is HOT_MAX*4 = 64 KB and eight counters share a
+// 32-byte line, so consecutively-compiled blocks (which tend to run together)
+// share lines. The descriptors stay fat but are only touched at compile time
+// and once a second by the dump. This matters because SPEED% in a hotblocks-on
+// log is only worth comparing if the probe's own cost is small and stable.
 // ---------------------------------------------------------------------------
 extern "C" int get_hotblocks_preset();
 
@@ -1710,14 +1721,15 @@ struct HotBlock
 	u32 sh4_ops;
 	u8* ppc_start;
 	u32 ppc_size;	// bytes of PPC emitted (filled in at the end of ngen_Compile)
-	u32 hits;		// bumped by the emitted counter; reset each dump
 };
 
 // ChuChu compiles ~10k blocks between cache clears; at 2048 the first run left
 // 7894 untracked, which biases the census toward whatever compiled first.
-// 16384 * 24 B = 384 KB, allocated only when the preset is on.
+// Descriptors 16384 * 20 B = 320 KB + counters 64 KB, allocated only when the
+// preset is on.
 #define HOT_MAX 16384
 static HotBlock* s_hb = 0;
+static u32* s_hb_hits = 0;	// dense counter array, indexed in step with s_hb
 static u32 s_hb_n = 0;
 static u32 s_hb_overflow = 0;
 static u32 s_hb_disasm_left = 2;	// full disassembly dumps per session
@@ -1730,33 +1742,41 @@ extern "C" void hotblocks_reset()
 	s_hb_overflow = 0;
 }
 
-// Compile time: claim a slot for this block, or 0 if unavailable.
-static HotBlock* hotblocks_slot(DecodedBlock* block)
+// Compile time: claim a slot for this block. Returns its index, or -1 if
+// unavailable — the caller needs the index to reach both the descriptor and
+// the counter, which live in separate arrays.
+static s32 hotblocks_slot(DecodedBlock* block)
 {
 	if (!get_hotblocks_preset())
-		return 0;
+		return -1;
 
 	if (!s_hb)
 	{
 		s_hb = (HotBlock*)malloc(sizeof(HotBlock)*HOT_MAX);
-		if (!s_hb)
-			return 0;
+		s_hb_hits = (u32*)malloc(sizeof(u32)*HOT_MAX);
+		if (!s_hb || !s_hb_hits)
+		{
+			free(s_hb);      s_hb = 0;
+			free(s_hb_hits); s_hb_hits = 0;
+			return -1;
+		}
 	}
 
 	if (s_hb_n >= HOT_MAX)
 	{
 		s_hb_overflow++;
-		return 0;
+		return -1;
 	}
 
-	HotBlock* h = &s_hb[s_hb_n++];
+	const s32 idx = (s32)s_hb_n++;
+	HotBlock* h = &s_hb[idx];
 	h->sh4_pc    = block->start;
 	h->sh4_size  = block->sh4_code_size;
 	h->sh4_ops   = block->opcodes;
 	h->ppc_start = 0;
 	h->ppc_size  = 0;
-	h->hits      = 0;
-	return h;
+	s_hb_hits[idx] = 0;
+	return idx;
 }
 
 static void hotblocks_disasm(const HotBlock& h)
@@ -1803,9 +1823,9 @@ extern "C" void hotblocks_dump(double seconds)
 	double all_hits = 0.0, all_ppc = 0.0, all_ops = 0.0;
 	for (u32 i=0;i<s_hb_n;i++)
 	{
-		all_hits += s_hb[i].hits;
-		all_ppc  += (double)s_hb[i].hits * s_hb[i].ppc_size;
-		all_ops  += (double)s_hb[i].hits * s_hb[i].sh4_ops;
+		all_hits += s_hb_hits[i];
+		all_ppc  += (double)s_hb_hits[i] * s_hb[i].ppc_size;
+		all_ops  += (double)s_hb_hits[i] * s_hb[i].sh4_ops;
 	}
 
 	if (all_hits <= 0.0)
@@ -1814,7 +1834,7 @@ extern "C" void hotblocks_dump(double seconds)
 	printf("[HOT] %.2fs  %u blocks tracked, %.0f entries/s, %.1f PPC B per SH4 op (execution-weighted)\n",
 		seconds, s_hb_n, all_hits/seconds, all_ops>0.0?(all_ppc/all_ops):0.0);
 
-	// Top 8 by hits. Repeated max-scan — 8 passes over <=2048 entries once a
+	// Top 8 by hits. Repeated max-scan — 8 passes over <=HOT_MAX entries once a
 	// second is free and avoids dragging a sort in.
 	u32 top[8];
 	u32 tn = 0;
@@ -1823,14 +1843,14 @@ extern "C" void hotblocks_dump(double seconds)
 		u32 best = 0xFFFFFFFF;
 		for (u32 i=0;i<s_hb_n;i++)
 		{
-			if (!s_hb[i].hits)
+			if (!s_hb_hits[i])
 				continue;
 			bool taken = false;
 			for (u32 k=0;k<tn;k++)
 				if (top[k]==i) { taken=true; break; }
 			if (taken)
 				continue;
-			if (best==0xFFFFFFFF || s_hb[i].hits > s_hb[best].hits)
+			if (best==0xFFFFFFFF || s_hb_hits[i] > s_hb_hits[best])
 				best = i;
 		}
 		if (best==0xFFFFFFFF)
@@ -1841,9 +1861,10 @@ extern "C" void hotblocks_dump(double seconds)
 	for (u32 a=0;a<tn;a++)
 	{
 		const HotBlock& h = s_hb[top[a]];
+		const u32 hits = s_hb_hits[top[a]];
 		printf("[HOT]   %u: pc=%08X %8u (%7.0f/s) %5.1f%%  sh4 %3u ops  ppc %5u B  %5.1f B/op\n",
-			a+1, h.sh4_pc, h.hits, h.hits/seconds,
-			h.hits*100.0/all_hits,
+			a+1, h.sh4_pc, hits, hits/seconds,
+			hits*100.0/all_hits,
 			h.sh4_ops, h.ppc_size,
 			h.sh4_ops?((double)h.ppc_size/h.sh4_ops):0.0);
 	}
@@ -1876,7 +1897,7 @@ extern "C" void hotblocks_dump(double seconds)
 	}
 
 	for (u32 i=0;i<s_hb_n;i++)
-		s_hb[i].hits = 0;
+		s_hb_hits[i] = 0;
 
 	fflush(stdout);
 }
@@ -2370,10 +2391,10 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 	// ngen_Begin so it counts real body executions — past the SMC check and the
 	// cycle-underflow exit — at a point where rarg0/rarg1 are still scratch
 	// (same reasoning as the block-check guard inside ngen_Begin).
-	HotBlock* hb = hotblocks_slot(block);
-	if (hb)
+	const s32 hb = hotblocks_slot(block);
+	if (hb>=0)
 	{
-		u32 lo = ppc_addr_high(ppc_rarg1,(void*)&hb->hits);
+		u32 lo = ppc_addr_high(ppc_rarg1,(void*)&s_hb_hits[hb]);
 		ppc_lwz(ppc_rarg0,ppc_rarg1,lo);
 		ppc_addi(ppc_rarg0,ppc_rarg0,1);
 		ppc_stw(ppc_rarg0,ppc_rarg1,lo);
@@ -3615,14 +3636,14 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 	// Now that the tail and the cold fragments are emitted, this block's real
 	// footprint is known — that is the number the B/op density is built on.
-	if (hb)
+	if (hb>=0)
 	{
 		u32 sz = (u32)((u8*)emit_GetCCPtr()-(u8*)rv);
 		// Discount the probe's own 4-instruction counter so the B/op figure
 		// describes the codegen, not the measurement. On a 3-op block those
 		// 16 bytes are 5 B/op of pure observer effect.
-		hb->ppc_start = (u8*)rv;
-		hb->ppc_size  = sz>16 ? sz-16 : sz;
+		s_hb[hb].ppc_start = (u8*)rv;
+		s_hb[hb].ppc_size  = sz>16 ? sz-16 : sz;
 	}
 
 	return rv;
