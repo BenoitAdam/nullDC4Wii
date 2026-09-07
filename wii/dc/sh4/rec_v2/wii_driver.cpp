@@ -108,6 +108,8 @@ extern "C" int get_bcache_preset();	// main.cpp: 0=off (default), 1=flat dispatc
 extern "C" int get_dyn_ic_preset();	// main.cpp: 0=off (default), 1=call+jump, 2=+rts
 extern "C" int get_fpu_pin_preset();	// main.cpp: 0=off (default), 1=pin fr[0..15] to f14..f29
 extern "C" int get_jit_align_preset();	// main.cpp: 0=off (default), 1=32-byte-align block entries
+extern "C" int get_ifb_flush_preset();	// main.cpp: 0=off (default, full bracket), 1=selective
+extern "C" int get_ifb_probe_preset();	// main.cpp: 0=off (default), 1=count ifb sites per opcode
 
 // ppc_li: Loads a 32-bit immediate value into a PowerPC register.
 void ppc_li(u32 D,u32 imm)
@@ -1328,6 +1330,264 @@ void reg_reload_all_fpu()
 	}
 }
 
+// ============================================================================
+// IFB_FLUSH preset + IFB_PROBE — narrowing the shop_ifb register bracket
+// ============================================================================
+// shop_ifb hands ONE 16-bit SH4 opcode to its interpreter handler
+// (OpDesc[op]->oph). Because that handler could in principle read or write any
+// guest register through Sh4cntx, the emitter has always bracketed the call
+// with a FULL register-file spill: reg_flush_all() (15 stw) + reg_reload_all()
+// (15 lwz), plus reg_flush_all_fpu()/reg_reload_all_fpu() (16 stfs + 16 lfs)
+// when FPU_PIN is on. That is 30 memory ops — 62 with FPU_PIN — around an
+// opcode that in practice touches two registers.
+//
+// Same shape as the fschg/sync_fpscr bug (a C call-out doing a whole-file
+// spill for almost nothing) that was worth +12-13% on Wii, and it lands on a
+// hot set. Only 28 opcodes reach ifb on this build, but they include div1,
+// addc/subc/addv/subv, negc, rotcl/rotcr, cmp/str, xtrct, swap.b, mac.l/mac.w
+// and tas.b. div1 is the expensive one: the SH4 has no divide instruction, so
+// every 32-bit software divide is ~32x div1 (+ rotcl), i.e. on the order of
+// 2000 memory ops of pure bracket per division under the full-spill code.
+//
+// What makes a narrower bracket safe: of the whole SH4 context, ONLY r0..r15
+// (minus r11) and fr[0..15] are ever register-resident. sr, gbr, vbr, mac,
+// fpul, fpscr, pr and the banked copies are always memory-authoritative, so a
+// handler touching only those needs no bracket at all. The bracket therefore
+// has to cover exactly the GPRs (and FPRs) that handler reads or writes.
+//
+// This is a CLOSED ALLOW-LIST, not a mask-derived guess: an opcode is narrowed
+// only if it is named below with its exact register set. Everything else keeps
+// the full bracket — every SR write (UpdateSR bank-swaps r0..r7 in memory),
+// every FPSCR write (ChangeFP swaps fr_hex[]/xf_hex[] in memory), trapa, sleep,
+// illegal instructions, and every FPU op that fell back because FPSCR.PR
+// selected double precision. Default-deny: an unlisted opcode is slow, never
+// wrong, and a future opcode reaching ifb inherits the safe path automatically.
+//
+// Entries are matched on the (mask, rez) PAIR from the opcode table rather
+// than on a hand-written mask, so if sh4_opcode_list.cpp is ever retuned the
+// pair simply stops matching and that opcode falls back to IFB_FULL.
+//
+// Exception caveat: a narrowed handler that raised an SH4 exception mid-op
+// would bank-swap memory while our un-flushed pinned regs held the old values.
+// That is why every opcode that can deliberately raise (trapa/sleep/illegal,
+// the SR/FPSCR writers) stays on the full path. The remainder only fault the
+// same way an ordinary shop_readm/shop_writem can, which this backend already
+// assumes cannot touch context GPRs (see reg_flush_all()'s comment above).
+// ============================================================================
+
+// Opcode-table mask constants (private copies of the #defines in
+// sh4_opcode_list.cpp, which are not exported in the header).
+static const u32 IFB_M_NONE = 0xFFFF;
+static const u32 IFB_M_N    = 0xF0FF;
+static const u32 IFB_M_NM   = 0xF00F;
+static const u32 IFB_M_IMM8 = 0xFF00;
+
+// Sentinel: this opcode cannot be narrowed, emit the legacy full bracket.
+static const u32 IFB_FULL = 0xFFFFFFFFu;
+
+// Bitmask over SH4 r0..r15 of the GPRs this opcode's interpreter handler may
+// read or write, or IFB_FULL if it is not on the allow-list. The mask is the
+// UNION of the read and write sets: flushing a register the handler only reads
+// is required (it must see a live value), and reloading one it never wrote just
+// re-reads what we stored, so one mask can drive both directions.
+static u32 ifb_gpr_mask(u16 sh4op)
+{
+	const sh4_opcodelistentry* d = OpDesc[sh4op];
+	const u32 Rn = 1u << ((sh4op >> 8) & 0xF);
+	const u32 Rm = 1u << ((sh4op >> 4) & 0xF);
+	const u32 R0 = 1u << 0;
+
+	#define IFB_IS(mm,rr) (d->mask==(mm) && d->rez==(rr))
+
+	// --- touches no GPR at all -------------------------------------------
+	if (IFB_IS(IFB_M_NONE,0x0028)) return 0;	// clrmac        -> MACH/MACL
+	if (IFB_IS(IFB_M_NONE,0x0038)) return 0;	// ldtlb         -> PTEH/PTEL
+
+	// --- Rn only ----------------------------------------------------------
+	if (IFB_IS(IFB_M_N,0x0002)) return Rn;		// stc SR,Rn
+	if (IFB_IS(IFB_M_N,0x4003)) return Rn;		// stc.l SR,@-Rn
+	if (IFB_IS(IFB_M_N,0x4024)) return Rn;		// rotcl Rn
+	if (IFB_IS(IFB_M_N,0x4025)) return Rn;		// rotcr Rn
+	if (IFB_IS(IFB_M_N,0x401B)) return Rn;		// tas.b @Rn
+
+	// --- Rn and Rm --------------------------------------------------------
+	if (IFB_IS(IFB_M_NM,0x000F)) return Rn|Rm;	// mac.l @Rm+,@Rn+
+	if (IFB_IS(IFB_M_NM,0x400F)) return Rn|Rm;	// mac.w @Rm+,@Rn+
+	if (IFB_IS(IFB_M_NM,0x200C)) return Rn|Rm;	// cmp/str Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x200D)) return Rn|Rm;	// xtrct Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x3004)) return Rn|Rm;	// div1 Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x300A)) return Rn|Rm;	// subc Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x300B)) return Rn|Rm;	// subv Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x300E)) return Rn|Rm;	// addc Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x300F)) return Rn|Rm;	// addv Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x6008)) return Rn|Rm;	// swap.b Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x600A)) return Rn|Rm;	// negc Rm,Rn
+
+	// --- implicit R0 (GBR-relative byte ops) ------------------------------
+	if (IFB_IS(IFB_M_IMM8,0xCC00)) return R0;	// tst.b #imm,@(R0,GBR)
+	if (IFB_IS(IFB_M_IMM8,0xCD00)) return R0;	// and.b #imm,@(R0,GBR)
+	if (IFB_IS(IFB_M_IMM8,0xCE00)) return R0;	// xor.b #imm,@(R0,GBR)
+	if (IFB_IS(IFB_M_IMM8,0xCF00)) return R0;	// or.b  #imm,@(R0,GBR)
+
+	#undef IFB_IS
+
+	return IFB_FULL;
+}
+
+// Flush/reload only the GPRs named in `gprs`. r11 is never pinned (GetIntReg
+// returns invalid — the emitter keeps it as a volatile temp window), so it is
+// already memory-coherent and drops out of the loop on its own.
+static void reg_flush_mask(u32 gprs)
+{
+#if STATIC_GPR_ALLOC
+	for (u32 i=0;i<16;i++)
+	{
+		if (!(gprs&(1u<<i)))
+			continue;
+		ppc_ireg ri=GetIntReg(reg_r0+i);
+		if (ri!=ppc_rinvalid)
+			ppc_stw(ri,ppc_contex,Sh4cntx.offset(reg_r0+i));
+	}
+#endif
+}
+static void reg_reload_mask(u32 gprs)
+{
+#if STATIC_GPR_ALLOC
+	for (u32 i=0;i<16;i++)
+	{
+		if (!(gprs&(1u<<i)))
+			continue;
+		ppc_ireg ri=GetIntReg(reg_r0+i);
+		if (ri!=ppc_rinvalid)
+			ppc_lwz(ri,ppc_contex,Sh4cntx.offset(reg_r0+i));
+	}
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// IFB_PROBE — per-opcode execution counters
+//
+// Answers "is shop_ifb hot enough to be worth narrowing?" before committing to
+// the A/B. Sites are keyed on the OpDesc[] ENTRY, not the raw opcode word, so
+// all n/m variants of e.g. div1 collapse into one row and the table stays tiny
+// (233 table entries exist in total; far fewer than 64 ever reach ifb).
+//
+// The counters live outside the code cache, so they survive recSh4_ClearCache()
+// and keep accumulating across recompiles. ifb_probe_dump() is called once a
+// second from the SPG stats block and resets them, so the numbers it prints are
+// per-second rates.
+// ---------------------------------------------------------------------------
+#define IFB_SITE_MAX 64
+struct IfbSite
+{
+	const sh4_opcodelistentry* desc;
+	u32 hits;
+	u32 gprs;	// cached ifb_gpr_mask() result, for the dump's narrow/full column
+};
+static IfbSite s_ifb_sites[IFB_SITE_MAX];
+static u32 s_ifb_site_n = 0;
+static u32 s_ifb_overflow = 0;
+
+// Compile-time (not run-time) lookup: returns the counter this site should
+// bump, or 0 if the registry is full.
+static u32* ifb_probe_slot(u16 sh4op)
+{
+	const sh4_opcodelistentry* d = OpDesc[sh4op];
+
+	for (u32 i=0;i<s_ifb_site_n;i++)
+		if (s_ifb_sites[i].desc==d)
+			return &s_ifb_sites[i].hits;
+
+	if (s_ifb_site_n>=IFB_SITE_MAX)
+	{
+		s_ifb_overflow++;
+		return 0;
+	}
+
+	IfbSite& s=s_ifb_sites[s_ifb_site_n];
+	s.desc=d;
+	s.hits=0;
+	s.gprs=ifb_gpr_mask(sh4op);
+	return &s_ifb_sites[s_ifb_site_n++].hits;
+}
+
+extern "C" void ifb_probe_dump(double seconds)
+{
+	if (!get_ifb_probe_preset() || s_ifb_site_n==0 || seconds<=0.0)
+		return;
+
+	// Order by hit count, descending. Selection sort over <=64 entries once a
+	// second is free, and it avoids dragging qsort into the build.
+	u32 idx[IFB_SITE_MAX];
+	u32 n=0;
+	for (u32 i=0;i<s_ifb_site_n;i++)
+		if (s_ifb_sites[i].hits)
+			idx[n++]=i;
+
+	if (n==0)
+		return;
+
+	for (u32 a=0;a<n;a++)
+	{
+		u32 best=a;
+		for (u32 b=a+1;b<n;b++)
+			if (s_ifb_sites[idx[b]].hits>s_ifb_sites[idx[best]].hits)
+				best=b;
+		u32 t=idx[a]; idx[a]=idx[best]; idx[best]=t;
+	}
+
+	// Bracket cost per execution, in memory ops (stores + loads).
+	const u32 full_cost = 30 + (get_fpu_pin_preset()?32:0);
+
+	u32 total=0, narrowed=0;
+	double cost_full=0.0, cost_sel=0.0;
+	for (u32 a=0;a<n;a++)
+	{
+		const IfbSite& s=s_ifb_sites[idx[a]];
+		total += s.hits;
+		cost_full += (double)s.hits*full_cost;
+		if (s.gprs!=IFB_FULL)
+		{
+			narrowed += s.hits;
+			u32 pop=0;
+			for (u32 b=0;b<16;b++)
+				if (s.gprs&(1u<<b)) pop++;
+			cost_sel += (double)s.hits*(pop*2);	// one stw + one lwz per reg
+		}
+		else
+		{
+			cost_sel += (double)s.hits*full_cost;
+		}
+	}
+
+	printf("[IFB] %.2fs  total %u (%.0f/s)  narrowable %u (%.1f%%)  bracket memops/s: full %.0f -> sel %.0f (-%.1f%%)\n",
+		seconds, total, total/seconds,
+		narrowed, total?(narrowed*100.0/total):0.0,
+		cost_full/seconds, cost_sel/seconds,
+		cost_full>0.0?((cost_full-cost_sel)*100.0/cost_full):0.0);
+
+	for (u32 a=0;a<n && a<12;a++)
+	{
+		const IfbSite& s=s_ifb_sites[idx[a]];
+		u32 pop=0;
+		if (s.gprs!=IFB_FULL)
+			for (u32 b=0;b<16;b++)
+				if (s.gprs&(1u<<b)) pop++;
+		printf("[IFB]   %-34s %8u %8.0f/s  %s\n",
+			s.desc->diss, s.hits, s.hits/seconds,
+			(s.gprs==IFB_FULL)?"FULL":(pop?"narrow":"none"));
+	}
+
+	if (s_ifb_overflow)
+		printf("[IFB]   (%u distinct opcodes did not fit the %u-entry registry)\n",
+			s_ifb_overflow, (u32)IFB_SITE_MAX);
+
+	for (u32 i=0;i<s_ifb_site_n;i++)
+		s_ifb_sites[i].hits=0;
+
+	fflush(stdout);
+}
+
 void FASTCALL do_sqw_mmu(u32 dst);
 void FASTCALL do_sqw_nommu(u32 dst);
 
@@ -2367,8 +2627,40 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 		case shop_ifb:
 			{
-				reg_flush_all();
-				reg_flush_all_fpu();
+				const u16 sh4op=(u16)op->rs3._imm;
+
+				// IFB_PROBE: bump this opcode's counter. rarg0/rarg1 are
+				// scratch at a shil-op boundary, and this runs before the
+				// bracket so it cannot disturb a flushed value.
+				if (get_ifb_probe_preset())
+				{
+					u32* slot=ifb_probe_slot(sh4op);
+					if (slot)
+					{
+						u32 lo=ppc_addr_high(ppc_rarg1,(void*)slot);
+						ppc_lwz(ppc_rarg0,ppc_rarg1,lo);
+						ppc_addi(ppc_rarg0,ppc_rarg0,1);
+						ppc_stw(ppc_rarg0,ppc_rarg1,lo);
+					}
+				}
+
+				// IFB_FLUSH: narrow the bracket to the GPRs this opcode's
+				// handler actually touches, when it is on the allow-list.
+				// Preset off (or opcode not listed) => legacy full spill.
+				// Note the FPU bracket is skipped entirely on the narrow
+				// path: no allow-listed opcode reads or writes fr[]/xf[].
+				const u32 gprs=get_ifb_flush_preset()?ifb_gpr_mask(sh4op):IFB_FULL;
+
+				if (gprs==IFB_FULL)
+				{
+					reg_flush_all();
+					reg_flush_all_fpu();
+				}
+				else
+				{
+					reg_flush_mask(gprs);
+				}
+
 				if (op->rs1._imm)
 				{
 					ppc_li(ppc_rarg0,op->rs2._imm);
@@ -2376,8 +2668,16 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				}
 				ppc_li(ppc_rarg0,op->rs3._imm);
 				ppc_call(OpDesc[op->rs3._imm]->oph);
-				reg_reload_all();
-				reg_reload_all_fpu();
+
+				if (gprs==IFB_FULL)
+				{
+					reg_reload_all();
+					reg_reload_all_fpu();
+				}
+				else
+				{
+					reg_reload_mask(gprs);
+				}
 			}
 			break;
 			

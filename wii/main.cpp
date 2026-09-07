@@ -640,6 +640,41 @@ extern "C" {
   int get_jit_align_preset() { return g_jit_align_preset; }
 }
 
+// IFB_FLUSH — narrow the register bracket around shop_ifb interpreter call-outs
+// (dc/sh4/rec_v2/wii_driver.cpp ifb_gpr_mask/reg_flush_mask). Every opcode that
+// falls back to the interpreter has always been wrapped in a FULL register-file
+// spill — 15 stw + 15 lwz, plus 16 stfs + 16 lfs when FPU PIN is on — because
+// the handler could in principle touch any guest register. In practice it
+// touches two. Only 28 opcodes reach this path, but they include div1, addc,
+// subc, addv, subv, negc, rotcl, rotcr, cmp/str, xtrct, swap.b, mac.l, mac.w
+// and tas.b. div1 is the costly one: the SH4 has no divide instruction, so a
+// single 32-bit software division is ~32 div1 and pays the bracket every time.
+// Same shape as the fschg/sync_fpscr call-out that was worth +12-13% on Wii.
+// Closed allow-list — anything not explicitly listed (SR writes, FPSCR writes,
+// trapa, sleep, illegal, all double-precision FPU fallbacks) keeps the full
+// spill, so an unlisted opcode is slow, never wrong.
+// Read at CODEGEN time: set it before launching, not mid-game.
+// 0=off (default, legacy full spill), 1=on (selective).
+int g_ifb_flush_preset = 0;
+
+extern "C" {
+  int get_ifb_flush_preset() { return g_ifb_flush_preset; }
+}
+
+// IFB_PROBE — count shop_ifb executions per opcode and print a [IFB] breakdown
+// to /ndclog.txt once a second (dc/sh4/rec_v2/wii_driver.cpp ifb_probe_dump,
+// called from plugs/drkPvr/SPG.cpp's stats block). Measures whether IFB_FLUSH
+// above is worth anything on a given game BEFORE doing the A/B: it reports
+// total ifb/sec, the share that is narrowable, and the bracket memory-op rate
+// with and without narrowing. Costs 4 instructions per ifb site, so leave it
+// off for timing runs. Read at CODEGEN time: set it before launching.
+// 0=off (default), 1=on.
+int g_ifb_probe_preset = 0;
+
+extern "C" {
+  int get_ifb_probe_preset() { return g_ifb_probe_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -1660,6 +1695,8 @@ void checkBiosFiles()
 #define OPT_PUYO_HACK    80   // shown on Page 6 (EXPERIMENTAL), with the other per-game hacks
 #define OPT_DINO_CRISIS_INVENTORY_HACK 72 // shown on Page 5 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_DYN_IC      81   // shown on Page 4 (CORE), under JIT BCACHE
+#define OPT_IFB_FLUSH   82   // shown on Page 4 (CORE), under JIT ALIGN
+#define OPT_IFB_PROBE   83   // shown on Page 4 (CORE), under JIT IFB FLUSH
 #define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
@@ -1762,7 +1799,9 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_BCACHE,
   OPT_DYN_IC,
   OPT_FPU_PIN,
-  OPT_JIT_ALIGN
+  OPT_JIT_ALIGN,
+  OPT_IFB_FLUSH,
+  OPT_IFB_PROBE
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -2509,6 +2548,24 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (32B LINES)    >]"); break;
     }
     printf(" align JIT blocks to cache lines");
+    printf("\n");
+
+    // --- Row: IFB_FLUSH - narrow the shop_ifb register bracket ---
+    printf("%s JIT IFB FLUSH  : ", (selectedRow == OPT_IFB_FLUSH) ? ">" : " ");
+    switch (g_ifb_flush_preset) {
+      case 0: printf("[< OFF (FULL SPILL)  >]"); break;
+      case 1: printf("[< ON (SELECTIVE)    >]"); break;
+    }
+    printf(" spill only regs the opcode touches");
+    printf("\n");
+
+    // --- Row: IFB_PROBE - count interpreter fallbacks per opcode ---
+    printf("%s JIT IFB PROBE  : ", (selectedRow == OPT_IFB_PROBE) ? ">" : " ");
+    switch (g_ifb_probe_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOGS [IFB])   >]"); break;
+    }
+    printf(" count ifb per opcode to ndclog");
     printf("\n\n");
 
     printOptionsFooter();
@@ -2753,6 +2810,8 @@ bool displayOptionsMenu()
         case OPT_DYN_IC:         g_dyn_ic_preset          = (g_dyn_ic_preset          + 2) % 3; break;
         case OPT_FPU_PIN:        g_fpu_pin_preset         = (g_fpu_pin_preset         + 1) % 2; break;
         case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
+        case OPT_IFB_FLUSH:      g_ifb_flush_preset       = (g_ifb_flush_preset       + 1) % 2; break;
+        case OPT_IFB_PROBE:      g_ifb_probe_preset       = (g_ifb_probe_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
@@ -2845,6 +2904,8 @@ bool displayOptionsMenu()
         case OPT_DYN_IC:         g_dyn_ic_preset          = (g_dyn_ic_preset          + 1) % 3; break;
         case OPT_FPU_PIN:        g_fpu_pin_preset         = (g_fpu_pin_preset         + 1) % 2; break;
         case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
+        case OPT_IFB_FLUSH:      g_ifb_flush_preset       = (g_ifb_flush_preset       + 1) % 2; break;
+        case OPT_IFB_PROBE:      g_ifb_probe_preset       = (g_ifb_probe_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
@@ -3691,6 +3752,8 @@ int main(int argc, wchar *argv[])
                                      g_dyn_ic_preset == 1 ? "ON (JSR/JMP)" : "OFF");
     printf("FPU Pin        : %s\n", g_fpu_pin_preset ? "ON (EXPERIMENTAL)" : "OFF (LEGACY)");
     printf("JIT Align      : %s\n", g_jit_align_preset ? "ON (32B LINES)" : "OFF (LEGACY)");
+    printf("JIT Ifb Flush  : %s\n", g_ifb_flush_preset ? "ON (SELECTIVE)" : "OFF (FULL SPILL)");
+    printf("JIT Ifb Probe  : %s\n", g_ifb_probe_preset ? "ON (LOGS [IFB])" : "OFF");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Dino Crisis Fix: %s\n", g_dino_crisis_inventory_hack_preset ? "ON (REDECODE)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");

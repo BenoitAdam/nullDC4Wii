@@ -207,6 +207,32 @@
                                 instead of possibly splitting its first fetch.
                                 Cache-hygiene only, no logic change; marginal.
                                 Default off. Perf preset — A/B per game.
+        ifb_flush=on        <- on/off, narrows the register bracket around
+                                interpreter fallbacks (see wii_driver.cpp
+                                ifb_gpr_mask). Every opcode that falls back to
+                                the interpreter has always been wrapped in a
+                                FULL register-file spill (15 stw + 15 lwz, plus
+                                32 more FP ops when fpu_pin is on) even though
+                                the handler touches ~2 registers. 28 opcodes
+                                take this path, including div1, addc, subc,
+                                addv, subv, negc, rotcl, rotcr, cmp/str, xtrct,
+                                swap.b, mac.l, mac.w and tas.b. div1 is the
+                                costly one — the SH4 has no divide instruction,
+                                so a 32-bit software division is ~32 div1 and
+                                pays the bracket every time. Closed allow-list;
+                                anything unlisted (SR/FPSCR writes, trapa,
+                                sleep, illegal, double-precision FPU) keeps the
+                                full spill, so unlisted is slow, never wrong.
+                                Default off. Perf preset — A/B per game,
+                                especially anything doing integer division.
+        ifb_probe=on        <- on/off, counts interpreter fallbacks per opcode
+                                and prints an [IFB] breakdown to /ndclog.txt
+                                once a second: total ifb/sec, the narrowable
+                                share, and the bracket memory-op rate with and
+                                without ifb_flush. Use it to decide whether
+                                ifb_flush is worth testing on a given game.
+                                Costs 4 instructions per fallback site, so turn
+                                it off for timing runs. Diagnostic, default off.
         sched=on            <- on/off, unified cycle-deadline event scheduler
                                 (dc/sh4/sh4_sched.cpp). Fires the completion/IRQ
                                 events whose RELATIVE ordering matters (GD-ROM
@@ -687,6 +713,8 @@ extern int g_bcache_preset;
 extern int g_dyn_ic_preset;
 extern int g_fpu_pin_preset;
 extern int g_jit_align_preset;
+extern int g_ifb_flush_preset;
+extern int g_ifb_probe_preset;
 extern int g_sched_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -791,6 +819,8 @@ struct GamePreset
     int dyn_ic;
     int fpu_pin;
     int jit_align;
+    int ifb_flush;
+    int ifb_probe;
     int sched;
     int debug_fb2d;
     int debug_message;
@@ -1208,6 +1238,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "dyn_ic"))         p->dyn_ic         = atoi(val);
     else if (key_eq(key, "fpu_pin"))        p->fpu_pin        = parse_bool(val);
     else if (key_eq(key, "jit_align"))      p->jit_align      = parse_bool(val);
+    else if (key_eq(key, "ifb_flush"))      p->ifb_flush      = parse_bool(val);
+    else if (key_eq(key, "ifb_probe"))      p->ifb_probe      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
@@ -1288,6 +1320,8 @@ static void preset_clear(GamePreset* cur)
     cur->dyn_ic = -1;
     cur->fpu_pin = -1;
     cur->jit_align = -1;
+    cur->ifb_flush = -1;
+    cur->ifb_probe = -1;
     cur->sched = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
@@ -1390,6 +1424,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->dyn_ic         >= 0) { g_dyn_ic_preset         = p->dyn_ic;         printf("  dyn_ic         -> %d\n", p->dyn_ic);         }
     if (p->fpu_pin        >= 0) { g_fpu_pin_preset        = p->fpu_pin;        printf("  fpu_pin        -> %d\n", p->fpu_pin);        }
     if (p->jit_align      >= 0) { g_jit_align_preset      = p->jit_align;      printf("  jit_align      -> %d\n", p->jit_align);      }
+    if (p->ifb_flush      >= 0) { g_ifb_flush_preset      = p->ifb_flush;      printf("  ifb_flush      -> %d\n", p->ifb_flush);      }
+    if (p->ifb_probe      >= 0) { g_ifb_probe_preset      = p->ifb_probe;      printf("  ifb_probe      -> %d\n", p->ifb_probe);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }

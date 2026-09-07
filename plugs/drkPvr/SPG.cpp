@@ -21,6 +21,11 @@ extern "C" int get_x_scaler_preset();
 extern "C" int get_render_delay_preset();
 #define RENDER_DELAY() (get_render_delay_preset() != 0)
 
+// IFB_PROBE breakdown (wii/dc/sh4/rec_v2/wii_driver.cpp). Self-quiets when the
+// preset is off; piggybacks on the once-a-second stats block below so it gets
+// the same fflush and the same time base.
+extern "C" void ifb_probe_dump(double seconds);
+
 u32 spg_InVblank = 0;
 s32 spg_ScanlineSh4CycleCounter = 0;
 u32 spg_ScanlineCount = 512;
@@ -341,6 +346,8 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                     (spd_fps > 0.0 ? mv / spd_fps / tdiff : 0.0),
                     mv / tdiff);
                 fflush(stdout); // once per 1s: keep the log tail intact if the Wii is powered off
+
+                ifb_probe_dump(tdiff);   // no-op unless the IFB PROBE preset is on
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
             }
