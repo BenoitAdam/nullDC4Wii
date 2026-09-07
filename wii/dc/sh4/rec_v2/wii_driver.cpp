@@ -1851,11 +1851,28 @@ extern "C" void hotblocks_dump(double seconds)
 	if (s_hb_overflow)
 		printf("[HOT]   (%u blocks did not fit the %u-entry table)\n", s_hb_overflow, (u32)HOT_MAX);
 
-	// Full disassembly of the current #1, a couple of times per session.
+	// Full disassembly, a couple of times per session: the #1 block, and also
+	// the worst codegen density among the hot ones. Those are usually not the
+	// same block — #1 tends to be a tight well-compiled loop, while whatever is
+	// burning the most PPC per SH4 op hides further down the list (ChuChu's
+	// 8C1074E6: 4 ops -> 288 B, 72 B/op, at 8.7% of entries).
 	if (tn && s_hb_disasm_left)
 	{
 		s_hb_disasm_left--;
 		hotblocks_disasm(s_hb[top[0]]);
+
+		u32 worst = top[0];
+		for (u32 a=1;a<tn;a++)
+		{
+			const HotBlock& h = s_hb[top[a]];
+			const HotBlock& w = s_hb[worst];
+			const double hd = h.sh4_ops ? (double)h.ppc_size/h.sh4_ops : 0.0;
+			const double wd = w.sh4_ops ? (double)w.ppc_size/w.sh4_ops : 0.0;
+			if (hd > wd)
+				worst = top[a];
+		}
+		if (worst != top[0])
+			hotblocks_disasm(s_hb[worst]);
 	}
 
 	for (u32 i=0;i<s_hb_n;i++)
