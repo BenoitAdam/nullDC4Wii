@@ -209,7 +209,7 @@
                                 Default off. Perf preset — A/B per game.
         ifb_flush=on        <- on/off, narrows the register bracket around
                                 interpreter fallbacks (see wii_driver.cpp
-                                ifb_gpr_mask). Every opcode that falls back to
+                                ifb_bracket). Every opcode that falls back to
                                 the interpreter has always been wrapped in a
                                 FULL register-file spill (15 stw + 15 lwz, plus
                                 32 more FP ops when fpu_pin is on) even though
@@ -219,11 +219,15 @@
                                 swap.b, mac.l, mac.w and tas.b. div1 is the
                                 costly one — the SH4 has no divide instruction,
                                 so a 32-bit software division is ~32 div1 and
-                                pays the bracket every time. Closed allow-list;
-                                anything unlisted (SR/FPSCR writes, trapa,
-                                sleep, illegal, double-precision FPU) keeps the
-                                full spill, so unlisted is slow, never wrong.
-                                Default off. Perf preset — A/B per game,
+                                pays the bracket every time. The GPR set and
+                                the float file are decided independently: `lds
+                                Rn,FPSCR` needs only Rn but must spill fr[],
+                                `ldc Rn,SR` needs every GPR but no float, and
+                                fcnvds/fcnvsd need float only. Closed
+                                allow-list; anything unlisted (trapa, sleep,
+                                illegal, double-precision FPU) keeps the full
+                                everything-spill, so unlisted is slow, never
+                                wrong. Default off. Perf preset — A/B per game,
                                 especially anything doing integer division.
         ifb_probe=on        <- on/off, counts interpreter fallbacks per opcode
                                 and prints an [IFB] breakdown to /ndclog.txt

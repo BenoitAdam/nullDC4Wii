@@ -1357,15 +1357,28 @@ void reg_reload_all_fpu()
 //
 // This is a CLOSED ALLOW-LIST, not a mask-derived guess: an opcode is narrowed
 // only if it is named below with its exact register set. Everything else keeps
-// the full bracket — every SR write (UpdateSR bank-swaps r0..r7 in memory),
-// every FPSCR write (ChangeFP swaps fr_hex[]/xf_hex[] in memory), trapa, sleep,
-// illegal instructions, and every FPU op that fell back because FPSCR.PR
-// selected double precision. Default-deny: an unlisted opcode is slow, never
-// wrong, and a future opcode reaching ifb inherits the safe path automatically.
+// the full bracket — trapa, sleep, illegal instructions, and every FPU op that
+// fell back because FPSCR.PR selected double precision. Default-deny: an
+// unlisted opcode is slow, never wrong, and a future opcode reaching ifb
+// inherits the safe path automatically.
+//
+// TWO INDEPENDENT AXES. The bracket is not one decision but two — "which GPRs
+// does this handler touch?" and "does it touch the float file at all?" — and
+// they do not correlate. Collapsing them into a single "spill everything"
+// sentinel (the first version of this code) made three groups overpay:
+//
+//   lds Rn,FPSCR      GPRs: just Rn      float: YES (ChangeFP swaps banks)
+//   ldc Rn,SR         GPRs: ALL (bank)   float: no  (SR has no FP bank bit;
+//                                                    SR.FD disables, not swaps)
+//   fcnvds / fcnvsd   GPRs: none         float: YES
+//
+// An [IFB] probe run measured `lds Rn,FPSCR` at 265k/s during BIOS boot — 98.5%
+// of all fallbacks in that phase — paying a 30-op GPR spill for a handler that
+// writes no GPR at all. So ifb_bracket() returns the two axes separately.
 //
 // Entries are matched on the (mask, rez) PAIR from the opcode table rather
 // than on a hand-written mask, so if sh4_opcode_list.cpp is ever retuned the
-// pair simply stops matching and that opcode falls back to IFB_FULL.
+// pair simply stops matching and that opcode falls back to the full bracket.
 //
 // Exception caveat: a narrowed handler that raised an SH4 exception mid-op
 // would bank-swap memory while our un-flushed pinned regs held the old values.
@@ -1382,15 +1395,22 @@ static const u32 IFB_M_N    = 0xF0FF;
 static const u32 IFB_M_NM   = 0xF00F;
 static const u32 IFB_M_IMM8 = 0xFF00;
 
-// Sentinel: this opcode cannot be narrowed, emit the legacy full bracket.
-static const u32 IFB_FULL = 0xFFFFFFFFu;
+// Every SH4 GPR — the mask a bank-swapping handler needs. r11 is included and
+// simply drops out in reg_flush_mask(), since GetIntReg() never pins it.
+static const u32 IFB_GPR_ALL = 0xFFFFu;
 
-// Bitmask over SH4 r0..r15 of the GPRs this opcode's interpreter handler may
-// read or write, or IFB_FULL if it is not on the allow-list. The mask is the
-// UNION of the read and write sets: flushing a register the handler only reads
-// is required (it must see a live value), and reloading one it never wrote just
-// re-reads what we stored, so one mask can drive both directions.
-static u32 ifb_gpr_mask(u16 sh4op)
+// What one ifb call-out has to spill, on the two independent axes.
+struct IfbBracket
+{
+	u32  gprs;	// bitmask over SH4 r0..r15 (IFB_GPR_ALL = all of them)
+	bool fpu;	// also spill fr[0..15] (only costs anything when FPU_PIN is on)
+};
+
+// The GPR mask is the UNION of the handler's read and write sets: flushing a
+// register it only reads is required (it must see a live value), and reloading
+// one it never wrote just re-reads what we stored, so one mask drives both
+// directions.
+static IfbBracket ifb_bracket(u16 sh4op)
 {
 	const sh4_opcodelistentry* d = OpDesc[sh4op];
 	const u32 Rn = 1u << ((sh4op >> 8) & 0xF);
@@ -1398,40 +1418,77 @@ static u32 ifb_gpr_mask(u16 sh4op)
 	const u32 R0 = 1u << 0;
 
 	#define IFB_IS(mm,rr) (d->mask==(mm) && d->rez==(rr))
+	#define IFB_B(g,f)    { IfbBracket b={(g),(f)}; return b; }
 
-	// --- touches no GPR at all -------------------------------------------
-	if (IFB_IS(IFB_M_NONE,0x0028)) return 0;	// clrmac        -> MACH/MACL
-	if (IFB_IS(IFB_M_NONE,0x0038)) return 0;	// ldtlb         -> PTEH/PTEL
+	// --- touches no GPR and no float -------------------------------------
+	if (IFB_IS(IFB_M_NONE,0x0028)) IFB_B(0,false)	// clrmac      -> MACH/MACL
+	if (IFB_IS(IFB_M_NONE,0x0038)) IFB_B(0,false)	// ldtlb       -> PTEH/PTEL
 
 	// --- Rn only ----------------------------------------------------------
-	if (IFB_IS(IFB_M_N,0x0002)) return Rn;		// stc SR,Rn
-	if (IFB_IS(IFB_M_N,0x4003)) return Rn;		// stc.l SR,@-Rn
-	if (IFB_IS(IFB_M_N,0x4024)) return Rn;		// rotcl Rn
-	if (IFB_IS(IFB_M_N,0x4025)) return Rn;		// rotcr Rn
-	if (IFB_IS(IFB_M_N,0x401B)) return Rn;		// tas.b @Rn
+	if (IFB_IS(IFB_M_N,0x0002)) IFB_B(Rn,false)	// stc SR,Rn      (reads sr only)
+	if (IFB_IS(IFB_M_N,0x4003)) IFB_B(Rn,false)	// stc.l SR,@-Rn  (reads sr only)
+	if (IFB_IS(IFB_M_N,0x4024)) IFB_B(Rn,false)	// rotcl Rn
+	if (IFB_IS(IFB_M_N,0x4025)) IFB_B(Rn,false)	// rotcr Rn
+	if (IFB_IS(IFB_M_N,0x401B)) IFB_B(Rn,false)	// tas.b @Rn
 
 	// --- Rn and Rm --------------------------------------------------------
-	if (IFB_IS(IFB_M_NM,0x000F)) return Rn|Rm;	// mac.l @Rm+,@Rn+
-	if (IFB_IS(IFB_M_NM,0x400F)) return Rn|Rm;	// mac.w @Rm+,@Rn+
-	if (IFB_IS(IFB_M_NM,0x200C)) return Rn|Rm;	// cmp/str Rm,Rn
-	if (IFB_IS(IFB_M_NM,0x200D)) return Rn|Rm;	// xtrct Rm,Rn
-	if (IFB_IS(IFB_M_NM,0x3004)) return Rn|Rm;	// div1 Rm,Rn
-	if (IFB_IS(IFB_M_NM,0x300A)) return Rn|Rm;	// subc Rm,Rn
-	if (IFB_IS(IFB_M_NM,0x300B)) return Rn|Rm;	// subv Rm,Rn
-	if (IFB_IS(IFB_M_NM,0x300E)) return Rn|Rm;	// addc Rm,Rn
-	if (IFB_IS(IFB_M_NM,0x300F)) return Rn|Rm;	// addv Rm,Rn
-	if (IFB_IS(IFB_M_NM,0x6008)) return Rn|Rm;	// swap.b Rm,Rn
-	if (IFB_IS(IFB_M_NM,0x600A)) return Rn|Rm;	// negc Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x000F)) IFB_B(Rn|Rm,false)	// mac.l @Rm+,@Rn+
+	if (IFB_IS(IFB_M_NM,0x400F)) IFB_B(Rn|Rm,false)	// mac.w @Rm+,@Rn+
+	if (IFB_IS(IFB_M_NM,0x200C)) IFB_B(Rn|Rm,false)	// cmp/str Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x200D)) IFB_B(Rn|Rm,false)	// xtrct Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x3004)) IFB_B(Rn|Rm,false)	// div1 Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x300A)) IFB_B(Rn|Rm,false)	// subc Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x300B)) IFB_B(Rn|Rm,false)	// subv Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x300E)) IFB_B(Rn|Rm,false)	// addc Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x300F)) IFB_B(Rn|Rm,false)	// addv Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x6008)) IFB_B(Rn|Rm,false)	// swap.b Rm,Rn
+	if (IFB_IS(IFB_M_NM,0x600A)) IFB_B(Rn|Rm,false)	// negc Rm,Rn
 
 	// --- implicit R0 (GBR-relative byte ops) ------------------------------
-	if (IFB_IS(IFB_M_IMM8,0xCC00)) return R0;	// tst.b #imm,@(R0,GBR)
-	if (IFB_IS(IFB_M_IMM8,0xCD00)) return R0;	// and.b #imm,@(R0,GBR)
-	if (IFB_IS(IFB_M_IMM8,0xCE00)) return R0;	// xor.b #imm,@(R0,GBR)
-	if (IFB_IS(IFB_M_IMM8,0xCF00)) return R0;	// or.b  #imm,@(R0,GBR)
+	if (IFB_IS(IFB_M_IMM8,0xCC00)) IFB_B(R0,false)	// tst.b #imm,@(R0,GBR)
+	if (IFB_IS(IFB_M_IMM8,0xCD00)) IFB_B(R0,false)	// and.b #imm,@(R0,GBR)
+	if (IFB_IS(IFB_M_IMM8,0xCE00)) IFB_B(R0,false)	// xor.b #imm,@(R0,GBR)
+	if (IFB_IS(IFB_M_IMM8,0xCF00)) IFB_B(R0,false)	// or.b  #imm,@(R0,GBR)
 
+	// --- FPSCR writers: Rn only, but the float file must be spilled -------
+	// UpdateFPSCR -> ChangeFP() swaps fr_hex[i]<->xf_hex[i] IN MEMORY on an
+	// FPSCR.FR toggle, so pinned fr[] must be written out before the call and
+	// re-read after. Neither handler writes any GPR — it only sources the new
+	// FPSCR value from Rn (post-incrementing it in the .l form).
+	if (IFB_IS(IFB_M_N,0x406A)) IFB_B(Rn,true)	// lds Rn,FPSCR
+	if (IFB_IS(IFB_M_N,0x4066)) IFB_B(Rn,true)	// lds.l @Rn+,FPSCR
+
+	// --- SR writers: full GPR bank, but the float file is untouched -------
+	// UpdateSR() bank-swaps r0..r7 <-> r0_bank..r7_bank in memory on an SR.RB
+	// toggle, so every pinned GPR has to be coherent across the call. SR has no
+	// FP bank bit — SR.FD disables the FPU, it does not swap fr[]/xf[] — so the
+	// 32 float ops the old single-sentinel path emitted here were pure waste.
+	if (IFB_IS(IFB_M_N,0x400E)) IFB_B(IFB_GPR_ALL,false)	// ldc Rn,SR
+	if (IFB_IS(IFB_M_N,0x4007)) IFB_B(IFB_GPR_ALL,false)	// ldc.l @Rn+,SR
+
+	// --- double-precision converts: float only, no GPR --------------------
+	if (IFB_IS(IFB_M_N,0xF0BD)) IFB_B(0,true)	// fcnvds DRn,FPUL
+	if (IFB_IS(IFB_M_N,0xF0AD)) IFB_B(0,true)	// fcnvsd FPUL,DRn
+
+	#undef IFB_B
 	#undef IFB_IS
 
-	return IFB_FULL;
+	// Not on the list (trapa, sleep, illegal, double-precision FPU fallbacks):
+	// the legacy everything-spill.
+	IfbBracket full={IFB_GPR_ALL,true};
+	return full;
+}
+
+// Memory ops one bracket costs, for the probe's reporting only.
+static u32 ifb_bracket_memops(const IfbBracket& b)
+{
+	u32 n=0;
+	for (u32 i=0;i<16;i++)
+		if ((b.gprs&(1u<<i)) && GetIntReg(reg_r0+i)!=ppc_rinvalid)
+			n+=2;					// one stw + one lwz
+	if (b.fpu && get_fpu_pin_preset())
+		n+=32;						// 16 stfs + 16 lfs
+	return n;
 }
 
 // Flush/reload only the GPRs named in `gprs`. r11 is never pinned (GetIntReg
@@ -1482,7 +1539,7 @@ struct IfbSite
 {
 	const sh4_opcodelistentry* desc;
 	u32 hits;
-	u32 gprs;	// cached ifb_gpr_mask() result, for the dump's narrow/full column
+	IfbBracket br;	// cached ifb_bracket() result, for the dump's cost columns
 };
 static IfbSite s_ifb_sites[IFB_SITE_MAX];
 static u32 s_ifb_site_n = 0;
@@ -1507,7 +1564,7 @@ static u32* ifb_probe_slot(u16 sh4op)
 	IfbSite& s=s_ifb_sites[s_ifb_site_n];
 	s.desc=d;
 	s.hits=0;
-	s.gprs=ifb_gpr_mask(sh4op);
+	s.br=ifb_bracket(sh4op);
 	return &s_ifb_sites[s_ifb_site_n++].hits;
 }
 
@@ -1536,31 +1593,31 @@ extern "C" void ifb_probe_dump(double seconds)
 		u32 t=idx[a]; idx[a]=idx[best]; idx[best]=t;
 	}
 
-	// Bracket cost per execution, in memory ops (stores + loads).
-	const u32 full_cost = 30 + (get_fpu_pin_preset()?32:0);
+	// Cost of the legacy everything-spill, for the comparison column.
+	IfbBracket full_br={IFB_GPR_ALL,true};
+	const u32 full_cost = ifb_bracket_memops(full_br);
 
 	u32 total=0, narrowed=0;
 	double cost_full=0.0, cost_sel=0.0;
 	for (u32 a=0;a<n;a++)
 	{
 		const IfbSite& s=s_ifb_sites[idx[a]];
+		const u32 cost=ifb_bracket_memops(s.br);
 		total += s.hits;
 		cost_full += (double)s.hits*full_cost;
-		if (s.gprs!=IFB_FULL)
-		{
+		cost_sel  += (double)s.hits*cost;
+		if (cost<full_cost)
 			narrowed += s.hits;
-			u32 pop=0;
-			for (u32 b=0;b<16;b++)
-				if (s.gprs&(1u<<b)) pop++;
-			cost_sel += (double)s.hits*(pop*2);	// one stw + one lwz per reg
-		}
-		else
-		{
-			cost_sel += (double)s.hits*full_cost;
-		}
 	}
 
-	printf("[IFB] %.2fs  total %u (%.0f/s)  narrowable %u (%.1f%%)  bracket memops/s: full %.0f -> sel %.0f (-%.1f%%)\n",
+	// Header states the preset actually in force. The old header did not, so a
+	// log could not tell an ifb_flush=on run from an off one — which made the
+	// first A/B unverifiable. Note both presets are read at CODEGEN time, so
+	// this reflects what the compiled blocks were built with only if the preset
+	// was set before the game launched.
+	printf("[IFB] flush=%s fpu_pin=%s  %.2fs  total %u (%.0f/s)  narrowable %u (%.1f%%)  bracket memops/s: full %.0f -> sel %.0f (-%.1f%%)\n",
+		get_ifb_flush_preset()?"ON":"OFF",
+		get_fpu_pin_preset()?"ON":"OFF",
 		seconds, total, total/seconds,
 		narrowed, total?(narrowed*100.0/total):0.0,
 		cost_full/seconds, cost_sel/seconds,
@@ -1570,12 +1627,13 @@ extern "C" void ifb_probe_dump(double seconds)
 	{
 		const IfbSite& s=s_ifb_sites[idx[a]];
 		u32 pop=0;
-		if (s.gprs!=IFB_FULL)
-			for (u32 b=0;b<16;b++)
-				if (s.gprs&(1u<<b)) pop++;
-		printf("[IFB]   %-34s %8u %8.0f/s  %s\n",
+		for (u32 b=0;b<16;b++)
+			if ((s.br.gprs&(1u<<b)) && GetIntReg(reg_r0+b)!=ppc_rinvalid)
+				pop++;
+		printf("[IFB]   %-34s %8u %8.0f/s  %2u gpr%s %3u ops (full %u)\n",
 			s.desc->diss, s.hits, s.hits/seconds,
-			(s.gprs==IFB_FULL)?"FULL":(pop?"narrow":"none"));
+			pop, s.br.fpu?"+fpu":"    ",
+			ifb_bracket_memops(s.br), full_cost);
 	}
 
 	if (s_ifb_overflow)
@@ -2644,22 +2702,18 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					}
 				}
 
-				// IFB_FLUSH: narrow the bracket to the GPRs this opcode's
-				// handler actually touches, when it is on the allow-list.
-				// Preset off (or opcode not listed) => legacy full spill.
-				// Note the FPU bracket is skipped entirely on the narrow
-				// path: no allow-listed opcode reads or writes fr[]/xf[].
-				const u32 gprs=get_ifb_flush_preset()?ifb_gpr_mask(sh4op):IFB_FULL;
+				// IFB_FLUSH: spill only what this opcode's handler actually
+				// touches, on both axes independently — the GPRs named by its
+				// allow-list entry, and the float file only if it can disturb
+				// fr[]/xf[]. Preset off => the legacy everything-spill, which
+				// is also what an unlisted opcode gets.
+				IfbBracket br={IFB_GPR_ALL,true};
+				if (get_ifb_flush_preset())
+					br=ifb_bracket(sh4op);
 
-				if (gprs==IFB_FULL)
-				{
-					reg_flush_all();
-					reg_flush_all_fpu();
-				}
-				else
-				{
-					reg_flush_mask(gprs);
-				}
+				reg_flush_mask(br.gprs);
+				if (br.fpu)
+					reg_flush_all_fpu();		// self-gates on FPU_PIN
 
 				if (op->rs1._imm)
 				{
@@ -2669,15 +2723,9 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				ppc_li(ppc_rarg0,op->rs3._imm);
 				ppc_call(OpDesc[op->rs3._imm]->oph);
 
-				if (gprs==IFB_FULL)
-				{
-					reg_reload_all();
+				if (br.fpu)
 					reg_reload_all_fpu();
-				}
-				else
-				{
-					reg_reload_mask(gprs);
-				}
+				reg_reload_mask(br.gprs);
 			}
 			break;
 			

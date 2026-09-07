@@ -641,7 +641,7 @@ extern "C" {
 }
 
 // IFB_FLUSH — narrow the register bracket around shop_ifb interpreter call-outs
-// (dc/sh4/rec_v2/wii_driver.cpp ifb_gpr_mask/reg_flush_mask). Every opcode that
+// (dc/sh4/rec_v2/wii_driver.cpp ifb_bracket/reg_flush_mask). Every opcode that
 // falls back to the interpreter has always been wrapped in a FULL register-file
 // spill — 15 stw + 15 lwz, plus 16 stfs + 16 lfs when FPU PIN is on — because
 // the handler could in principle touch any guest register. In practice it
@@ -650,9 +650,15 @@ extern "C" {
 // and tas.b. div1 is the costly one: the SH4 has no divide instruction, so a
 // single 32-bit software division is ~32 div1 and pays the bracket every time.
 // Same shape as the fschg/sync_fpscr call-out that was worth +12-13% on Wii.
-// Closed allow-list — anything not explicitly listed (SR writes, FPSCR writes,
-// trapa, sleep, illegal, all double-precision FPU fallbacks) keeps the full
-// spill, so an unlisted opcode is slow, never wrong.
+// The GPR set and the float file are decided INDEPENDENTLY, because they do
+// not correlate: `lds Rn,FPSCR` needs only Rn but must spill fr[] (ChangeFP
+// swaps the banks), `ldc Rn,SR` needs every GPR (UpdateSR bank-swaps r0..r7)
+// but no float at all, and fcnvds/fcnvsd need float only. A probe run measured
+// `lds Rn,FPSCR` at 265k/s during BIOS boot paying a 30-op GPR spill for a
+// handler that writes no GPR.
+// Closed allow-list — anything not explicitly listed (trapa, sleep, illegal,
+// double-precision FPU fallbacks) keeps the full everything-spill, so an
+// unlisted opcode is slow, never wrong.
 // Read at CODEGEN time: set it before launching, not mid-game.
 // 0=off (default, legacy full spill), 1=on (selective).
 int g_ifb_flush_preset = 0;
