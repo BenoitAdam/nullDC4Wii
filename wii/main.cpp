@@ -681,6 +681,23 @@ extern "C" {
   int get_ifb_probe_preset() { return g_ifb_probe_preset; }
 }
 
+// JIT_NEWOPS — dynarec eight opcodes that had always fallen back to the
+// interpreter (dc/sh4/rec_v2/decoder.cpp dec_is_newop): stc.l SR / ldc.l SR /
+// ldc SR, lds FPSCR / lds.l FPSCR, rotcl, rotcr and tas.b. Hand-written decoder
+// handlers for all eight already existed in decoder.cpp but were never
+// referenced from the opcode table, so the code sat dead and every execution
+// took the shop_ifb path (a full call-out plus the register bracket IFB_FLUSH
+// narrows). rotcl is the interesting one: it is half of the 32-step software
+// division idiom, and only the runs the DIV0 matcher fails to collapse reach
+// here. Changes SH4 core codegen, so it is off by default — A/B per game, and
+// use IFB_PROBE to see whether a given game issues enough of these to care.
+// 0=off (legacy, default), 1=on.
+int g_jit_newops_preset = 0;
+
+extern "C" {
+  int get_jit_newops_preset() { return g_jit_newops_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -1703,6 +1720,7 @@ void checkBiosFiles()
 #define OPT_DYN_IC      81   // shown on Page 4 (CORE), under JIT BCACHE
 #define OPT_IFB_FLUSH   82   // shown on Page 4 (CORE), under JIT ALIGN
 #define OPT_IFB_PROBE   83   // shown on Page 4 (CORE), under JIT IFB FLUSH
+#define OPT_JIT_NEWOPS  84   // shown on Page 4 (CORE), under JIT IFB PROBE
 #define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
@@ -1807,7 +1825,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_FPU_PIN,
   OPT_JIT_ALIGN,
   OPT_IFB_FLUSH,
-  OPT_IFB_PROBE
+  OPT_IFB_PROBE,
+  OPT_JIT_NEWOPS
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -2572,6 +2591,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (LOGS [IFB])   >]"); break;
     }
     printf(" count ifb per opcode to ndclog");
+    printf("\n");
+
+    // --- Row: JIT_NEWOPS - dynarec 8 opcodes that always fell back ---
+    printf("%s JIT NEW OPS    : ", (selectedRow == OPT_JIT_NEWOPS) ? ">" : " ");
+    switch (g_jit_newops_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (8 OPS JITTED) >]"); break;
+    }
+    printf(" jit rotcl/rotcr/tas.b/sr/fpscr");
     printf("\n\n");
 
     printOptionsFooter();
@@ -2818,6 +2846,7 @@ bool displayOptionsMenu()
         case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
         case OPT_IFB_FLUSH:      g_ifb_flush_preset       = (g_ifb_flush_preset       + 1) % 2; break;
         case OPT_IFB_PROBE:      g_ifb_probe_preset       = (g_ifb_probe_preset       + 1) % 2; break;
+        case OPT_JIT_NEWOPS:     g_jit_newops_preset      = (g_jit_newops_preset      + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
@@ -2912,6 +2941,7 @@ bool displayOptionsMenu()
         case OPT_JIT_ALIGN:      g_jit_align_preset       = (g_jit_align_preset       + 1) % 2; break;
         case OPT_IFB_FLUSH:      g_ifb_flush_preset       = (g_ifb_flush_preset       + 1) % 2; break;
         case OPT_IFB_PROBE:      g_ifb_probe_preset       = (g_ifb_probe_preset       + 1) % 2; break;
+        case OPT_JIT_NEWOPS:     g_jit_newops_preset      = (g_jit_newops_preset      + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
@@ -3760,6 +3790,7 @@ int main(int argc, wchar *argv[])
     printf("JIT Align      : %s\n", g_jit_align_preset ? "ON (32B LINES)" : "OFF (LEGACY)");
     printf("JIT Ifb Flush  : %s\n", g_ifb_flush_preset ? "ON (SELECTIVE)" : "OFF (FULL SPILL)");
     printf("JIT Ifb Probe  : %s\n", g_ifb_probe_preset ? "ON (LOGS [IFB])" : "OFF");
+    printf("JIT New Ops    : %s\n", g_jit_newops_preset ? "ON (8 OPS JITTED)" : "OFF (LEGACY)");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Dino Crisis Fix: %s\n", g_dino_crisis_inventory_hack_preset ? "ON (REDECODE)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");

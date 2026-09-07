@@ -164,6 +164,8 @@ u32* Sh4_int_GetRegisterPtr(Sh4RegType reg)
 		case reg_fpscr :
 			return &fpscr.full;
 
+		case reg_temp :
+			return &Sh4cntx.jit_temp;
 
 		default:
 			// EMUERROR2("Unkown register Id %d",reg);

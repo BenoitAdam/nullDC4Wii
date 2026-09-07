@@ -1151,7 +1151,13 @@ void ngen_End(DecodedBlock* block)
 
 	case BET_StaticIntr:
 	case BET_DynamicIntr:
-		printf("BET: Interrupt !\n");
+		// Gated like the BET_StaticJump trace below: printf goes to /ndclog.txt
+		// on the SD card, and JIT_NEWOPS makes BET_StaticIntr common (every
+		// ldc/ldc.l to SR now ends a block this way instead of falling back).
+		if (get_debug_loop() == 1)
+		{
+			printf("BET: Interrupt !\n");
+		}
 		{
 			u32 reg;
 			if (block->BlockType==BET_StaticIntr)

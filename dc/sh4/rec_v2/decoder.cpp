@@ -108,6 +108,31 @@ static void dec_fallback(u32 op)
 	block.oplist.push_back(opcd);
 }
 
+// JIT_NEWOPS preset (wii/main.cpp). The eight opcodes below have hand-written
+// decoder handlers further down this file that were never referenced from
+// OpDesc[].rec_oph, so despite the code existing they always took the shop_ifb
+// interpreter path. Wiring them up changes SH4 core codegen, so it ships behind
+// a preset: with the preset off the dispatch in dec_DecodeBlock ignores their
+// rec_oph and they fall back exactly as they did before.
+extern "C" int get_jit_newops_preset();
+
+static bool dec_is_newop(u32 op)
+{
+	switch(op&0xF0FF)
+	{
+	case 0x4003:	//stc.l SR,@-<REG_N>
+	case 0x4007:	//ldc.l @<REG_N>+,SR
+	case 0x400E:	//ldc <REG_N>,SR
+	case 0x401B:	//tas.b @<REG_N>
+	case 0x4024:	//rotcl <REG_N>
+	case 0x4025:	//rotcr <REG_N>
+	case 0x4066:	//lds.l @<REG_N>+,FPSCR
+	case 0x406A:	//lds <REG_N>,FPSCR
+		return true;
+	}
+	return false;
+}
+
 #if 1
 /*
 #define		FMT_I32 OMG!THIS!IS!WRONG++!!
@@ -1117,7 +1142,11 @@ DecodedBlock* dec_DecodeBlock(u32 startpc,fpscr_type fpu_cfg,u32 max_cycles)
 					else
 						block.cycles+=CPU_RATIO;
 
-					if (state.ngen.OnlyDynamicEnds || !OpDesc[op]->rec_oph)
+					RecOpCallFP* rec_oph=OpDesc[op]->rec_oph;
+					if (rec_oph && dec_is_newop(op) && !get_jit_newops_preset())
+						rec_oph=0;
+
+					if (state.ngen.OnlyDynamicEnds || !rec_oph)
 					{
 						if (state.ngen.InterpreterFallback || !dec_generic(op))
 						{
@@ -1135,7 +1164,7 @@ DecodedBlock* dec_DecodeBlock(u32 startpc,fpscr_type fpu_cfg,u32 max_cycles)
 					}
 					else
 					{
-						OpDesc[op]->rec_oph(op);
+						rec_oph(op);
 					}
 
 					state.cpu.rpc+=2;

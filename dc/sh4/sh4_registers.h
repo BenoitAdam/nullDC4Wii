@@ -36,6 +36,14 @@ struct Sh4Context
 	sr_type old_sr;
 	fpscr_type old_fpscr;
 
+	// Backing store for Sh4RegType reg_temp — the decoder's scratch register.
+	// Not an SH4 architectural register: decoder handlers that need a spare
+	// value (rotcl/rotcr's saved T, tas.b's loaded byte, the SR read/write
+	// pairs) emit SHIL against reg_temp, and the backend resolves it through
+	// offset() like any other register. Kept at the tail so no existing
+	// field's context offset moves.
+	u32 jit_temp;
+
 	u32 offset(u32 sh4_reg);
 	u32 offset(Sh4RegType sh4_reg) { return offset((u32)sh4_reg); }
 };
