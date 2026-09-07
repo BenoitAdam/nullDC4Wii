@@ -1720,7 +1720,8 @@ struct HotBlock
 	u32 sh4_size;	// bytes of SH4 source the block consumed
 	u32 sh4_ops;
 	u8* ppc_start;
-	u32 ppc_size;	// bytes of PPC emitted (filled in at the end of ngen_Compile)
+	u32 ppc_size;	// bytes of HOT PPC body (filled in at the end of ngen_Compile)
+	u32 ppc_cold;	// bytes of out-of-line mem slow paths FlushCold() appended
 };
 
 // ChuChu compiles ~10k blocks between cache clears; at 2048 the first run left
@@ -1732,7 +1733,19 @@ static HotBlock* s_hb = 0;
 static u32* s_hb_hits = 0;	// dense counter array, indexed in step with s_hb
 static u32 s_hb_n = 0;
 static u32 s_hb_overflow = 0;
-static u32 s_hb_disasm_left = 2;	// full disassembly dumps per session
+// Blocks already disassembled this session, so each distinct hot shape is
+// dumped exactly once no matter which scene it turns hot in. Deliberately NOT
+// cleared by hotblocks_reset(): a cache clear recompiles the same pc, and
+// re-dumping identical code would just bury the new shapes.
+#define HOT_DUMP_MAX 16
+static u32 s_hb_dumped[HOT_DUMP_MAX];
+static u32 s_hb_dumped_n = 0;
+
+// Worst B/op dumped so far, and how many #1-by-hits dumps have been spent.
+// See the selection logic in hotblocks_dump() for why both exist.
+#define HOT_TOP_DUMPS 4
+static u32    s_hb_top_dumps = 0;
+static double s_hb_worst_bop = 0.0;
 
 // Called from recSh4_ClearCache (dc/sh4/rec_v2/driver.cpp): the compiled code
 // these entries describe no longer exists.
@@ -1775,14 +1788,15 @@ static s32 hotblocks_slot(DecodedBlock* block)
 	h->sh4_ops   = block->opcodes;
 	h->ppc_start = 0;
 	h->ppc_size  = 0;
+	h->ppc_cold  = 0;
 	s_hb_hits[idx] = 0;
 	return idx;
 }
 
 static void hotblocks_disasm(const HotBlock& h)
 {
-	printf("[HOT] --- disasm pc=%08X : %u SH4 ops / %u B  ->  %u B PPC ---\n",
-		h.sh4_pc, h.sh4_ops, h.sh4_size, h.ppc_size);
+	printf("[HOT] --- disasm pc=%08X : %u SH4 ops / %u B  ->  %u B hot + %u B cold ---\n",
+		h.sh4_pc, h.sh4_ops, h.sh4_size, h.ppc_size, h.ppc_cold);
 
 	printf("[HOT] SH4:\n");
 	u32 n = h.sh4_size/2;
@@ -1796,7 +1810,7 @@ static void hotblocks_disasm(const HotBlock& h)
 	if (h.sh4_size/2 > n)
 		printf("[HOT]   ... (%u more)\n", h.sh4_size/2 - n);
 
-	printf("[HOT] PPC (%u B):\n", h.ppc_size);
+	printf("[HOT] PPC hot body (%u B):\n", h.ppc_size);
 	if (h.ppc_start)
 	{
 		const u32* w = (const u32*)h.ppc_start;
@@ -1812,6 +1826,21 @@ static void hotblocks_disasm(const HotBlock& h)
 		if (h.ppc_size/4 > wn)
 			printf("[HOT]   ... (%u more words)\n", h.ppc_size/4 - wn);
 	}
+}
+
+// Disassemble this block unless its pc has already been dumped. Returns true
+// if it actually emitted a dump.
+static bool hotblocks_dump_once(const HotBlock& h)
+{
+	if (s_hb_dumped_n >= HOT_DUMP_MAX)
+		return false;
+	for (u32 i=0;i<s_hb_dumped_n;i++)
+		if (s_hb_dumped[i]==h.sh4_pc)
+			return false;
+
+	s_hb_dumped[s_hb_dumped_n++] = h.sh4_pc;
+	hotblocks_disasm(h);
+	return true;
 }
 
 extern "C" void hotblocks_dump(double seconds)
@@ -1862,38 +1891,59 @@ extern "C" void hotblocks_dump(double seconds)
 	{
 		const HotBlock& h = s_hb[top[a]];
 		const u32 hits = s_hb_hits[top[a]];
-		printf("[HOT]   %u: pc=%08X %8u (%7.0f/s) %5.1f%%  sh4 %3u ops  ppc %5u B  %5.1f B/op\n",
+		printf("[HOT]   %u: pc=%08X %8u (%7.0f/s) %5.1f%%  sh4 %3u ops  hot %5u B  %5.1f B/op  cold %5u B\n",
 			a+1, h.sh4_pc, hits, hits/seconds,
 			hits*100.0/all_hits,
 			h.sh4_ops, h.ppc_size,
-			h.sh4_ops?((double)h.ppc_size/h.sh4_ops):0.0);
+			h.sh4_ops?((double)h.ppc_size/h.sh4_ops):0.0,
+			h.ppc_cold);
 	}
 
 	if (s_hb_overflow)
 		printf("[HOT]   (%u blocks did not fit the %u-entry table)\n", s_hb_overflow, (u32)HOT_MAX);
 
-	// Full disassembly, a couple of times per session: the #1 block, and also
-	// the worst codegen density among the hot ones. Those are usually not the
-	// same block — #1 tends to be a tight well-compiled loop, while whatever is
-	// burning the most PPC per SH4 op hides further down the list (ChuChu's
-	// 8C1074E6: 4 ops -> 288 B, 72 B/op, at 8.7% of entries).
-	if (tn && s_hb_disasm_left)
+	// Full disassembly of the #1 block and of the worst codegen density among
+	// the hot ones — usually different blocks, since #1 tends to be a tight
+	// well-compiled loop while whatever burns the most PPC per SH4 op hides
+	// further down (ChuChu's 8C1074E6: 4 ops -> 288 B, 72 B/op, at 8.7% of
+	// entries in the HEAVY scene only).
+	//
+	// Dump each distinct pc once, rather than spending a fixed budget. A
+	// "2 dumps per session" budget was wrong: it spent itself on the first two
+	// [HOT] lines after boot — menus — so a block that only turns hot later in
+	// gameplay could never be dumped at all, which is exactly why 8C1074E6 kept
+	// being missed despite the preset being on the whole time.
+	if (tn)
 	{
-		s_hb_disasm_left--;
-		hotblocks_disasm(s_hb[top[0]]);
+		// #1 by hits is contextual only, so it gets a small fixed budget and
+		// cannot starve the outlier hunt below.
+		if (s_hb_top_dumps < HOT_TOP_DUMPS && hotblocks_dump_once(s_hb[top[0]]))
+			s_hb_top_dumps++;
 
 		u32 worst = top[0];
-		for (u32 a=1;a<tn;a++)
+		double worst_bop = 0.0;
+		for (u32 a=0;a<tn;a++)
 		{
 			const HotBlock& h = s_hb[top[a]];
-			const HotBlock& w = s_hb[worst];
-			const double hd = h.sh4_ops ? (double)h.ppc_size/h.sh4_ops : 0.0;
-			const double wd = w.sh4_ops ? (double)w.ppc_size/w.sh4_ops : 0.0;
-			if (hd > wd)
+			const double d = h.sh4_ops ? (double)h.ppc_size/h.sh4_ops : 0.0;
+			if (d > worst_bop)
+			{
+				worst_bop = d;
 				worst = top[a];
+			}
 		}
-		if (worst != top[0])
-			hotblocks_disasm(s_hb[worst]);
+
+		// Only ever dump a NEW worst. Dumping every distinct worst-of-the-second
+		// spent the whole budget on ordinary blocks from the boot/menu scenes,
+		// so the actual outlier — 8C1074E6 at 72 B/op, which only turns hot in
+		// the heavy scene — was never reached. Requiring each dump to beat the
+		// previous worst converges on the outlier instead, and is self-limiting
+		// because B/op has to strictly increase each time.
+		if (worst_bop > s_hb_worst_bop)
+		{
+			s_hb_worst_bop = worst_bop;
+			hotblocks_dump_once(s_hb[worst]);
+		}
 	}
 
 	for (u32 i=0;i<s_hb_n;i++)
@@ -3631,19 +3681,27 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 	ngen_End(block);
 
+	// Split point for JIT_HOTBLOCKS: everything up to here is the block's HOT
+	// body, everything FlushCold() adds after it is out-of-line mem slow paths
+	// that usually never execute. Lumping them together makes a block with big
+	// cold fragments look like bad codegen when its hot path may be fine, so
+	// the two are reported separately.
+	u8 *const _hb_cold_start = (u8*)emit_GetCCPtr();
+
 	FlushCold();          // emit the out-of-line mem slow paths after the block tail
 	make_address_range_executable((u8*)rv, (u8*)emit_GetCCPtr()-(u8*)rv);
 
-	// Now that the tail and the cold fragments are emitted, this block's real
-	// footprint is known — that is the number the B/op density is built on.
+	// Hot body and cold fragments recorded separately — B/op is built on the HOT
+	// size only, since that is what actually executes.
 	if (hb>=0)
 	{
-		u32 sz = (u32)((u8*)emit_GetCCPtr()-(u8*)rv);
+		u32 hot = (u32)(_hb_cold_start-(u8*)rv);
 		// Discount the probe's own 4-instruction counter so the B/op figure
 		// describes the codegen, not the measurement. On a 3-op block those
 		// 16 bytes are 5 B/op of pure observer effect.
 		s_hb[hb].ppc_start = (u8*)rv;
-		s_hb[hb].ppc_size  = sz>16 ? sz-16 : sz;
+		s_hb[hb].ppc_size  = hot>16 ? hot-16 : hot;
+		s_hb[hb].ppc_cold  = (u32)((u8*)emit_GetCCPtr()-_hb_cold_start);
 	}
 
 	return rv;
