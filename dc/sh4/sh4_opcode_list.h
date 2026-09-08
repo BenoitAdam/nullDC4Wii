@@ -148,4 +148,7 @@ enum DecMode
 	DM_DIV0,
 	DM_ADC,			//Add/subtract with carry
 	DM_NEGC,		//Negate with carry
+	DM_OVF,			//Add/subtract, T = signed overflow (addv/subv)
+	DM_XTRCT,		//xtrct: Rn = (Rn >> 16) | (Rm << 16)
+	DM_CLRMAC,		//clrmac: MACH = MACL = 0
 };

@@ -295,6 +295,27 @@
                                 8C1074E6 in ChuChu (3 fmov.s + fschg) compiled
                                 4 SH4 opcodes into 288 bytes. Perf preset,
                                 changes SH4 codegen — default off, A/B per game.
+        jit_carry=on        <- on/off, dynarecs the SH4 carry/overflow
+                                arithmetic that always called the interpreter:
+                                addc, subc, negc, addv, subv, div1, plus
+                                cmp/str, xtrct, swap.b and clrmac. SHIL had no
+                                opcode that could produce a value AND the new T
+                                bit, so all ten went through shop_ifb; they now
+                                have real shil ops with PPC codegen that maps T
+                                onto XER[CA]/XER[OV] (the shapes Evoca uses in
+                                seta-gx's SH2 recompiler). Expect TENTHS of a
+                                percent, not a breakthrough: with ifb_flush on,
+                                a fallback is ~35-45 cycles and Castlevania
+                                runs ~49.5k/s of them = ~0.3% of the frame.
+                                Run ifb_probe first to see if a game issues
+                                enough of these to be worth measuring.
+                                ALSO A CORRECTNESS FIX: the interpreter's div1
+                                skipped the `q ^ M ^ carry` step, so T was
+                                wrong whenever the bit shifted out of Rn was
+                                set or M was 1 (signed division). Mostly
+                                invisible because MatchDiv32 replaces the
+                                32-step idiom with a real divide. Perf preset,
+                                changes SH4 codegen — default off, A/B per game.
         sched=on            <- on/off, unified cycle-deadline event scheduler
                                 (dc/sh4/sh4_sched.cpp). Fires the completion/IRQ
                                 events whose RELATIVE ordering matters (GD-ROM
@@ -781,6 +802,7 @@ extern int g_jit_newops_preset;
 extern int g_hotblocks_preset;
 extern int g_jit_tfwd_preset;
 extern int g_jit_fmov_preset;
+extern int g_jit_carry_preset;
 extern int g_sched_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -891,6 +913,7 @@ struct GamePreset
     int hotblocks;
     int jit_tfwd;
     int jit_fmov;
+    int jit_carry;
     int sched;
     int debug_fb2d;
     int debug_message;
@@ -1314,6 +1337,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_hotblocks"))  p->hotblocks      = parse_bool(val);
     else if (key_eq(key, "jit_tfwd"))       p->jit_tfwd       = parse_bool(val);
     else if (key_eq(key, "jit_fmov"))       p->jit_fmov       = parse_bool(val);
+    else if (key_eq(key, "jit_carry"))      p->jit_carry      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
@@ -1400,6 +1424,7 @@ static void preset_clear(GamePreset* cur)
     cur->hotblocks = -1;
     cur->jit_tfwd = -1;
     cur->jit_fmov = -1;
+    cur->jit_carry = -1;
     cur->sched = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
@@ -1508,6 +1533,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->hotblocks      >= 0) { g_hotblocks_preset      = p->hotblocks;      printf("  jit_hotblocks  -> %d\n", p->hotblocks);      }
     if (p->jit_tfwd       >= 0) { g_jit_tfwd_preset       = p->jit_tfwd;       printf("  jit_tfwd       -> %d\n", p->jit_tfwd);       }
     if (p->jit_fmov       >= 0) { g_jit_fmov_preset       = p->jit_fmov;       printf("  jit_fmov       -> %d\n", p->jit_fmov);       }
+    if (p->jit_carry      >= 0) { g_jit_carry_preset      = p->jit_carry;      printf("  jit_carry      -> %d\n", p->jit_carry);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }

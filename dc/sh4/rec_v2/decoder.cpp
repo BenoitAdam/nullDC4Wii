@@ -135,6 +135,43 @@ static bool dec_is_newop(u32 op)
 	return false;
 }
 
+// JIT_CARRY preset (wii/main.cpp). The SH4's carry/overflow arithmetic --
+// addc/subc/negc/addv/subv/div1 -- plus cmp/str, xtrct, swap.b and clrmac.
+// Every one of these took the shop_ifb interpreter path because SHIL had no
+// opcode that could express "produce a value AND the new T bit". The shil ops
+// now exist (shop_adc/sbc/negc/addv/subv/div1/cmpstr/swaplb, see
+// dc/sh4/rec_v2/shil_canonical.h) with native PPC codegen behind them; the
+// table rows for these opcodes carry a `decode` word that reaches dec_generic
+// below. With the preset off, this gate sends them back to the interpreter so
+// the change is a clean A/B.
+//
+// The div1 semantics also CHANGE with this preset: the interpreter's
+// i0011_nnnn_mmmm_0100 never applied the `q ^ M ^ carry` step, so its Q (and
+// therefore T) was wrong whenever the bit shifted out of Rn was set, or
+// whenever M was 1 (signed division). shop_div1 implements the architectural
+// sequence. This is invisible in most games because the 32-step rotcl/div1
+// idiom is pattern-matched away by MatchDiv32 -- only the unmatchable
+// prologue/epilogue div1s ever execute (see the [DIV] probe).
+extern "C" int get_jit_carry_preset();
+
+static bool dec_is_carryop(u32 op)
+{
+	switch(op&0xF00F)
+	{
+	case 0x300E:	//addc <REG_M>,<REG_N>
+	case 0x300F:	//addv <REG_M>,<REG_N>
+	case 0x300A:	//subc <REG_M>,<REG_N>
+	case 0x300B:	//subv <REG_M>,<REG_N>
+	case 0x3004:	//div1 <REG_M>,<REG_N>
+	case 0x600A:	//negc <REG_M>,<REG_N>
+	case 0x6008:	//swap.b <REG_M>,<REG_N>
+	case 0x200C:	//cmp/str <REG_M>,<REG_N>
+	case 0x200D:	//xtrct <REG_M>,<REG_N>
+		return true;
+	}
+	return op==0x0028;	//clrmac
+}
+
 #if 1
 /*
 #define		FMT_I32 OMG!THIS!IS!WRONG++!!
@@ -902,6 +939,10 @@ bool dec_generic(u32 op)
 	if (dec_is_newop(op) && !get_jit_newops_preset())
 		return false;
 
+	// JIT_CARRY gate -- see dec_is_carryop above.
+	if (dec_is_carryop(op) && !get_jit_carry_preset())
+		return false;
+
 	u64 inf=OpDesc[op]->decode;
 
 	e=(u32)(inf>>32);
@@ -950,6 +991,25 @@ bool dec_generic(u32 op)
 	case DM_NEGC:
 		// Negate with carry: 0 - src - T
 		block.Emit(natop, rs1, rs2, mk_reg(reg_sr_T), 0, shil_param(), mk_reg(reg_sr_T));
+		break;
+
+	case DM_OVF:
+		// addv/subv: value -> rd, signed overflow -> T. No T input.
+		block.Emit(natop, rs1, rs1, rs2, 0, shil_param(), mk_reg(reg_sr_T));
+		break;
+
+	case DM_XTRCT:
+		// xtrct <REG_M>,<REG_N> : Rn = (Rn >> 16) | (Rm << 16).
+		// Expressed with existing single-instruction shil ops rather than a
+		// dedicated one -- reg_temp is needed because rd aliases rs1 here.
+		block.Emit(shop_shr, mk_reg(reg_temp), rs1, mk_imm(16));
+		block.Emit(shop_shl, rs1, rs2, mk_imm(16));
+		block.Emit(shop_or,  rs1, rs1, mk_reg(reg_temp));
+		break;
+
+	case DM_CLRMAC:
+		block.Emit(shop_mov32, mk_reg(reg_mach), mk_imm(0));
+		block.Emit(shop_mov32, mk_reg(reg_macl), mk_imm(0));
 		break;
 
 	case DM_WriteTOp:

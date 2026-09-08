@@ -765,6 +765,36 @@ extern "C" {
   int get_jit_fmov_preset() { return g_jit_fmov_preset; }
 }
 
+// JIT_CARRY - dynarec the SH4's carry/overflow arithmetic instead of calling
+// the interpreter for it: addc, subc, negc, addv, subv, div1, plus cmp/str,
+// xtrct, swap.b and clrmac. All ten took the shop_ifb path because SHIL had no
+// opcode that could produce a value AND the new T bit in one go; the shil ops
+// now exist (shop_adc/sbc/negc/addv/subv/div1/cmpstr/swaplb) with native PPC
+// codegen behind them that maps the T bit onto XER[CA]/XER[OV] the way the
+// hardware intends -- the approach Evoca uses in seta-gx's SH2 recompiler.
+//
+// SIZE OF THE PRIZE, honestly: with IFB_FLUSH on, one fallback costs ~35-45
+// PPC cycles, and Castlevania's steady state runs ~49.5k of them a second =
+// ~0.3% of a 729 MHz frame. cmp/str spikes to 72k/s on string-heavy loading
+// screens, addc to 21k/s in ChuChu Rocket. So this is a low-single-digit-
+// tenths-of-a-percent speedup, not a breakthrough. Use IFB_PROBE first to see
+// whether a given game issues enough of these to bother measuring.
+//
+// It is ALSO a correctness fix. The interpreter's div1 never applied the
+// `q ^ M ^ carry` step, so its Q -- and therefore T -- was wrong whenever the
+// bit shifted out of Rn was set, or whenever M was 1 (signed division). The
+// new shop_div1 implements the architectural sequence. This stayed invisible
+// because MatchDiv32 pattern-matches the 32-step rotcl/div1 idiom away; only
+// the unmatchable prologue/epilogue div1s ever execute.
+//
+// Read at CODEGEN time: set it before launching, not mid-game.
+// 0=off (legacy interpreter fallback, default), 1=on.
+int g_jit_carry_preset = 0;
+
+extern "C" {
+  int get_jit_carry_preset() { return g_jit_carry_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -1791,6 +1821,7 @@ void checkBiosFiles()
 #define OPT_JIT_HOTBLOCKS 85 // shown on Page 4 (CORE), under JIT NEW OPS
 #define OPT_JIT_TFWD    86   // shown on Page 4 (CORE), under JIT HOTBLOCKS
 #define OPT_JIT_FMOV    87   // shown on Page 4 (CORE), under JIT T-FORWARD
+#define OPT_JIT_CARRY   88   // shown on Page 4 (CORE), under JIT FMOV DIRECT
 #define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
@@ -1899,7 +1930,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_JIT_NEWOPS,
   OPT_JIT_HOTBLOCKS,
   OPT_JIT_TFWD,
-  OPT_JIT_FMOV
+  OPT_JIT_FMOV,
+  OPT_JIT_CARRY
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -2700,6 +2732,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (LFS/STFS)     >]"); break;
     }
     printf(" fmov straight to/from pinned FPR");
+    printf("\n");
+
+    // --- Row: JIT_CARRY - dynarec the carry/overflow arithmetic ---
+    printf("%s JIT CARRY OPS  : ", (selectedRow == OPT_JIT_CARRY) ? ">" : " ");
+    switch (g_jit_carry_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (10 OPS JITTED)>]"); break;
+    }
+    printf(" jit addc/subc/div1/cmp-str");
     printf("\n\n");
 
     printOptionsFooter();
@@ -2950,6 +2991,7 @@ bool displayOptionsMenu()
         case OPT_JIT_HOTBLOCKS:  g_hotblocks_preset       = (g_hotblocks_preset       + 1) % 2; break;
         case OPT_JIT_TFWD:       g_jit_tfwd_preset        = (g_jit_tfwd_preset        + 1) % 2; break;
         case OPT_JIT_FMOV:       g_jit_fmov_preset        = (g_jit_fmov_preset        + 1) % 2; break;
+        case OPT_JIT_CARRY:      g_jit_carry_preset       = (g_jit_carry_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
@@ -3048,6 +3090,7 @@ bool displayOptionsMenu()
         case OPT_JIT_HOTBLOCKS:  g_hotblocks_preset       = (g_hotblocks_preset       + 1) % 2; break;
         case OPT_JIT_TFWD:       g_jit_tfwd_preset        = (g_jit_tfwd_preset        + 1) % 2; break;
         case OPT_JIT_FMOV:       g_jit_fmov_preset        = (g_jit_fmov_preset        + 1) % 2; break;
+        case OPT_JIT_CARRY:      g_jit_carry_preset       = (g_jit_carry_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
@@ -3902,6 +3945,7 @@ int main(int argc, wchar *argv[])
     // before/after pair is only comparable if every other switch matched.
     printf("JIT T-Forward  : %s\n", g_jit_tfwd_preset ? "ON (NO T RELOAD)" : "OFF (LEGACY)");
     printf("JIT Fmov Direct: %s\n", g_jit_fmov_preset ? "ON (LFS/STFS)" : "OFF (GPR BOUNCE)");
+    printf("JIT Carry Ops  : %s\n", g_jit_carry_preset ? "ON (10 OPS JITTED)" : "OFF (LEGACY)");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Dino Crisis Fix: %s\n", g_dino_crisis_inventory_hack_preset ? "ON (REDECODE)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");

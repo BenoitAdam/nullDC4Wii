@@ -201,6 +201,165 @@ shil_opc(sub) BIN_OP_I(-)  shil_opc_end()
 shil_opc(neg) UN_OP_I(-)   shil_opc_end()
 
 // ---------------------------------------------------------------------------
+// Integer arithmetic with carry / overflow  (SH4 addc/subc/negc/addv/subv/div1)
+//
+// All of these produce TWO results: the 32-bit value and the new T bit. They
+// return them packed in a u64 exactly the way div32u/div32s below do --
+// word[0] = value -> rd (CPT_u64rvL), word[1] = new T -> rd2 (CPT_u64rvH) --
+// because word[0] lands in the first return register on both endians.
+//
+// These canonical bodies are the CORRECTNESS reference. The Wii backend has
+// native cases for all of them (wii/dc/sh4/rec_v2/wii_driver.cpp) that use
+// PPC XER[CA]/XER[OV] directly and never call these; any other backend gets
+// the C version for free.
+// ---------------------------------------------------------------------------
+#define CARRY_RV(_v, _t) \
+    u64 rv; ((u32*)&rv)[0] = (u32)(_v); ((u32*)&rv)[1] = (u32)(_t); return rv;
+
+// addc Rm,Rn : Rn = Rn + Rm + T ; T = carry out
+shil_opc(adc)
+shil_canonical(
+    u64, f1, (u32 r1, u32 r2, u32 T),
+    u64 res = (u64)r1 + (u64)r2 + (u64)(T & 1);
+    CARRY_RV((u32)res, (u32)(res >> 32))
+)
+shil_compile(
+    shil_cf_arg_u32(rs3);
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+// subc Rm,Rn : Rn = Rn - Rm - T ; T = borrow out
+shil_opc(sbc)
+shil_canonical(
+    u64, f1, (u32 r1, u32 r2, u32 T),
+    u64 res = (u64)r1 - (u64)r2 - (u64)(T & 1);
+    CARRY_RV((u32)res, (u32)((res >> 32) & 1))
+)
+shil_compile(
+    shil_cf_arg_u32(rs3);
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+// negc Rm,Rn : Rn = 0 - Rm - T ; T = borrow out
+shil_opc(negc)
+shil_canonical(
+    u64, f1, (u32 r1, u32 T),
+    u64 res = (u64)0 - (u64)r1 - (u64)(T & 1);
+    CARRY_RV((u32)res, (u32)((res >> 32) & 1))
+)
+shil_compile(
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+// addv Rm,Rn : Rn = Rn + Rm ; T = signed overflow
+shil_opc(addv)
+shil_canonical(
+    u64, f1, (u32 r1, u32 r2),
+    u32 res = r1 + r2;
+    CARRY_RV(res, (~(r1 ^ r2) & (r1 ^ res)) >> 31)
+)
+shil_compile(
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+// subv Rm,Rn : Rn = Rn - Rm ; T = signed overflow
+shil_opc(subv)
+shil_canonical(
+    u64, f1, (u32 r1, u32 r2),
+    u32 res = r1 - r2;
+    CARRY_RV(res, ((r1 ^ r2) & (r1 ^ res)) >> 31)
+)
+shil_compile(
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+// div1 Rm,Rn : one non-restoring division step.
+//
+// The Hitachi SH-4 sequence in its compact form:
+//     q     = MSB(Rn) BEFORE the shift
+//     Rn    = (Rn << 1) | T
+//     Rn   -= Rm  when old_Q == M, else Rn += Rm
+//     Q     = q ^ M ^ carry_out
+//     T     = (Q == M)
+// Q (SR bit 8) and M (SR bit 9) are read and written in place; sr_status is
+// never register-resident, so touching it here is safe. AnalyseBlock in
+// shil.cpp is told about this implicit read so DCE cannot delete the div0s
+// that set up Q/M.
+shil_opc(div1)
+shil_canonical(
+    u64, f1, (u32 rn, u32 rm, u32 T),
+    u32 old_q = (sr.status >> 8) & 1;
+    u32 m     = (sr.status >> 9) & 1;
+    u32 q     = rn >> 31;
+    rn = (rn << 1) | (T & 1);
+    u32 tmp0 = rn;
+    u32 c;
+    if (old_q == m) { rn -= rm; c = (rn > tmp0); }
+    else            { rn += rm; c = (rn < tmp0); }
+    q ^= m ^ c;
+    sr.status = (sr.status & ~(1u << 8)) | (q << 8);
+    CARRY_RV(rn, (q == m))
+)
+shil_compile(
+    shil_cf_arg_u32(rs3);
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+// cmp/str Rm,Rn : T = any BYTE lane of Rn and Rm is equal.
+// Single result (T), so this is a plain u32-returning binop.
+shil_opc(cmpstr)
+shil_canonical(
+    u32, f1, (u32 r1, u32 r2),
+    u32 t = r1 ^ r2;
+    return (u32)(((t & 0xFF000000u) == 0) | ((t & 0x00FF0000u) == 0) |
+                 ((t & 0x0000FF00u) == 0) | ((t & 0x000000FFu) == 0));
+)
+shil_compile(
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u32(rd);
+)
+shil_opc_end()
+
+// swap.b Rm,Rn : swap the two LOW bytes, upper half untouched.
+shil_opc(swaplb)
+shil_canonical(
+    u32, f1, (u32 r1),
+    return (r1 & 0xFFFF0000u) | ((r1 & 0x00FFu) << 8) | ((r1 >> 8) & 0x00FFu);
+)
+shil_compile(
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u32(rd);
+)
+shil_opc_end()
+
+// ---------------------------------------------------------------------------
 // Shifts
 // ---------------------------------------------------------------------------
 shil_opc(shl) BIN_OP_I2(u32, <<) shil_opc_end()
@@ -564,6 +723,7 @@ SHIL_END
 #undef UN_OP_I
 #undef UN_OP_F
 #undef shil_recimp
+#undef CARRY_RV
 
 #if SHIL_MODE == 1
 #  undef shil_cf_arg_u32

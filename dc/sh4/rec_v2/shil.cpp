@@ -68,6 +68,14 @@ static u32 REMOVED_OPS     = 0;
 //   ftrv / fsca        - write their destination through a pointer, so the
 //                        rd liveness above does not describe what they touch
 //   div32u/s/p2        - multi-register division helpers
+//   adc/sbc/negc/      - two-output ops: RegWriteInfo() decides deadness one
+//   addv/subv            register at a time, so a dead T with a LIVE value
+//                        would still mark the whole op dead. Kept off the
+//                        whitelist until that is fixed (the same latent
+//                        hazard applies to div32u/s and mul_u64/s64, which
+//                        predate this).
+//   div1               - also read-modify-writes SR.Q, which no shil param
+//                        describes
 // Whitelist rather than blacklist on purpose: a future shil op defaults to
 // "not deletable" instead of silently becoming a correctness bug.
 static bool shil_op_is_pure(shilop op)
@@ -85,6 +93,7 @@ static bool shil_op_is_pure(shilop op)
     case shop_cvt_f2i_t: case shop_cvt_i2f_n: case shop_cvt_i2f_z:
     case shop_test:      case shop_seteq:     case shop_setge:
     case shop_setgt:     case shop_setae:     case shop_setab:
+    case shop_cmpstr:    case shop_swaplb:
     case shop_fadd:      case shop_fsub:      case shop_fmul:
     case shop_fdiv:      case shop_fabs:      case shop_fneg:
     case shop_fsqrt:     case shop_fipr:      case shop_fmac:
@@ -179,6 +188,13 @@ void AnalyseBlock(DecodedBlock* blk)
         RegReadInfo(op->rs1, i);
         RegReadInfo(op->rs2, i);
         RegReadInfo(op->rs3, i);
+
+        // shop_div1 reads AND writes SR.Q/SR.M through sr_status, which no
+        // shil param carries (rs1/rs2/rs3 are already Rn/Rm/T). Declare the
+        // read explicitly or the div0s that set Q/M up looks dead as soon as
+        // a second division in the same block writes sr_status again.
+        if (op->op == shop_div1)
+            RegReadInfo(shil_param(reg_sr_status), i);
 
         RegWriteInfo(&blk->oplist[0], op->rd,  i);
         RegWriteInfo(&blk->oplist[0], op->rd2, i);

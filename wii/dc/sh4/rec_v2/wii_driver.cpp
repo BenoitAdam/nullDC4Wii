@@ -930,6 +930,76 @@ static void emit_cr0_bit_to_rarg0(u32 cr0_bit_index)
 	ppc_rlwinmx(ppc_rarg0,ppc_rarg0,cr0_bit_index+1,31,31,0);
 }
 
+// ---------------------------------------------------------------------------
+// JIT_CARRY: SH4 T bit <-> PPC XER.
+//
+// TWO BIT NUMBERINGS ARE IN PLAY HERE, and mixing them is the easy mistake.
+// PowerPC documents SPR and CR fields in IBM numbering (bit 0 = MSB), so
+// XER[SO]=0, XER[OV]=1, XER[CA]=2, CR0[LT,GT,EQ,SO]=0..3. rlwinm's SH/MB/ME
+// are IBM-numbered too. The SH4 flags we are moving them to/from are described
+// in ordinary value numbering: sr_T is value bit 0, SR.Q is value bit 8, SR.M
+// is value bit 9.
+//
+// To land value bit `b` in value bit 0:      rlwinm rD,rS,32-b,31,31
+// To take value bit 0 back up to value bit b: rlwimi rD,rS,b,31-b,31-b
+//
+// So XER[CA] (IBM 2 = value 29) extracts with SH=3 and is written with SH=29,
+// which is also what emit_cr0_bit_to_rarg0 does for CR0 (index k is IBM, so
+// value bit 31-k, so SH = k+1). SR.Q (value 8) needs SH=24 / SH=8 + MB=ME=23 —
+// NOT 9 and 8. Getting that pair wrong is silent: the value comes out right
+// and only Q/T are corrupted.
+//
+// These are the sequences Evoca uses in seta-gx's SH2 recompiler, retargeted:
+// there SR (T included) is pinned in a GPR so the T traffic is register-only,
+// here sr_T is always memory-resident, which costs the lwz/stw pair below.
+// ---------------------------------------------------------------------------
+
+// XER[CA] = sr_T (optionally inverted, for the borrow-polarity ops). `t` is a
+// scratch GPR that must not alias either operand of the following adde/subfe.
+static void emit_T_to_ca(u32 t,bool invert)
+{
+	ppc_sh_load(t,reg_sr_T);
+	if (invert)
+		ppc_xori(t,t,1);
+	ppc_rlwinmx(t,t,29,2,2,0);	// value bit 0 -> XER[CA]
+	ppc_mtxer(t);
+}
+
+// sr_T = XER[CA] (optionally inverted). SH4 subc/negc define T as a BORROW,
+// PPC defines CA as "no borrow", hence the inversion on those.
+static void emit_ca_to_T(u32 t,bool invert)
+{
+	ppc_mfxer(t);
+	ppc_rlwinmx(t,t,3,31,31,0);	// XER[CA] -> value bit 0
+	if (invert)
+		ppc_xori(t,t,1);
+	ppc_sh_store(t,reg_sr_T);
+}
+
+// sr_T = XER[OV], set by the OE=1 form of add/subf (addv/subv).
+static void emit_ov_to_T(u32 t)
+{
+	ppc_mfxer(t);
+	ppc_rlwinmx(t,t,2,31,31,0);	// XER[OV] -> value bit 0
+	ppc_sh_store(t,reg_sr_T);
+}
+
+// Resolve the destination of a carry op. rd is always an SH4 GPR here, so it
+// is pinned unless it is r11. Safe for the single-instruction shapes below
+// (adde/subfe/subfze/addo/subfo read both sources then write the dest), which
+// is why the dest may alias a source.
+static u32 carry_dest(shil_opcode* op)
+{
+	ppc_ireg d=GetIntReg(op->rd._reg);
+	return (d!=ppc_rinvalid) ? (u32)d : (u32)ppc_rarg3;
+}
+
+static void carry_dest_store(shil_opcode* op,u32 d)
+{
+	if (d==(u32)ppc_rarg3)
+		ppc_sh_store(ppc_rarg3,op->rd);
+}
+
 // Compare rs1 against rs2 into CR0. cmp/cmpl/cmpi/cmpli can read ANY register,
 // so when an operand already lives in a pinned PPC reg we compare it in place
 // and skip the move into rarg0/rarg1 — only spilled operands (or immediates
@@ -3644,6 +3714,176 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				ppc_andcx(ppc_rarg3,ppc_rarg3,ppc_r0,0);
 				ppc_orx(ppc_rarg0,ppc_rarg0,ppc_rarg3,0);
 				binop_end(op);
+			}
+			break;
+
+		// --- Carry / overflow arithmetic (JIT_CARRY preset) -------------------
+		// All of these used to be shop_ifb call-outs because SHIL had no way to
+		// say "produce a value AND the new T bit". Scratch budget: sources go
+		// to rarg0/rarg1, the T<->XER shuffle uses rarg2, the dest is a pinned
+		// GPR or rarg3 — no two of those can alias.
+
+		case shop_adc:		// addc Rm,Rn : Rn = Rn + Rm + T ; T = carry
+			{
+				u32 a=src_or_load(op->rs1,ppc_rarg0);
+				u32 b=src_or_load(op->rs2,ppc_rarg1);
+				u32 d=carry_dest(op);
+				emit_T_to_ca(ppc_rarg2,false);
+				ppc_addex(d,a,b,0,0);			// adde d,a,b
+				emit_ca_to_T(ppc_rarg2,false);
+				carry_dest_store(op,d);
+			}
+			break;
+
+		case shop_sbc:		// subc Rm,Rn : Rn = Rn - Rm - T ; T = borrow
+			{
+				// subfe d,b,a computes ~b + a + CA = a - b - 1 + CA, so CA
+				// carries the INVERTED T going in and comes back as "no
+				// borrow" — hence invert on both ends.
+				u32 a=src_or_load(op->rs1,ppc_rarg0);
+				u32 b=src_or_load(op->rs2,ppc_rarg1);
+				u32 d=carry_dest(op);
+				emit_T_to_ca(ppc_rarg2,true);
+				ppc_subfex(d,b,a,0,0);			// subfe d,b,a
+				emit_ca_to_T(ppc_rarg2,true);
+				carry_dest_store(op,d);
+			}
+			break;
+
+		case shop_negc:		// negc Rm,Rn : Rn = 0 - Rm - T ; T = borrow
+			{
+				// rs1 is Rm here (DM_NEGC), rs2 is the T input which
+				// emit_T_to_ca reads straight from the context.
+				u32 a=src_or_load(op->rs1,ppc_rarg0);
+				u32 d=carry_dest(op);
+				emit_T_to_ca(ppc_rarg2,true);
+				ppc_subfzex(d,a,0,0);			// subfze d,a  = ~a + CA
+				emit_ca_to_T(ppc_rarg2,true);
+				carry_dest_store(op,d);
+			}
+			break;
+
+		case shop_addv:		// addv Rm,Rn : Rn = Rn + Rm ; T = signed overflow
+			{
+				u32 a=src_or_load(op->rs1,ppc_rarg0);
+				u32 b=src_or_load(op->rs2,ppc_rarg1);
+				u32 d=carry_dest(op);
+				ppc_addx(d,a,b,1,0);			// addo d,a,b
+				emit_ov_to_T(ppc_rarg2);
+				carry_dest_store(op,d);
+			}
+			break;
+
+		case shop_subv:		// subv Rm,Rn : Rn = Rn - Rm ; T = signed overflow
+			{
+				u32 a=src_or_load(op->rs1,ppc_rarg0);
+				u32 b=src_or_load(op->rs2,ppc_rarg1);
+				u32 d=carry_dest(op);
+				ppc_subfx(d,b,a,1,0);			// subfo d,b,a = a - b
+				emit_ov_to_T(ppc_rarg2);
+				carry_dest_store(op,d);
+			}
+			break;
+
+		case shop_cmpstr:	// cmp/str Rm,Rn : T = any byte lane is equal
+			{
+				// Classic has-zero-byte test on (Rn ^ Rm):
+				//   x = (t - 0x01010101) & ~t ; rotl 1 ; & 0x01010101 ; != 0
+				// The mask has its MSB clear, so the `and.` result can never be
+				// negative and CR0[GT] is exactly "non-zero".
+				u32 a=src_or_load(op->rs1,ppc_rarg0);
+				u32 b=src_or_load(op->rs2,ppc_rarg1);
+
+				ppc_xorx(ppc_rarg2,a,b,0);			// rarg2 = t
+				ppc_li(ppc_rarg3,0x01010101);
+				ppc_subfx(ppc_r0,ppc_rarg3,ppc_rarg2,0,0);	// r0 = t - const
+				ppc_andcx(ppc_r0,ppc_r0,ppc_rarg2,0);		// r0 &= ~t
+				ppc_rlwinmx(ppc_r0,ppc_r0,1,0,31,0);		// rotl 1
+				ppc_andx(ppc_r0,ppc_r0,ppc_rarg3,1);		// and. -> CR0
+				emit_cr0_bit_to_rarg0(BI_CR0_GT);
+				binop_end(op);					// rd is sr_T
+			}
+			break;
+
+		case shop_swaplb:	// swap.b Rm,Rn : swap the two LOW bytes
+			{
+				// rlwimi rotate n places source bit (i+n)%32 into dest bit i:
+				// bits 16..23 come from 24..31 (n=8), 24..31 from 16..23 (n=24).
+				// Built in scratch so a dest that aliases the source is safe.
+				u32 s=src_or_load(op->rs1,ppc_rarg0);
+				ppc_rlwinmx(ppc_rarg1,s,0,0,15,0);	// keep the upper half
+				ppc_rlwimix(ppc_rarg1,s,8,16,23,0);
+				ppc_rlwimix(ppc_rarg1,s,24,24,31,0);
+				ppc_sh_store(ppc_rarg1,op->rd);
+			}
+			break;
+
+		case shop_div1:		// div1 Rm,Rn : one non-restoring division step
+			{
+				// q_new = q ^ oldQ ^ CA ^ 1, where q = MSB(Rn) before the
+				// shift and CA is the carry out of the unified add:
+				//     sel  = oldQ ^ M          (1 => add Rm, 0 => subtract)
+				//     rmx  = sel ? Rm : ~Rm    (mask = sel-1)
+				//     cin  = !sel
+				//     Rn   = ((Rn<<1)|T) + rmx + cin
+				// The M term cancels out of the usual `q ^ M ^ carry ^ !sel`
+				// because sel already carries it. T = (q_new == M).
+				//
+				// Rm is captured into rmx BEFORE Rn is shifted, so `div1 Rn,Rn`
+				// behaves like the hardware.
+				const u32 t0=ppc_rarg0;		// SR.status, live to the end
+				const u32 t1=ppc_rarg1;		// M, live to the T test
+				const u32 t2=ppc_rarg2;		// oldQ, then general scratch
+				const u32 t3=ppc_rarg3;		// q accumulator
+				const u32 t4=ppc_r0;		// rmx
+				const u32 t5=ppc_rarg4;		// sel
+
+				// Rn is updated in place when it is pinned (rd == rs1 always
+				// holds for DM_ADC), else through rarg7.
+				ppc_ireg dpin=GetIntReg(op->rd._reg);
+				u32 A;
+				bool a_scratch=false;
+				if (dpin!=ppc_rinvalid && op->rs1.is_reg() && op->rs1._reg==op->rd._reg)
+					A=(u32)dpin;
+				else
+				{
+					ppc_sh_load(ppc_rarg7,op->rs1);
+					A=ppc_rarg7;
+					a_scratch=true;
+				}
+				u32 B=src_or_load(op->rs2,ppc_rarg6);
+
+				ppc_sh_load(t0,reg_sr_status);
+				ppc_rlwinmx(t1,t0,23,31,31,0);		// M    = SR value bit 9
+				ppc_rlwinmx(t2,t0,24,31,31,0);		// oldQ = SR value bit 8
+				ppc_xorx(t5,t2,t1,0);			// sel  = oldQ ^ M
+				ppc_addi(t4,t5,-1);			// mask = ~0 when sel==0
+				ppc_xorx(t4,B,t4,0);			// rmx  = Rm ^ mask
+				ppc_xori(t5,t5,1);			// cin  = !sel
+				ppc_rlwinmx(t5,t5,29,2,2,0);		// -> XER[CA]
+				ppc_mtxer(t5);				// (nothing below touches XER
+									//  until the adde)
+
+				ppc_rlwinmx(t3,A,1,31,31,0);		// q = MSB(Rn), pre-shift
+				ppc_xorx(t3,t3,t2,0);			// q ^= oldQ
+
+				ppc_sh_load(t2,reg_sr_T);
+				ppc_rlwinmx(A,A,1,0,30,0);		// Rn <<= 1
+				ppc_orx(A,A,t2,0);			// Rn |= T
+				ppc_addex(A,A,t4,0,0);			// Rn += rmx + cin
+
+				ppc_mfxer(t2);
+				ppc_rlwinmx(t2,t2,3,31,31,0);		// CA
+				ppc_xorx(t3,t3,t2,0);			// q ^= CA
+				ppc_xori(t3,t3,1);			// q_new = q ^ oldQ ^ CA ^ 1
+				ppc_xorx(t2,t3,t1,0);
+				ppc_xori(t2,t2,1);			// T = (q_new == M)
+				ppc_sh_store(t2,reg_sr_T);
+				ppc_rlwimix(t0,t3,8,23,23,0);		// SR.Q (value bit 8) = q_new
+				ppc_sh_store(t0,reg_sr_status);
+
+				if (a_scratch)
+					ppc_sh_store(A,op->rd);
 			}
 			break;
 
