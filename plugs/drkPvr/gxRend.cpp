@@ -128,6 +128,50 @@ extern "C" int get_layer_back_tex();        // slot 0 only
 extern "C" int get_layer_back_tex_n(int i); // slot i, 0 when unset
 #define LAYER_BACK_TEX() ((u32)get_layer_back_tex())
 
+// -- layer_front_tex: one named texture is an OVERLAY, not scenery -----------
+// The exact mirror of layer_back_tex above, for the opposite symptom: a
+// texture that BELONGS on top gets buried by whatever the game submits after
+// it. Same 2D failure mode read the other way round -- the HUD plate, the
+// score panel, the frame around the playfield goes out EARLY in the
+// translucent list, at the same depth as the sprites that follow it, so
+// painter order paints the sprites over it. Symptom: "the interface is behind
+// the characters" / "the panel is half-eaten by the sprites".
+//
+// Two things differ from the backdrop case, both on purpose:
+//
+//  1. A front match wins OUTRIGHT, not just at equal depth. layer_back_tex's
+//     tier 4 only reorders strips that share a far_w, because a backdrop that
+//     is genuinely farther away already sorts correctly. "On top" has no such
+//     luck: an overlay submitted at an arbitrary W would keep whatever depth
+//     order it had and the preset would silently do nothing. So front strips
+//     are a global last group in trans_strip_cmp() -- still a strict weak
+//     ordering (front-vs-front and rest-vs-rest keep the full depth/tier/
+//     submission comparison), just with the front group pinned after all of
+//     the rest.
+//
+//  2. Drawing last is not the same as being visible. Depth still gets a vote,
+//     and an overlay parked behind the scene in Z fails GEQUAL no matter how
+//     late it is issued. Front strips are therefore drawn GX_ALWAYS with
+//     Z-write off, reusing the same per-strip override + restore hud_pass
+//     uses further down. That is the whole statement of the preset: this
+//     texture goes on top, nothing hides it, and it hides nothing after it.
+//
+// Everything else matches layer_back_tex: up to LAYER_FRONT_TEX_MAX VRAM byte
+// addresses as a comma list (`layer_front_tex=0x52C000,0x694000`), taken off a
+// [SCN] census addr= field, found with debug_skip_tex (hide one address at a
+// time and see what stops being covered), and it implies the translucent sort
+// because it IS a tier rule. Address-keyed for the same reason: at one shared
+// depth an overlay is indistinguishable from an ordinary sprite by blend,
+// format or size, so no heuristic finds it.
+//
+// Scope caveat, same as every tier rule here: this reorders the TRANSLUCENT
+// list only. A texture the game draws in the OP or PT list is not in this
+// sort's range and naming it here does nothing.
+#define LAYER_FRONT_TEX_MAX 4
+extern "C" int get_layer_front_tex();        // slot 0 only
+extern "C" int get_layer_front_tex_n(int i); // slot i, 0 when unset
+#define LAYER_FRONT_TEX() ((u32)get_layer_front_tex())
+
 // puyo_hack: Puyo Puyo 4's own two backdrop addresses, folded into the
 // layer_back_tex list above when this per-game switch (page 6, PUYO HACK) is
 // on. Cfg/menu never carries a raw hex address for this game -- the addresses
@@ -5914,10 +5958,13 @@ struct TransStripRec
   Vertex *vtx;     // first vertex of the strip
   PolyParam *mod;  // render state in effect for this strip
   u16 count;       // vertex count (sign bit already consumed)
-  u16 tr_class;    // layer tier at equal depth (0 otherwise):
+  s16 tr_class;    // layer tier at equal depth (0 otherwise):
                    // 4 = LAYER_BACK_TEX() named backdrop (behind everything),
                    // then LAYER_SORT()'s tiers: 3 = full-screen plate,
-                   // 2 = VQ stage art, 1 = 8bpp bank 32-47, 0 = rest
+                   // 2 = VQ stage art, 1 = 8bpp bank 32-47, 0 = rest.
+                   // -1 = LAYER_FRONT_TEX() named overlay: signed for this one
+                   // value, and not a tier like the others -- it is pulled out
+                   // of the depth comparison entirely (see trans_strip_cmp).
 };
 
 static TransStripRec trans_sort_recs[8 * 1024];
@@ -5966,6 +6013,15 @@ static int trans_strip_cmp(const void *a, const void *b)
 {
   const TransStripRec *ra = (const TransStripRec *)a;
   const TransStripRec *rb = (const TransStripRec *)b;
+  // LAYER_FRONT_TEX(): named overlays are a global LAST group, compared before
+  // anything else so depth cannot keep them buried (see the macro doc at the
+  // top of the file). Two front strips fall through to the normal depth /
+  // submission comparison below, so the overlay's own internal order is
+  // untouched -- the group is pinned after the rest, not flattened.
+  {
+    const bool fa = ra->tr_class < 0, fb = rb->tr_class < 0;
+    if (fa != fb) return fa ? 1 : -1;
+  }
   if (ra->far_w > rb->far_w) return -1; // farther strips draw first
   if (ra->far_w < rb->far_w) return 1;
   // layer_sort layer tier: at equal depth, background plates (3) draw before
@@ -8225,7 +8281,18 @@ void DoRender()
         layer_back_tex[layer_back_tex_n++] = hack[h];
     }
   }
-  const bool trans_sort = (TRANS_SORT() || LAYER_SORT() || layer_back_tex_n) && !as_frame_peels; // read once per frame
+  // layer_front_tex: same deal on the other side -- it is a sort rule, so it
+  // implies the sort. Read once per frame and compacted like the back list.
+  u32 layer_front_tex[LAYER_FRONT_TEX_MAX];
+  int layer_front_tex_n = 0;
+  for (int i = 0; i < LAYER_FRONT_TEX_MAX; i++)
+  {
+    const u32 a = (u32)get_layer_front_tex_n(i);
+    if (a)
+      layer_front_tex[layer_front_tex_n++] = a;
+  }
+  const bool trans_sort = (TRANS_SORT() || LAYER_SORT() || layer_back_tex_n
+                           || layer_front_tex_n) && !as_frame_peels; // read once per frame
   bool ts_active = false;
   int ts_idx = 0;
   int ts_count = 0;
@@ -8806,12 +8873,27 @@ void DoRender()
             // VQ-vs-VQ compositing stays legacy-identical (an address-based
             // low/high VRAM split was tried and broke the character-select
             // screen by reordering VQ against VQ).
-            u16 tclass = 0;
+            s16 tclass = 0;
+            // LAYER_FRONT_TEX(): one named texture is an OVERLAY -- the mirror
+            // of the backdrop rule below. Tested first because it is the
+            // stronger claim (it beats depth, not just the tier order), so a
+            // texture named in both lists resolves to "on top" instead of
+            // depending on which test ran first.
+            if (layer_front_tex_n && cur_mod->pcw.Texture)
+            {
+              const u32 a = (u32)((cur_mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
+              for (int i = 0; i < layer_front_tex_n; i++)
+                if (a == layer_front_tex[i])
+                {
+                  tclass = -1;
+                  break;
+                }
+            }
             // LAYER_BACK_TEX(): one named texture is a BACKDROP — park it in a
             // tier above every other, so it draws first and everything else
             // composites on top of it. See the macro doc at the top of the file
             // for why this is address-keyed rather than inferred.
-            if (layer_back_tex_n && cur_mod->pcw.Texture)
+            if (tclass == 0 && layer_back_tex_n && cur_mod->pcw.Texture)
             {
               const u32 a = (u32)((cur_mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
               for (int i = 0; i < layer_back_tex_n; i++)
@@ -8821,10 +8903,12 @@ void DoRender()
                   break;
                 }
             }
-            // tclass != 4: a backdrop match above wins outright. This was an
-            // `else if` on the single-address test; with the test now a loop it
-            // has to re-check the result instead.
-            if (tclass != 4 && isp_tier && cur_mod->pcw.Texture)
+            // tclass == 0: a front or backdrop match above wins outright.
+            // This was an `else if` on the single-address test; with the test
+            // now a loop it has to re-check the result instead. (Was
+            // `tclass != 4`, which the front tier's -1 would have slipped
+            // through -- layer_sort could then have re-tiered an overlay.)
+            if (tclass == 0 && isp_tier && cur_mod->pcw.Texture)
             {
               if (cur_mod->tcw.NO_PAL.PixelFmt == 2 && cur_mod->tcw.NO_PAL.VQ_Comp)
                 tclass = 2; // VQ stage art: bottom layer
@@ -8955,6 +9039,9 @@ void DoRender()
 
       s32 count;
       PolyParam *stripMod = 0; // non-NULL → apply this polygon's render state below
+      // LAYER_FRONT_TEX(): this strip is a named overlay and must be drawn
+      // with the depth test defeated, not merely last (see the macro doc).
+      bool ts_front = false;
       if (ts_active)
       {
         // Sorted translucent strip: fetched out of submission order, so the
@@ -8963,6 +9050,7 @@ void DoRender()
         const TransStripRec &r = trans_sort_recs[ts_idx++];
         count = r.count;
         drawVTX = r.vtx;
+        ts_front = (r.tr_class < 0);
         if (r.mod != ts_last_mod)
         {
           stripMod = r.mod;
@@ -9457,6 +9545,31 @@ void DoRender()
         // on top; mode 1 leaves Z untouched (pure overlay).
         if (hud_strip)
           GX_SetZMode(GX_TRUE, GX_ALWAYS, hud_pass == 2 ? GX_TRUE : GX_FALSE);
+      }
+
+      // ── layer_front_tex: draw a named overlay strip with depth defeated ──
+      // The sort already pinned it after every other translucent strip; this
+      // is the other half of "on top". GX_ALWAYS so nothing already in the
+      // EFB can reject it, Z-write off so it stamps no depth of its own (it
+      // is last in the range, so there is nothing left for it to occlude and
+      // no reason to leave a near-plane wall behind for the next segment).
+      // Vertices are NOT moved -- unlike hud_pass this is not a near-clip
+      // rescue, the geometry is on screen already, it was just losing the
+      // compositing order. Reuses hud_strip purely for the per-strip state
+      // restore at the end of the loop body.
+      //
+      // NOT an `else if` on the chain above: hud_pass's branch is entered for
+      // EVERY strip once the preset is on and only sets state for the ones
+      // that actually crossed the near plane, so chaining onto it would make
+      // this override vanish in any game that also runs hud_pass. The
+      // !hud_strip guard is what keeps the two from fighting -- if a rescue
+      // above already pinned the Z state for this strip, its choice stands
+      // (hud_pass=2 deliberately WRITES the near-plane Z, and stomping that
+      // here would undo the mode the user picked).
+      if (ts_front && count && !hud_strip)
+      {
+        GX_SetZMode(GX_TRUE, GX_ALWAYS, GX_FALSE);
+        hud_strip = true;
       }
 
       // POLY_OFFSET(): PT list only — nudge co-planar decals/shadows/road-

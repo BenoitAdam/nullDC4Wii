@@ -750,6 +750,8 @@ extern int g_debug_skip_tex;
 extern int g_debug_skip_tex_saved;
 #define LAYER_BACK_TEX_MAX 4
 extern int g_layer_back_tex[LAYER_BACK_TEX_MAX];
+#define LAYER_FRONT_TEX_MAX 4
+extern int g_layer_front_tex[LAYER_FRONT_TEX_MAX];
 extern int g_x_scaler_preset;
 extern int g_y_scaler_preset;
 extern int g_h_scaler_preset;
@@ -857,6 +859,8 @@ struct GamePreset
     int debug_skip_tex;
     int layer_back_tex[LAYER_BACK_TEX_MAX];
     int layer_back_tex_n; // -1 = key absent, else how many slots were given
+    int layer_front_tex[LAYER_FRONT_TEX_MAX];
+    int layer_front_tex_n; // -1 = key absent, else how many slots were given
     int x_scaler;
     int y_scaler;
     int h_scaler;
@@ -1295,6 +1299,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     // plain decimal too. Diagnostic only — it removes geometry.
     else if (key_eq(key, "debug_skip_tex")) p->debug_skip_tex = (int)strtol(val, 0, 0);
     else if (key_eq(key, "layer_back_tex")) p->layer_back_tex_n = parse_addr_list(val, p->layer_back_tex, LAYER_BACK_TEX_MAX);
+    else if (key_eq(key, "layer_front_tex")) p->layer_front_tex_n = parse_addr_list(val, p->layer_front_tex, LAYER_FRONT_TEX_MAX);
     else if (key_eq(key, "x_scaler"))   p->x_scaler   = parse_bool(val);
     else if (key_eq(key, "y_scaler"))   p->y_scaler   = parse_bool(val);
     else if (key_eq(key, "h_scaler"))   p->h_scaler   = parse_bool(val);
@@ -1394,6 +1399,8 @@ static void preset_clear(GamePreset* cur)
     cur->debug_skip_tex = -1;
     cur->layer_back_tex_n = -1;
     for (int i = 0; i < LAYER_BACK_TEX_MAX; i++) cur->layer_back_tex[i] = 0;
+    cur->layer_front_tex_n = -1;
+    for (int i = 0; i < LAYER_FRONT_TEX_MAX; i++) cur->layer_front_tex[i] = 0;
     cur->x_scaler = -1;
     cur->y_scaler = -1;
     cur->h_scaler = -1;
@@ -1483,6 +1490,14 @@ static void preset_apply_fields(const GamePreset* p)
         printf("  layer_back_tex ->");
         if (p->layer_back_tex_n == 0) printf(" off");
         for (int i = 0; i < p->layer_back_tex_n; i++) printf(" %06X", (unsigned)p->layer_back_tex[i]);
+        printf("\n");
+    }
+    if (p->layer_front_tex_n >= 0) {
+        for (int i = 0; i < LAYER_FRONT_TEX_MAX; i++)
+            g_layer_front_tex[i] = (i < p->layer_front_tex_n) ? p->layer_front_tex[i] : 0;
+        printf("  layer_front_tex ->");
+        if (p->layer_front_tex_n == 0) printf(" off");
+        for (int i = 0; i < p->layer_front_tex_n; i++) printf(" %06X", (unsigned)p->layer_front_tex[i]);
         printf("\n");
     }
     if (p->x_scaler   >= 0) { g_x_scaler_preset       = p->x_scaler;   printf("  x_scaler   -> %d\n", p->x_scaler);   }

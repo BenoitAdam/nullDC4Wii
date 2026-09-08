@@ -895,6 +895,21 @@ extern "C" {
                                            ? g_layer_back_tex[i] : 0; }
 }
 
+// layer_front_tex (see LAYER_FRONT_TEX in gxRend.cpp): the mirror of the
+// array above -- VRAM byte addresses of textures that are OVERLAYS, drawn
+// after every other translucent strip and with the depth test defeated, for
+// the HUD/panel/frame a game submits early and then paints its sprites over.
+// 0 = off. Same cfg shape, a comma list of up to 4 addresses. Cfg-driven
+// mechanism only, exactly like layer_back_tex: no per-game hardcoded address
+// belongs in this array.
+#define LAYER_FRONT_TEX_MAX 4
+int g_layer_front_tex[LAYER_FRONT_TEX_MAX] = { 0, 0, 0, 0 };
+extern "C" {
+  int get_layer_front_tex()        { return g_layer_front_tex[0]; }
+  int get_layer_front_tex_n(int i) { return (i >= 0 && i < LAYER_FRONT_TEX_MAX)
+                                            ? g_layer_front_tex[i] : 0; }
+}
+
 int g_puyo_hack_preset = 0;
 // 0=off, 1=on (Puyo Puyo 4's two hardcoded backdrop VRAM addresses — the
 //   gameplay playfields AND the intro/main screen background, both submitted
