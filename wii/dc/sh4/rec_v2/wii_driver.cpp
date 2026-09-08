@@ -240,6 +240,12 @@ u32 last_block;
 // t_in_rarg0 comment in compile_state.
 extern "C" int get_jit_tfwd_preset();
 
+// JIT_FMOV preset (main.cpp): extend FPU_PIN "Phase B" (direct lfs/stfs to a
+// pinned FR, no GPR bounce) to the FASTMEM shapes in shop_readm/shop_writem.
+// Needs the matching float shapes in rec_fastmem_patch() below, which is why
+// it is a separate switch from fpu_pin rather than part of it.
+extern "C" int get_jit_fmov_preset();
+
 // Forward decls: GPR/FPR allocation maps + flush/reload (defined later in this file).
 ppc_ireg GetIntReg(u32 reg);
 ppc_freg GetFloatReg(u32 reg);
@@ -2126,6 +2132,20 @@ static void FlushCold()
 //   scalar write: rlwinm r5 / [xori r5] / stb|sth|stw rS,0(r5)
 //   pair   write: rlwinm r4 / stw r5,0(r4) / stw r6,4(r4)
 //
+// JIT_FMOV adds four FLOAT variants of the same four shapes, used when the
+// value's SH4 register is a pinned FR (FPU_PIN) so the access can name the
+// FPR directly instead of bouncing through a GPR and the context slot:
+//
+//   scalar read : rlwinm r4 / lfs  fD,0(r4)
+//   pair   read : rlwinm r5 / lfs  fD,0(r5)  / lfs  fD+1,4(r5)
+//   scalar write: rlwinm r5 / stfs fS,0(r5)
+//   pair   write: rlwinm r4 / stfs fS,0(r4)  / stfs fS+1,4(r4)
+//
+// Scratch registers and displacements are identical to the integer shapes —
+// only the opcode differs (lfs 48 / stfs 52 vs lwz 32 / stw 36) — so the
+// decoder's existing read/write and scalar/pair discrimination is untouched.
+// Float shapes are always 4 bytes wide, hence no xori and no andi mask.
+//
 // The rlwinm never clobbers the address register, so the trampoline can
 // pass the ORIGINAL SH4 address (recovered from the decoded rlwinm source
 // field) to the generic ReadMem/WriteMem dispatchers — this is what keeps
@@ -2175,15 +2195,41 @@ static volatile u32 s_fm_fail_reason;	// 1=pc outside cache 2=pool full 3=undeco
 static u32 s_fm_ring[FM_RING];		// last FM_RING patched site PCs
 static u32 s_fm_ring_n;
 
+// JIT_FMOV tripwire. The preset needs BOTH fpu_pin and fastmem to be on to do
+// anything, and silently emits the legacy GPR bounce otherwise — exactly the
+// way to waste a hardware A/B run on a switch that never engaged. This counts
+// float shapes actually emitted and announces the first one, so the log says
+// plainly whether the thing under test is in the build that ran.
+static u32 s_fm_float_sites = 0;
+static void fm_note_float_site()
+{
+	// Compile time, normal context: printf is OK here (never in the DSI path).
+	if (s_fm_float_sites++ == 0)
+		printf("[fmov] JIT_FMOV active: emitting lfs/stfs fastmem shapes\n");
+}
+
+// Float sites that actually FAULTED and got a trampoline built. Emitted-vs-
+// patched is the distinction that matters: emitting a float shape exercises
+// nothing but the emitter, while a patch is the only proof that the DSI
+// decoder and its trampolines — the exception-context code, where a mis-decode
+// is a panic rather than a slow path — have been down the float path at all.
+// A log showing thousands of float shapes emitted and ZERO patched means the
+// risky half of JIT_FMOV is still untested, however well the game ran.
+static u32 s_fm_float_patches = 0;
+
 static void rec_fastmem_reset_pool()
 {
 	// Runs in normal context (bm_Reset / recSh4_ClearCache) — printf is OK.
 	if (s_fm_patch_count)
-		printf("[fastmem] cache clear: %u sites were patched (%u/%u B pool)\n",
-		       s_fm_patch_count, s_fm_pool_used, FM_POOL_SIZE);
-	s_fm_pool_used   = 0;
-	s_fm_patch_count = 0;
-	s_fm_ring_n      = 0;
+		printf("[fastmem] cache clear: %u sites were patched (%u/%u B pool),"
+		       " %u float shapes emitted / %u float sites patched\n",
+		       s_fm_patch_count, s_fm_pool_used, FM_POOL_SIZE,
+		       s_fm_float_sites, s_fm_float_patches);
+	s_fm_pool_used     = 0;
+	s_fm_patch_count   = 0;
+	s_fm_ring_n        = 0;
+	s_fm_float_sites   = 0;	// the sites die with the cache, like the patches
+	s_fm_float_patches = 0;
 }
 
 // --- minimal raw-word emitter --------------------------------------------
@@ -2217,6 +2263,22 @@ static void fm_sq_addr(u32 reg,u32 areg,u32 swz)
 	u32 hi=((u32)(sq-(u32)lo))>>16;
 	fm_w(fm_dform(15,reg,reg,hi));					// addis reg,reg,hi
 	fm_w(fm_dform(14,reg,reg,(u32)lo));				// addi  reg,reg,lo
+}
+
+// JIT_FMOV: context byte offset of the pinned FR named by a float shape's
+// register field. GetFloatReg maps fr[n] -> f14+n and fr[] is contiguous, so
+// the slot follows from the register number alone — which matters because this
+// runs in exception context, where Sh4Context::offset() (a switch through
+// Sh4_int_GetRegisterPtr plus verify()) is not callable. `pair` additionally
+// requires fD+1 to be inside the pinned bank, so a mis-decode can never make
+// the trampoline write past fr[15]. Returns -1 when the register is outside
+// the bank (no emitted shape does that; this is the belt-and-braces check).
+static int fm_fr_ofs(u32 fd,bool pair)
+{
+	const u32 lastf = pair ? (u32)(ppc_f14+14) : (u32)(ppc_f14+15);
+	if (fd < (u32)ppc_f14 || fd > lastf)
+		return -1;
+	return (int)(SH4CTX_OFS_FR + (fd-(u32)ppc_f14)*4);
 }
 
 // Locate the governing `rlwinm rEA, rADDR, 0,3,31` within the 3 insns
@@ -2384,6 +2446,141 @@ int rec_fastmem_patch(unsigned int pc)
 			ok&=fm_branch(site+1,0);
 		}
 	}
+	// ---- JIT_FMOV float shapes (lfs op6=48 / stfs op6=52) -------------------
+	// Same EA scratch registers and displacements as the integer shapes above
+	// — the opcode alone tells them apart — so the read/write and scalar/pair
+	// discrimination is unchanged. rt is an FPR number here, not a GPR.
+	//
+	// These cases are deliberately NOT gated on get_jit_fmov_preset(): a site
+	// is only ever EMITTED with the preset on, but if the preset were flipped
+	// off while blocks compiled under it are still in the cache, gating here
+	// would turn a perfectly valid site into an undecodable one — a panic
+	// instead of a slow path. A decoder must accept everything the emitter can
+	// produce, unconditionally.
+	//
+	// The slow C dispatchers deal in integers, so each trampoline bounces
+	// through the FR's OWN context slot (fm_fr_ofs) — the one place that is
+	// safe to clobber, since it is the slot the FR would flush to anyway.
+	// f14..f31 are callee-saved under the PPC EABI, so a pinned FR survives
+	// the ReadMem/WriteMem call; that is why the pair straddle cases need none
+	// of the save/restore their integer counterparts do.
+	else if (op6==48 && ra==ppc_rarg1 && dd==0)
+	{
+		// --- scalar float read: lfs fD,0(r4)  (fmov.s, always 4 bytes).
+		int areg=fm_find_areg(site,ra);
+		int fofs=fm_fr_ofs(rt,false);
+		if (areg>=0 && fofs>=0)
+		{
+			ok=true;
+			fm_mr(ppc_rarg0,(u32)areg);
+			ok&=fm_branch((void*)ReadMem32,1);
+			fm_w(fm_dform(36,ppc_rrv0,ppc_contex,(u32)fofs));	// stw r3,fofs(r30)
+			fm_w(fm_dform(48,rt,ppc_contex,(u32)fofs));		// lfs fD,fofs(r30)
+			ok&=fm_branch(site+1,0);
+		}
+	}
+	else if (op6==48 && ra==ppc_rarg2 && dd==0)
+	{
+		// --- pair float read, first word: lfs fD,0(r5). Address is still in
+		// r3 (the pair shape always sources rarg0), so ReadMem64 needs no
+		// setup; it returns r3:r4 = word[addr]:word[addr+4] -> fD:fD+1.
+		int fofs=fm_fr_ofs(rt,true);
+		if (fm_find_areg(site,ra)==ppc_rarg0 && fofs>=0)
+		{
+			ok=fm_branch((void*)ReadMem64,1);
+			fm_w(fm_dform(36,ppc_rrv0,ppc_contex,(u32)fofs));	// stw r3,fofs(r30)
+			fm_w(fm_dform(36,ppc_rrv1,ppc_contex,(u32)fofs+4));	// stw r4,fofs+4(r30)
+			fm_w(fm_dform(48,rt,ppc_contex,(u32)fofs));		// lfs fD,  fofs(r30)
+			fm_w(fm_dform(48,rt+1,ppc_contex,(u32)fofs+4));		// lfs fD+1,fofs+4(r30)
+			ok&=fm_branch(site+2,0);				// skip the second lfs
+		}
+	}
+	else if (op6==48 && ra==ppc_rarg2 && dd==4)
+	{
+		// --- pair float read, second word alone (straddling; see LIMITATION).
+		// The first word is already in fD-1, which the call cannot disturb.
+		int fofs=fm_fr_ofs(rt,false);
+		if (fm_find_areg(site,ra)>=0 && fofs>=0)
+		{
+			ok=true;
+			fm_w(fm_dform(14,ppc_rarg0,ppc_rarg2,4));		// addi r3,r5,4 (masked EA+4)
+			ok&=fm_branch((void*)ReadMem32,1);
+			fm_w(fm_dform(36,ppc_rrv0,ppc_contex,(u32)fofs));	// stw r3,fofs(r30)
+			fm_w(fm_dform(48,rt,ppc_contex,(u32)fofs));		// lfs fD,fofs(r30)
+			ok&=fm_branch(site+1,0);
+		}
+	}
+	else if (op6==52 && ra==ppc_rarg2 && dd==0)
+	{
+		// --- scalar float write: stfs fS,0(r5), with the same inlined SQ
+		// fast path the integer scalar write gets. sz is always 4 here, so
+		// there is no sub-word swizzle and no andi mask.
+		int areg=fm_find_areg(site,ra);
+		int fofs=fm_fr_ofs(rt,false);
+		if (areg>=0 && fofs>=0)
+		{
+			ok=true;
+			if (dar < 0x04000000)
+			{
+				fm_w(0x54000000|((u32)areg<<21)|(ppc_rarg2<<16)|(6<<11)|(26<<6)|(31<<1));	// rlwinm r5,areg,6,26,31
+				fm_w(0x2C000000|(ppc_rarg2<<16)|0x38);		// cmpwi r5,0x38 — SQ region?
+				u32* bne=fm_p;
+				fm_w(0x40820000);				// bne -> generic (patched below)
+				fm_sq_addr(ppc_rarg2,(u32)areg,0);
+				fm_w(fm_dform(52,rt,ppc_rarg2,0));		// stfs fS,0(r5)
+				ok&=fm_branch(site+1,0);
+				*bne |= ((u32)((u8*)fm_p-(u8*)bne))&0xFFFC;	// resolve bne -> generic
+			}
+			fm_mr(ppc_rarg0,(u32)areg);				// before r4 is clobbered below
+			fm_w(fm_dform(52,rt,ppc_contex,(u32)fofs));		// stfs fS,fofs(r30)
+			fm_w(fm_dform(32,ppc_rarg1,ppc_contex,(u32)fofs));	// lwz  r4,fofs(r30)
+			ok&=fm_branch((void*)WriteMem32,1);
+			ok&=fm_branch(site+1,0);
+		}
+	}
+	else if (op6==52 && ra==ppc_rarg1 && dd==0)
+	{
+		// --- pair float write, first word: stfs fS,0(r4). Address still in
+		// r3; WriteMem64(u32,u64) wants r3 + r5:r6, so only the data moves.
+		// fmov.d bursts into the SQ are THE geometry path, hence the inline.
+		int fofs=fm_fr_ofs(rt,true);
+		if (fm_find_areg(site,ra)==ppc_rarg0 && fofs>=0)
+		{
+			ok=true;
+			if (dar < 0x04000000)
+			{
+				fm_w(0x54000000|(ppc_rarg0<<21)|(ppc_rarg1<<16)|(6<<11)|(26<<6)|(31<<1));	// rlwinm r4,r3,6,26,31
+				fm_w(0x2C000000|(ppc_rarg1<<16)|0x38);		// cmpwi r4,0x38
+				u32* bne=fm_p;
+				fm_w(0x40820000);				// bne -> generic
+				fm_sq_addr(ppc_rarg1,ppc_rarg0,0);		// 8-aligned: no swizzle
+				fm_w(fm_dform(52,rt,ppc_rarg1,0));		// stfs fS,  0(r4)
+				fm_w(fm_dform(52,rt+1,ppc_rarg1,4));		// stfs fS+1,4(r4)
+				ok&=fm_branch(site+2,0);
+				*bne |= ((u32)((u8*)fm_p-(u8*)bne))&0xFFFC;
+			}
+			fm_w(fm_dform(52,rt,ppc_contex,(u32)fofs));		// stfs fS,  fofs(r30)
+			fm_w(fm_dform(52,rt+1,ppc_contex,(u32)fofs+4));		// stfs fS+1,fofs+4(r30)
+			fm_w(fm_dform(32,ppc_rarg2,ppc_contex,(u32)fofs));	// lwz  r5,fofs(r30)
+			fm_w(fm_dform(32,ppc_rarg3,ppc_contex,(u32)fofs+4));	// lwz  r6,fofs+4(r30)
+			ok&=fm_branch((void*)WriteMem64,1);
+			ok&=fm_branch(site+2,0);				// skip the second stfs
+		}
+	}
+	else if (op6==52 && ra==ppc_rarg1 && dd==4)
+	{
+		// --- pair float write, second word alone (straddling; see LIMITATION).
+		int fofs=fm_fr_ofs(rt,false);
+		if (fm_find_areg(site,ra)>=0 && fofs>=0)
+		{
+			ok=true;
+			fm_w(fm_dform(14,ppc_rarg0,ppc_rarg1,4));		// addi r3,r4,4 (before r4 dies)
+			fm_w(fm_dform(52,rt,ppc_contex,(u32)fofs));		// stfs fS,fofs(r30)
+			fm_w(fm_dform(32,ppc_rarg1,ppc_contex,(u32)fofs));	// lwz  r4,fofs(r30)
+			ok&=fm_branch((void*)WriteMem32,1);
+			ok&=fm_branch(site+1,0);
+		}
+	}
 
 	if (!ok)
 	{
@@ -2407,6 +2604,8 @@ int rec_fastmem_patch(unsigned int pc)
 
 	s_fm_ring[s_fm_ring_n++ & (FM_RING-1)]=pc;
 	s_fm_patch_count++;
+	if (op6==48 || op6==52)		// lfs / stfs — a JIT_FMOV float shape faulted
+		s_fm_float_patches++;
 	return 0;
 }
 
@@ -2491,13 +2690,21 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				// FPU_PIN Phase B: when the destination is a pinned FR, load the
 				// value STRAIGHT into the FPR (lfs/lfsx) instead of into a GPR and
 				// then bouncing it through memory. Only for RUNTIME addresses
-				// (rs1 reg) on the LEGACY path — the fastmem shapes are fixed and
-				// decoded at DSI time, so that combo keeps the v1 GPR bounce.
+				// (rs1 reg): a compile-time-known address is either resolved to a
+				// direct RAM pointer or dispatched through a C call that returns
+				// in a GPR, so neither wants a float shape.
 				// fmov.s = flags 4 scalar (rd float); fmov.d = flags 8 pair
 				// (rd, rd+1 both pinned fr). xf-based pairs (unpinned) fall back.
+				//
+				// JIT_FMOV extends this to the fastmem path. Those shapes are
+				// FIXED — rec_fastmem_patch() decodes them at DSI time — so the
+				// float variants only get EMITTED while the preset is on, but
+				// the decoder accepts them unconditionally (see the comment on
+				// its float cases: a site outlives the switch that made it).
 				bool fdirect=false;
 				u32  fd0=0, fd1=0, fofs=0;
-				if (get_fpu_pin_preset() && !fastmem_on() && op->rs1.is_reg())
+				if (get_fpu_pin_preset() && op->rs1.is_reg()
+				    && (!fastmem_on() || get_jit_fmov_preset()))
 				{
 					if (op->flags==8)
 					{
@@ -2610,8 +2817,21 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						// (high), word[addr+4]->rrv1 (low), matching the
 						// ReadMem64 slow path register-for-register.
 						ppc_rlwinmx(ppc_rarg2,ppc_rarg0,0,3,31,0);	// EA = addr & 0x1FFFFFFF
-						ppc_lwz(ppc_rrv0,ppc_rarg2,0);			// fault site A
-						ppc_lwz(ppc_rrv1,ppc_rarg2,4);			// fault site B
+						if (fdirect)
+						{
+							// JIT_FMOV: straight into the pinned FPRs. Same EA
+							// scratch (rarg2) and same displacements, so the
+							// decoder tells this from the integer pair only by
+							// the opcode (lfs vs lwz).
+							fm_note_float_site();
+							ppc_lfs(fd0,ppc_rarg2,0);		// fault site A
+							ppc_lfs(fd1,ppc_rarg2,4);		// fault site B
+						}
+						else
+						{
+							ppc_lwz(ppc_rrv0,ppc_rarg2,0);		// fault site A
+							ppc_lwz(ppc_rrv1,ppc_rarg2,4);		// fault site B
+						}
 					}
 					else
 					{
@@ -2623,7 +2843,12 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_rlwinmx(ppc_rarg1,areg,0,3,31,0);	// EA = addr & 0x1FFFFFFF
 						if (sz<4)
 							ppc_xori(ppc_rarg1,ppc_rarg1,4-sz);	// BE sub-word swizzle
-						if (sz==1)
+						if (fdirect)
+						{
+							fm_note_float_site();
+							ppc_lfs(fd0,ppc_rarg1,0);		// fault site (sz==4 only)
+						}
+						else if (sz==1)
 						{
 							ppc_lbz(rdreg,ppc_rarg1,0);		// fault site
 							ppc_extsbx(rdreg,rdreg,0);
@@ -2817,11 +3042,14 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 
 				// FPU_PIN Phase B (symmetric to shop_readm): when the data source
 				// is a pinned FR, store STRAIGHT from the FPR (stfs/stfsx) instead
-				// of bouncing it into a GPR first. Legacy path only (fastmem shapes
-				// are fixed); fmov.s = flags 4 scalar, fmov.d = flags 8 pair.
+				// of bouncing it into a GPR first. fmov.s = flags 4 scalar,
+				// fmov.d = flags 8 pair. JIT_FMOV extends it to fastmem, whose
+				// float shapes rec_fastmem_patch() learned — see the shop_readm
+				// gate above. Unlike the read side there is no rs1 check: a
+				// store's address is always a runtime register here.
 				bool fdirect=false;
 				u32  fs0=0, fs1=0, fofs=0;
-				if (get_fpu_pin_preset() && !fastmem_on())
+				if (get_fpu_pin_preset() && (!fastmem_on() || get_jit_fmov_preset()))
 				{
 					if (op->flags==8)
 					{
@@ -2878,8 +3106,19 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						// Pair: address in rarg0, data in rarg2:rarg3 =
 						// high:low. EA scratch MUST be rarg1.
 						ppc_rlwinmx(ppc_rarg1,ppc_rarg0,0,3,31,0);	// EA = addr & 0x1FFFFFFF
-						ppc_stw(ppc_rarg2,ppc_rarg1,0);			// fault site A
-						ppc_stw(ppc_rarg3,ppc_rarg1,4);			// fault site B
+						if (fdirect)
+						{
+							// JIT_FMOV: straight from the pinned FPRs; the
+							// rarg2:rarg3 preload above was skipped.
+							fm_note_float_site();
+							ppc_stfs(fs0,ppc_rarg1,0);		// fault site A
+							ppc_stfs(fs1,ppc_rarg1,4);		// fault site B
+						}
+						else
+						{
+							ppc_stw(ppc_rarg2,ppc_rarg1,0);		// fault site A
+							ppc_stw(ppc_rarg3,ppc_rarg1,4);		// fault site B
+						}
 					}
 					else
 					{
@@ -2892,7 +3131,12 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 						ppc_rlwinmx(ppc_rarg2,areg,0,3,31,0);	// EA = addr & 0x1FFFFFFF
 						if (sz<4)
 							ppc_xori(ppc_rarg2,ppc_rarg2,4-sz);	// BE sub-word swizzle
-						if (sz==1)
+						if (fdirect)
+						{
+							fm_note_float_site();
+							ppc_stfs(fs0,ppc_rarg2,0);		// fault site (sz==4 only)
+						}
+						else if (sz==1)
 							ppc_stb(datareg,ppc_rarg2,0);		// fault site
 						else if (sz==2)
 							ppc_sth(datareg,ppc_rarg2,0);		// fault site

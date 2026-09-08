@@ -1,4 +1,5 @@
 #pragma once
+#include <stddef.h>
 #include "types.h"
 #include "sh4_if.h"
 
@@ -48,7 +49,18 @@ struct Sh4Context
 	u32 offset(Sh4RegType sh4_reg) { return offset((u32)sh4_reg); }
 };
 
-
+// Context field offsets for JIT backends, captured HERE — above the
+// convenience-macro block below — because those macros (`#define fr
+// Sh4cntx.fr`, etc.) rewrite the bare field names, so `offsetof(Sh4Context,fr)`
+// at any later point expands to `offsetof(Sh4Context,Sh4cntx.fr)` and does not
+// compile. Any future context offset the recompiler needs belongs here too.
+//
+// SH4CTX_OFS_FR is needed by the Wii fastmem DSI handler, which runs in
+// exception context and therefore cannot call Sh4Context::offset() (that goes
+// through Sh4_int_GetRegisterPtr + verify()). fr[] is contiguous and
+// GetFloatReg maps fr[n] -> f14+n, so the handler recovers a pinned FR's slot
+// from the faulting instruction's register field alone.
+enum { SH4CTX_OFS_FR = offsetof(Sh4Context, fr) };
 
 extern ALIGN(64) Sh4Context Sh4cntx;
 #define r Sh4cntx.r

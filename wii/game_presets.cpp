@@ -281,6 +281,20 @@
                                 reload goes, and only when the compare is the
                                 immediately preceding op. Perf preset, changes
                                 SH4 codegen — default off, A/B per game.
+        jit_fmov=on         <- on/off, the same load-hit-store fix as jit_tfwd
+                                but on the FPU path, and it needs fpu_pin=on
+                                and fastmem=on to do anything. With fr0-15
+                                pinned to PPC f14-f29, every fmov.s/fmov.d was
+                                still routing through a GPR — "lwz; stw ctx;
+                                lfs" on a load, "stfs ctx; lwz; stw" on a store
+                                — because the pinned-FPR direct path existed
+                                only for the legacy memory shapes, not the
+                                fastmem ones. This emits lfs/stfs at the access
+                                itself and teaches the DSI backpatcher the four
+                                float shapes. Found with jit_hotblocks: block
+                                8C1074E6 in ChuChu (3 fmov.s + fschg) compiled
+                                4 SH4 opcodes into 288 bytes. Perf preset,
+                                changes SH4 codegen — default off, A/B per game.
         sched=on            <- on/off, unified cycle-deadline event scheduler
                                 (dc/sh4/sh4_sched.cpp). Fires the completion/IRQ
                                 events whose RELATIVE ordering matters (GD-ROM
@@ -766,6 +780,7 @@ extern int g_ifb_probe_preset;
 extern int g_jit_newops_preset;
 extern int g_hotblocks_preset;
 extern int g_jit_tfwd_preset;
+extern int g_jit_fmov_preset;
 extern int g_sched_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -875,6 +890,7 @@ struct GamePreset
     int jit_newops;
     int hotblocks;
     int jit_tfwd;
+    int jit_fmov;
     int sched;
     int debug_fb2d;
     int debug_message;
@@ -1297,6 +1313,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_newops"))     p->jit_newops     = parse_bool(val);
     else if (key_eq(key, "jit_hotblocks"))  p->hotblocks      = parse_bool(val);
     else if (key_eq(key, "jit_tfwd"))       p->jit_tfwd       = parse_bool(val);
+    else if (key_eq(key, "jit_fmov"))       p->jit_fmov       = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
@@ -1382,6 +1399,7 @@ static void preset_clear(GamePreset* cur)
     cur->jit_newops = -1;
     cur->hotblocks = -1;
     cur->jit_tfwd = -1;
+    cur->jit_fmov = -1;
     cur->sched = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
@@ -1489,6 +1507,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->jit_newops     >= 0) { g_jit_newops_preset     = p->jit_newops;     printf("  jit_newops     -> %d\n", p->jit_newops);     }
     if (p->hotblocks      >= 0) { g_hotblocks_preset      = p->hotblocks;      printf("  jit_hotblocks  -> %d\n", p->hotblocks);      }
     if (p->jit_tfwd       >= 0) { g_jit_tfwd_preset       = p->jit_tfwd;       printf("  jit_tfwd       -> %d\n", p->jit_tfwd);       }
+    if (p->jit_fmov       >= 0) { g_jit_fmov_preset       = p->jit_fmov;       printf("  jit_fmov       -> %d\n", p->jit_fmov);       }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }

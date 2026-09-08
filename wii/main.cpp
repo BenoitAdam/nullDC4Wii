@@ -736,6 +736,35 @@ extern "C" {
   int get_jit_tfwd_preset() { return g_jit_tfwd_preset; }
 }
 
+// JIT_FMOV — extend FPU_PIN's "Phase B" direct float memory access to the
+// FASTMEM shapes (dc/sh4/rec_v2/wii_driver.cpp shop_readm/shop_writem).
+//
+// With FPU_PIN on, fr[0..15] live in PPC f14..f29, but shop_readm/writem move
+// raw bit patterns through the generic integer helpers, so every fmov.s/fmov.d
+// against a pinned FR was emitting a memory bounce:
+//     lwz r3,0(r4) ; stw r3,ofs(r30) ; lfs f18,ofs(r30)     (load)
+//     stfs f18,ofs(r30) ; lwz r4,ofs(r30) ; stw r4,0(r5)    (store)
+// The store is immediately followed by a load of the SAME address — the same
+// load-hit-store stall JIT_TFWD removed for sr_T, on the FPU path. Phase B
+// already fixes this by using lfs/stfs directly, but it was scoped to the
+// LEGACY memory path only, because the fastmem fault sites are decoded by
+// rec_fastmem_patch() at DSI time and it only knew the integer shapes. This
+// preset teaches that decoder the four float shapes and turns Phase B on for
+// fastmem, which is the configuration actually played.
+//
+// Found with JIT_HOTBLOCKS: block 8C1074E6 in ChuChu Rocket (three fmov.s
+// @Rm+,DRn plus an fschg, ~8-9% of all block entries in the heavy scene) was
+// compiling 4 SH4 opcodes into 288 bytes, each fmov.s costing 9 PPC
+// instructions with two of these bounces in it.
+//
+// Requires FPU PIN and FASTMEM to be on; a no-op otherwise.
+// 0=off (legacy GPR bounce, default), 1=on.
+int g_jit_fmov_preset = 1;
+
+extern "C" {
+  int get_jit_fmov_preset() { return g_jit_fmov_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -1761,6 +1790,7 @@ void checkBiosFiles()
 #define OPT_JIT_NEWOPS  84   // shown on Page 4 (CORE), under JIT IFB PROBE
 #define OPT_JIT_HOTBLOCKS 85 // shown on Page 4 (CORE), under JIT NEW OPS
 #define OPT_JIT_TFWD    86   // shown on Page 4 (CORE), under JIT HOTBLOCKS
+#define OPT_JIT_FMOV    87   // shown on Page 4 (CORE), under JIT T-FORWARD
 #define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
@@ -1868,7 +1898,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_IFB_PROBE,
   OPT_JIT_NEWOPS,
   OPT_JIT_HOTBLOCKS,
-  OPT_JIT_TFWD
+  OPT_JIT_TFWD,
+  OPT_JIT_FMOV
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -2660,6 +2691,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (NO T RELOAD)  >]"); break;
     }
     printf(" skip the T store/reload on cmp+bt");
+    printf("\n");
+
+    // --- Row: JIT_FMOV - Phase B direct float access on the fastmem path ---
+    printf("%s JIT FMOV DIRECT: ", (selectedRow == OPT_JIT_FMOV) ? ">" : " ");
+    switch (g_jit_fmov_preset) {
+      case 0: printf("[< OFF (GPR BOUNCE)  >]"); break;
+      case 1: printf("[< ON (LFS/STFS)     >]"); break;
+    }
+    printf(" fmov straight to/from pinned FPR");
     printf("\n\n");
 
     printOptionsFooter();
@@ -2909,6 +2949,7 @@ bool displayOptionsMenu()
         case OPT_JIT_NEWOPS:     g_jit_newops_preset      = (g_jit_newops_preset      + 1) % 2; break;
         case OPT_JIT_HOTBLOCKS:  g_hotblocks_preset       = (g_hotblocks_preset       + 1) % 2; break;
         case OPT_JIT_TFWD:       g_jit_tfwd_preset        = (g_jit_tfwd_preset        + 1) % 2; break;
+        case OPT_JIT_FMOV:       g_jit_fmov_preset        = (g_jit_fmov_preset        + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
@@ -3006,6 +3047,7 @@ bool displayOptionsMenu()
         case OPT_JIT_NEWOPS:     g_jit_newops_preset      = (g_jit_newops_preset      + 1) % 2; break;
         case OPT_JIT_HOTBLOCKS:  g_hotblocks_preset       = (g_hotblocks_preset       + 1) % 2; break;
         case OPT_JIT_TFWD:       g_jit_tfwd_preset        = (g_jit_tfwd_preset        + 1) % 2; break;
+        case OPT_JIT_FMOV:       g_jit_fmov_preset        = (g_jit_fmov_preset        + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
@@ -3856,6 +3898,10 @@ int main(int argc, wchar *argv[])
     printf("JIT Ifb Probe  : %s\n", g_ifb_probe_preset ? "ON (LOGS [IFB])" : "OFF");
     printf("JIT New Ops    : %s\n", g_jit_newops_preset ? "ON (9 OPS JITTED)" : "OFF (LEGACY)");
     printf("JIT Hotblocks  : %s\n", g_hotblocks_preset ? "ON (LOGS [HOT])" : "OFF");
+    // Both of these are A/B subjects, so they belong in the log header: a
+    // before/after pair is only comparable if every other switch matched.
+    printf("JIT T-Forward  : %s\n", g_jit_tfwd_preset ? "ON (NO T RELOAD)" : "OFF (LEGACY)");
+    printf("JIT Fmov Direct: %s\n", g_jit_fmov_preset ? "ON (LFS/STFS)" : "OFF (GPR BOUNCE)");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Dino Crisis Fix: %s\n", g_dino_crisis_inventory_hack_preset ? "ON (REDECODE)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");
