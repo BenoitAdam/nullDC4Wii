@@ -789,7 +789,7 @@ extern "C" {
 //
 // Read at CODEGEN time: set it before launching, not mid-game.
 // 0=off (legacy interpreter fallback, default), 1=on.
-int g_jit_carry_preset = 0;
+int g_jit_carry_preset = 1;
 
 extern "C" {
   int get_jit_carry_preset() { return g_jit_carry_preset; }
