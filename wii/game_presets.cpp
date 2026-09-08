@@ -1174,6 +1174,7 @@ static int parse_fmv_format(const char* v)
     if (key_eq(v, "cmpr"))   return 0;
     if (key_eq(v, "rgba8"))  return 1;
     if (key_eq(v, "rgb565")) return 2;
+    if (key_eq(v, "tev"))    return 3;
     printf("[game_presets] Unknown fmv_format value: '%s'\n", v);
     return -1;
 }

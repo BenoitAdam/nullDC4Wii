@@ -299,7 +299,7 @@ extern "C" {
   int get_framebuffer_2d() { return g_framebuffer_2d; }
 }
 
-int g_fmv_format_preset = 2; // 0=CMPR (DXT1), 1=RGBA8, 2=RGB565
+int g_fmv_format_preset = 2; // 0=CMPR (DXT1), 1=RGBA8, 2=RGB565, 3=TEV (GPU YUV->RGB: the YUV422 source is uploaded raw as an I8 luma plane + an IA8 chroma plane and the BT.601 matrix runs in the TEV combiner, so the PPC does no colour math per FMV pixel at all)
 
 extern "C" {
   int get_fmv_format_preset() { return g_fmv_format_preset; }
@@ -2244,6 +2244,7 @@ bool displayOptionsMenu()
       case 0: printf("[< CMPR (DXT1)       >]"); break;
       case 1: printf("[< RGBA8             >]"); break;
       case 2: printf("[< RGB565 (FASTER)   >]"); break;
+      case 3: printf("[< TEV (GPU YUV)     >]"); break;
     }
     printf(" CMPR if some movie display white");
     printf("\n");
@@ -2935,7 +2936,7 @@ bool displayOptionsMenu()
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
-        case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 2) % 3; break;
+        case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 3) % 4; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 4) % 5; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = tex_cache_step(g_texture_cache_preset, -1); break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 4) % 5; break;
@@ -3034,7 +3035,7 @@ bool displayOptionsMenu()
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
         case OPT_FRAMEBUFFER_2D: g_framebuffer_2d   = (g_framebuffer_2d        + 1) % 2; break;
-        case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 1) % 3; break;
+        case OPT_FMV_FORMAT: g_fmv_format_preset    = (g_fmv_format_preset     + 1) % 4; break;
         case OPT_FRAMESKIP: g_frameskip_preset      = (g_frameskip_preset      + 1) % 5; break;
         case OPT_TEX_CACHE: g_texture_cache_preset  = tex_cache_step(g_texture_cache_preset, +1); break;
         case OPT_4BPP:      g_4bpp_preset           = (g_4bpp_preset           + 1) % 5; break;
@@ -3888,6 +3889,7 @@ int main(int argc, wchar *argv[])
       case 0: printf("CMPR (DXT1)\n"); break;
       case 1: printf("RGBA8\n");       break;
       case 2: printf("RGB565\n");      break;
+      case 3: printf("TEV (GPU YUV)\n"); break;
     }
     printf("YUV Stride     : ");
     switch(g_yuv_stride_preset) {
