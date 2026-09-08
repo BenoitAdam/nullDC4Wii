@@ -104,6 +104,61 @@ Exit :
 Press - and + (wiimote) or Press L + R + Z (or L + R + Start)  
 
 
+### Special layouts (CONTROLS menu)
+
+The last menu before launch has a **SPECIAL LAYOUT** row. It is not saved -
+it goes back to OFF on every boot, like every other menu setting.
+
+| Value | What it does |
+| ----- | ------------ |
+| OFF | Normal per-device mapping (the table above) |
+| CHUCHU ROCKET | The ChuChu Rocket columns of the table above |
+| DDR SELECT | Dance Dance Revolution Club Mix / 2nd Mix: holding the Gamecube Z button reads as "analog stick pushed fully down", which is how those games take a Select input (dancer / arrow skin / sequence type, and the Left, Right and Shuffle option codes) |
+| USER CFG | The whole mapping comes from `user_controls.cfg` instead - see below |
+
+A game preset can set this row for you with `layout=off|chuchu|ddr_select|user_cfg`
+in `game_presets.cfg`. `[default]` sets `layout=off`, which is what resets the row
+between game selections - do not delete that line, or a layout set by one game
+stays active for every game you launch afterwards in the same session.
+
+### user_controls.cfg (USER CFG layout)
+
+Fully remappable controls, from a file you edit by hand. Put `user_controls.cfg`
+next to `boot.dol` or in your games folder - same places `game_presets.cfg` is
+looked for - then set SPECIAL LAYOUT to USER CFG. The file itself documents the
+format and lists every target and every physical source you can bind.
+
+The CONTROLS menu tells you whether it was actually found: with USER CFG
+selected the row reads `(user_controls.cfg LOADED)` or `(user_controls.cfg NOT
+FOUND)`. If the file is missing, USER CFG quietly falls back to the normal
+mapping, so it can never lock you out.
+
+**Note:** the `user_controls.cfg` that ships with the emulator deliberately
+reproduces the default mapping line for line. Selecting USER CFG without
+editing it first will look like nothing happened - that is expected. Edit the
+file, then reboot the emulator: it is read once at startup.
+
+### Sixaxis / DualShock 3 (USB) - hold Gamecube B at boot
+
+DS3 support is **off by default** and has to be switched on at boot: **hold B on
+a Gamecube controller** (any port) while the emulator starts. The CONTROLS menu
+shows `SIXAXIS/DS3 (USB): [OFF]` when it was not switched on.
+
+It has to be opt-in because raw USB access to the pad needs IOS58, and switching
+the console to it restarts the whole I/O system - Bluetooth included. Every
+connected Wiimote drops its link and has to reconnect right as the emulator is
+starting up, which is why Wiimotes would sometimes refuse to connect in the menu
+or in game. Leave the button alone and none of that happens.
+
+It has to be a *Gamecube* button, not a Wiimote one: the Gamecube ports are read
+directly by the console's main CPU, so they work before any of this is decided,
+while reading a Wiimote would need the very Bluetooth stack in question - and no
+Wiimote has connected yet that early in boot anyway.
+
+A console with no Gamecube ports (Wii Family Edition, Wii Mini, Wii U vWii) can
+therefore not enable DS3 support.
+
+
 ### VMU (Memory card)
 
 It seems to be supported, but 1rst you'll need to format the VMU in the bios

@@ -31,6 +31,7 @@ void SS_Init(void);
 void SS_PollConnections(void);
 u32 SS_GetClassicButtonsHeld(void);
 int SS_ConnectedCount(void);
+int SS_IsEnabled(void);
 
 // *** GAME PRESETS ***
 #include "wii/game_presets.h"
@@ -1002,10 +1003,13 @@ bool hasValidExtension(const char *filename)
 //      already mounted when fatInitDefault() runs - otherwise it silently
 //      falls back to the first device it did mount, i.e. "sd:/", and the BIOS
 //      lookup went to sd:/data/ instead of <device>:/apps/nulldc4wii/data/.
-//   2) SS_Init() calls IOS_ReloadIOS(58) as the very first thing in main().
-//      That tears the USB stack down, so for a USB install the drive is NOT
-//      mounted when fatInitDefault() runs and case (1) is guaranteed to fire.
-//      USB has to be brought back up explicitly, with time to re-enumerate.
+//   2) SS_Init() may call IOS_ReloadIOS(58) early in main() - only when the
+//      Sixaxis/DS3 gate button is held at boot, but when it does it tears the
+//      USB stack down, so for a USB install the drive is NOT mounted when
+//      fatInitDefault() runs and case (1) is guaranteed to fire. USB has to
+//      be brought back up explicitly, with time to re-enumerate. The retry
+//      loop below covers both worlds: with no reload the drive is still
+//      mounted from the loader and the first attempt simply succeeds.
 //
 // argv[0] survives the IOS reload (it lives in main memory, not in IOS), so it
 // stays a reliable answer to "which device am I installed on".
@@ -3366,9 +3370,18 @@ bool displayControlsMenu()
     printf("\n");
 
     // --- Row 7: Special controller layout ---
-    printf("%s SPECIAL LAYOUT  : [< %-20s >]\n",
+    printf("%s SPECIAL LAYOUT  : [< %-20s >]",
            (selectedRow == CTRL_SPECIAL_LAYOUT) ? ">" : " ",
            kSpecialLayoutNames[g_special_layout_preset]);
+    // USER CFG falls back to the normal mapping when user_controls.cfg was
+    // never found, which from the player's seat looks exactly like "the file
+    // is being ignored". Say which of the two it is here - loadUserControls()
+    // reports it only via printf, and printf goes to the SD log, not the
+    // screen.
+    if (g_special_layout_preset == SPECIAL_LAYOUT_USER_CFG)
+        printf("%s", user_controls_loaded() ? " (user_controls.cfg LOADED)"
+                                            : " (user_controls.cfg NOT FOUND)");
+    printf("\n");
 
     // --- Row 8: Wii U GamePad status (display only) ---
     printf("    WII U GAMEPAD    : %s\n",
@@ -3377,7 +3390,9 @@ bool displayControlsMenu()
     // --- Row 9: Sixaxis/DualShock3 (USB) status (display only) ---
     {
       int ssCount = SS_ConnectedCount();
-      if (ssCount > 0)
+      if (!SS_IsEnabled())
+        printf("    SIXAXIS/DS3 (USB): [OFF]  (hold GameCube B at boot)\n");
+      else if (ssCount > 0)
         printf("    SIXAXIS/DS3 (USB): [DETECTED x%d] (drives matching port)\n", ssCount);
       else
         printf("    SIXAXIS/DS3 (USB): [NOT DETECTED]\n");
@@ -3664,22 +3679,24 @@ void handleBIOSBoot()
 
 int main(int argc, wchar *argv[])
 {
-  // Sixaxis/DualShock3 (USB): reloads IOS58 for raw USB HID access. Done as
-  // the very first thing in main(), before any other subsystem claims IOS
-  // resources under whatever IOS the loader started us with — same order
-  // libsicksaxis's own sample uses. IOS58 is Nintendo's own "USB2" IOS and
-  // supports Bluetooth (Wiimote) fine, but this is the one part of this
-  // feature that genuinely changes system state at boot — confirm Wiimote
-  // pairing, audio, and USB/SD storage all still behave normally on
-  // real hardware after adding this.
-  SS_Init();
-
+  // VIDEO and PAD come first because neither goes through IOS: the VI
+  // registers and the Serial Interface the GameCube ports hang off are both
+  // PowerPC-side hardware, so an IOS reload cannot disturb them. PAD in
+  // particular MUST be up before SS_Init(), which reads the GameCube pad to
+  // decide whether to reload IOS at all.
   VIDEO_Init();
+  PAD_Init();
+
+  // Sixaxis/DualShock3 (USB): opt-in, gated on a GameCube button held at
+  // boot (see SS_Init()). Raw USB HID access needs IOS58, and reloading IOS
+  // restarts the Bluetooth stack along with everything else, dropping every
+  // connected Wiimote right as WPAD_Init() below is coming up. With the gate
+  // button not held nothing here touches IOS, so that race never happens.
+  SS_Init();
 
   ASND_Init();
   wii_audio_init();
 
-  PAD_Init();
   WPAD_Init();
 
   // Wii U / vWii detection: ORs together every independent signal we have

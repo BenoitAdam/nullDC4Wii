@@ -326,38 +326,128 @@ static inline void CheckExitCombination(u32 wiiButtons, u32 gcButtons, u32 class
 static struct ss_device s_ssDev[MAX_CONTROLLERS];
 static bool s_ssInited = false;
 
+// GameCube button that must be held at boot to switch Sixaxis/DS3 support on.
+// Any of the four ports counts.
+//
+// It is deliberately a GameCube button and not a Wiimote one: the GameCube
+// ports hang off the PowerPC's Serial Interface, which is real hardware on
+// our side of the machine and owned by nobody else, so it can be read before
+// IOS is up and is completely unaffected by the reload below. A Wiimote
+// cannot work here -- reading one needs the very Bluetooth stack we are
+// deciding whether to destroy, and at this point in boot no Wiimote has
+// connected yet, so there would be nothing to read.
+#define SS_BOOT_GATE_BUTTON PAD_BUTTON_B
+
+static bool SS_BootGateHeld(void)
+{
+    // PAD_Init() has already run (wii/main.cpp), but the Serial Interface
+    // needs a few poll cycles before PAD_ButtonsHeld() reports anything, and
+    // there is no video retrace to wait on this early. ~200 ms of short
+    // sleeps covers that and doubles as the window the player is holding the
+    // button through.
+    u32 held = 0;
+
+    for (int i = 0; i < 10; i++)
+    {
+        usleep(20 * 1000);
+        PAD_ScanPads();
+        for (int port = 0; port < MAX_CONTROLLERS; port++)
+            held |= PAD_ButtonsHeld(port);
+    }
+
+    return (held & SS_BOOT_GATE_BUTTON) != 0;
+}
+
 /**
- * One-time boot init: reloads IOS58, brings up the USB stack, and readies
- * one ss_device slot per controller port. Called from wii/main.cpp before
- * WPAD_Init(). Harmless if no Sixaxis/DS3 is ever plugged in.
+ * One-time boot init, opt-in: with the gate button held it makes sure we are
+ * on IOS58, brings up the USB stack and readies one ss_device slot per
+ * controller port; with nothing held it does nothing at all and leaves IOS
+ * (and therefore Bluetooth) untouched. Called from wii/main.cpp after
+ * PAD_Init() and before WPAD_Init().
  */
 void SS_Init()
 {
-    IOS_ReloadIOS(58);
-    usleep(100 * 1000);
+    // Sixaxis/DS3 support is opt-in, because switching it on costs everyone
+    // else something. Raw USB HID access to the pad needs IOS58, and
+    // IOS_ReloadIOS() restarts the whole I/O OS - Bluetooth stack included -
+    // so every connected Wiimote drops its link and has to re-establish it
+    // while WPAD_Init() is already running a few milliseconds later. That
+    // race is what made the Wiimote intermittently refuse to connect, in the
+    // menus and in game. Holding the gate button is the player saying "I want
+    // the DS3 and I accept the reload"; with nothing held, IOS is left exactly
+    // as the loader handed it over and Bluetooth is never touched.
+    if (!SS_BootGateHeld())
+    {
+        printf("[sixaxis] gate button not held at boot - DS3 support off, IOS left alone\n");
+        return; // s_ssInited stays false: every SS_* entry point below no-ops
+    }
+
+    // The Homebrew Channel normally launches us under IOS58 already, in which
+    // case the reload would drop Bluetooth for nothing. Only pay for it when
+    // we are genuinely on another IOS, and then give the rebuilt stack real
+    // time to come back up before WPAD_Init() touches it.
+    if (IOS_GetVersion() != 58)
+    {
+        IOS_ReloadIOS(58);
+        usleep(500 * 1000);
+    }
+
     USB_Initialize();
     ss_init();
     for (int i = 0; i < MAX_CONTROLLERS; i++)
         ss_initialize(&s_ssDev[i]);
     s_ssInited = true;
+    printf("[sixaxis] enabled, running on IOS%d\n", (int)IOS_GetVersion());
 }
 
 /**
+ * True once SS_Init() actually brought the USB stack up, i.e. the boot gate
+ * button was held. Lets the CONTROLS menu tell "no pad plugged in" apart from
+ * "the feature was never switched on this boot".
+ */
+int SS_IsEnabled(void)
+{
+    return s_ssInited ? 1 : 0;
+}
+
+// How many calls apart two USB enumerations may be. Every caller runs at
+// frame rate, so this works out to about one enumeration per second - still
+// prompt enough that plugging a pad in gets noticed while a menu is up.
+#define SS_POLL_INTERVAL 60
+
+static unsigned s_ssPollTick = 0;
+
+/**
  * Claims any newly-plugged Sixaxis/DS3 and starts its async report reading.
- * Cheap and idempotent — safe to call every frame/menu tick.
+ * Idempotent and safe to call every frame/menu tick — it throttles its own
+ * USB enumeration, see below.
  */
 void SS_PollConnections(void)
 {
     if (!s_ssInited)
         return;
 
+    // ss_open() is not cheap: each call runs a full USB_GetDeviceList(), a
+    // synchronous IOS IPC round-trip, whether or not a pad is there. This
+    // function is called once per frame from every menu loop and once per
+    // emulated frame in game, so scanning all four slots unthrottled meant
+    // ~240 enumerations a second contending with the Bluetooth module for the
+    // same IOS - which shows up as the Wiimote dropping or refusing to
+    // connect. Enumerate about once a second instead.
+    if (s_ssPollTick++ % SS_POLL_INTERVAL != 0)
+        return;
+
     for (int i = 0; i < MAX_CONTROLLERS; i++)
     {
-        if (!ss_is_connected(&s_ssDev[i]))
-        {
-            if (ss_open(&s_ssDev[i]) > 0)
-                ss_start_reading(&s_ssDev[i]);
-        }
+        if (ss_is_connected(&s_ssDev[i]))
+            continue;
+
+        // Every slot scans the one shared device list, so a slot that finds
+        // no unclaimed pad means the slots after it will not find one either.
+        if (ss_open(&s_ssDev[i]) <= 0)
+            break;
+
+        ss_start_reading(&s_ssDev[i]);
     }
 }
 

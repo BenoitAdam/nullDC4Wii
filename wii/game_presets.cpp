@@ -646,6 +646,16 @@
                                 between passes and presents ONE assembled frame.
                                 both: a game doing per-poly tile clips inside
                                 multi-pass renders.
+        layout=off          <- off/chuchu/ddr_select/user_cfg, the generic
+                                spelling of the special controller layout
+                                slot the two keys below also write (see
+                                main.cpp SPECIAL_LAYOUT_*). [default] sets
+                                layout=off so the slot is reset on every game
+                                selection -- every other preset field is reset
+                                the same way. Without it a layout set by one
+                                game, or picked by hand on the CONTROLS menu,
+                                stayed active for every game chosen afterwards
+                                in the same session.
         layout_chuchu=on    <- on/off, ChuChu Rocket special controller
                                 layout (see main.cpp g_special_layout_preset,
                                 drkMapleDevices.cpp MapButtons()). All players:
@@ -1020,6 +1030,20 @@ static int parse_rtt(const char* v)
 // render pass with the PVR user tile clip, 2 composes ONE PASS PER VIEWPORT
 // into a single frame, 3 does both. "on" stays the tile-clip mode every
 // existing config line meant.
+// Special controller layout slot, shared by the layout / layout_chuchu /
+// layout_ddr_select keys (see main.cpp SPECIAL_LAYOUT_*). "layout" is the
+// generic spelling and is what [default] uses to reset the slot between game
+// selections -- without that reset a layout set by one game (or picked by
+// hand on the CONTROLS menu) leaked into every game chosen afterwards.
+static int parse_layout(const char* v)
+{
+    if (key_eq(v, "chuchu")     || key_eq(v, "chuchu_rocket") || strcmp(v, "1") == 0) return 1;
+    if (key_eq(v, "ddr_select") || key_eq(v, "ddr")           || strcmp(v, "2") == 0) return 2;
+    if (key_eq(v, "user_cfg")   || key_eq(v, "user")          || strcmp(v, "3") == 0) return 3;
+    if (key_eq(v, "off") || key_eq(v, "no") || key_eq(v, "false") || strcmp(v, "0") == 0) return 0;
+    return -1;
+}
+
 static int parse_split_screen(const char* v)
 {
     if (key_eq(v, "tile_clip") || key_eq(v, "tileclip")) return 1;
@@ -1296,6 +1320,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "autosort"))       p->autosort       = atoi(val);
     else if (key_eq(key, "render_to_texture")) p->render_to_texture = parse_rtt(val);
     else if (key_eq(key, "split_screen"))   p->split_screen   = parse_split_screen(val);
+    else if (key_eq(key, "layout"))         p->layout         = parse_layout(val);
     else if (key_eq(key, "layout_chuchu"))  { int b = parse_bool(val); if (b >= 0) p->layout = b ? 1 /* SPECIAL_LAYOUT_CHUCHU */ : 0 /* SPECIAL_LAYOUT_OFF */; }
     else if (key_eq(key, "layout_ddr_select")) { int b = parse_bool(val); if (b >= 0) p->layout = b ? 2 /* SPECIAL_LAYOUT_DDR_SELECT */ : 0 /* SPECIAL_LAYOUT_OFF */; }
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
