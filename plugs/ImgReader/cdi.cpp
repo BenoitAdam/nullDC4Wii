@@ -1,6 +1,9 @@
 #include "cdi.h"
 
-#define printf(...) // printf(__VA_ARGS__)
+// Debug logging is compiled out. It must still expand to an *expression*, not to
+// nothing: `if (cond) printf(...);` would otherwise be an if with an empty body
+// (-Wempty-body). Swap in `printf(__VA_ARGS__)` to turn the log back on.
+#define printf(...) ((void)0)
 
 extern "C" int get_debug_loop();
 

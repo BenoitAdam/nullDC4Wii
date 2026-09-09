@@ -20,20 +20,20 @@ static TaListFP* ta_poly_data_lut[15] =
 //32/64b , full
 static TaPolyParamFP* ta_poly_param_lut[5]=
 {
-	(TaPolyParamFP*)TA_decoder::AppendPolyParam0,
-	(TaPolyParamFP*)TA_decoder::AppendPolyParam1,
-	(TaPolyParamFP*)AppendPolyParam2Full,
-	(TaPolyParamFP*)TA_decoder::AppendPolyParam3,
-	(TaPolyParamFP*)AppendPolyParam4Full
+	TA_PP_FP(TA_decoder::AppendPolyParam0),
+	TA_PP_FP(TA_decoder::AppendPolyParam1),
+	TA_PP_FP(AppendPolyParam2Full),
+	TA_PP_FP(TA_decoder::AppendPolyParam3),
+	TA_PP_FP(AppendPolyParam4Full)
 };
 //64b , first part
 static TaPolyParamFP* ta_poly_param_a_lut[5]=
 {
 	(TaPolyParamFP*)0,
 	(TaPolyParamFP*)0,
-	(TaPolyParamFP*)TA_decoder::AppendPolyParam2A,
+	TA_PP_FP(TA_decoder::AppendPolyParam2A),
 	(TaPolyParamFP*)0,
-	(TaPolyParamFP*)TA_decoder::AppendPolyParam4A
+	TA_PP_FP(TA_decoder::AppendPolyParam4A)
 };
 
 //64b , , second part

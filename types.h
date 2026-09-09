@@ -122,6 +122,15 @@ using namespace std;
 //no inline :)
 #define NOINLINE
 
+//intentional switch fallthrough marker (silences -Wimplicit-fallthrough)
+#if BUILD_COMPILER==COMPILER_GCC
+	#define FALLTHROUGH __attribute__((fallthrough))
+#elif defined(__cplusplus) && __cplusplus >= 201703L
+	#define FALLTHROUGH [[fallthrough]]
+#else
+	#define FALLTHROUGH ((void)0)
+#endif
+
 
 
 #ifdef MEM_ERROR_BREAK

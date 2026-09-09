@@ -680,7 +680,7 @@ void bop_resolve_a_d(shil_opcode* op)
 	}
 
 	ppc_ireg d=GetIntReg(op->rd._reg);
-	bop_d = (d!=ppc_rinvalid) ? (u32)d : ppc_rarg0;
+	bop_d = (d!=ppc_rinvalid) ? (u32)d : (u32)ppc_rarg0;
 }
 
 // Resolve rs2 -> bop_b (source). Materialises an immediate into rarg1.
@@ -786,7 +786,7 @@ void unop3_start(shil_opcode* op)
 	}
 
 	ppc_ireg d=GetIntReg(op->rd._reg);
-	bop_d = (d!=ppc_rinvalid) ? (u32)d : ppc_rarg0;
+	bop_d = (d!=ppc_rinvalid) ? (u32)d : (u32)ppc_rarg0;
 }
 
 void unop3_end(shil_opcode* op)
@@ -847,14 +847,14 @@ static void fbop_resolve(shil_opcode* op)
 	fop_a=fsrc_or_load(op->rs1,ppc_farg0);
 	fop_b=fsrc_or_load(op->rs2,ppc_farg1);
 	ppc_freg d=get_fpu_pin_preset()?GetFloatReg(op->rd._reg):ppc_finvalid;
-	fop_d=(d!=ppc_finvalid)?(u32)d:ppc_farg0;
+	fop_d=(d!=ppc_finvalid)?(u32)d:(u32)ppc_farg0;
 }
 static void fuop_resolve(shil_opcode* op)
 {
 	verify(!op->rs1.is_null() && !op->rd.is_null());
 	fop_a=fsrc_or_load(op->rs1,ppc_farg0);
 	ppc_freg d=get_fpu_pin_preset()?GetFloatReg(op->rd._reg):ppc_finvalid;
-	fop_d=(d!=ppc_finvalid)?(u32)d:ppc_farg0;
+	fop_d=(d!=ppc_finvalid)?(u32)d:(u32)ppc_farg0;
 }
 static void fbop_end(shil_opcode* op)
 {
@@ -3444,7 +3444,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				// Resolve dest: a pinned (integer) rd is written in place; a
 				// non-pinned or float-typed rd uses rarg0 + a context store.
 				ppc_ireg rdr = op->rd.is_r32i() ? GetIntReg(op->rd._reg) : ppc_rinvalid;
-				u32 dst = (rdr!=ppc_rinvalid) ? (u32)rdr : ppc_rarg0;
+				u32 dst = (rdr!=ppc_rinvalid) ? (u32)rdr : (u32)ppc_rarg0;
 
 				if (op->rs1.is_imm())
 				{

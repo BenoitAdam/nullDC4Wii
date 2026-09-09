@@ -676,6 +676,7 @@ void dec_param(DecParam p,shil_param& r1,shil_param& r2, u32 op)
 			r1=mk_regi(rx);
 			break;
 		}
+		FALLTHROUGH;	//32bit size: same register as PRM_FRN
 	case PRM_FRN:
 		r1=mk_regi(reg_fr_0+GetN(op));
 		break;
@@ -692,6 +693,7 @@ void dec_param(DecParam p,shil_param& r1,shil_param& r2, u32 op)
 			r1=mk_regi(rx);
 			break;
 		}
+		FALLTHROUGH;	//32bit size: same register as PRM_FRM
 	case PRM_FRM:
 		r1=mk_regi(reg_fr_0+GetM(op));
 		break;
@@ -1323,7 +1325,7 @@ DecodedBlock* dec_DecodeBlock(u32 startpc,fpscr_type fpu_cfg,u32 max_cycles)
 		case NDO_Delayslot:
 			state.NextOp=state.DelayOp;
 			state.cpu.is_delayslot=true;
-			//there is no break here by design
+			FALLTHROUGH;	//there is no break here by design
 		case NDO_NextOp:
 			{
 				if (block.cycles>=max_cycles && !state.cpu.is_delayslot)

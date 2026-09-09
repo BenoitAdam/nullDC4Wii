@@ -47,6 +47,13 @@ namespace TASplitter
 	typedef Ta_Dma* TaListFP(Ta_Dma* data,Ta_Dma* data_end);
 	typedef u32 fastcall TaPolyParamFP(void* ptr);
 
+	// The AppendPolyParamN decoders take a typed parameter pointer and return
+	// void; they are dispatched through the untyped u32(*)(void*) slot above.
+	// The reinterpretation is deliberate, so route the cast through
+	// 'void (*)(void)' -- the type GCC treats as compatible with everything --
+	// instead of tripping -Wcast-function-type on every table entry.
+	#define TA_PP_FP(f) ((TaPolyParamFP*)(void(*)(void))(f))
+
 
 	const HollyInterruptID ListEndInterrupt[5]=
 	{
@@ -1125,20 +1132,20 @@ public:
 						//32/64b , full
 						static TaPolyParamFP* ta_poly_param_lut[5]=
 						{
-							(TaPolyParamFP*)TA_decoder::AppendPolyParam0,
-							(TaPolyParamFP*)TA_decoder::AppendPolyParam1,
-							(TaPolyParamFP*)AppendPolyParam2Full,
-							(TaPolyParamFP*)TA_decoder::AppendPolyParam3,
-							(TaPolyParamFP*)AppendPolyParam4Full
+							TA_PP_FP(TA_decoder::AppendPolyParam0),
+							TA_PP_FP(TA_decoder::AppendPolyParam1),
+							TA_PP_FP(AppendPolyParam2Full),
+							TA_PP_FP(TA_decoder::AppendPolyParam3),
+							TA_PP_FP(AppendPolyParam4Full)
 						};
 						//64b , first part
 						static TaPolyParamFP* ta_poly_param_a_lut[5]=
 						{
 							(TaPolyParamFP*)0,
 							(TaPolyParamFP*)0,
-							(TaPolyParamFP*)TA_decoder::AppendPolyParam2A,
+							TA_PP_FP(TA_decoder::AppendPolyParam2A),
 							(TaPolyParamFP*)0,
-							(TaPolyParamFP*)TA_decoder::AppendPolyParam4A
+							TA_PP_FP(TA_decoder::AppendPolyParam4A)
 						};
 
 						//64b , , second part

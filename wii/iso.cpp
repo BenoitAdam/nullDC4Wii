@@ -368,10 +368,14 @@ static int _ISO9660_read_r(struct _reent *r, void *fd, char *ptr, size_t len) {
     }
 
     u64 offset = file->entry.sector * SECTOR_SIZE + file->offset;
-    if ((len = _read(ptr, offset, len)) < 0) {
+    // _read() returns a signed count. Assigning it straight into the unsigned
+    // 'len' made the "< 0" error test dead code, so keep the result signed.
+    int rlen = _read(ptr, offset, len);
+    if (rlen < 0) {
         r->_errno = EIO;
         return -1;
     }
+    len = (size_t)rlen;
     
     file->offset += len;
     return len;

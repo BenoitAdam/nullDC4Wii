@@ -3161,6 +3161,10 @@ void SetupPaletteForTexture(u32 palette_index, u32 sz)
   if (fmtpal < 3)
     palette_index >>= 1;
 
+  // The CLUT upload itself is not wired to GX yet (see the commented-out
+  // sceGu* calls below), so the resolved index currently has no consumer.
+  (void)palette_index;
+
     // sceGuClutMode(PalFMT[fmtpal],0,0xFF,0);//or whatever
     // sceGuClutLoad(sz/8,&palette_lut[palette_index]);
 }
