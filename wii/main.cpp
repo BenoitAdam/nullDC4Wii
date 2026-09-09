@@ -15,6 +15,7 @@
 #include <asndlib.h>
 #include <mp3player.h> // Was for testing playing an MP3 on menu. 
 #include "wii/wii_audio.h"
+#include "wii/wii_exit.h"   // ordered shutdown for the in-game exit combo
 #include <sdcard/wiisd_io.h>
 #include <ogc/usbstorage.h>
 #include "stdclass.h"   // for GetEmuPath() for bios check
@@ -939,6 +940,27 @@ extern "C" {
                                             ? g_layer_front_tex[i] : 0; }
 }
 
+// EXIT FIX (wii/wii_exit.cpp): how the in-game exit combo leaves the
+// emulator.
+//   0 = OFF     bare exit(0), exactly as before (legacy, for A/B)
+//   1 = SAFE    stop USB pads / ASND voice + DSP / the queued GX frame, let
+//               the Serial Interface drain, flush the log, drop Bluetooth,
+//               THEN exit(0)
+//   2 = SAFE + WATCHDOG  same, plus a 6-second alarm that jumps straight to
+//               the Homebrew Channel return stub if exit() still wedges
+//   3 = + HOST POLL  same, plus the combo is also tested ~once a frame off
+//               the emulated scanline counter (SPG.cpp), so a game that has
+//               stopped polling Maple entirely can still be exited. Costs
+//               one extra PAD/WPAD_ScanPads() per frame.
+// Fixes the "screen goes black on exit and the Wii just sits there" hang:
+// libogc's SYS_ResetSystem unwinds the DSP, the GP, the pads and Bluetooth
+// with several UNBOUNDED waits, and the old path handed it a machine that
+// was still running flat out. See wii/wii_exit.cpp for the disassembly notes.
+int g_exit_fix_preset = 1;
+extern "C" {
+  int get_exit_fix_preset() { return g_exit_fix_preset; }
+}
+
 int g_puyo_hack_preset = 0;
 // 0=off, 1=on (Puyo Puyo 4's two hardcoded backdrop VRAM addresses — the
 //   gameplay playfields AND the intro/main screen background, both submitted
@@ -1539,7 +1561,7 @@ static u32 DRC_ButtonsDownWPAD()
     return 0;
   WiiDRC_ScanPads();
   if (WiiDRC_ShutdownRequested())
-    exit(0);
+    WiiExitToLoader();
   return DRC_ToWPAD(WiiDRC_ButtonsDown());
 }
 
@@ -1871,6 +1893,7 @@ void checkBiosFiles()
 #define OPT_JIT_FMOV    87   // shown on Page 4 (CORE), under JIT T-FORWARD
 #define OPT_JIT_CARRY   88   // shown on Page 4 (CORE), under JIT FMOV DIRECT
 #define OPT_JIT_MAC     89   // shown on Page 4 (CORE), under JIT CARRY OPS
+#define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
@@ -1987,6 +2010,7 @@ static const int OPT_PAGE4_ROWS[] = {
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
 static const int OPT_PAGE5_ROWS[] = {
   OPT_LAUNCH,
+  OPT_EXIT_FIX,
   OPT_MIPMAP,
   OPT_DMA_FIX,
   OPT_SCHED,
@@ -2835,6 +2859,22 @@ bool displayOptionsMenu()
     printf(" hw-order DMA/IRQ completions (exp)");
     printf("\n");
 
+    // --- Row: exit-combo shutdown (wii/wii_exit.cpp) ---
+    // OFF reproduces the old bare exit(0); everything above it quiesces the
+    // DSP, the GP, the pads and Bluetooth first, which is what stops the
+    // intermittent black-screen hang on the way back to the loader.
+    // HOST POLL additionally tests the combo off the emulated scanline
+    // counter, so a game that stopped polling Maple can still be exited.
+    printf("%s EXIT FIX       : ", (selectedRow == OPT_EXIT_FIX) ? ">" : " ");
+    switch (g_exit_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< SAFE SHUTDOWN     >]"); break;
+      case 2: printf("[< SAFE + WATCHDOG   >]"); break;
+      case 3: printf("[< + HOST POLL       >]"); break;
+    }
+    printf(" Fixes black screen on exit");
+    printf("\n");
+
     // --- Row: Translucent-list depth write ---
     printf("%s TRANS ZWRITE   : ", (selectedRow == OPT_TRANS_ZWRITE) ? ">" : " ");
     switch (g_trans_zwrite_preset) {
@@ -3031,6 +3071,7 @@ bool displayOptionsMenu()
         case OPT_LIST_ORDER:  g_list_order_preset     = (g_list_order_preset       + 1) % 2; break;
         case OPT_PUYO_HACK:    g_puyo_hack_preset      = (g_puyo_hack_preset       + 1) % 2; break;
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
+        case OPT_EXIT_FIX:    g_exit_fix_preset       = (g_exit_fix_preset         + 3) % 4; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 2) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 4) % 5; break;
@@ -3131,6 +3172,7 @@ bool displayOptionsMenu()
         case OPT_LIST_ORDER:  g_list_order_preset     = (g_list_order_preset       + 1) % 2; break;
         case OPT_PUYO_HACK:    g_puyo_hack_preset      = (g_puyo_hack_preset       + 1) % 2; break;
         case OPT_HOKUTO_HACK: g_hokuto_hack_preset    = (g_hokuto_hack_preset      + 1) % 2; break;
+        case OPT_EXIT_FIX:    g_exit_fix_preset       = (g_exit_fix_preset         + 1) % 4; break;
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 1) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 1) % 5; break;
@@ -4087,6 +4129,9 @@ int main(int argc, wchar *argv[])
       printf("Canvas Width   : %d\n", g_canvas_width_preset);
     printf("Hokuto Hack    : %s\n", g_hokuto_hack_preset ? "ON (TR TIER SORT)" : "OFF (LEGACY)");
     printf("Puyo Hack      : %s\n", g_puyo_hack_preset ? "ON (RAM hack)" : "OFF (LEGACY)");
+    printf("Exit Fix       : %s\n", g_exit_fix_preset == 3 ? "SAFE + WATCHDOG + HOST POLL" :
+                                     g_exit_fix_preset == 2 ? "SAFE + WATCHDOG" :
+                                     g_exit_fix_preset == 1 ? "SAFE SHUTDOWN"   : "OFF (LEGACY)");
     printf("ISP Depth Func : %s\n", g_isp_depth_func_preset == 0 ? "OFF (LEGACY)"
                                   : (g_isp_depth_func_preset == 1 ? "ON (OPAQUE/PT)" : "ON (ALL LISTS)"));
     printf("ISP Cull       : %s\n", g_isp_cull_preset == 0 ? "OFF (LEGACY)"

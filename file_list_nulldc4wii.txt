@@ -266,6 +266,8 @@ nullDC4Wii\wii\multi.cmd
 nullDC4Wii\wii\ndce.log
 nullDC4Wii\wii\wii_audio.cpp
 nullDC4Wii\wii\wii_audio.h
+nullDC4Wii\wii\wii_exit.cpp
+nullDC4Wii\wii\wii_exit.h
 nullDC4Wii\wii\wii_types.cpp
 nullDC4Wii\wii\dc\sh4\rec_v2\wii_driver.cpp
 nullDC4Wii\workdir\controls.cfg

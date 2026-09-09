@@ -12006,6 +12006,27 @@ void TermRenderer()
 }
 
 // ============================
+// EXIT QUIESCE  (wii/wii_exit.cpp)
+// ============================
+// Called on the way out of the in-game exit combo, before libogc's shutdown
+// runs. ASYNC_RENDER() leaves a frame queued in the FIFO (draws + CopyDisp +
+// GX_SetDrawDone) that nothing on this path will ever wait on or present.
+//
+// This deliberately does NOT go through gx_sync_pending(): that blocks in
+// GX_WaitDrawDone(), and a GP that is not going to finish would hang us right
+// there. GX_AbortFrame() resets the CP instead and is bounded (libogc's
+// __GX_WaitAbort spins on the time base, not on the GPU). Doing it here also
+// disarms libogc's own __gx_onreset, which does GX_Flush() *before*
+// GX_AbortFrame() - and that Flush pushes 32 more bytes into the write-gather
+// pipe, which stalls the CPU if the FIFO is full and the GP is stuck.
+extern "C" void gxRend_ExitQuiesce(void)
+{
+  GX_AbortFrame();
+  s_gx_pending  = false;
+  s_gx_done_irq = false;
+}
+
+// ============================
 // RESET RENDERER
 // ============================
 

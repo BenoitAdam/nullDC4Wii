@@ -10,6 +10,11 @@ void wii_audio_init();
 // Call once at shutdown
 void wii_audio_term();
 
+// Exit path only (wii/wii_exit.cpp). Closes the sink and releases anyone
+// parked in wii_audio_push_sample()'s pacing wait BEFORE stopping the voice,
+// which wii_audio_term() alone does not do. Safe to call from anywhere.
+void wii_audio_shutdown();
+
 // Call once after AICA_Init() completes — enables the audio sink.
 // Until this is called, wii_audio_push_sample() is a safe no-op.
 void wii_audio_aica_ready();

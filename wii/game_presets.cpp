@@ -617,6 +617,27 @@
                                 driven counterpart of canvas_width below (for
                                 games that render narrow WITHOUT setting the
                                 bit), so an explicit canvas_width wins.
+        exit_fix=1          <- 0/1/2/3, how the in-game exit combo leaves the
+                                emulator (see wii/wii_exit.cpp). 0 = OFF, the
+                                legacy bare exit(0). 1 = SAFE: stop the USB
+                                pads, the ASND voice + DSP and the GX frame
+                                ASYNC_RENDER left queued, let the Serial
+                                Interface drain, flush the log and drop
+                                Bluetooth, THEN exit(0). 2 = SAFE plus a
+                                6-second watchdog that jumps straight to the
+                                Homebrew Channel return stub if exit() still
+                                wedges. 3 = also tests the combo ~once a
+                                frame off the emulated scanline counter
+                                (SPG.cpp), so a game that has stopped
+                                polling Maple can still be exited; costs one
+                                extra PAD/WPAD_ScanPads() per frame.
+                                Fixes the intermittent "screen goes
+                                black, Wii stays on" hang on the way back to
+                                the loader: libogc's SYS_ResetSystem unwinds
+                                the DSP, the GP, the pads and Bluetooth with
+                                several UNBOUNDED waits, and the legacy path
+                                handed it a machine still running flat out.
+                                Global, not per-game -- set it in [default].
         dino_crisis_inventory_hack=on <- on/off, forces one hardcoded texture
                                 address (0x242000, see gxRend.cpp
                                 DINO_CRISIS_INVENTORY_HACK()) to
@@ -810,6 +831,7 @@ extern int g_bg_poly_preset;
 extern int g_layer_sort_preset;
 extern int g_hokuto_hack_preset;
 extern int g_puyo_hack_preset;
+extern int g_exit_fix_preset;
 extern int g_wince_preset;
 extern int g_isp_depth_func_preset;
 extern int g_isp_cull_preset;
@@ -924,6 +946,7 @@ struct GamePreset
     int layer_sort;
     int hokuto_hack;
     int puyo_hack;
+    int exit_fix;
     int wince;
     int isp_depth_func;
     int isp_cull;
@@ -1366,6 +1389,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "layer_sort"))     p->layer_sort     = parse_bool(val);
     else if (key_eq(key, "hokuto_hack"))    p->hokuto_hack    = parse_bool(val);
     else if (key_eq(key, "puyo_hack"))      p->puyo_hack      = parse_bool(val);
+    else if (key_eq(key, "exit_fix"))       p->exit_fix       = atoi(val);
     else if (key_eq(key, "wince"))          p->wince          = parse_bool(val);
     else if (key_eq(key, "isp_depth_func")) p->isp_depth_func = atoi(val);
     else if (key_eq(key, "isp_cull"))       p->isp_cull       = atoi(val);
@@ -1456,6 +1480,7 @@ static void preset_clear(GamePreset* cur)
     cur->layer_sort = -1;
     cur->hokuto_hack = -1;
     cur->puyo_hack = -1;
+    cur->exit_fix = -1;
     cur->wince = -1;
     cur->isp_depth_func = -1;
     cur->isp_cull = -1;
@@ -1566,6 +1591,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->layer_sort     >= 0) { g_layer_sort_preset    = p->layer_sort;      printf("  layer_sort     -> %d\n", p->layer_sort);     }
     if (p->hokuto_hack    >= 0) { g_hokuto_hack_preset   = p->hokuto_hack;     printf("  hokuto_hack    -> %d\n", p->hokuto_hack);    }
     if (p->puyo_hack      >= 0) { g_puyo_hack_preset     = p->puyo_hack;       printf("  puyo_hack      -> %d\n", p->puyo_hack);      }
+    if (p->exit_fix       >= 0) { g_exit_fix_preset      = p->exit_fix;        printf("  exit_fix       -> %d\n", p->exit_fix);       }
     // wince is deliberately NOT sticky, unlike every field above: it has no
     // menu row for the user to notice and flip back off, so an unconditional
     // assign here (instead of the usual "only touch it if this pass set it")

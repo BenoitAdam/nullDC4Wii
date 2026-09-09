@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <wiiuse/wpad.h>
 #include "dc/dc.h"
+#include "wii/wii_exit.h"  // ordered shutdown for the exit combo (EXIT FIX preset)
 
 // Dreamcast controller button definitions (same as drkMapleDevices.cpp)
 #define key_CONT_C          (1 << 0)
@@ -198,7 +199,7 @@ void UpdateLightGunState(u32 port)
 
     // Exit combination: MINUS + PLUS simultaneously
     if ((wiiButtons & WPAD_BUTTON_MINUS) && (wiiButtons & WPAD_BUTTON_PLUS))
-        exit(0);
+        WiiExitToLoader();
 }
 
 /**

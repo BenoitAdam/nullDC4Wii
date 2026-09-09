@@ -36,6 +36,7 @@
 #include <wiiuse/wpad.h>
 #include <ogc/usb.h>            // USB HID base
 #include "dc/dc.h"
+#include "wii/wii_exit.h"  // ordered shutdown for the exit combo (EXIT FIX preset)
 
 // ============================================================================
 // Dreamcast keyboard report structure
@@ -145,7 +146,7 @@ static void FillWiimoteFallback(u32 port, DC_KeyboardReport *report)
 
     // Exit: MINUS + PLUS
     if ((held & WPAD_BUTTON_MINUS) && (held & WPAD_BUTTON_PLUS))
-        exit(0);
+        WiiExitToLoader();
 }
 
 /**

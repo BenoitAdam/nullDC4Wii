@@ -41,6 +41,7 @@ extern "C" int get_special_layout_preset(void);
 
 #include "plugs/drkMapleDevices/dc_pad_bits.h" // Dreamcast controller button definitions
 #include "wii/user_controls.h" // USER CFG special layout (fully user-remappable)
+#include "wii/wii_exit.h"     // ordered shutdown for the exit combo (EXIT FIX preset)
 
 // Configuration constants
 #define MAX_CONTROLLERS 4
@@ -305,8 +306,67 @@ static inline void CheckExitCombination(u32 wiiButtons, u32 gcButtons, u32 class
         ((classicButtons & WPAD_CLASSIC_BUTTON_MINUS) && (classicButtons & WPAD_CLASSIC_BUTTON_PLUS)) ||
         (gcButtons & PAD_TRIGGER_R && gcButtons & PAD_TRIGGER_L && gcButtons & PAD_TRIGGER_Z))
     {
-        exit(0);
+        WiiExitToLoader();
     }
+}
+
+// ============================================================================
+// HOST-SIDE EXIT COMBO POLL  (EXIT FIX = 3)
+// ============================================================================
+//
+// CheckExitCombination() above only ever runs when the GUEST reads the pad:
+// it hangs off the Maple DMA the Dreamcast game issues. A game that stops
+// polling Maple - crashed, stuck in a boot loop, waiting on something that
+// never arrives - therefore cannot be exited at all, even though the
+// emulator itself is still running perfectly well.
+//
+// This is the same test driven from the HOST side instead: SPG.cpp calls it
+// off the emulated scanline counter, which advances for as long as the SH4
+// core executes any code at all, whatever that code happens to be doing.
+// Deliberately hung off the scanline tick and not the vblank event, because
+// a game that programs SPG_VBLANK.vbstart past the counter wrap never fires
+// a vblank event either (see the [SPG] notes in SPG.cpp).
+//
+// Only the hardcoded combos are tested, never the USER CFG remap - exactly
+// like CheckExitCombination(), so this can never be the thing that locks a
+// player out. Held state only, no ButtonsDown(), so the extra ScanPads()
+// cannot steal an edge from the Maple path.
+extern "C" void ExitCombo_HostPoll(void)
+{
+    PAD_ScanPads();
+    WPAD_ScanPads();
+
+    u32 wiiButtons     = 0;
+    u32 gcButtons      = 0;
+    u32 classicButtons = 0;
+
+    for (int port = 0; port < MAX_CONTROLLERS; port++)
+    {
+        u32 held = WPAD_ButtonsHeld(port);
+        wiiButtons |= held;
+        gcButtons  |= PAD_ButtonsHeld(port);
+
+        // Same derivation UpdateInputState() uses: the Classic Controller bits
+        // live in the upper half of the WPAD word and alias the Nunchuck's, so
+        // they only count once exp.type confirms a Classic is attached.
+        WPADData *wpadData = WPAD_Data(port);
+        if (wpadData && wpadData->exp.type == WPAD_EXP_CLASSIC)
+            classicButtons |= held & 0xFFFF0000;
+    }
+
+    // Wii U GamePad (vWii): MINUS+PLUS, or the GamePad power button.
+    if (WiiDRC_Inited())
+    {
+        WiiDRC_ScanPads();
+        u32 drc = WiiDRC_ButtonsHeld();
+        if (((drc & WIIDRC_BUTTON_MINUS) && (drc & WIIDRC_BUTTON_PLUS)) ||
+            WiiDRC_ShutdownRequested())
+        {
+            WiiExitToLoader();
+        }
+    }
+
+    CheckExitCombination(wiiButtons, gcButtons, classicButtons);
 }
 
 // ============================================================================
@@ -398,6 +458,24 @@ void SS_Init()
         ss_initialize(&s_ssDev[i]);
     s_ssInited = true;
     printf("[sixaxis] enabled, running on IOS%d\n", (int)IOS_GetVersion());
+}
+
+/**
+ * Closes every pad libsicksaxis still has open. Called from the exit path
+ * (wii/wii_exit.cpp) so no USB HID device handle is left dangling in IOS when
+ * libogc's __IOS_ShutdownSubsystems() runs. No-op when SS_Init() never armed.
+ */
+extern "C" void SS_Term(void)
+{
+    if (!s_ssInited)
+        return;
+
+    for (int i = 0; i < MAX_CONTROLLERS; i++)
+    {
+        if (ss_is_connected(&s_ssDev[i]))
+            ss_close(&s_ssDev[i]);
+    }
+    s_ssInited = false;
 }
 
 /**
@@ -590,7 +668,7 @@ void UpdateInputState(u32 port)
         if (((drc & WIIDRC_BUTTON_MINUS) && (drc & WIIDRC_BUTTON_PLUS)) ||
             WiiDRC_ShutdownRequested())
         {
-            exit(0);
+            WiiExitToLoader();
         }
     }
 
@@ -637,7 +715,7 @@ void UpdateInputState(u32 port)
     if (specialLayout == SPECIAL_LAYOUT_USER_CFG && user_controls_loaded())
     {
         if (UserControls_CheckExitCombo(wiiButtons, gcButtons, nunchuckButtons, classicButtons))
-            exit(0);
+            WiiExitToLoader();
 
         UserControls_Update(wiiButtons, gcButtons, nunchuckButtons, classicButtons,
                              stickX, stickY, subStickX, subStickY, expStickX, expStickY,

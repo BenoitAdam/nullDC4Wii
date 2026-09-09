@@ -112,6 +112,18 @@ void wii_audio_term()
     ASND_StopVoice(VOICE_SLOT);
 }
 
+// Exit path (wii/wii_exit.cpp). Order matters: close the sink FIRST, so a
+// producer already parked in wii_audio_push_sample()'s pacing wait is released
+// and no new sample can enter it, and only then stop the voice whose callback
+// that wait depends on. Stopping the voice first would strand the producer
+// forever.
+extern "C" void wii_audio_shutdown()
+{
+    aica_ready  = 0;
+    stage_ready = 0;   // releases anyone in the pacing wait below
+    ASND_StopVoice(VOICE_SLOT);
+}
+
 static volatile int fill_pos = 0;
 
 // Audio sink — one 44.1 kHz stereo sample per call from AICA_Sample() (driven
@@ -142,7 +154,15 @@ void wii_audio_push_sample(s16 l, s16 r)
     if (settings.emulator.AudioBuffers == 0)
         return;
 
-    while (stage_ready)
+    // Pacing wait, BOUNDED. This used to be an open `while (stage_ready)`, and
+    // the emulation thread is the only thing that reads the pads (the exit
+    // combo is tested from the guest's maple DMA), so if the voice callback
+    // ever stopped firing - voice dropped, DSP task lost, ASND paused - the
+    // emulator froze with no way out at all. 100 ms is >4x one buffer
+    // (23.2 ms at 44.1 kHz), so a healthy callback never reaches the cap;
+    // giving up just drops this buffer, which costs an audio glitch instead of
+    // a dead console.
+    for (int spins = 0; stage_ready && spins < 2000; spins++)
         usleep(50);
 }
 

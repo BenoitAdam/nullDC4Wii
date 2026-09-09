@@ -57,6 +57,7 @@
 #include <math.h>
 #include <wiiuse/wpad.h>
 #include "dc/dc.h"
+#include "wii/wii_exit.h"  // ordered shutdown for the exit combo (EXIT FIX preset)
 
 // Dreamcast button definitions
 #define key_CONT_C          (1 << 0)
@@ -280,7 +281,7 @@ void UpdateFishingRodState(u32 port)
 
     // Exit combination
     if ((wiiButtons & WPAD_BUTTON_MINUS) && (wiiButtons & WPAD_BUTTON_PLUS))
-        exit(0);
+        WiiExitToLoader();
 
     // Save previous accelerometer values for next frame
     prev_acc_x[port] = ax;

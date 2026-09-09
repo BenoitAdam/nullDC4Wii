@@ -47,6 +47,7 @@
 #include <math.h>
 #include <wiiuse/wpad.h>
 #include "dc/dc.h"
+#include "wii/wii_exit.h"  // ordered shutdown for the exit combo (EXIT FIX preset)
 
 // Dreamcast button definitions
 #define key_CONT_C          (1 << 0)
@@ -202,7 +203,7 @@ void UpdateMaracasState(u32 port)
 
     // Exit: MINUS + PLUS on either maraca Wiimote
     if (((wiiL | wiiR) & WPAD_BUTTON_MINUS) && ((wiiL | wiiR) & WPAD_BUTTON_PLUS))
-        exit(0);
+        WiiExitToLoader();
 }
 
 /**

@@ -27,6 +27,27 @@ extern "C" int get_render_delay_preset();
 extern "C" void ifb_probe_dump(double seconds);
 extern "C" void hotblocks_dump(double seconds);
 
+// Host-side exit-combo poll (EXIT FIX = 3; see wii/wii_exit.cpp and
+// plugs/drkMapleDevices/drkMapleDevices.cpp ExitCombo_HostPoll()).
+//
+// The normal exit combo hangs off the Maple DMA the GAME issues, so a game
+// that stops polling Maple cannot be exited at all. Driving the same test
+// from the scanline counter below covers that: this counter advances for as
+// long as the SH4 core executes anything, whatever the guest code is doing.
+//
+// The scanline tick, not the vblank event, on purpose - a game that programs
+// SPG_VBLANK.vbstart past the counter wrap never fires a vblank event either
+// (see the [SPG] sync notes further down).
+extern "C" int  get_exit_fix_preset();
+extern "C" void ExitCombo_HostPoll();
+#define EXIT_HOST_POLL() (get_exit_fix_preset() >= 3)
+
+// Scanline ticks between two host polls. ~15.7 kHz scanline rate, so 512 is
+// about one poll per displayed frame - the same rate the Maple path polls at
+// when the game is healthy, i.e. no extra WPAD_ScanPads() cost in the common
+// case beyond what a game already pays.
+#define EXIT_HOST_POLL_LINES 512
+
 u32 spg_InVblank = 0;
 s32 spg_ScanlineSh4CycleCounter = 0;
 u32 spg_ScanlineCount = 512;
@@ -258,6 +279,17 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
         // A full scanline has elapsed
         spg_CurrentScanline = (spg_CurrentScanline + 1) % spg_ScanlineCount;
         spg_ScanlineSh4CycleCounter += spg_LineSh4Cycles;
+
+        // Host-side exit combo (EXIT FIX = 3), rate limited in scanlines.
+        if (EXIT_HOST_POLL())
+        {
+            static u32 s_exit_poll_lines = 0;
+            if (++s_exit_poll_lines >= EXIT_HOST_POLL_LINES)
+            {
+                s_exit_poll_lines = 0;
+                ExitCombo_HostPoll();
+            }
+        }
 
         // Scanline-triggered interrupts
         if (SPG_VBLANK_INT.vblank_in_interrupt_line_number == spg_CurrentScanline)
