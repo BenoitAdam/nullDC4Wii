@@ -63,7 +63,10 @@ SOURCES     += ../gui/
 #---------------------------------------------------------------------------------
 
 # Base Flags
-CFLAGS  := -save-temps -g -O2 -Wall
+CFLAGS  := -save-temps -g -O2 -Wall -Wextra
+# -Wextra is loud on this codebase: mute the two noisiest categories
+# (stubbed plugin callbacks, partial GX/struct literals) so real warnings show
+CFLAGS  += -Wno-unused-parameter -Wno-missing-field-initializers
 CFLAGS  += $(MACHDEP) $(INCLUDE)
 CFLAGS  += -D_WII -DRELEASE
 
