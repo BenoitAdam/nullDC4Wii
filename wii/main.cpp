@@ -796,6 +796,35 @@ extern "C" {
   int get_jit_carry_preset() { return g_jit_carry_preset; }
 }
 
+// JIT_MAC - dynarec mac.l and mac.w, the last two SH4 opcodes with no dynarec
+// path at all. Separate from JIT_CARRY on purpose: these are the only ones in
+// that batch that touch MEMORY, so a hardware problem can be bisected to them.
+//
+// The decoder now issues the two @Rm+/@Rn+ accesses as ordinary shop_readm ops
+// (DM_MAC in dc/sh4/rec_v2/decoder.cpp), so they pick up FASTMEM and pinned-
+// register addressing; on the old shop_ifb path they went through the
+// interpreter's ReadMem and re-did the full address decode every time. The
+// 64-bit accumulate that is left compiles to mullw/mulhw + addc/adde inline.
+//
+// It also makes saturation mode work. SR.S=1 used to be fatal-or-silent: mac.l
+// did `verify(sr.S == 0)` and DIED, mac.w printed a line and skipped the whole
+// instruction including both register post-increments, so the guest's pointers
+// stopped advancing. Neither has been seen in a real game, which is exactly why
+// nobody noticed. sh4_mac_l/sh4_mac_w in dc/sh4/rec_v2/shil.cpp now implement
+// the SH-4 manual pseudocode, and the JIT calls them on the rare S=1 path.
+//
+// Expect nothing for most games - the SH4 has a real FPU, so MAC is far rarer
+// on it than on the SH2 this idea came from. Run IFB_PROBE first and only
+// bother if mac.l/mac.w actually show up.
+//
+// Read at CODEGEN time: set it before launching, not mid-game.
+// 0=off (legacy interpreter fallback, default), 1=on.
+int g_jit_mac_preset = 1;
+
+extern "C" {
+  int get_jit_mac_preset() { return g_jit_mac_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -1841,6 +1870,7 @@ void checkBiosFiles()
 #define OPT_JIT_TFWD    86   // shown on Page 4 (CORE), under JIT HOTBLOCKS
 #define OPT_JIT_FMOV    87   // shown on Page 4 (CORE), under JIT T-FORWARD
 #define OPT_JIT_CARRY   88   // shown on Page 4 (CORE), under JIT FMOV DIRECT
+#define OPT_JIT_MAC     89   // shown on Page 4 (CORE), under JIT CARRY OPS
 #define OPT_ROW_COUNT   66
 
 // Options are split across six themed pages so no single page scrolls off
@@ -1950,7 +1980,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_JIT_HOTBLOCKS,
   OPT_JIT_TFWD,
   OPT_JIT_FMOV,
-  OPT_JIT_CARRY
+  OPT_JIT_CARRY,
+  OPT_JIT_MAC
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -2761,6 +2792,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (10 OPS JITTED)>]"); break;
     }
     printf(" jit addc/subc/div1/cmp-str");
+    printf("\n");
+
+    // --- Row: JIT_MAC - dynarec mac.l / mac.w ---
+    printf("%s JIT MAC OPS    : ", (selectedRow == OPT_JIT_MAC) ? ">" : " ");
+    switch (g_jit_mac_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FASTMEM READS)>]"); break;
+    }
+    printf(" jit mac.l/mac.w + saturation");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3012,6 +3052,7 @@ bool displayOptionsMenu()
         case OPT_JIT_TFWD:       g_jit_tfwd_preset        = (g_jit_tfwd_preset        + 1) % 2; break;
         case OPT_JIT_FMOV:       g_jit_fmov_preset        = (g_jit_fmov_preset        + 1) % 2; break;
         case OPT_JIT_CARRY:      g_jit_carry_preset       = (g_jit_carry_preset       + 1) % 2; break;
+        case OPT_JIT_MAC:        g_jit_mac_preset         = (g_jit_mac_preset         + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
@@ -3111,6 +3152,7 @@ bool displayOptionsMenu()
         case OPT_JIT_TFWD:       g_jit_tfwd_preset        = (g_jit_tfwd_preset        + 1) % 2; break;
         case OPT_JIT_FMOV:       g_jit_fmov_preset        = (g_jit_fmov_preset        + 1) % 2; break;
         case OPT_JIT_CARRY:      g_jit_carry_preset       = (g_jit_carry_preset       + 1) % 2; break;
+        case OPT_JIT_MAC:        g_jit_mac_preset         = (g_jit_mac_preset         + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
@@ -3980,6 +4022,7 @@ int main(int argc, wchar *argv[])
     printf("JIT T-Forward  : %s\n", g_jit_tfwd_preset ? "ON (NO T RELOAD)" : "OFF (LEGACY)");
     printf("JIT Fmov Direct: %s\n", g_jit_fmov_preset ? "ON (LFS/STFS)" : "OFF (GPR BOUNCE)");
     printf("JIT Carry Ops  : %s\n", g_jit_carry_preset ? "ON (10 OPS JITTED)" : "OFF (LEGACY)");
+    printf("JIT Mac Ops    : %s\n", g_jit_mac_preset ? "ON (FASTMEM READS)" : "OFF (LEGACY)");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Dino Crisis Fix: %s\n", g_dino_crisis_inventory_hack_preset ? "ON (REDECODE)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");

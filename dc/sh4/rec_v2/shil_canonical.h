@@ -360,6 +360,65 @@ shil_compile(
 shil_opc_end()
 
 // ---------------------------------------------------------------------------
+// Multiply-accumulate (SH4 mac.l / mac.w) — the JIT_MAC preset.
+//
+// rs1/rs2 are the two ALREADY-LOADED operands (the decoder issues the two
+// @Rm+/@Rn+ reads as ordinary shop_readm ops, so they go through fastmem);
+// rs3 is SR.status, needed for the S (saturation) bit. rd = MACL, rd2 = MACH,
+// packed into the u64 return the same way as the carry ops above.
+//
+// MACH/MACL are read as well as written and no shil param says so — they are
+// never register-resident, so that is safe, and AnalyseBlock in shil.cpp is
+// told about the implicit read so DCE cannot drop whatever set them up.
+//
+// The arithmetic itself lives in sh4_mac_l/sh4_mac_w (shil.cpp) so there is
+// exactly ONE copy of the SH-4 manual's saturation rules — the Wii backend
+// calls the same pair for its rare S==1 path. That saturation is a behaviour
+// CHANGE, not just a speedup: the interpreter's mac.l does
+// `verify(sr.S == 0)` (dies) and its mac.w prints a line and silently skips
+// the whole instruction, register post-increments and all.
+// ---------------------------------------------------------------------------
+
+// NOTE the op names are mac_l / mac_w, not macl / macw: `macl` and `mach` are
+// macros for Sh4cntx.macl/.mach (sh4_registers.h), and while the X-macros here
+// only ever token-paste `name` — which suppresses expansion — a shil op called
+// `macl` would break the moment one of them stopped pasting it.
+
+// mac.l @Rm+,@Rn+ : MAC += (s64)Rn * (s64)Rm, 48-bit saturating when S=1.
+shil_opc(mac_l)
+shil_canonical(
+    u64, f1, (u32 r1, u32 r2, u32 srs),
+    sh4_mac_l(r1, r2, macl, mach, srs);
+    CARRY_RV(macl, mach)
+)
+shil_compile(
+    shil_cf_arg_u32(rs3);
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+// mac.w @Rm+,@Rn+ : MAC += (s32)Rn * (s32)Rm. When S=1 only MACL takes part
+// and it clamps to [0x80000000, 0x7FFFFFFF]; MACH is left alone (SH-4 manual —
+// the "MACH LSB is the overflow flag" behaviour is SH-1/SH-DSP, not this core).
+shil_opc(mac_w)
+shil_canonical(
+    u64, f1, (u32 r1, u32 r2, u32 srs),
+    sh4_mac_w(r1, r2, macl, mach, srs);
+    CARRY_RV(macl, mach)
+)
+shil_compile(
+    shil_cf_arg_u32(rs3);
+    shil_cf_arg_u32(rs2);
+    shil_cf_arg_u32(rs1);
+    shil_cf(f1);
+    shil_cf_rv_u64(rd);
+)
+shil_opc_end()
+
+// ---------------------------------------------------------------------------
 // Shifts
 // ---------------------------------------------------------------------------
 shil_opc(shl) BIN_OP_I2(u32, <<) shil_opc_end()

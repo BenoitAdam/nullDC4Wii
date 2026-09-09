@@ -196,6 +196,15 @@ void AnalyseBlock(DecodedBlock* blk)
         if (op->op == shop_div1)
             RegReadInfo(shil_param(reg_sr_status), i);
 
+        // Same shape for mac.l/mac.w: rd/rd2 are MACL/MACH, but they are
+        // ACCUMULATORS — read as well as written — and no param says so. Two
+        // macs in a row would otherwise make the first one's write look dead.
+        if (op->op == shop_mac_l || op->op == shop_mac_w)
+        {
+            RegReadInfo(shil_param(reg_macl), i);
+            RegReadInfo(shil_param(reg_mach), i);
+        }
+
         RegWriteInfo(&blk->oplist[0], op->rd,  i);
         RegWriteInfo(&blk->oplist[0], op->rd2, i);
     }
@@ -232,6 +241,67 @@ bool UpdateSR();
 #include "dc/sh4/ccn.h"
 #include "ngen.h"
 #include "dc/sh4/sh4_registers.h"
+
+// ---------------------------------------------------------------------------
+// mac.l / mac.w — the single implementation, declared in shil.h. Both the
+// canonical shil bodies and the Wii backend's rare S==1 path call these, so
+// there is exactly one copy of the saturation rules.
+//
+// Transcribed from the SH-4 manual pseudocode. Note what it does NOT do: the
+// old interpreter's mac.l had `verify(sr.S == 0)` (a hard die) and its mac.w
+// printed a line and then skipped the instruction entirely, post-increments
+// included.
+// ---------------------------------------------------------------------------
+extern "C" void sh4_mac_l(u32 a, u32 b, u32 oldl, u32 oldh, u32 srs)
+{
+    const u64 mul  = (u64)((s64)(s32)a * (s64)(s32)b);
+    u32       res0 = oldl + (u32)mul;
+    u32       res2 = (u32)(mul >> 32) + (oldl > res0 ? 1u : 0u);
+
+    if (srs & 2)
+    {
+        // 48-bit saturation: only the low 16 bits of MACH take part, and the
+        // result is clamped to [0xFFFF800000000000, 0x00007FFFFFFFFFFF].
+        res2 += (oldh & 0x0000FFFFu);
+        if ((s32)res2 < 0 && res2 < 0xFFFF8000u) { res2 = 0xFFFF8000u; res0 = 0x00000000u; }
+        if ((s32)res2 > 0 && res2 > 0x00007FFFu) { res2 = 0x00007FFFu; res0 = 0xFFFFFFFFu; }
+    }
+    else
+        res2 += oldh;
+
+    macl = res0;
+    mach = res2;
+}
+
+extern "C" void sh4_mac_w(u32 a, u32 b, u32 oldl, u32 oldh, u32 srs)
+{
+    const u32 prod = (u32)((s32)a * (s32)b);
+    u32       res0 = oldl + prod;
+    u32       res2 = oldh;
+
+    if (srs & 2)
+    {
+        // 32-bit saturation. MACH is NOT touched (the "MACH LSB is an overflow
+        // flag" behaviour belongs to SH-1/SH-DSP, not this core). Overflow only
+        // when both addends share a sign and the sum flips it.
+        const u32 dest = (s32)oldl < 0 ? 1u : 0u;
+        const u32 src  = ((s32)prod < 0 ? 1u : 0u) + dest;
+        const u32 ans  = ((s32)res0 < 0 ? 1u : 0u) + dest;
+        if (ans == 1)
+        {
+            if (src == 0) res0 = 0x7FFFFFFFu;
+            if (src == 2) res0 = 0x80000000u;
+        }
+    }
+    else
+    {
+        const u32 sext = (u32)((s32)prod >> 31);        // 0 or 0xFFFFFFFF
+        res2 += sext + (oldl > res0 ? 1u : 0u);         // + carry out of the low add
+    }
+
+    macl = res0;
+    mach = res2;
+}
 
 // Instantiate canonical (portable C) implementations (SHIL_MODE 1).
 #define SHIL_MODE 1

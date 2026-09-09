@@ -113,6 +113,7 @@ enum Sh4RegType
 	reg_pc_dyn,     // Dynamic PC (write-only, dynarec use only)
 
   reg_temp,      // Temporary register for internal use (not a real SH4 register)
+  reg_temp2,     // Second decoder scratch (mac.l/mac.w need two loaded values live at once)
 
 	sh4_reg_count,  // Total count of physical registers
 

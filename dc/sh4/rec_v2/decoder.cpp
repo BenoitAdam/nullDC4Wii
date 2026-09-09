@@ -172,6 +172,28 @@ static bool dec_is_carryop(u32 op)
 	return op==0x0028;	//clrmac
 }
 
+// JIT_MAC preset (wii/main.cpp). mac.l / mac.w — the last two opcodes with no
+// dynarec path at all. Kept OFF the jit_carry switch on purpose: these are the
+// only ones in the set that touch MEMORY, so if something goes wrong on
+// hardware you want to be able to bisect them separately.
+//
+// Two wins, one of them not about speed:
+//   * The two @Rm+/@Rn+ reads become ordinary shop_readm ops, so they go
+//     through FASTMEM. On the shop_ifb path they went through the interpreter's
+//     ReadMem, which does the full address decode every time.
+//   * Saturation (SR.S=1) actually works now. The interpreter's mac.l does
+//     `verify(sr.S == 0)` and DIES; its mac.w prints a line and skips the whole
+//     instruction — including the two register post-increments, so the guest's
+//     pointers silently stop advancing. Neither has ever been hit in practice,
+//     which is why it went unnoticed.
+extern "C" int get_jit_mac_preset();
+
+static bool dec_is_macop(u32 op)
+{
+	//mac.l @<REG_M>+,@<REG_N>+ / mac.w @<REG_M>+,@<REG_N>+
+	return (op&0xF00F)==0x000F || (op&0xF00F)==0x400F;
+}
+
 #if 1
 /*
 #define		FMT_I32 OMG!THIS!IS!WRONG++!!
@@ -943,6 +965,10 @@ bool dec_generic(u32 op)
 	if (dec_is_carryop(op) && !get_jit_carry_preset())
 		return false;
 
+	// JIT_MAC gate -- see dec_is_macop above.
+	if (dec_is_macop(op) && !get_jit_mac_preset())
+		return false;
+
 	u64 inf=OpDesc[op]->decode;
 
 	e=(u32)(inf>>32);
@@ -996,6 +1022,34 @@ bool dec_generic(u32 op)
 	case DM_OVF:
 		// addv/subv: value -> rd, signed overflow -> T. No T input.
 		block.Emit(natop, rs1, rs1, rs2, 0, shil_param(), mk_reg(reg_sr_T));
+		break;
+
+	case DM_MAC:
+		// mac.l/mac.w @<REG_M>+,@<REG_N>+ : e is the access size (4 or 2).
+		//
+		// The two loads are plain shop_readm, which is the entire point — they
+		// pick up fastmem and the pinned-register addressing for free instead
+		// of going through the interpreter's ReadMem. shop_readm with size 2
+		// already sign-extends (lha), which is exactly what mac.w wants.
+		//
+		// Rn is read first, then incremented, then Rm — matching the hardware,
+		// and making `mac.l @Rn+,@Rn+` (m == n) read mem[a] and mem[a+4] with
+		// Rn ending at a+8, which is what the manual specifies.
+		//
+		// DELIBERATELY does NOT set state.info.has_readm. Its only consumer is
+		// the idle-loop heuristic at the bottom of dec_DecodeBlock, which
+		// multiplies a block's cycles by 30 when it is a short conditional loop
+		// that reads and never writes. A MAC accumulation loop —
+		// `mac.l @Rm+,@Rn+ ; dt Rk ; bf loop` — matches that shape exactly and
+		// is real work, not a spin. These blocks took the shop_ifb path before,
+		// which never set the flag either, so leaving it alone keeps their
+		// timing identical to today's.
+		block.Emit(shop_readm, mk_reg(reg_temp),  rs1, shil_param(), e);
+		block.Emit(shop_add,   rs1, rs1, mk_imm(e));
+		block.Emit(shop_readm, mk_reg(reg_temp2), rs2, shil_param(), e);
+		block.Emit(shop_add,   rs2, rs2, mk_imm(e));
+		block.Emit(natop, mk_reg(reg_macl), mk_reg(reg_temp), mk_reg(reg_temp2),
+		           0, mk_reg(reg_sr_status), mk_reg(reg_mach));
 		break;
 
 	case DM_XTRCT:

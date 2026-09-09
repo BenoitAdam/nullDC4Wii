@@ -45,6 +45,11 @@ struct Sh4Context
 	// field's context offset moves.
 	u32 jit_temp;
 
+	// Backing store for Sh4RegType reg_temp2. mac.l/mac.w need BOTH loaded
+	// operands live at the same time to multiply them, which one scratch slot
+	// cannot express. Kept at the tail for the same reason jit_temp is.
+	u32 jit_temp2;
+
 	u32 offset(u32 sh4_reg);
 	u32 offset(Sh4RegType sh4_reg) { return offset((u32)sh4_reg); }
 };

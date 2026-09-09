@@ -106,6 +106,10 @@ static u64 dec_adc(shilop op)   { return dec_Fill(DM_ADC ,PRM_RN,PRM_RM,op); }
 static u64 dec_ovf(shilop op)   { return dec_Fill(DM_OVF ,PRM_RN,PRM_RM,op); }
 static u64 dec_negc(shilop op)  { return dec_Fill(DM_NEGC,PRM_RN,PRM_RM,op); }
 
+// JIT_MAC. `sz` is the access size of the two post-increment reads (4 or 2),
+// which is also the post-increment amount.
+static u64 dec_mac(shilop op, u32 sz) { return dec_Fill(DM_MAC,PRM_RN,PRM_RM,op,sz); }
+
 static u64 dec_LD(DecParam d)	{ return dec_Fill(DM_UnaryOp,d,PRM_RN,shop_mov32); }
 static u64 dec_LDM(DecParam d)	{ return dec_Fill(DM_ReadM,d,PRM_RN,shop_readm,-4); }
 static u64 dec_ST(DecParam d)	{ return dec_Fill(DM_UnaryOp,PRM_RN,d,shop_mov32); }
@@ -152,7 +156,7 @@ sh4_opcodelistentry opcodes[]=
 	{dec_i0000_0000_0001_1011	,i0000_0000_0001_1011	,Mask_none	,0x001B	,ReadWritePC		,"sleep"								,4,4,CO,fix_none},	//sleep
 
 
-	{0							,i0000_nnnn_mmmm_1111	,Mask_n_m	,0x000F	,Normal				,"mac.l @<REG_M>+,@<REG_N>+"			,2,3,CO,fix_none},	//mac.l @<REG_M>+,@<REG_N>+
+	{0							,i0000_nnnn_mmmm_1111	,Mask_n_m	,0x000F	,Normal				,"mac.l @<REG_M>+,@<REG_N>+"			,2,3,CO,fix_none	,dec_mac(shop_mac_l,4)},	//mac.l @<REG_M>+,@<REG_N>+
 
 	{0							,i0010_nnnn_mmmm_0111	,Mask_n_m	,0x2007	,Normal				,"div0s <REG_M>,<REG_N>"				,1,1,EX,fix_none	,dec_Fill(DM_DIV0,PRM_RN,PRM_RM,shop_or,-1)},	// div0s <REG_M>,<REG_N>
 	{0							,i0010_nnnn_mmmm_1000	,Mask_n_m	,0x2008	,Normal				,"tst <REG_M>,<REG_N>"					,1,1,MT,fix_none	,dec_cmp(shop_test,PRM_RN,PRM_RM)},	// tst <REG_M>,<REG_N>
@@ -314,7 +318,7 @@ sh4_opcodelistentry opcodes[]=
 	{dec_i0100_nnnn_0001_1011	,i0100_nnnn_0001_1011	,Mask_n		,0x401B	,Normal				,"tas.b @<REG_N>"						,5,5,CO,fix_none},	//tas.b @<REG_N>
 	{0							,i0100_nnnn_mmmm_1100	,Mask_n_m	,0x400C	,Normal				,"shad <REG_M>,<REG_N>"					,1,1,EX,fix_none	,dec_Bin_rNrM(shop_shad)},	//shad <REG_M>,<REG_N>
 	{0							,i0100_nnnn_mmmm_1101	,Mask_n_m	,0x400D	,Normal				,"shld <REG_M>,<REG_N>"					,1,1,EX,fix_none	,dec_Bin_rNrM(shop_shld)},	//shld <REG_M>,<REG_N>
-	{0							,i0100_nnnn_mmmm_1111	,Mask_n_m	,0x400F	,Normal				,"mac.w @<REG_M>+,@<REG_N>+"			,2,3,CO,fix_none},	//mac.w @<REG_M>+,@<REG_N>+
+	{0							,i0100_nnnn_mmmm_1111	,Mask_n_m	,0x400F	,Normal				,"mac.w @<REG_M>+,@<REG_N>+"			,2,3,CO,fix_none	,dec_mac(shop_mac_w,2)},	//mac.w @<REG_M>+,@<REG_N>+
 	{0							,i0110_nnnn_mmmm_0111	,Mask_n_m	,0x6007	,Normal				,"not <REG_M>,<REG_N>"					,1,1,EX,fix_none	,dec_Un_rNrM(shop_not)},	//not <REG_M>,<REG_N>
 	{0							,i0110_nnnn_mmmm_1000	,Mask_n_m	,0x6008	,Normal				,"swap.b <REG_M>,<REG_N>"				,1,1,EX,fix_none	,dec_Un_rNrM(shop_swaplb)},	//swap.b <REG_M>,<REG_N>
 	{0							,i0110_nnnn_mmmm_1001	,Mask_n_m	,0x6009	,Normal				,"swap.w <REG_M>,<REG_N>"				,1,1,EX,fix_none	,dec_Fill(DM_Rot,PRM_RN,PRM_RM,shop_ror,16|0x1000)},	//swap.w <REG_M>,<REG_N>

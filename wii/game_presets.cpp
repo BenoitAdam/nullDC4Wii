@@ -316,6 +316,23 @@
                                 invisible because MatchDiv32 replaces the
                                 32-step idiom with a real divide. Perf preset,
                                 changes SH4 codegen — default off, A/B per game.
+        jit_mac=on          <- on/off, dynarecs mac.l and mac.w, the last two
+                                opcodes with no dynarec path at all. The two
+                                @Rm+/@Rn+ reads become ordinary shop_readm ops
+                                so they go through FASTMEM instead of the
+                                interpreter's ReadMem; the 64-bit accumulate
+                                that is left is mullw/mulhw + addc/adde inline.
+                                Kept separate from jit_carry because these are
+                                the only ops in that batch that touch memory —
+                                bisect them on their own if something breaks.
+                                ALSO makes saturation mode work: SR.S=1 used to
+                                be fatal or silent (mac.l did verify(sr.S==0)
+                                and died, mac.w printed a line and skipped the
+                                instruction INCLUDING both post-increments).
+                                Expect nothing for most games — the SH4 has a
+                                real FPU, so MAC is far rarer on it than on the
+                                SH2 this came from. Run ifb_probe first. Perf
+                                preset, changes SH4 codegen — default off.
         sched=on            <- on/off, unified cycle-deadline event scheduler
                                 (dc/sh4/sh4_sched.cpp). Fires the completion/IRQ
                                 events whose RELATIVE ordering matters (GD-ROM
@@ -815,6 +832,7 @@ extern int g_hotblocks_preset;
 extern int g_jit_tfwd_preset;
 extern int g_jit_fmov_preset;
 extern int g_jit_carry_preset;
+extern int g_jit_mac_preset;
 extern int g_sched_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -928,6 +946,7 @@ struct GamePreset
     int jit_tfwd;
     int jit_fmov;
     int jit_carry;
+    int jit_mac;
     int sched;
     int debug_fb2d;
     int debug_message;
@@ -1369,6 +1388,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_tfwd"))       p->jit_tfwd       = parse_bool(val);
     else if (key_eq(key, "jit_fmov"))       p->jit_fmov       = parse_bool(val);
     else if (key_eq(key, "jit_carry"))      p->jit_carry      = parse_bool(val);
+    else if (key_eq(key, "jit_mac"))        p->jit_mac        = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
@@ -1458,6 +1478,7 @@ static void preset_clear(GamePreset* cur)
     cur->jit_tfwd = -1;
     cur->jit_fmov = -1;
     cur->jit_carry = -1;
+    cur->jit_mac = -1;
     cur->sched = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
@@ -1575,6 +1596,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->jit_tfwd       >= 0) { g_jit_tfwd_preset       = p->jit_tfwd;       printf("  jit_tfwd       -> %d\n", p->jit_tfwd);       }
     if (p->jit_fmov       >= 0) { g_jit_fmov_preset       = p->jit_fmov;       printf("  jit_fmov       -> %d\n", p->jit_fmov);       }
     if (p->jit_carry      >= 0) { g_jit_carry_preset      = p->jit_carry;      printf("  jit_carry      -> %d\n", p->jit_carry);      }
+    if (p->jit_mac        >= 0) { g_jit_mac_preset        = p->jit_mac;        printf("  jit_mac        -> %d\n", p->jit_mac);        }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }

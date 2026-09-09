@@ -35,6 +35,19 @@ enum shil_param_type
 //this should be really removed ...
 u32* GetRegPtr(u32 reg);
 
+// ---------------------------------------------------------------------------
+// mac.l / mac.w reference implementation (JIT_MAC preset). Follows the SH-4
+// manual pseudocode, saturation included, and writes MACH/MACL itself.
+//
+// The OLD accumulator is passed in rather than read from the context, so a
+// backend may emit the common S==0 case inline, store it, and still call this
+// afterwards to redo the rare S==1 case from the original values — which is
+// exactly what wii_driver.cpp does, and it saves an unconditional branch on
+// the hot path.
+// ---------------------------------------------------------------------------
+extern "C" void sh4_mac_l(u32 a, u32 b, u32 oldl, u32 oldh, u32 srs);
+extern "C" void sh4_mac_w(u32 a, u32 b, u32 oldl, u32 oldh, u32 srs);
+
 struct shil_param
 {
     shil_param()

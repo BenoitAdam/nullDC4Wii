@@ -3887,6 +3887,60 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			}
 			break;
 
+		// --- Multiply-accumulate (JIT_MAC preset) -----------------------------
+		// mac.l / mac.w. The two @Rm+/@Rn+ reads are NOT here — the decoder
+		// issues them as ordinary shop_readm ops (DM_MAC), which is most of the
+		// win: on the old shop_ifb path they went through the interpreter's
+		// ReadMem and never saw fastmem. What is left is the 64-bit accumulate.
+		//
+		// Shape, identical for both widths:
+		//     r3..r7 = a, b, old MACL, old MACH, SR.status   (kept live)
+		//     r8..r11 = the S==0 result, stored unconditionally
+		//     then, only if SR.S is set, call sh4_mac_l/w with r3..r7 to redo
+		//     it properly from the ORIGINAL accumulator and overwrite.
+		// Passing the old accumulator to the helper instead of letting it read
+		// the context is what lets the store happen before the test, so the
+		// common path needs one conditional branch and no unconditional one.
+		case shop_mac_l:
+		case shop_mac_w:
+			{
+				const bool is_l = (op->op==shop_mac_l);
+
+				ppc_sh_load(ppc_rarg0,op->rs1);			// a
+				ppc_sh_load(ppc_rarg1,op->rs2);			// b
+				ppc_sh_load(ppc_rarg2,reg_macl);		// old MACL
+				ppc_sh_load(ppc_rarg3,reg_mach);		// old MACH
+				ppc_sh_load(ppc_rarg4,op->rs3);			// SR.status
+
+				// Product, sign-extended to 64 bits. mac.w's operands are
+				// already sign-extended 16-bit values (shop_readm size 2 emits
+				// lha), so mullw gives the whole signed product and the high
+				// word is just its sign.
+				ppc_mullwx(ppc_rarg5,ppc_rarg0,ppc_rarg1,0,0);
+				if (is_l)
+					ppc_mulhwx(ppc_rarg6,ppc_rarg0,ppc_rarg1,0);
+				else
+					ppc_srawix(ppc_rarg6,ppc_rarg5,31,0);
+
+				ppc_addcx(ppc_rarg7,ppc_rarg2,ppc_rarg5,0,0);	// MACL + lo
+				ppc_addex(ppc_r11,ppc_rarg3,ppc_rarg6,0,0);	// MACH + hi + CA
+				ppc_sh_store(ppc_rarg7,op->rd);			// -> MACL
+				ppc_sh_store(ppc_r11,op->rd2);			// -> MACH
+
+				// SR.S is value bit 1. Saturation mode is vanishingly rare —
+				// rare enough that the old interpreter died on it — so this is
+				// a predicted-not-taken forward branch over a call.
+				ppc_andi(ppc_r0,ppc_rarg4,2);
+				ppc_label* done=ppc_CreateLabel();
+				ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq -> done
+				if (is_l)
+					ppc_call(sh4_mac_l);
+				else
+					ppc_call(sh4_mac_w);
+				done->MarkLabel();
+			}
+			break;
+
 		// --- Integer comparisons / test ---------------------------------------
 		// (set*/test do their own operand load + immediate folding internally.)
 		case shop_test:	// rd = (r1 & r2) == 0
