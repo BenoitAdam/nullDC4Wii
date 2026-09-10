@@ -11876,6 +11876,9 @@ bool InitRenderer()
   wii_boot_log_stop();
   freopen("/ndclog.txt", "a", stdout);
   printf("[Init Renderer] Logging started\n");
+  // Land this one immediately: it is the marker that says the renderer was
+  // reached at all, which is the first thing to check when a log stops early.
+  fflush(stdout);
 #endif
 #if SCOPE_DEBUG_LOG
   // Unambiguous marker: if this line never appears, the build did not pick up
@@ -12006,6 +12009,15 @@ bool InitRenderer()
   printf("sizeof TextureCacheDesc: %d\n", sizeof(TextureCacheDesc));
   printf("sizeof GXTexObj: %d\n", sizeof(GXTexObj));
   printf("sizeof GXTlutObj: %d\n", sizeof(GXTlutObj));
+
+  // Commit the start-up block to the card. From the freopen above, stdout is a
+  // block-buffered FILE on SD: without this, everything printed between here
+  // and the first ~4 KB of run-time logging sits in the buffer and is lost
+  // unless the user exits cleanly. A bug report from someone who just powered
+  // the console off then shows a log that stops at the last wii_boot_log()
+  // line, which reads as "it died right there" when in fact it ran fine.
+  // One flush at init - nothing per frame - so it costs nothing measurable.
+  fflush(stdout);
 
   tex_cache_init(); // must be after vram_buffer is allocated by _vmem_reserve()
 
