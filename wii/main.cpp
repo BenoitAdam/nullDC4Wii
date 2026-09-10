@@ -611,7 +611,7 @@ extern "C" {
 // aligning entries makes every branch/link target begin on a clean boundary.
 // Cheap (<=7 nops/block against a 6 MB cache) and cache-hygiene only — no
 // logic change. Marginal by nature; A/B per game. 0=off (default), 1=on.
-int g_jit_align_preset = 0;
+int g_jit_align_preset = 1;
 
 extern "C" {
   int get_jit_align_preset() { return g_jit_align_preset; }
@@ -670,7 +670,7 @@ extern "C" {
 // that game's slow vertex-bound scenes). Changes SH4 core codegen, so it is off
 // by default — A/B per game, and use IFB_PROBE to see whether a given game
 // issues enough of these to care. 0=off (legacy, default), 1=on.
-int g_jit_newops_preset = 0;
+int g_jit_newops_preset = 1;
 
 extern "C" {
   int get_jit_newops_preset() { return g_jit_newops_preset; }
@@ -707,7 +707,7 @@ extern "C" {
 // conditional and to the shop_jcond of a delay-slot branch, and only when the
 // producer is the immediately preceding op — anything in between invalidates
 // it automatically. 0=off (legacy, default), 1=on.
-int g_jit_tfwd_preset = 0;
+int g_jit_tfwd_preset = 1;
 
 extern "C" {
   int get_jit_tfwd_preset() { return g_jit_tfwd_preset; }
@@ -1344,6 +1344,24 @@ static void initStorage()
                sdOK ? "mounted" : "not found",
                g_usb_mounted ? "mounted" : "not found", g_usb_root,
                g_app_dir[0] ? g_app_dir : "unknown (no argv from loader)");
+
+  // Why this line exists: libfat's sector cache is
+  // g_dvmDefaultCachePages(4) x g_dvmDefaultSectorsPerPage(64) x bytesPerSector,
+  // malloc'd from the MEM1 heap PER MOUNTED VOLUME. That is 128 KB for a drive
+  // reporting 512-byte sectors and 1 MB for one reporting 4096 - an 8x swing in
+  // MEM1 that depends entirely on the drive, not on us. Drives over 2 TB
+  // partitioned as MBR have to use 4096-byte logical sectors (MBR's LBA count is
+  // 32-bit: 2^32 x 512 = 2 TiB), so a 4 TB MBR volume is exactly the case that
+  // costs the extra ~900 KB. That is the leading explanation for why fastmem
+  // boots fine with one USB drive and not another - see wii/wii_fastmem.cpp.
+  if (g_usb_mounted)
+  {
+    const u32 ss = __io_usbstorage_sector_size;
+    wii_boot_log("[boot] USB sector size %u bytes -> libfat cache %u KB"
+                 " (SD cache 128 KB), MEM1 free %d KB\n",
+                 ss, (ss ? (4u * 64u * ss) : 0u) / 1024u,
+                 (s32)((u8*)SYS_GetArena1Hi() - (u8*)SYS_GetArena1Lo()) / 1024);
+  }
 
   // ---- Games folders. Both names are accepted on both devices now, so a USB
   // install is not forced into "dreamcast" nor an SD one into "discs".
@@ -2134,7 +2152,7 @@ static void printOptionsFooter(void)
 {
   int cols, rows;
   CON_GetMetrics(&cols, &rows);
-  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.71", rows);
+  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.72", rows);
 }
 
 bool displayOptionsMenu()
@@ -3665,7 +3683,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - alpha 0.71   ");
+    printf("\nNullDC4Wii - alpha 0.72   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");
