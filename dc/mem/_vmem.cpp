@@ -385,10 +385,62 @@ void _vmem_term()
 ALIGN(256) u8 SLIM_RAM[ARAM_SIZE + VRAM_SIZE + RAM_SIZE];
 #endif
 
+#if HOST_OS == OS_WII
+// Live texture-cache preset (wii/main.cpp). By the time EmuMain() runs, the
+// game preset has been applied and the user has been through the options menu,
+// so this is the final value -- which lets us skip the CACHE_VERY_FAST_PLUS
+// overflow arena entirely for the games that will never read it.
+extern "C" int get_texture_cache_preset();
+// gxRend.cpp: CACHE_VERY_FAST_PLUS() is preset 6. Keep the two in step.
+#define TEXCACHE_VERY_FAST_PLUS 6
+// wii/main.cpp: writes to the on-screen console AND appends to /ndclog.txt.
+// Everything here runs before InitRenderer redirects stdout, so a plain printf
+// would reach the screen only - and the screen is gone the moment a failed boot
+// drops back to the Homebrew Channel.
+extern "C" void wii_boot_log(const char* fmt, ...);
+#endif
+
 bool _vmem_reserve()
 {
 #if HOST_OS == OS_WII
     u32 level = IRQ_Disable();
+
+    // ---- MEM2 budget ------------------------------------------------------
+    // Everything below bump-allocates out of the MEM2 arena, and nothing here
+    // used to look at Arena2Hi. That was fine only by luck: how much MEM2 an
+    // app gets is decided by the IOS it runs under, so it differs from console
+    // to console. On a console with a smaller arena the bumps below ran PAST
+    // Arena2Hi into IOS-owned MEM2 and the Dreamcast's RAM was then written
+    // straight over IOS's own buffers -- a black screen and a jump to the
+    // health screen, with no code dump. Worse, the USB stack keeps its buffers
+    // up there, so the blast radius depended on whether a USB drive was
+    // mounted: a game on the SD card could die purely because a drive was
+    // plugged in. Check the total first and fail cleanly instead.
+    {
+        u8* const a_lo = (u8*)SYS_GetArena2Lo();
+        u8* const a_hi = (u8*)SYS_GetArena2Hi();
+        // Signed on purpose: an already-overrun arena must read as negative,
+        // not wrap to ~4 GB and sail through the comparison.
+        const s32 a_free = (s32)(a_hi - a_lo);
+        // Worst case both alignments below are paid in full.
+        const u32 need = 65536u + (ARAM_SIZE + VRAM_SIZE + RAM_SIZE)
+                       + 64u    + (VRAM_SIZE * 2u);
+
+        if (a_free < (s32)need)
+        {
+            IRQ_Restore(level);
+            wii_boot_log("\n\n"
+                   "  *** NOT ENOUGH MEM2 ***\n\n"
+                   "  Dreamcast RAM+VRAM needs %u KB, this console has %d KB\n"
+                   "  free in the MEM2 arena (%p - %p), short by %d KB.\n\n"
+                   "  How much MEM2 homebrew gets depends on the IOS the\n"
+                   "  Homebrew Channel launched under, so this varies per\n"
+                   "  console. Please report this whole screen.\n\n",
+                   need / 1024u, a_free / 1024, a_lo, a_hi,
+                   ((s32)need - a_free) / 1024);
+            return false;
+        }
+    }
 
     u8* ram_alloc = (u8*)SYS_GetArena2Lo();
     // Align to 65536 bytes (required by _vmem_map_block).
@@ -424,28 +476,53 @@ bool _vmem_reserve()
     // several MB free, which smells like a layout interaction rather than plain
     // exhaustion. Carving from Arena2Hi leaves the bottom of the arena byte for
     // byte as it was before this feature existed.
+    //
+    // Only carved when the selected game actually asks for the preset. This
+    // used to happen on every boot regardless, so every user paid 4 MB of MEM2
+    // for a feature their game never read (plus_tex_arena is only ever consumed
+    // under CACHE_VERY_FAST_PLUS -- see gxRend.cpp). On consoles whose IOS
+    // hands out a smaller arena that unconditional 4 MB was the difference
+    // between booting and not.
+
+    // Why the preset wanted the arena but did not get one, reported after
+    // IRQ_Restore below: -1 = the game never asked, otherwise the KB free.
+    s32 plus_arena_short_kb = -1;
+    if (get_texture_cache_preset() == TEXCACHE_VERY_FAST_PLUS)
     {
-        const u32 want = 4u * 1024u * 1024u;
-        const u32 keep = 4u * 1024u * 1024u; // MEM2 left for everyone else
-        u32 free_m2 = (u32)((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo());
+        const s32 want = 4 * 1024 * 1024;
+        const s32 keep = 4 * 1024 * 1024; // MEM2 left for everyone else
+        // Signed: if the arena were already exhausted this subtraction used to
+        // wrap to ~4 GB, the guard passed, and we carved 4 MB off a top that
+        // was already below the bottom -- making a bad layout worse.
+        const s32 free_m2 = (s32)((u8*)SYS_GetArena2Hi() - (u8*)SYS_GetArena2Lo());
         // Never take more than half of what is free, whatever the numbers say.
-        if (free_m2 > want + keep && want <= free_m2 / 2u)
+        if (free_m2 > want + keep && want <= free_m2 / 2)
         {
             u8* a = (u8*)SYS_GetArena2Hi() - want;
             a = (u8*)((unat)a & ~(unat)63); // 64-byte align, downwards
             SYS_SetArena2Hi(a);
             plus_tex_arena      = a;
-            plus_tex_arena_size = want;
+            plus_tex_arena_size = (u32)want;
+        }
+        else
+        {
+            plus_arena_short_kb = free_m2 / 1024;
         }
     }
 
     IRQ_Restore(level);
 
-    printf("[vmem] Wii RAM: %p  VRAM buffer: %p  GDDR3 free: %.2f MB\n",
+    // Signed: an unsigned subtraction here printed a wrapped ~4096 MB when the
+    // arena had overrun, which read as "loads of room" in the logs and hid the
+    // real problem. A negative number now says exactly what happened.
+    wii_boot_log("[vmem] Wii RAM: %p  VRAM buffer: %p  GDDR3 free: %.2f MB\n",
            ram_alloc, vram_buffer,
-           ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / (1024.f * 1024.f));
-    printf("[vmem] PLUS tex arena: %p (%u KB)\n",
+           (s32)((u8*)SYS_GetArena2Hi() - (u8*)SYS_GetArena2Lo()) / (1024.f * 1024.f));
+    wii_boot_log("[vmem] PLUS tex arena: %p (%u KB)\n",
            plus_tex_arena, plus_tex_arena_size / 1024u);
+    if (plus_arena_short_kb >= 0)
+        wii_boot_log("[vmem] PLUS tex arena skipped: only %d KB MEM2 free\n",
+               plus_arena_short_kb);
 #else
     u8* ram_alloc = SLIM_RAM;
 

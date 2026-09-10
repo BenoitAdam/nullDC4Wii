@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <wiiuse/wpad.h>
 #include <stdio.h>
+#include <stdarg.h>   // va_list for wii_boot_log()
 #include <stdlib.h>
 #include <malloc.h>   // memalign() — used by Detect_WiiU_IOS58Version()
 #include <string.h>
@@ -86,13 +87,11 @@ extern "C" {
 }
 
 // Anisotropic filtering, index into { 0X, 2X, 4X }. Hollywood's TX unit only
-// implements GX_ANISO_1/2/4 (one filter cycle per level of aniso) - there is no
-// 8X mode on this GPU, so the menu stops at 4X. An aniso=8x line in an old
-// game_presets.cfg still loads, clamped to 4X. 0 = off (default).
+// implements GX_ANISO_1/2/4 (one filter cycle per level of aniso)
 // NOTE: the TX unit only iterates anisotropy when the min filter is
 // GX_LIN_MIP_LIN, so this does nothing at all unless MIPMAPS (page 6) is set to
 // FAST or TRILINEAR - see SetTextureParams() in gxRend.cpp.
-int g_aniso_preset = 0;
+int g_aniso_preset = 0; // 0 = off (default).
 
 extern "C" {
   int get_aniso_preset() { return g_aniso_preset; }
@@ -137,21 +136,14 @@ extern "C" {
 }
 
 int g_layer_sort_preset = 0;
-// 0=off (legacy: painter order), 1=on (layer-tiered translucent sort for 2D
-//   games that submit their whole scene at one depth — origin case is
-//   Hokuto no Ken's VQ backdrop erasing its fighters/HUD without this, but the
-//   tiering keys off render state only, so it is game-agnostic and SF3 needs
-//   it too; see gxRend.cpp LAYER_SORT())
+// 0=off (legacy: painter order), 1=on (layer-tiered translucent sort for 2D games that submit their whole scene at one depth
 
 extern "C" {
   int get_layer_sort_preset() { return g_layer_sort_preset; }
 }
 
 int g_hokuto_hack_preset = 0;
-// 0=off, 1=on (Hokuto no Ken's hardcoded stage 1/2 debris VRAM addresses,
-//   refining the layer_sort tier-2 order — does nothing unless layer_sort is
-//   also on, and must stay OFF in every other game; see gxRend.cpp
-//   HOKUTO_HACK())
+// 0=off, 1=on (Hokuto no Ken's hardcoded stage 1/2 debris VRAM addresses (refining the layer_sort tier-2 order — does nothing unless layer_sort is))
 
 extern "C" {
   int get_hokuto_hack_preset() { return g_hokuto_hack_preset; }
@@ -217,31 +209,19 @@ extern "C" {
   int get_ppz_write_preset() { return g_ppz_write_preset; }
 }
 
-// Translucent-list depth WRITE:
-//   1 = on   legacy, the TR list writes depth (default)
-//   0 = off  never write, translucent strips paint in submission order
-// DEBUG ONLY: off hides the Dreamcast BIOS boot logo. parse_bool("off") is
-// 0, so getting the polarity backwards makes `trans_zwrite=off` a silent
-// no-op.
+// DEBUG ONLY  Translucent-list depth WRITE: 1 = on (legacy) 0 = off 
 int g_trans_zwrite_preset = 1;
 
-// Sprite Base Colour
-//   1 = on   - sprite header's own BaseCol
-//   0 = off  - legacy, appears white
-// Needed in most game (game menu and other)
-int g_sprite_color_preset = 1;
+// Sprite Base Colour // Needed in most game (game menu and other)
+int g_sprite_color_preset = 1; // 0 = off  - legacy, appears white // 1 = on   - sprite header's own BaseCol
 
 // Vertex alpha on ARGB1555 surfaces (see VTX_ALPHA_HONOR in gxRend.cpp).
 // 0 = legacy, force opaque on every ARGB1555 poly (Test Drive 6's cutout
 // font needs it); 1 = honour TSP.UseAlpha, so vertex-alpha fades work.
 int g_vtx_alpha_preset = 0;
 
-// PVR list-type render order (see LIST_ORDER in gxRend.cpp). 0 = legacy, the
-// flat strip buffer is drawn in TA submission order; 1 = when a game opens its
-// OPAQUE list AFTER its translucent one, draw the opaque range first, like real
-// PVR does (Puyo Puyo 4 submits its background plates last and they cover the
-// whole game). No-op for every game that submits OP first.
-int g_list_order_preset = 0;
+// PVR list-type render order (see LIST_ORDER in gxRend.cpp).
+int g_list_order_preset = 0; // 1 for Puyo 4 Only
 
 extern "C" {
   int get_sprite_color_preset() { return g_sprite_color_preset; }
@@ -282,13 +262,8 @@ extern "C" {
   int get_h_scaler_preset() { return g_h_scaler_preset; }
 }
 
-// Force one hardcoded texture address (Dino Crisis's inventory preview
-// icon slot, 0x242000) to always redecode instead of trusting the
-// persistent texture cache's sentinel. That cache only ever asks "has this
-// slot been decoded once", so a game that repaints a shared icon slot in
-// place (swapping which item's thumbnail is there) never gets noticed.
-// Off by default: hardcoded to one address, meaningless for any other game.
-int g_dino_crisis_inventory_hack_preset = 0;
+// Dino Crisis's inventory preview 
+int g_dino_crisis_inventory_hack_preset = 0; // icon slot, 0x242000) // Off by default: hardcoded to one address, meaningless for any other game.
 
 extern "C" {
   int get_dino_crisis_inventory_hack_preset() { return g_dino_crisis_inventory_hack_preset; }
@@ -1218,6 +1193,69 @@ static void resolveGamesRoot(char* out, size_t outSize,
   snprintf(out, outSize, "%s", candidates[0]);
 }
 
+// ============================================================================
+// BOOT LOG
+// ============================================================================
+//
+// Until InitRenderer() redirects stdout, printf IS the on-screen UI here - the
+// file browser and the options menu draw themselves with it. So everything
+// printed during boot, including the reason a boot FAILED, went to the screen
+// and nowhere else, and InitRenderer then opened /ndclog.txt with "w" and wiped
+// whatever the previous run had left. Between the two, a user who never reached
+// the renderer had a screen that flashed past on the way back to the Homebrew
+// Channel and a log file still holding the last SUCCESSFUL run - the single
+// most misleading thing we could hand someone reporting a boot failure.
+//
+// wii_boot_log() writes both ways: to the console so the user sees it, and
+// appended to the log so it can be sent in. wii_boot_log_reset() truncates the
+// file once per run, and InitRenderer opens it with "a" now, so the boot
+// section survives into the renderer's log instead of being overwritten.
+// ============================================================================
+
+#define NDC_LOG_PATH "/ndclog.txt"
+
+// Cleared by wii_boot_log_stop() once stdout itself becomes the log file:
+// appending through a second handle while that one is open would interleave
+// two write positions in the same file.
+static bool s_boot_log_to_file = true;
+
+// Truncate the log for this run. Called from initStorage() as soon as a device
+// is mounted - before that there is nowhere to write. If it fails (no card, or
+// a read-only one) the appends below simply fail too and the console still has
+// everything; the only cost is a log that keeps growing across runs.
+extern "C" void wii_boot_log_reset(void)
+{
+  FILE* f = fopen(NDC_LOG_PATH, "w");
+  if (f)
+    fclose(f);
+}
+
+extern "C" void wii_boot_log_stop(void)
+{
+  s_boot_log_to_file = false;
+}
+
+extern "C" void wii_boot_log(const char* fmt, ...)
+{
+  char buf[1024];
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+
+  fputs(buf, stdout);   // still the on-screen console at boot time
+
+  if (s_boot_log_to_file)
+  {
+    FILE* f = fopen(NDC_LOG_PATH, "a");
+    if (f)
+    {
+      fputs(buf, f);
+      fclose(f);        // flushed per call: the next thing to happen may be a crash
+    }
+  }
+}
+
 // Mounts both devices, pins GetEmuPath()/cwd to the folder the DOL lives in,
 // and points the browser at the launch device. Called once from main(), after
 // SS_Init()'s IOS reload.
@@ -1287,6 +1325,17 @@ static void initStorage()
     printf("App folder: unknown (no argv from loader), using current dir\n");
     g_app_dir[0] = '\0';
   }
+
+  // Start this run's log. Deliberately AFTER the chdir above: "/ndclog.txt" is
+  // resolved against libfat's default device, and the chdir is what settles
+  // which device that is. Repeating the device summary here rather than routing
+  // the printfs above through the logger keeps their order on screen unchanged
+  // - and this is the line a USB bug report actually needs.
+  wii_boot_log_reset();
+  wii_boot_log("[boot] SD %s, USB %s (%s), app folder: %s\n",
+               sdOK ? "mounted" : "not found",
+               g_usb_mounted ? "mounted" : "not found", g_usb_root,
+               g_app_dir[0] ? g_app_dir : "unknown (no argv from loader)");
 
   // ---- Games folders. Both names are accepted on both devices now, so a USB
   // install is not forced into "dreamcast" nor an SD one into "discs".
@@ -4154,6 +4203,26 @@ int main(int argc, wchar *argv[])
   }
 
   int rv = EmuMain(argc, argv);
+
+  // A non-zero return means EmuMain gave up during start-up (no MEM2, no BIOS,
+  // no plugins...). Everything it printed is still on screen -- stdout only
+  // becomes /ndclog.txt once InitRenderer freopens it, which is later than any
+  // of those failures -- so hold here. Returning straight to the loader would
+  // flash the diagnostic for one frame and drop the user back in the Homebrew
+  // Channel with nothing to report.
+  if (rv != 0)
+  {
+    wii_boot_log("\n  Start-up failed (code %d). Press any button to exit.\n", rv);
+
+    while (true)
+    {
+      WPAD_ScanPads();
+      if (WPAD_ButtonsDown(0) != 0 || DRC_ButtonsDownWPAD() != 0 || SS_ButtonsDownWPAD() != 0)
+        break;
+      VIDEO_WaitVSync();
+    }
+  }
+
   return rv;
 }
 

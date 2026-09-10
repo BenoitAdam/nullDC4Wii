@@ -245,6 +245,9 @@ extern "C" int get_vq_cmpr_preset();
 extern "C" int get_vertex_color_preset();
 #define VERTEX_COLOR() (get_vertex_color_preset() != 0)
 
+// wii/main.cpp: hands the boot logger over to us. See InitRenderer's freopen.
+extern "C" void wii_boot_log_stop();
+
 // Texture cache management
 extern "C" int get_texture_cache_preset();
 
@@ -11864,7 +11867,14 @@ bool InitRenderer()
   // window / USB Gecko). Restore the redirect by setting SCOPE_LOG_TO_CONSOLE 0.
   printf("[Init Renderer] Logging to console (ndclog.txt redirect skipped)\n");
 #else
-  freopen("/ndclog.txt", "w", stdout);
+  // "a", not "w": wii_boot_log() has already appended this run's boot section
+  // (device mounts, MEM2 budget) to the same file, and wii_boot_log_reset()
+  // truncated it once at start-up. Opening with "w" here would wipe exactly the
+  // lines a start-up bug report needs. Tell the boot logger to stop touching
+  // the file first - from here on stdout IS that file, and a second handle
+  // appending to it would interleave two write positions.
+  wii_boot_log_stop();
+  freopen("/ndclog.txt", "a", stdout);
   printf("[Init Renderer] Logging started\n");
 #endif
 #if SCOPE_DEBUG_LOG
@@ -11987,8 +11997,11 @@ bool InitRenderer()
   // setup the vertex descriptor
   // tells the flipper to expect direct data
 
-  printf("MEM1 free: %.2f MB\n", ((unat)SYS_GetArena1Hi() - (unat)SYS_GetArena1Lo()) / 1024.f / 1024);
-  printf("MEM2 free: %.2f MB\n", ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / 1024.f / 1024.f);
+  // Signed subtraction: an exhausted arena has Hi < Lo, and the old unsigned
+  // form wrapped that to ~4096 MB -- the log then read as "plenty of room"
+  // when it was in fact overrun. A negative number says what really happened.
+  printf("MEM1 free: %.2f MB\n", (s32)((u8*)SYS_GetArena1Hi() - (u8*)SYS_GetArena1Lo()) / 1024.f / 1024);
+  printf("MEM2 free: %.2f MB\n", (s32)((u8*)SYS_GetArena2Hi() - (u8*)SYS_GetArena2Lo()) / 1024.f / 1024.f);
 
   printf("sizeof TextureCacheDesc: %d\n", sizeof(TextureCacheDesc));
   printf("sizeof GXTexObj: %d\n", sizeof(GXTexObj));
