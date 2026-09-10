@@ -947,8 +947,16 @@ extern "C" {
   int get_puyo_hack_preset() { return g_puyo_hack_preset; }
 }
 
-// wince=yes in game_presets.cfg (see game_presets.cpp): the game needs the
-// Windows CE syscall layer, which NullDC4Wii does not emulate. No menu row —
+// wince=yes in game_presets.cfg (see game_presets.cpp): the game is built on
+// Sega's Windows CE devkit rather than the plain Katana SDK. Nothing needs to
+// be HLE'd for these — the CE kernel ships on the game disc and runs as
+// ordinary SH4 code. What they need is the SH4 MMU: they run with MMUCR.AT=1
+// and drive their own page tables off the TLB-miss exception. dc/mem/mmu.cpp
+// only implements the store-queue remap, ReadMem*/WriteMem* never translate
+// (see the aliased defines in dc/mem/sh4_mem.h), and the dynarec cannot take
+// a mid-block exception at all (next_pc lives in a PPC register, GPRs stay
+// pinned across blocks), so they are not expected to boot or run correctly.
+// No menu row —
 // this is cfg-only and, unlike every other preset field, NOT sticky across
 // game selections (see preset_apply_fields in game_presets.cpp): it is
 // re-derived fresh on every launch so a WinCE game can never leave the flag
@@ -3298,8 +3306,10 @@ bool displayOptionsMenu()
 // WINCE WARNING
 // ============================================================================
 // Shown right after the options menu, only when the matched game_presets.cfg
-// section set wince=yes (g_wince_preset — see game_presets.cpp). NullDC4Wii
-// does not emulate the Windows CE syscall layer these games run on top of, so
+// section set wince=yes (g_wince_preset — see game_presets.cpp). These games
+// carry their own CE kernel on the disc, so there is no syscall layer to
+// emulate: what NullDC4Wii lacks is SH4 MMU address translation and the
+// TLB-miss exception path the CE kernel refills its page tables from, so
 // they are not expected to work. A launches anyway, B returns to the file
 // list (not just the options menu — there is nothing to retweak here, the
 // user needs a different game).

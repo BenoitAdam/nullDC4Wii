@@ -730,11 +730,18 @@
                                 the key out entirely does the same thing
                                 UNLESS an earlier section already forced it.
         wince=yes           <- yes/no (also on/off/1/0/true/false), flags a
-                                game as needing Windows CE rather than the
-                                plain Katana SDK. NullDC4Wii does not emulate
-                                the WinCE syscall layer these games depend on,
-                                so they are not expected to boot or run
-                                correctly. No menu row: purely a cfg flag,
+                                game as built on Sega's Windows CE devkit
+                                rather than the plain Katana SDK. Nothing here
+                                needs HLE: the CE kernel ships on the game
+                                disc and runs as ordinary SH4 code. What these
+                                games need is the SH4 MMU — they run with
+                                MMUCR.AT=1 and refill their own page tables
+                                from the TLB-miss exception. NullDC4Wii only
+                                implements the store-queue remap (dc/mem/
+                                mmu.cpp), (ReadMem* /WriteMem*) never translate,
+                                and the dynarec cannot take a mid-block
+                                exception, so they are not expected to boot or
+                                run correctly. No menu row: purely a cfg flag,
                                 consumed once right after the options menu
                                 (main.cpp displayWinCEWarning()) — the player
                                 sees a warning and can press A to launch
