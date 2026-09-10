@@ -84,6 +84,10 @@ int g_wii_fastmem_active = 0;
 static u8* s_htab      = 0;   // virtual (cached) address of the HTAB
 static u32 s_htab_phys = 0;
 static int s_htab_mem1 = 0;   // 1 if the HTAB was placed in MEM1
+// Arena headroom measured at the moment the HTAB was placed, reported in the
+// log. Signed: an exhausted arena reads as negative instead of wrapping.
+static s32 s_mem1_free_at_init = 0;
+static s32 s_mem2_free_at_init = 0;
 
 // Insert one 4 KB translation. ea is the window EA, pa the physical target.
 // PTE word0 = V | VSID | H | API ; word1 = RPN | R | C | WIMG=0 | PP=10.
@@ -330,8 +334,34 @@ void WiiFastmem_Init(void)
     if (!get_fastmem_preset())
     {
         printf("[fastmem] preset off\n");
+        fflush(stdout);
         return;
     }
+
+    // USB NOTE (one user, PAL Wii, alpha 0.71, 2026-09-10).
+    //
+    // With a USB mass-storage volume mounted, fastmem stopped that console
+    // booting at all: no Dreamcast BIOS animation, straight back to the Homebrew
+    // Channel. It was not specific to the drive holding the game - an SD game
+    // failed identically while a drive was plugged in - and FASTMEM=OFF with
+    // everything else at default booted the same games from USB.
+    //
+    // Fastmem is worth ~+20% FPS and this has been reported by exactly one user
+    // on one drive, so it stays ON by default and nothing here is gated on USB.
+    // What this function does instead is refuse to run off the end of an arena,
+    // and say clearly what happened, so that user gets an explanation and a
+    // pointer to the workaround rather than a silent reset.
+    //
+    // Cause still unknown. If it turns out NOT to be memory, no message below
+    // will fire and the console will still die - that would rule the memory
+    // theory out, which is itself worth knowing. Candidates:
+    //   * The HTAB arena choice below depends on the MEM1 heap top, and libfat
+    //     mallocs a sector cache per mounted volume - so mounting a drive can
+    //     flip the table from MEM1 into MEM2.
+    //   * fastmem_enable_mmu() sets SDR1 and SR0-SR7 machine-wide and installs a
+    //     DSI handler whose non-fastmem path goes straight to the libogc panic
+    //     handler. That is global state, and libogc's USB stack runs
+    //     asynchronously (alarms, IPC callbacks) against it.
 
     if (!mem_b.data || !vram.data || !aica_ram.data)
     {
@@ -347,11 +377,24 @@ void WiiFastmem_Init(void)
     // fastmem tax. libogc's sbrk grows the heap by moving Arena1Lo the
     // same way, so this carve just consumes heap headroom; fall back to
     // MEM2 if MEM1 can't spare it (2 MB of heap must remain).
+    //
+    // NOTE: which arena this lands in depends on how far the MEM1 heap has
+    // already grown, and mounting a second FAT volume grows it - libfat's
+    // sector cache is malloc'd, sized pages x sectorsPerPage x bytesPerSector.
+    // So whether the HTAB sits in MEM1 or falls back to MEM2 can flip purely on
+    // whether a USB drive is plugged in. That makes this function one of the
+    // very few places whose behaviour is USB-dependent, which is why both
+    // branches now report themselves and neither is allowed to run off the end
+    // of its arena.
     {
         const u32 level = IRQ_Disable();
         u8* lo   = (u8*)SYS_GetArena1Lo();
         u8* hi   = (u8*)SYS_GetArena1Hi();
         u8* htab = (u8*)(((u32)lo + FASTMEM_HTAB_SIZE - 1) & ~(u32)(FASTMEM_HTAB_SIZE - 1));
+        s_mem1_free_at_init = (s32)(hi - lo);
+        // Measured whichever branch we take, so the log line below always
+        // reports both arenas - that is the pair of numbers a bug report needs.
+        s_mem2_free_at_init = (s32)((u8*)SYS_GetArena2Hi() - (u8*)SYS_GetArena2Lo());
         if (htab + FASTMEM_HTAB_SIZE + (2*1024*1024) <= hi)
         {
             SYS_SetArena1Lo(htab + FASTMEM_HTAB_SIZE);
@@ -359,8 +402,29 @@ void WiiFastmem_Init(void)
         }
         else
         {
-            lo   = (u8*)SYS_GetArena2Lo();
+            lo = (u8*)SYS_GetArena2Lo();
+            u8* const hi2 = (u8*)SYS_GetArena2Hi();
             htab = (u8*)(((u32)lo + FASTMEM_HTAB_SIZE - 1) & ~(u32)(FASTMEM_HTAB_SIZE - 1));
+            // MEM1 could not spare it and neither can MEM2: bump-allocating
+            // anyway would hand back a pointer past Arena2Hi, and the memset
+            // below would then write over IOS-owned memory. Stay inactive.
+            if (htab + FASTMEM_HTAB_SIZE > hi2)
+            {
+                IRQ_Restore(level);
+                printf("\n"
+                       "  *** OUT OF MEMORY FOR FASTMEM ***\n"
+                       "  Need %u KB for the MMU page table, but MEM1 has %d KB\n"
+                       "  free and MEM2 has %d KB.\n"
+                       "  A mounted USB device costs memory even when the game is\n"
+                       "  on the SD card. Try another USB device, or set FASTMEM to\n"
+                       "  OFF on options page 4 (CORE) - that costs about 20%% FPS\n"
+                       "  but frees this memory.\n"
+                       "  Continuing without fastmem.\n\n",
+                       (FASTMEM_HTAB_SIZE * 2u) / 1024u,
+                       s_mem1_free_at_init / 1024, s_mem2_free_at_init / 1024);
+                fflush(stdout);
+                return;
+            }
             SYS_SetArena2Lo(htab + FASTMEM_HTAB_SIZE);
             s_htab_mem1 = 0;
         }
@@ -368,6 +432,14 @@ void WiiFastmem_Init(void)
         s_htab      = htab;
         s_htab_phys = MEM_VIRTUAL_TO_PHYSICAL(htab);
     }
+    // Say where the table landed BEFORE the MMU is switched on. If the machine
+    // dies during the enable, this is the last line in the log and it names the
+    // arena - the difference between "fastmem crashed" and a silent reset.
+    printf("[fastmem] HTAB %p in %s (MEM1 free %d KB, MEM2 free %d KB)\n",
+           s_htab, s_htab_mem1 ? "MEM1" : "MEM2 fallback",
+           s_mem1_free_at_init / 1024, s_mem2_free_at_init / 1024);
+    fflush(stdout);
+
     memset(s_htab, 0, FASTMEM_HTAB_SIZE);
 
     // Window layout (see header). Order does not matter.
@@ -386,6 +458,7 @@ void WiiFastmem_Init(void)
     if (!ok)
     {
         printf("[fastmem] mapping failed - inactive\n");
+        fflush(stdout);
         return;
     }
 
@@ -406,6 +479,7 @@ void WiiFastmem_Init(void)
     {
         printf("[fastmem] window self-test %s - inactive (mappings left dormant)\n",
                s_selftest_faulted ? "FAULTED" : "failed");
+        fflush(stdout);
         return;
     }
 
@@ -413,6 +487,7 @@ void WiiFastmem_Init(void)
     printf("[fastmem] active: HTAB %p (phys %08X, %u KB, %s), window 0x00000000-0x1FFFFFFF\n",
            s_htab, s_htab_phys, FASTMEM_HTAB_SIZE / 1024,
            s_htab_mem1 ? "MEM1" : "MEM2 fallback");
+    fflush(stdout);
 }
 
 #else // !OS_WII

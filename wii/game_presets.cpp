@@ -159,7 +159,12 @@
                                 reproduces the legacy pre-fix behavior, for A/B
                                 comparison only.
         fastmem=on          <- on/off, PPC-MMU fastmem for the SH4 dynarec
-                                (wii/wii_fastmem.cpp). Maps the DC address
+                                (wii/wii_fastmem.cpp). Worth ~+20% FPS, so it
+                                stays ON by default. One user has reported that
+                                it stops the emulator booting while a USB drive
+                                is mounted - see the USB note in wii_fastmem.cpp;
+                                the workaround is to turn this off on that setup.
+                                Maps the DC address
                                 space at EA 0-0x1FFFFFFF via segment regs +
                                 a hashed page table so JIT loads/stores are
                                 branchless (rlwinm+load, no compares, no

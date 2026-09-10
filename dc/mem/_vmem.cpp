@@ -430,12 +430,14 @@ bool _vmem_reserve()
         {
             IRQ_Restore(level);
             wii_boot_log("\n\n"
-                   "  *** NOT ENOUGH MEM2 ***\n\n"
-                   "  Dreamcast RAM+VRAM needs %u KB, this console has %d KB\n"
-                   "  free in the MEM2 arena (%p - %p), short by %d KB.\n\n"
-                   "  How much MEM2 homebrew gets depends on the IOS the\n"
-                   "  Homebrew Channel launched under, so this varies per\n"
-                   "  console. Please report this whole screen.\n\n",
+                   "  *** NOT ENOUGH MEMORY ***\n\n"
+                   "  The Dreamcast RAM+VRAM needs %u KB, but only %d KB is\n"
+                   "  free (arena %p - %p) - short by %d KB.\n\n"
+                   "  A mounted USB device costs memory even when the game is\n"
+                   "  on the SD card. Try another USB device, or unplug it.\n"
+                   "  You can also set FASTMEM to OFF on options page 4 (CORE)\n"
+                   "  to free some memory - that costs about 20%% FPS.\n\n"
+                   "  Please report this screen and /ndclog.txt.\n\n",
                    need / 1024u, a_free / 1024, a_lo, a_hi,
                    ((s32)need - a_free) / 1024);
             return false;
