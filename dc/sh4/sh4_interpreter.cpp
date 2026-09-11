@@ -14,6 +14,7 @@
 #include "types.h"
 
 #include "sh4_interpreter.h"
+#include "dc/sh4/rec_v2/ccall_census.h"
 #include "sh4_opcode_list.h"
 #include "sh4_registers.h"
 #include "sh4_if.h"
@@ -397,6 +398,7 @@ int FASTCALL UpdateSystem()
 // -------------------------------------------------------------------------
 int FASTCALL UpdateSystem_no_event()
 {
+	CCALL(CC_TIMESLICE);
 	if (!(update_cnt & (s_medium_period - 1)))
 		MediumUpdate();
 

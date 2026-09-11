@@ -25,6 +25,8 @@
 #include "types.h"
 #include "shil.h"
 #include "decoder.h"
+#include "ccall_census.h"
+#include <stdio.h>
 
 // ---------------------------------------------------------------------------
 // Dead-code elimination master switch (A/B kill switch).
@@ -254,6 +256,7 @@ bool UpdateSR();
 // ---------------------------------------------------------------------------
 extern "C" void sh4_mac_l(u32 a, u32 b, u32 oldl, u32 oldh, u32 srs)
 {
+    CCALL(CC_MAC_SAT);
     const u64 mul  = (u64)((s64)(s32)a * (s64)(s32)b);
     u32       res0 = oldl + (u32)mul;
     u32       res2 = (u32)(mul >> 32) + (oldl > res0 ? 1u : 0u);
@@ -275,6 +278,7 @@ extern "C" void sh4_mac_l(u32 a, u32 b, u32 oldl, u32 oldh, u32 srs)
 
 extern "C" void sh4_mac_w(u32 a, u32 b, u32 oldl, u32 oldh, u32 srs)
 {
+    CCALL(CC_MAC_SAT);
     const u32 prod = (u32)((s32)a * (s32)b);
     u32       res0 = oldl + prod;
     u32       res2 = oldh;
@@ -301,6 +305,113 @@ extern "C" void sh4_mac_w(u32 a, u32 b, u32 oldl, u32 oldh, u32 srs)
 
     macl = res0;
     mach = res2;
+}
+
+// ---------------------------------------------------------------------------
+// C call-out census (JIT_CCALLS preset). See ccall_census.h for the rationale.
+// Storage lives here rather than in wii/main.cpp so that dc/ stays linkable on
+// its own; the Wii menu and game_presets write g_jit_ccalls_preset directly.
+// ---------------------------------------------------------------------------
+extern "C"
+{
+	u32 g_ccall[CC_COUNT] = { 0 };
+	u32 g_ccall_area[2][CCA_COUNT] = { { 0 } };
+	int g_jit_ccalls_preset = 0;
+}
+
+// SH4 physical areas. 1 is PVR VRAM, 3 is system RAM, 4 is the TA / texture
+// upload FIFO; the rest are rare enough that their names are only here so an
+// unexpected hit is recognisable rather than a bare number.
+static const char* const s_ccall_area_name[CCA_COUNT] =
+{
+	"a0:boot/reg", "a1:VRAM", "a2", "a3:RAM",
+	"a4:TA", "a5", "a6", "a7",
+};
+
+static const char* const s_ccall_name[CC_COUNT] =
+{
+	"timeslice",   // UpdateSystem_no_event
+	"interrupt",   // UpdateSystem_handle_event / UpdateINTC
+	"getcode",     // bm_GetCode
+	"sqw",         // do_sqw  (store queue -> TA)
+	"sync_sr",     // UpdateSR
+	"sync_fpscr",  // UpdateFPSCR (full path)
+	"fsqrt",       // rec_fsqrt  -> libm
+	"fsrra",       // rec_fsrra  -> libm
+	"readmem",     // _vmem_ReadMem*
+	"writemem",    // _vmem_WriteMem*
+	"mac_sat",     // sh4_mac_l/w saturation
+};
+
+extern "C" void ccall_census_dump(double seconds, double vbs)
+{
+	if (!g_jit_ccalls_preset || seconds <= 0.0)
+		return;
+
+	// Sort by rate, descending. CC_COUNT is tiny, so a selection sort once a
+	// second costs nothing and keeps qsort out of the build.
+	u32 idx[CC_COUNT];
+	u32 n = 0;
+	for (u32 i = 0; i < CC_COUNT; i++)
+		if (g_ccall[i])
+			idx[n++] = i;
+
+	if (n == 0)
+	{
+		// Say so explicitly: a silent probe is indistinguishable from one that
+		// was never switched on, and that ambiguity has cost a test run before.
+		printf("[CC] %.2fs  no C call-outs counted\n", seconds);
+		return;
+	}
+
+	for (u32 a = 0; a < n; a++)
+	{
+		u32 best = a;
+		for (u32 b = a + 1; b < n; b++)
+			if (g_ccall[idx[b]] > g_ccall[idx[best]])
+				best = b;
+		u32 t = idx[a]; idx[a] = idx[best]; idx[best] = t;
+	}
+
+	double total = 0.0;
+	for (u32 i = 0; i < CC_COUNT; i++)
+		total += (double)g_ccall[i];
+
+	printf("[CC] %.2fs  %.0f call-outs/s total  (%.1f vbl/s)\n",
+	       seconds, total / seconds, vbs);
+
+	for (u32 a = 0; a < n; a++)
+	{
+		const u32 i = idx[a];
+		const double per_s = (double)g_ccall[i] / seconds;
+		const double per_f = (vbs > 0.0) ? per_s / vbs : 0.0;
+		printf("[CC]   %-11s %10.0f/s  %9.1f/frame  %5.1f%%\n",
+		       s_ccall_name[i], per_s, per_f,
+		       total > 0.0 ? 100.0 * (double)g_ccall[i] / total : 0.0);
+
+		// readmem/writemem are the only two with a per-area split, and it is
+		// the split -- not the total -- that says whether anything can be done.
+		if (i == CC_READMEM || i == CC_WRITEMEM)
+		{
+			const u32 rw = (i == CC_WRITEMEM) ? 1u : 0u;
+			for (u32 k = 0; k < CCA_COUNT; k++)
+			{
+				if (!g_ccall_area[rw][k])
+					continue;
+				printf("[CC]     %-11s %10.0f/s  %9.1f/frame  %5.1f%% of that\n",
+				       s_ccall_area_name[k],
+				       (double)g_ccall_area[rw][k] / seconds,
+				       (vbs > 0.0) ? (double)g_ccall_area[rw][k] / seconds / vbs : 0.0,
+				       g_ccall[i] ? 100.0 * (double)g_ccall_area[rw][k] / (double)g_ccall[i] : 0.0);
+			}
+		}
+	}
+
+	for (u32 i = 0; i < CC_COUNT; i++)
+		g_ccall[i] = 0;
+	for (u32 rw = 0; rw < 2; rw++)
+		for (u32 k = 0; k < CCA_COUNT; k++)
+			g_ccall_area[rw][k] = 0;
 }
 
 // Instantiate canonical (portable C) implementations (SHIL_MODE 1).

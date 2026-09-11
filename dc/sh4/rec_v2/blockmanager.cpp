@@ -12,6 +12,7 @@
 */
 
 #include "blockmanager.h"
+#include "ccall_census.h"
 #include "ngen.h"
 
 #include "../sh4_interpreter.h"
@@ -99,6 +100,7 @@ static inline DynarecCodeEntry* bm_CheckCache(u32 addr, u32 idx)
 // Main lookup function with improved cache strategy
 DynarecCodeEntry* FASTCALL bm_GetCode(u32 addr)
 {
+	CCALL(CC_GETCODE);
 	u32 idx = bm_AddrHash(addr);
 	
 	// Fast path: check cache first

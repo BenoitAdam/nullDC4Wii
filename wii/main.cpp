@@ -893,6 +893,63 @@ extern "C" {
   int get_jit_cr0_preset() { return g_jit_cr0_preset; }
 }
 
+// JIT_CCALLS - census of every C function the dynarec still calls out to.
+//
+// "Check the number of C/helper function call-outs per frame, and reduce the
+// heck outta those too." -- dave. This answers that directly: counters live
+// inside the callees (dc/sh4/rec_v2/ccall_census.h) and a [CC] block prints
+// per-second and per-FRAME rates once a second, next to [IFB] and [HOT].
+//
+// Counted: the per-timeslice scheduler tick, interrupt dispatch, bm_GetCode,
+// do_sqw (the store-queue -> TA path), UpdateSR, UpdateFPSCR, rec_fsqrt,
+// rec_fsrra, _vmem_ReadMem*/WriteMem* (i.e. the inline+fastmem fast path was
+// missed), and the mac.l/mac.w saturation path.
+//
+// Why this rather than another guess at the emitter: the only JIT change here
+// that ever moved a game (jit_fschg, +10% in ChuChu) was found by a counter
+// showing 1.3M sync_fpscr/s. Every change argued from static instruction
+// counts -- superblocks, bcache, jit_align, clustering, dyn_ic, jit_cr0 --
+// has come in between 0% and 3%. Measure the traffic, then aim.
+//
+// Cheap: one global load and a predicted-not-taken branch inside a function
+// that is already paying a call, so unlike JIT_HOTBLOCKS (measured 12.6%)
+// the rates can be trusted. Still re-measure SPEED% with it off.
+//
+// Writes g_jit_ccalls_preset, which lives in dc/sh4/rec_v2/shil.cpp so the
+// dc/ tree links without depending on a symbol from wii/main.cpp.
+// 0=off (default), 1=on.
+extern "C" int g_jit_ccalls_preset;
+
+// JIT_RAMTRAMP - inline the system-RAM store in back-patched write trampolines.
+//
+// FASTMEM back-patches are PERMANENT and per-SITE. One SH4 store instruction
+// that writes RAM a million times and touches the store queue once is
+// downgraded to a C call forever by that one fault. The [CC] census caught the
+// result on Crazy Taxi:
+//
+//     writemem  1,128,138/s   of which a3:RAM  1,077,322/s  (95.5%)
+//     readmem       2,609/s   of which a3:RAM        489/s
+//
+// 1.08M system-RAM writes/s through the generic dispatcher versus 489 reads --
+// the asymmetry is entirely because writes are the polymorphic ones. ~25 saved
+// cycles each is roughly 3.7% of Broadway.
+//
+// Safe by construction: area 3 is page-mapped in all 4 mirrors with PP=10
+// (read/write), so the inlined store cannot fault -- it is the exact access
+// the un-patched shape would have made. Area 3 is not texture memory, so
+// nothing is owed to the texture cache either.
+//
+// Integer scalar + pair write shapes only; the census shows 13 of 782 patched
+// sites are float, so those are left on the generic path.
+//
+// Takes effect as sites are patched, so it wants a fresh launch rather than a
+// mid-game toggle. 0=off (default), 1=on.
+int g_jit_ramtramp_preset = 1;
+
+extern "C" {
+  int get_jit_ramtramp_preset() { return g_jit_ramtramp_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -2062,6 +2119,8 @@ void checkBiosFiles()
 #define OPT_JIT_MAC     89   // shown on Page 6 (JIT/DYNAREC), under JIT CARRY OPS
 #define OPT_JIT_FSCHG   91   // shown on Page 6 (JIT/DYNAREC), under JIT MAC OPS
 #define OPT_JIT_CR0     92   // shown on Page 6 (JIT/DYNAREC), under JIT FSCHG FAST
+#define OPT_JIT_CCALLS  93   // shown on Page 6 (JIT/DYNAREC), under JIT CR0 BRANCH
+#define OPT_JIT_RAMTRAMP 94  // shown on Page 6 (JIT/DYNAREC), under JIT CCALL CENSUS
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2200,7 +2259,9 @@ static const int OPT_PAGE6_ROWS[] = {
   OPT_JIT_CARRY,
   OPT_JIT_MAC,
   OPT_JIT_FSCHG,
-  OPT_JIT_CR0
+  OPT_JIT_CR0,
+  OPT_JIT_CCALLS,
+  OPT_JIT_RAMTRAMP
 };
 
 static const int *opt_page_rows(int page, int *count)
@@ -2255,7 +2316,7 @@ static void printOptionsFooter(void)
 {
   int cols, rows;
   CON_GetMetrics(&cols, &rows);
-  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.725", rows);
+  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.726", rows);
 }
 
 bool displayOptionsMenu()
@@ -3173,6 +3234,24 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (NO MFCR)      >]"); break;
     }
     printf(" cmp+bt: branch on CR0, skip mfcr");
+    printf("\n");
+
+    // --- Row: JIT_CCALLS - census of remaining C call-outs ---
+    printf("%s JIT CCALL      : ", (selectedRow == OPT_JIT_CCALLS) ? ">" : " ");
+    switch (g_jit_ccalls_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOGS [CC])    >]"); break;
+    }
+    printf(" C call-outs/second and /frame");
+    printf("\n");
+
+    // --- Row: JIT_RAMTRAMP - inline RAM store in write trampolines ---
+    printf("%s JIT RAM TRAMP  : ", (selectedRow == OPT_JIT_RAMTRAMP) ? ">" : " ");
+    switch (g_jit_ramtramp_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FASTER?)      >]"); break;
+    }
+    printf(" RAM inline, no C call");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3296,6 +3375,8 @@ bool displayOptionsMenu()
         case OPT_JIT_MAC:        g_jit_mac_preset         = (g_jit_mac_preset         + 1) % 2; break;
         case OPT_JIT_FSCHG:      g_jit_fschg_preset       = (g_jit_fschg_preset       + 1) % 2; break;
         case OPT_JIT_CR0:        g_jit_cr0_preset         = (g_jit_cr0_preset         + 1) % 2; break;
+        case OPT_JIT_CCALLS:     g_jit_ccalls_preset      = (g_jit_ccalls_preset      + 1) % 2; break;
+        case OPT_JIT_RAMTRAMP:   g_jit_ramtramp_preset    = (g_jit_ramtramp_preset    + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
@@ -3399,6 +3480,8 @@ bool displayOptionsMenu()
         case OPT_JIT_MAC:        g_jit_mac_preset         = (g_jit_mac_preset         + 1) % 2; break;
         case OPT_JIT_FSCHG:      g_jit_fschg_preset       = (g_jit_fschg_preset       + 1) % 2; break;
         case OPT_JIT_CR0:        g_jit_cr0_preset         = (g_jit_cr0_preset         + 1) % 2; break;
+        case OPT_JIT_CCALLS:     g_jit_ccalls_preset      = (g_jit_ccalls_preset      + 1) % 2; break;
+        case OPT_JIT_RAMTRAMP:   g_jit_ramtramp_preset    = (g_jit_ramtramp_preset    + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;

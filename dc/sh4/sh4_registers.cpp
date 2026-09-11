@@ -4,6 +4,7 @@
 
 #include "types.h"
 #include "sh4_registers.h"
+#include "dc/sh4/rec_v2/ccall_census.h"
 #include "intc.h"
 
 ALIGN(64) Sh4Context Sh4cntx;
@@ -33,6 +34,7 @@ INLINE void ChangeFP()
 //called when sr is changed and we must check for reg banks ect.. , returns true if interrupts got
 bool UpdateSR()
 {
+	CCALL(CC_SYNC_SR);
 	if (sr.MD)
 	{
 		if (old_sr.RB !=sr.RB)
@@ -93,6 +95,7 @@ void SetFloatStatusReg()
 //called when fpscr is changed and we must check for reg banks ect..
 void UpdateFPSCR()
 {
+	CCALL(CC_SYNC_FPSCR);
 	if (fpscr.FR !=old_fpscr.FR)
 		ChangeFP();//fpu bank change
 	old_fpscr=fpscr;

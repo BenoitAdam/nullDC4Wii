@@ -3,6 +3,7 @@
 
 #include "types.h"
 #include "intc.h"
+#include "dc/sh4/rec_v2/ccall_census.h"
 #include "tmu.h"
 #include "ccn.h"
 #include "sh4_registers.h"
@@ -293,6 +294,7 @@ int UpdateINTC_pending()
 
 int UpdateINTC()
 {
+	CCALL(CC_INTERRUPT);
 	u32 intped=interrupt_vpend&interrupt_vmask;
 	if (intped<=decoded_srimask)
 		return 0;

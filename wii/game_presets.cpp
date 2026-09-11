@@ -373,6 +373,37 @@
                                 Castlevania gameplay, not yet measured in
                                 ChuChu. Perf preset, changes SH4 codegen —
                                 default ON.
+
+        jit_ccalls=on       <- on/off, DEBUG probe. Counts every C function the
+                                dynarec still calls out to and prints a [CC]
+                                block once a second with per-second AND
+                                per-frame rates: scheduler tick, interrupt
+                                dispatch, bm_GetCode, do_sqw (store queue ->
+                                TA), UpdateSR, UpdateFPSCR, fsqrt, fsrra,
+                                ReadMem/WriteMem (i.e. the inline + fastmem
+                                fast path was missed), mac saturation.
+                                Counters sit inside the callees, so this is
+                                far cheaper than jit_hotblocks (which costs a
+                                measured 12.6%) — but still re-measure SPEED%
+                                with it off. Use it to pick the next target
+                                instead of guessing from the emitter.
+                                Debug preset — default off.
+
+        jit_ramtramp=on     <- on/off, gives a back-patched FASTMEM write
+                                trampoline an inlined system-RAM store ahead of
+                                its generic WriteMem call. A back-patch is
+                                permanent and per-SITE: one SH4 store that
+                                writes RAM a million times and touches the store
+                                queue once is downgraded to a C call forever.
+                                Measured on Crazy Taxi: 1,077,322 system-RAM
+                                writes/s through the C dispatcher against 489
+                                reads. Safe by construction: area 3 is
+                                page-mapped RW in all 4 mirrors so the inlined
+                                store cannot fault, and it is not texture memory
+                                so nothing is owed to the texture cache.
+                                Integer scalar+pair shapes only. Takes effect as
+                                sites are patched, so relaunch rather than
+                                toggling mid-game. Perf preset, default off.
         sched=on            <- on/off, unified cycle-deadline event scheduler
                                 (dc/sh4/sh4_sched.cpp). Fires the completion/IRQ
                                 events whose RELATIVE ordering matters (GD-ROM
@@ -904,6 +935,8 @@ extern int g_jit_carry_preset;
 extern int g_jit_mac_preset;
 extern int g_jit_fschg_preset;
 extern int g_jit_cr0_preset;
+extern "C" int g_jit_ccalls_preset;
+extern int g_jit_ramtramp_preset;
 extern int g_sched_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -1021,6 +1054,8 @@ struct GamePreset
     int jit_mac;
     int jit_fschg;
     int jit_cr0;
+    int jit_ccalls;
+    int jit_ramtramp;
     int sched;
     int debug_fb2d;
     int debug_message;
@@ -1466,6 +1501,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_mac"))        p->jit_mac        = parse_bool(val);
     else if (key_eq(key, "jit_fschg"))      p->jit_fschg      = parse_bool(val);
     else if (key_eq(key, "jit_cr0"))        p->jit_cr0        = parse_bool(val);
+    else if (key_eq(key, "jit_ccalls"))     p->jit_ccalls     = parse_bool(val);
+    else if (key_eq(key, "jit_ramtramp"))   p->jit_ramtramp   = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
@@ -1559,6 +1596,8 @@ static void preset_clear(GamePreset* cur)
     cur->jit_mac = -1;
     cur->jit_fschg = -1;
     cur->jit_cr0 = -1;
+    cur->jit_ccalls = -1;
+    cur->jit_ramtramp = -1;
     cur->sched = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
@@ -1680,6 +1719,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->jit_mac        >= 0) { g_jit_mac_preset        = p->jit_mac;        printf("  jit_mac        -> %d\n", p->jit_mac);        }
     if (p->jit_fschg      >= 0) { g_jit_fschg_preset      = p->jit_fschg;      printf("  jit_fschg      -> %d\n", p->jit_fschg);      }
     if (p->jit_cr0        >= 0) { g_jit_cr0_preset        = p->jit_cr0;        printf("  jit_cr0        -> %d\n", p->jit_cr0);        }
+    if (p->jit_ccalls     >= 0) { g_jit_ccalls_preset     = p->jit_ccalls;     printf("  jit_ccalls     -> %d\n", p->jit_ccalls);     }
+    if (p->jit_ramtramp   >= 0) { g_jit_ramtramp_preset   = p->jit_ramtramp;   printf("  jit_ramtramp   -> %d\n", p->jit_ramtramp);   }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }

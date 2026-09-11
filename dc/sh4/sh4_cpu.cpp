@@ -6,6 +6,7 @@
 #include "types.h"
 #include "dc/pvr/pvr_if.h"
 #include "sh4_interpreter.h"
+#include "dc/sh4/rec_v2/ccall_census.h"
 #include "dc/mem/sh4_mem.h"
 #include "dc/mem/sh4_internal_reg.h"
 #include "sh4_registers.h"
@@ -126,6 +127,7 @@ sh4op(i0000_nnnn_1011_0011)
 template<bool mmu_on>
 INLINE void FASTCALL do_sqw(u32 Dest)
 {
+	CCALL(CC_SQW);
 	u32* sq = (u32*)&sq_both[Dest & 0x20];
 	u32 Address;
 

@@ -26,6 +26,9 @@ extern "C" int get_render_delay_preset();
 // the same fflush and the same time base.
 extern "C" void ifb_probe_dump(double seconds);
 extern "C" void hotblocks_dump(double seconds);
+// C call-out census (dc/sh4/rec_v2/ccall_census.h). Takes vblanks/sec too,
+// so it can report the per-FRAME rate dave actually asked for.
+extern "C" void ccall_census_dump(double seconds, double vbs);
 
 // Host-side exit-combo poll (EXIT FIX = 3; see wii/wii_exit.cpp and
 // plugs/drkMapleDevices/drkMapleDevices.cpp ExitCombo_HostPoll()).
@@ -397,6 +400,7 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
 
                 ifb_probe_dump(tdiff);   // no-op unless the IFB PROBE preset is on
                 hotblocks_dump(tdiff);   // no-op unless the JIT HOTBLOCKS preset is on
+                ccall_census_dump(tdiff, spd_vbs); // no-op unless JIT CCALLS is on
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
             }

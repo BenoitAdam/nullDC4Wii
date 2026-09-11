@@ -14,6 +14,7 @@
 #include "dc/aica/aica_if.h"
 #include "dc/pvr/pvr_if.h"
 #include "sh4_mem.h"
+#include "dc/sh4/rec_v2/ccall_census.h"
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -148,15 +149,15 @@ static INLINE void fastcall _vmem_writet(u32 addr, T data)
 // ---------------------------------------------------------------------------
 // Public read/write accessors
 // ---------------------------------------------------------------------------
-u8  fastcall _vmem_ReadMem8  (u32 addr) { return _vmem_readt<u8> (addr); }
-u16 fastcall _vmem_ReadMem16 (u32 addr) { return _vmem_readt<u16>(addr); }
-u32 fastcall _vmem_ReadMem32 (u32 addr) { return _vmem_readt<u32>(addr); }
-u64 fastcall _vmem_ReadMem64 (u32 addr) { return _vmem_readt<u64>(addr); }
+u8  fastcall _vmem_ReadMem8  (u32 addr) { CCALL_MEM(CC_READMEM, 0, addr); return _vmem_readt<u8> (addr); }
+u16 fastcall _vmem_ReadMem16 (u32 addr) { CCALL_MEM(CC_READMEM, 0, addr); return _vmem_readt<u16>(addr); }
+u32 fastcall _vmem_ReadMem32 (u32 addr) { CCALL_MEM(CC_READMEM, 0, addr); return _vmem_readt<u32>(addr); }
+u64 fastcall _vmem_ReadMem64 (u32 addr) { CCALL_MEM(CC_READMEM, 0, addr); return _vmem_readt<u64>(addr); }
 
-void fastcall _vmem_WriteMem8  (u32 addr, u8  data) { _vmem_writet<u8> (addr, data); }
-void fastcall _vmem_WriteMem16 (u32 addr, u16 data) { _vmem_writet<u16>(addr, data); }
-void fastcall _vmem_WriteMem32 (u32 addr, u32 data) { _vmem_writet<u32>(addr, data); }
-void fastcall _vmem_WriteMem64 (u32 addr, u64 data) { _vmem_writet<u64>(addr, data); }
+void fastcall _vmem_WriteMem8  (u32 addr, u8  data) { CCALL_MEM(CC_WRITEMEM, 1, addr); _vmem_writet<u8> (addr, data); }
+void fastcall _vmem_WriteMem16 (u32 addr, u16 data) { CCALL_MEM(CC_WRITEMEM, 1, addr); _vmem_writet<u16>(addr, data); }
+void fastcall _vmem_WriteMem32 (u32 addr, u32 data) { CCALL_MEM(CC_WRITEMEM, 1, addr); _vmem_writet<u32>(addr, data); }
+void fastcall _vmem_WriteMem64 (u32 addr, u64 data) { CCALL_MEM(CC_WRITEMEM, 1, addr); _vmem_writet<u64>(addr, data); }
 
 // ---------------------------------------------------------------------------
 // Default "not mapped" handlers
