@@ -1959,21 +1959,21 @@ void checkBiosFiles()
 #define OPT_DEBUG_SKIP_TEX 79 // shown on Page 6 (EXPERIMENTAL), debug block at the end
 #define OPT_PUYO_HACK    80   // shown on Page 6 (EXPERIMENTAL), with the other per-game hacks
 #define OPT_DINO_CRISIS_INVENTORY_HACK 72 // shown on Page 5 (EXPERIMENTAL), see OPT_PAGE5_ROWS
-#define OPT_DYN_IC      81   // shown on Page 4 (CORE), under JIT BCACHE
-#define OPT_IFB_FLUSH   82   // shown on Page 4 (CORE), under JIT ALIGN
-#define OPT_IFB_PROBE   83   // shown on Page 4 (CORE), under JIT IFB FLUSH
-#define OPT_JIT_NEWOPS  84   // shown on Page 4 (CORE), under JIT IFB PROBE
-#define OPT_JIT_HOTBLOCKS 85 // shown on Page 4 (CORE), under JIT NEW OPS
-#define OPT_JIT_TFWD    86   // shown on Page 4 (CORE), under JIT HOTBLOCKS
-#define OPT_JIT_FMOV    87   // shown on Page 4 (CORE), under JIT T-FORWARD
-#define OPT_JIT_CARRY   88   // shown on Page 4 (CORE), under JIT FMOV DIRECT
-#define OPT_JIT_MAC     89   // shown on Page 4 (CORE), under JIT CARRY OPS
+#define OPT_DYN_IC      81   // shown on Page 6 (JIT/DYNAREC), under JIT BCACHE
+#define OPT_IFB_FLUSH   82   // shown on Page 6 (JIT/DYNAREC), under JIT ALIGN
+#define OPT_IFB_PROBE   83   // shown on Page 6 (JIT/DYNAREC), under JIT IFB FLUSH
+#define OPT_JIT_NEWOPS  84   // shown on Page 6 (JIT/DYNAREC), under JIT IFB PROBE
+#define OPT_JIT_HOTBLOCKS 85 // shown on Page 6 (JIT/DYNAREC), under JIT NEW OPS
+#define OPT_JIT_TFWD    86   // shown on Page 6 (JIT/DYNAREC), under JIT HOTBLOCKS
+#define OPT_JIT_FMOV    87   // shown on Page 6 (JIT/DYNAREC), under JIT T-FORWARD
+#define OPT_JIT_CARRY   88   // shown on Page 6 (JIT/DYNAREC), under JIT FMOV DIRECT
+#define OPT_JIT_MAC     89   // shown on Page 6 (JIT/DYNAREC), under JIT CARRY OPS
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
-// Options are split across six themed pages so no single page scrolls off
+// Options are split across seven themed pages so no single page scrolls off
 // screen and related settings are grouped together.
-#define OPT_PAGE_COUNT 6
+#define OPT_PAGE_COUNT 7
 
 // Explicit, ordered list of selectable rows for each page — in the SAME
 // order they are printf'd below. Cursor navigation (UP/DOWN) walks these
@@ -2065,21 +2065,7 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_RENDER_DELAY,
   OPT_TMEM_CACHE,
   OPT_SH4_CLOCK,
-  OPT_ARM7_SPEED,
-  OPT_JIT_SBP,
-  OPT_FASTMEM,
-  OPT_BCACHE,
-  OPT_DYN_IC,
-  OPT_FPU_PIN,
-  OPT_JIT_ALIGN,
-  OPT_IFB_FLUSH,
-  OPT_IFB_PROBE,
-  OPT_JIT_NEWOPS,
-  OPT_JIT_HOTBLOCKS,
-  OPT_JIT_TFWD,
-  OPT_JIT_FMOV,
-  OPT_JIT_CARRY,
-  OPT_JIT_MAC
+  OPT_ARM7_SPEED
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -2102,6 +2088,25 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_DEBUG_SKIP_TEX
 };
 
+// Page 6 - JIT/DYNAREC
+static const int OPT_PAGE6_ROWS[] = {
+  OPT_LAUNCH,
+  OPT_JIT_SBP,
+  OPT_FASTMEM,
+  OPT_BCACHE,
+  OPT_DYN_IC,
+  OPT_FPU_PIN,
+  OPT_JIT_ALIGN,
+  OPT_IFB_FLUSH,
+  OPT_IFB_PROBE,
+  OPT_JIT_NEWOPS,
+  OPT_JIT_HOTBLOCKS,
+  OPT_JIT_TFWD,
+  OPT_JIT_FMOV,
+  OPT_JIT_CARRY,
+  OPT_JIT_MAC
+};
+
 static const int *opt_page_rows(int page, int *count)
 {
   switch (page) {
@@ -2111,6 +2116,7 @@ static const int *opt_page_rows(int page, int *count)
     case 3: *count = sizeof(OPT_PAGE3_ROWS) / sizeof(int); return OPT_PAGE3_ROWS;
     case 4: *count = sizeof(OPT_PAGE4_ROWS) / sizeof(int); return OPT_PAGE4_ROWS;
     case 5: *count = sizeof(OPT_PAGE5_ROWS) / sizeof(int); return OPT_PAGE5_ROWS;
+    case 6: *count = sizeof(OPT_PAGE6_ROWS) / sizeof(int); return OPT_PAGE6_ROWS;
     default: *count = 1; return OPT_PAGE0_ROWS; // OPT_LAUNCH only, defensive fallback
   }
 }
@@ -2139,6 +2145,7 @@ static const char *opt_page_title(int page)
     case 3: return "AUDIO";
     case 4: return "CORE";
     case 5: return "EXPERIMENTAL STUFF & DEBUG";
+    case 6: return "JIT/DYNAREC";
     default: return "";
   }
 }
@@ -2772,134 +2779,6 @@ bool displayOptionsMenu()
       case 2: printf("[< 2.5MHZ (RISKY)    >]"); break;
     }
     printf(" sound CPU clock - check audio!");
-    printf("\n");
-
-    // --- Row: JIT_SBP - Stale Block Protection (dc/sh4/rec_v2/driver.cpp) ---
-    printf("%s JIT SBP        : ", (selectedRow == OPT_JIT_SBP) ? ">" : " ");
-    switch (g_jit_sbp_preset) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< KNOWN (DEFAULT)   >]"); break;
-      case 2: printf("[< ALL RAM (SLOW)    >]"); break;
-    }
-    printf(" stale/self-modified block guard");
-    printf("\n");
-
-    // --- Row: FASTMEM - PPC-MMU branchless JIT memory access ---
-    printf("%s FASTMEM        : ", (selectedRow == OPT_FASTMEM) ? ">" : " ");
-    switch (g_fastmem_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FASTER)       >]"); break;
-    }
-    printf(" MMU-mapped JIT memory");
-    printf("\n");
-
-    // --- Row: BCACHE - flat dynamic-branch dispatch cache ---
-    printf("%s JIT BCACHE     : ", (selectedRow == OPT_BCACHE) ? ">" : " ");
-    switch (g_bcache_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FLAT)         >]"); break;
-    }
-    printf(" 1-cacheline dynamic jump dispatch");
-    printf("\n");
-
-    // --- Row: DYN_IC - per-site inline cache on dynamic exits ---
-    printf("%s JIT DYN IC     : ", (selectedRow == OPT_DYN_IC) ? ">" : " ");
-    switch (g_dyn_ic_preset) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (JSR/JMP)      >]"); break;
-      case 2: printf("[< ON (+RTS)         >]"); break;
-    }
-    printf(" bake last target at branch site");
-    printf("\n");
-
-    // --- Row: FPU_PIN - pin fr[0..15] to PPC f14..f29 ---
-    printf("%s FPU PIN        : ", (selectedRow == OPT_FPU_PIN) ? ">" : " ");
-    switch (g_fpu_pin_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (EXPERIMENTAL) >]"); break;
-    }
-    printf(" pin fr0-15 to real FPU regs");
-    printf("\n");
-
-    // --- Row: JIT_ALIGN - 32-byte-align block entries ---
-    printf("%s JIT ALIGN      : ", (selectedRow == OPT_JIT_ALIGN) ? ">" : " ");
-    switch (g_jit_align_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (32B LINES)    >]"); break;
-    }
-    printf(" align JIT blocks to cache lines");
-    printf("\n");
-
-    // --- Row: IFB_FLUSH - narrow the shop_ifb register bracket ---
-    printf("%s JIT IFB FLUSH  : ", (selectedRow == OPT_IFB_FLUSH) ? ">" : " ");
-    switch (g_ifb_flush_preset) {
-      case 0: printf("[< OFF (FULL SPILL)  >]"); break;
-      case 1: printf("[< ON (SELECTIVE)    >]"); break;
-    }
-    printf(" spill only regs the opcode touches");
-    printf("\n");
-
-    // --- Row: IFB_PROBE - count interpreter fallbacks per opcode ---
-    printf("%s JIT IFB PROBE  : ", (selectedRow == OPT_IFB_PROBE) ? ">" : " ");
-    switch (g_ifb_probe_preset) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (LOGS [IFB])   >]"); break;
-    }
-    printf(" count ifb per opcode to ndclog");
-    printf("\n");
-
-    // --- Row: JIT_NEWOPS - dynarec 8 opcodes that always fell back ---
-    printf("%s JIT NEW OPS    : ", (selectedRow == OPT_JIT_NEWOPS) ? ">" : " ");
-    switch (g_jit_newops_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (9 OPS JITTED) >]"); break;
-    }
-    printf(" jit rotcl/rotcr/tas.b/sr/fpscr");
-    printf("\n");
-
-    // --- Row: JIT_HOTBLOCKS - per-block execution counts + codegen dump ---
-    printf("%s JIT HOTBLOCKS  : ", (selectedRow == OPT_JIT_HOTBLOCKS) ? ">" : " ");
-    switch (g_hotblocks_preset) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (LOGS [HOT])   >]"); break;
-    }
-    printf(" hot blocks + ppc bytes per op");
-    printf("\n");
-
-    // --- Row: JIT_TFWD - forward T to its branch instead of reloading it ---
-    printf("%s JIT T-FORWARD  : ", (selectedRow == OPT_JIT_TFWD) ? ">" : " ");
-    switch (g_jit_tfwd_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (NO T RELOAD)  >]"); break;
-    }
-    printf(" skip the T store/reload on cmp+bt");
-    printf("\n");
-
-    // --- Row: JIT_FMOV - Phase B direct float access on the fastmem path ---
-    printf("%s JIT FMOV DIRECT: ", (selectedRow == OPT_JIT_FMOV) ? ">" : " ");
-    switch (g_jit_fmov_preset) {
-      case 0: printf("[< OFF (GPR BOUNCE)  >]"); break;
-      case 1: printf("[< ON (LFS/STFS)     >]"); break;
-    }
-    printf(" fmov straight to/from pinned FPR");
-    printf("\n");
-
-    // --- Row: JIT_CARRY - dynarec the carry/overflow arithmetic ---
-    printf("%s JIT CARRY OPS  : ", (selectedRow == OPT_JIT_CARRY) ? ">" : " ");
-    switch (g_jit_carry_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (10 OPS JITTED)>]"); break;
-    }
-    printf(" jit addc/subc/div1/cmp-str");
-    printf("\n");
-
-    // --- Row: JIT_MAC - dynarec mac.l / mac.w ---
-    printf("%s JIT MAC OPS    : ", (selectedRow == OPT_JIT_MAC) ? ">" : " ");
-    switch (g_jit_mac_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FASTMEM READS)>]"); break;
-    }
-    printf(" jit mac.l/mac.w + saturation");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3052,6 +2931,138 @@ bool displayOptionsMenu()
 
     printOptionsFooter();
     } // end page 5
+
+    if (optionsPage == 6) {
+    // --- Row: JIT_SBP - Stale Block Protection (dc/sh4/rec_v2/driver.cpp) ---
+    printf("%s JIT SBP        : ", (selectedRow == OPT_JIT_SBP) ? ">" : " ");
+    switch (g_jit_sbp_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< KNOWN (DEFAULT)   >]"); break;
+      case 2: printf("[< ALL RAM (SLOW)    >]"); break;
+    }
+    printf(" stale/self-modified block guard");
+    printf("\n");
+
+    // --- Row: FASTMEM - PPC-MMU branchless JIT memory access ---
+    printf("%s FASTMEM        : ", (selectedRow == OPT_FASTMEM) ? ">" : " ");
+    switch (g_fastmem_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FASTER)       >]"); break;
+    }
+    printf(" MMU-mapped JIT memory");
+    printf("\n");
+
+    // --- Row: BCACHE - flat dynamic-branch dispatch cache ---
+    printf("%s JIT BCACHE     : ", (selectedRow == OPT_BCACHE) ? ">" : " ");
+    switch (g_bcache_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FLAT)         >]"); break;
+    }
+    printf(" 1-cacheline dynamic jump dispatch");
+    printf("\n");
+
+    // --- Row: DYN_IC - per-site inline cache on dynamic exits ---
+    printf("%s JIT DYN IC     : ", (selectedRow == OPT_DYN_IC) ? ">" : " ");
+    switch (g_dyn_ic_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (JSR/JMP)      >]"); break;
+      case 2: printf("[< ON (+RTS)         >]"); break;
+    }
+    printf(" bake last target at branch site");
+    printf("\n");
+
+    // --- Row: FPU_PIN - pin fr[0..15] to PPC f14..f29 ---
+    printf("%s FPU PIN        : ", (selectedRow == OPT_FPU_PIN) ? ">" : " ");
+    switch (g_fpu_pin_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (EXPERIMENTAL) >]"); break;
+    }
+    printf(" pin fr0-15 to real FPU regs");
+    printf("\n");
+
+    // --- Row: JIT_ALIGN - 32-byte-align block entries ---
+    printf("%s JIT ALIGN      : ", (selectedRow == OPT_JIT_ALIGN) ? ">" : " ");
+    switch (g_jit_align_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (32B LINES)    >]"); break;
+    }
+    printf(" align JIT blocks to cache lines");
+    printf("\n");
+
+    // --- Row: IFB_FLUSH - narrow the shop_ifb register bracket ---
+    printf("%s JIT IFB FLUSH  : ", (selectedRow == OPT_IFB_FLUSH) ? ">" : " ");
+    switch (g_ifb_flush_preset) {
+      case 0: printf("[< OFF (FULL SPILL)  >]"); break;
+      case 1: printf("[< ON (SELECTIVE)    >]"); break;
+    }
+    printf(" spill only regs the opcode touches");
+    printf("\n");
+
+    // --- Row: IFB_PROBE - count interpreter fallbacks per opcode ---
+    printf("%s JIT IFB PROBE  : ", (selectedRow == OPT_IFB_PROBE) ? ">" : " ");
+    switch (g_ifb_probe_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOGS [IFB])   >]"); break;
+    }
+    printf(" count ifb per opcode to ndclog");
+    printf("\n");
+
+    // --- Row: JIT_NEWOPS - dynarec 8 opcodes that always fell back ---
+    printf("%s JIT NEW OPS    : ", (selectedRow == OPT_JIT_NEWOPS) ? ">" : " ");
+    switch (g_jit_newops_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (9 OPS JITTED) >]"); break;
+    }
+    printf(" jit rotcl/rotcr/tas.b/sr/fpscr");
+    printf("\n");
+
+    // --- Row: JIT_HOTBLOCKS - per-block execution counts + codegen dump ---
+    printf("%s JIT HOTBLOCKS  : ", (selectedRow == OPT_JIT_HOTBLOCKS) ? ">" : " ");
+    switch (g_hotblocks_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOGS [HOT])   >]"); break;
+    }
+    printf(" hot blocks + ppc bytes per op");
+    printf("\n");
+
+    // --- Row: JIT_TFWD - forward T to its branch instead of reloading it ---
+    printf("%s JIT T-FORWARD  : ", (selectedRow == OPT_JIT_TFWD) ? ">" : " ");
+    switch (g_jit_tfwd_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (NO T RELOAD)  >]"); break;
+    }
+    printf(" skip the T store/reload on cmp+bt");
+    printf("\n");
+
+    // --- Row: JIT_FMOV - Phase B direct float access on the fastmem path ---
+    printf("%s JIT FMOV DIRECT: ", (selectedRow == OPT_JIT_FMOV) ? ">" : " ");
+    switch (g_jit_fmov_preset) {
+      case 0: printf("[< OFF (GPR BOUNCE)  >]"); break;
+      case 1: printf("[< ON (LFS/STFS)     >]"); break;
+    }
+    printf(" fmov straight to/from pinned FPR");
+    printf("\n");
+
+    // --- Row: JIT_CARRY - dynarec the carry/overflow arithmetic ---
+    printf("%s JIT CARRY OPS  : ", (selectedRow == OPT_JIT_CARRY) ? ">" : " ");
+    switch (g_jit_carry_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (10 OPS JITTED)>]"); break;
+    }
+    printf(" jit addc/subc/div1/cmp-str");
+    printf("\n");
+
+    // --- Row: JIT_MAC - dynarec mac.l / mac.w ---
+    printf("%s JIT MAC OPS    : ", (selectedRow == OPT_JIT_MAC) ? ">" : " ");
+    switch (g_jit_mac_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FASTMEM READS)>]"); break;
+    }
+    printf(" jit mac.l/mac.w + saturation");
+    printf("\n\n");
+
+    printOptionsFooter();
+    } // end page 6
 
 
 
