@@ -389,6 +389,9 @@
                                 instead of guessing from the emitter.
                                 Debug preset — default off.
 
+        jit_fsqrt=on        <- on/off, inlines fsqrt as frsqrte + Newton-
+                               Raphson instead of calling newlib sqrtf
+                               (a 25-iteration bit loop). Bit-exact.
         jit_ramtramp=on     <- on/off, gives a back-patched FASTMEM write
                                 trampoline an inlined system-RAM store ahead of
                                 its generic WriteMem call. A back-patch is
@@ -937,6 +940,7 @@ extern int g_jit_fschg_preset;
 extern int g_jit_cr0_preset;
 extern "C" int g_jit_ccalls_preset;
 extern int g_jit_ramtramp_preset;
+extern int g_jit_fsqrt_preset;
 extern int g_sched_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -1056,6 +1060,7 @@ struct GamePreset
     int jit_cr0;
     int jit_ccalls;
     int jit_ramtramp;
+    int jit_fsqrt;
     int sched;
     int debug_fb2d;
     int debug_message;
@@ -1503,6 +1508,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_cr0"))        p->jit_cr0        = parse_bool(val);
     else if (key_eq(key, "jit_ccalls"))     p->jit_ccalls     = parse_bool(val);
     else if (key_eq(key, "jit_ramtramp"))   p->jit_ramtramp   = parse_bool(val);
+    else if (key_eq(key, "jit_fsqrt"))      p->jit_fsqrt      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
@@ -1598,6 +1604,7 @@ static void preset_clear(GamePreset* cur)
     cur->jit_cr0 = -1;
     cur->jit_ccalls = -1;
     cur->jit_ramtramp = -1;
+    cur->jit_fsqrt    = -1;
     cur->sched = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
@@ -1721,6 +1728,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->jit_cr0        >= 0) { g_jit_cr0_preset        = p->jit_cr0;        printf("  jit_cr0        -> %d\n", p->jit_cr0);        }
     if (p->jit_ccalls     >= 0) { g_jit_ccalls_preset     = p->jit_ccalls;     printf("  jit_ccalls     -> %d\n", p->jit_ccalls);     }
     if (p->jit_ramtramp   >= 0) { g_jit_ramtramp_preset   = p->jit_ramtramp;   printf("  jit_ramtramp   -> %d\n", p->jit_ramtramp);   }
+    if (p->jit_fsqrt      >= 0) { g_jit_fsqrt_preset      = p->jit_fsqrt;      printf("  jit_fsqrt      -> %d\n", p->jit_fsqrt);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }

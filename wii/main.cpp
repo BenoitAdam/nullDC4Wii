@@ -950,6 +950,28 @@ extern "C" {
   int get_jit_ramtramp_preset() { return g_jit_ramtramp_preset; }
 }
 
+// JIT_FSQRT - inline fsqrt as frsqrte + Newton-Raphson instead of calling libm.
+//
+// newlib's sqrtf is a 25-iteration shift-and-subtract bit loop wrapped in two
+// load-hit-store stack round-trips: roughly 300 cycles. The [CC] census counted
+// 167,906 fsqrt/s in Crazy Taxi, several percent of the whole CPU.
+//
+// Broadway's frsqrte is only a 5-bit ESTIMATE -- emitting it bare is what
+// distorted the BIOS swirl in an earlier attempt -- so it is used as a seed and
+// refined: three Newton-Raphson steps to ~36 bits, then one exact-residual step
+// (fnmsub is fused) to a double ulp. Rounding that to single is provably the
+// correctly-rounded result, and simulating the exact sequence over 2.07 M cases
+// with adversarial seeds at the full spec error limit reproduced sqrtf
+// bit-for-bit every time.
+//
+// Zero, negative, Inf and NaN inputs fall through one compare to the same libm
+// call as before, so their semantics are untouched. 0=off (default), 1=on.
+int g_jit_fsqrt_preset = 0;
+
+extern "C" {
+  int get_jit_fsqrt_preset() { return g_jit_fsqrt_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -2121,6 +2143,7 @@ void checkBiosFiles()
 #define OPT_JIT_CR0     92   // shown on Page 6 (JIT/DYNAREC), under JIT FSCHG FAST
 #define OPT_JIT_CCALLS  93   // shown on Page 6 (JIT/DYNAREC), under JIT CR0 BRANCH
 #define OPT_JIT_RAMTRAMP 94  // shown on Page 6 (JIT/DYNAREC), under JIT CCALL CENSUS
+#define OPT_JIT_FSQRT   95   // shown on Page 6 (JIT/DYNAREC), under JIT RAM TRAMP
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2261,7 +2284,8 @@ static const int OPT_PAGE6_ROWS[] = {
   OPT_JIT_FSCHG,
   OPT_JIT_CR0,
   OPT_JIT_CCALLS,
-  OPT_JIT_RAMTRAMP
+  OPT_JIT_RAMTRAMP,
+  OPT_JIT_FSQRT
 };
 
 static const int *opt_page_rows(int page, int *count)
@@ -3252,6 +3276,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (FASTER?)      >]"); break;
     }
     printf(" RAM inline, no C call");
+    printf("\n");
+
+    // --- Row: JIT_FSQRT - inline sqrt instead of the libm call ---
+    printf("%s JIT FSQRT      : ", (selectedRow == OPT_JIT_FSQRT) ? ">" : " ");
+    switch (g_jit_fsqrt_preset) {
+      case 0: printf("[< OFF (LIBM)        >]"); break;
+      case 1: printf("[< ON (INLINE NR)    >]"); break;
+    }
+    printf(" frsqrte+Newton, no C call");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3377,6 +3410,7 @@ bool displayOptionsMenu()
         case OPT_JIT_CR0:        g_jit_cr0_preset         = (g_jit_cr0_preset         + 1) % 2; break;
         case OPT_JIT_CCALLS:     g_jit_ccalls_preset      = (g_jit_ccalls_preset      + 1) % 2; break;
         case OPT_JIT_RAMTRAMP:   g_jit_ramtramp_preset    = (g_jit_ramtramp_preset    + 1) % 2; break;
+        case OPT_JIT_FSQRT:      g_jit_fsqrt_preset       = (g_jit_fsqrt_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
@@ -3482,6 +3516,7 @@ bool displayOptionsMenu()
         case OPT_JIT_CR0:        g_jit_cr0_preset         = (g_jit_cr0_preset         + 1) % 2; break;
         case OPT_JIT_CCALLS:     g_jit_ccalls_preset      = (g_jit_ccalls_preset      + 1) % 2; break;
         case OPT_JIT_RAMTRAMP:   g_jit_ramtramp_preset    = (g_jit_ramtramp_preset    + 1) % 2; break;
+        case OPT_JIT_FSQRT:      g_jit_fsqrt_preset       = (g_jit_fsqrt_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;

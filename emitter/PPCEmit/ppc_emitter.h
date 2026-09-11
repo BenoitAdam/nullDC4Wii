@@ -352,6 +352,9 @@ enum ppc_freg
 #define ppc_fsel(D, A, C, B)  ppc_fselx((D), (A), (B), (C), 0)
 #define ppc_fmadd(D, A, C, B) ppc_fmaddx((D), (A), (B), (C), 0)
 #define ppc_fmsub(D, A, C, B) ppc_fmsubx((D), (A), (B), (C), 0)
+#define ppc_fnmsub(D, A, C, B) ppc_fnmsubx((D), (A), (B), (C), 0)  // D = B - A*C
+#define ppc_frsqrte(D, B)     ppc_frsqrtex((D), (B), 0)  // D ~ 1/sqrt(B), >=5 bits
+#define ppc_fres(D, B)        ppc_fresx((D), (B), 0)     // D ~ 1/B, >=8 bits
 #define ppc_fadds(D, A, B)    ppc_faddsx((D), (A), (B), 0)
 #define ppc_fsubs(D, A, B)    ppc_fsubsx((D), (A), (B), 0)
 #define ppc_fmuls(D, A, C)    ppc_fmulsx((D), (A), (C), 0)

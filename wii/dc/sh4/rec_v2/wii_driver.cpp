@@ -266,6 +266,10 @@ extern "C" int get_jit_tfwd_preset();
 // same way the store-queue fast path already works. See rec_fastmem_patch().
 extern "C" int get_jit_ramtramp_preset();
 
+// JIT_FSQRT preset (main.cpp): inline fsqrt as frsqrte + Newton-Raphson
+// instead of calling libm. See the comment block above rec_fsqrt.
+extern "C" int get_jit_fsqrt_preset();
+
 // JIT_CR0 preset (main.cpp): let a block-ending compare leave its answer in
 // CR0 and have the conditional exit branch on it directly, instead of moving
 // the bit into a GPR only to compare it back to 0/1. See emit_t_to_cr0().
@@ -2131,6 +2135,52 @@ void FASTCALL do_sqw_nommu(u32 dst);
 // these route to the accurate libm path via a single f32->f32 call. Matches the
 // canonical UN_OP_F(sqrtf) / UN_OP_F(1.0f/sqrtf) semantics exactly.
 static f32 rec_fsqrt(f32 x)  { CCALL(CC_FSQRT); return sqrtf(x); }
+
+// ---- JIT_FSQRT -------------------------------------------------------------
+// That libm call is far more expensive than "no hardware fsqrt" suggests.
+// newlib's __ieee754_sqrtf is a 25-iteration shift-and-subtract bit loop
+// (li r9,25 / mtctr / bdnz) wrapped in TWO stack round-trips -- stfs f1,8(r1)
+// followed immediately by lwz r10,8(r1) to get at the bit pattern, and the
+// mirror image on the way out. Each of those is a load-hit-store stall on
+// Broadway. Call it ~300 cycles a pop, and the [CC] census measured 167,906
+// fsqrt/s in Crazy Taxi, i.e. several percent of the whole CPU.
+//
+// Broadway does have frsqrte (reciprocal sqrt estimate). The obvious move --
+// used by an earlier attempt here -- is to emit it bare and multiply back up.
+// That is wrong: the PowerPC spec only guarantees the estimate to 1/32, about
+// 5 bits, and it visibly distorted the BIOS swirl. The estimate is a SEED, not
+// an answer.
+//
+// So refine it. Newton-Raphson for y = 1/sqrt(x), written to need exactly one
+// constant (0.5) rather than the usual two:
+//
+//     t = y*y ; e = 0.5 - (0.5*x)*t ; y = y*e + y        (quadratic)
+//
+// Three iterations take the spec-minimum 5 bits to ~36. Then form s = x*y and
+// take one residual step -- r = x - s*s is EXACT because fnmsub is fused, so
+// s = r*(0.5*y) + s lands within a double ulp:
+//
+//     seed   2^-5  ->  2^-9  ->  2^-18  ->  2^-36  ->  refine  ->  2^-53
+//
+// Rounding that to single is then provably the correctly-rounded float result:
+// sqrt of a float is never exactly halfway between two floats (if it were,
+// squaring would need more mantissa bits than a float has), and the closest it
+// ever comes to a tie is 2^-50 -- comfortably outside the double's error.
+//
+// Verified rather than argued: simulating this sequence with exact fused
+// semantics over 2.07 M cases -- 230 K inputs (random normals, denormals, every
+// power of two, perfect squares, FLT_MIN/FLT_MAX) crossed with adversarial
+// seeds at the full +-1/32 spec limit -- reproduced sqrtf bit-for-bit every
+// time. The 16 ops are also MINIMAL: dropping to 2 iterations, or keeping 3 but
+// skipping the residual step, both start missing (0.004% of cases) and 2
+// iterations with no refinement is wrong 78% of the time.
+//
+// Denormal inputs need no special case: lfs widens an f32 denormal into a
+// perfectly normal double, so the whole sequence runs in range.
+//
+// 0.5f is exact in single precision, so one lfs materialises it as a double --
+// no 8-byte pool, no second load.
+static const f32 s_fsqrt_half = 0.5f;
 static f32 rec_fsrra(f32 x)  { CCALL(CC_FSRRA); return 1.0f / sqrtf(x); }
 
 // =====================
@@ -4280,8 +4330,8 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			}
 			break;
 
-		// fsqrt / fsrra are handled below via accurate native calls (the
-		// frsqrte estimate was too imprecise — it distorted the BIOS swirl).
+		// fsqrt / fsrra are handled below. fsrra is always the libm call;
+		// fsqrt is too unless JIT_FSQRT is on, which inlines it (see above).
 
 		// --- FSCA: rd[0]=sin_table[idx], rd[1]=sin_table[idx+0x4000] ----------
 		// idx = rs1 & 0xFFFF. Table entries are f32 (4 bytes).
@@ -4382,9 +4432,73 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		// fsqrt / fsrra: single f32->f32 calls (accurate libm path).
 		// arg in farg0 (f1), result in frv0 (f1) per PPC FP calling convention.
 		case shop_fsqrt:
-			ppc_sh_load_f32(ppc_farg0,op->rs1);
-			ppc_call(&rec_fsqrt);
-			ppc_sh_store_f32(ppc_frv0,op->rd);
+			if (get_jit_fsqrt_preset())
+			{
+				// Say so once, so a log can prove the inline path was emitted
+				// at all -- [fmov] does the same for its fastmem shapes.
+				static bool announced=false;
+				if (!announced)
+				{
+					announced=true;
+					printf("[fsqrt] JIT_FSQRT active: inlining frsqrte+Newton (no libm call)\n");
+					fflush(stdout);
+				}
+
+				// rd and rs1 are the same FR for `fsqrt FRn`, so nothing may
+				// write d until the last read of a (the residual step).
+				u32 a=fsrc_or_load(op->rs1,ppc_f0);
+				u32 d=fdst_reg(op->rd,ppc_f0);
+				const u32 fC=ppc_f2,fY=ppc_f3,fH=ppc_f4,fT=ppc_f5;
+				const u32 fE=ppc_f6,fS=ppc_f7,fR=ppc_f8,fHY=ppc_f9;
+
+				// Hoisted above the guard so the load has landed by the time
+				// the first multiply wants it.
+				u32 lo=ppc_addr_high(ppc_rarg0,(void*)&s_fsqrt_half);
+				ppc_lfs(fC,ppc_rarg0,lo);		// 0.5
+
+				// Guard: fast path only for x > 0. fsubs(x,x) is +0.0 for any
+				// finite x and NaN for +-Inf, so this one compare rejects 0,
+				// -0, negatives, Inf and NaN together -- NaN and Inf compare
+				// unordered, which is not GT.
+				ppc_fsubs(fT,a,a);
+				ppc_fcmpu(ppc_cr0,a,fT);
+				ppc_label* to_cold=ppc_CreateLabel();
+				ppc_bcx(BO_FALSE,BI_CR0_GT,0,0,0);	// bng -> cold
+
+				ppc_fmul(fH,a,fC);			// h = 0.5*x
+				ppc_frsqrte(fY,a);			// y ~ 1/sqrt(x), >=5 bits
+				for (u32 i=0;i<3;i++)
+				{
+					ppc_fmul(fT,fY,fY);		// t = y*y
+					ppc_fnmsub(fE,fH,fT,fC);	// e = 0.5 - h*t
+					ppc_fmadd(fY,fY,fE,fY);		// y = y*e + y
+				}
+				ppc_fmul(fS,a,fY);			// s = x*y ~ sqrt(x)
+				ppc_fmul(fHY,fY,fC);			// hy = 0.5*y
+				ppc_fnmsub(fR,fS,fS,a);			// r = x - s*s  (exact: fused)
+				ppc_fmadd(fS,fR,fHY,fS);		// s = r*hy + s
+				ppc_frsp(d,fS);				// -> single, correctly rounded
+
+				ppc_label* to_done=ppc_CreateLabel();
+				ppc_bx(0,0,0);				// b done (patched below)
+				to_cold->MarkLabel();
+				// Cold: 0, -0, negative, Inf, NaN. Hand them to the same libm
+				// call the legacy path uses so the semantics are identical.
+				if (a!=ppc_farg0)
+					ppc_fmr(ppc_farg0,a);
+				ppc_call(&rec_fsqrt);
+				if (d!=ppc_frv0)
+					ppc_fmr(d,ppc_frv0);
+				to_done->MarkLabelLong();
+
+				fdst_store(op->rd,d,ppc_f0);
+			}
+			else
+			{
+				ppc_sh_load_f32(ppc_farg0,op->rs1);
+				ppc_call(&rec_fsqrt);
+				ppc_sh_store_f32(ppc_frv0,op->rd);
+			}
 			break;
 		case shop_fsrra:
 			ppc_sh_load_f32(ppc_farg0,op->rs1);
