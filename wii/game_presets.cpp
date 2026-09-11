@@ -338,6 +338,41 @@
                                 real FPU, so MAC is far rarer on it than on the
                                 SH2 this came from. Run ifb_probe first. Perf
                                 preset, changes SH4 codegen — default off.
+
+        jit_fschg=on        <- on/off, skips the UpdateFPSCR() C call on `fschg`.
+                                fschg toggles FPSCR.SZ and nothing else, so the
+                                FP bank cannot swap and the host rounding mode
+                                cannot change — all UpdateFPSCR() has left to do
+                                is keep old_fpscr in step, which is one stw.
+                                Without this, every fschg emits (with fpu_pin on)
+                                16 stfs + a C call + 16 lfs. Dreamcast T&L
+                                brackets its vertex loop with fschg for
+                                pair-width fmov, so it fires ~2.3 times per
+                                transformed vertex: measured at ~1.3 M/s in
+                                ChuChu mouse mania, of which 0.05% actually
+                                changed a bank. frchg and ldc/ldc.l to FPSCR are
+                                untouched and keep the full call. Originally
+                                +12-13% on branch chuchu_frameskip_speed;
+                                re-measured on main 2026-09-11 at ~+10% in
+                                ChuChu mouse mania (matched load), null in
+                                Castlevania — that game does not run fschg hot.
+                                Perf preset, changes SH4 codegen — default ON.
+
+        jit_cr0=on          <- on/off, a conditional block exit branches on the
+                                PowerPC CR0 bit the compare already set, instead
+                                of mfcr/rlwinm/stw/cmpi to rebuild it. sr_T is
+                                still written, as the constant each path implies
+                                (on the taken path T is BlockType&1 by
+                                definition), so nothing assumes T is dead. Only
+                                fires when the flag producer is the block's LAST
+                                op — that is what guarantees nothing clobbers
+                                CR0 in between. cmp/eq+bt, tst+bf and cmp/ge+bf
+                                shapes qualify; a copy loop with a store between
+                                the dt and the bf.s does not. Wii-measured
+                                +2.8% on the DC BIOS boot phase, null in
+                                Castlevania gameplay, not yet measured in
+                                ChuChu. Perf preset, changes SH4 codegen —
+                                default ON.
         sched=on            <- on/off, unified cycle-deadline event scheduler
                                 (dc/sh4/sh4_sched.cpp). Fires the completion/IRQ
                                 events whose RELATIVE ordering matters (GD-ROM
@@ -867,6 +902,8 @@ extern int g_jit_tfwd_preset;
 extern int g_jit_fmov_preset;
 extern int g_jit_carry_preset;
 extern int g_jit_mac_preset;
+extern int g_jit_fschg_preset;
+extern int g_jit_cr0_preset;
 extern int g_sched_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -982,6 +1019,8 @@ struct GamePreset
     int jit_fmov;
     int jit_carry;
     int jit_mac;
+    int jit_fschg;
+    int jit_cr0;
     int sched;
     int debug_fb2d;
     int debug_message;
@@ -1425,6 +1464,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_fmov"))       p->jit_fmov       = parse_bool(val);
     else if (key_eq(key, "jit_carry"))      p->jit_carry      = parse_bool(val);
     else if (key_eq(key, "jit_mac"))        p->jit_mac        = parse_bool(val);
+    else if (key_eq(key, "jit_fschg"))      p->jit_fschg      = parse_bool(val);
+    else if (key_eq(key, "jit_cr0"))        p->jit_cr0        = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
@@ -1516,6 +1557,8 @@ static void preset_clear(GamePreset* cur)
     cur->jit_fmov = -1;
     cur->jit_carry = -1;
     cur->jit_mac = -1;
+    cur->jit_fschg = -1;
+    cur->jit_cr0 = -1;
     cur->sched = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
@@ -1635,6 +1678,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->jit_fmov       >= 0) { g_jit_fmov_preset       = p->jit_fmov;       printf("  jit_fmov       -> %d\n", p->jit_fmov);       }
     if (p->jit_carry      >= 0) { g_jit_carry_preset      = p->jit_carry;      printf("  jit_carry      -> %d\n", p->jit_carry);      }
     if (p->jit_mac        >= 0) { g_jit_mac_preset        = p->jit_mac;        printf("  jit_mac        -> %d\n", p->jit_mac);        }
+    if (p->jit_fschg      >= 0) { g_jit_fschg_preset      = p->jit_fschg;      printf("  jit_fschg      -> %d\n", p->jit_fschg);      }
+    if (p->jit_cr0        >= 0) { g_jit_cr0_preset        = p->jit_cr0;        printf("  jit_cr0        -> %d\n", p->jit_cr0);        }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }

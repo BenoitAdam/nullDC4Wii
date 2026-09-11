@@ -425,7 +425,18 @@ sh4dec(i1111_0011_1111_1101)
 {
 	//fpscr.SZ is bit 20
 	block.Emit(shop_xor,reg_fpscr,reg_fpscr,mk_imm(1<<20));
-	block.Emit(shop_sync_fpscr);
+	// SZ-only: flag it so a backend can skip UpdateFPSCR() entirely (see
+	// SYNC_FPSCR_SZ_ONLY in shil.h, consumed by the Wii backend's JIT_FSCHG
+	// preset). Measured at ~1.3 M/s -- 2.3 per transformed vertex -- in ChuChu
+	// mouse mania, of which ~0.05% actually changed FP banks. Dreamcast T&L
+	// brackets its vertex loop with fschg to get pair-width fmov, so every
+	// other one was paying a C call wrapped in a full pinned-FPU spill/reload
+	// for no state change at all.
+	//
+	// The 5th positional argument of Emit() is `flags` (see decoder.h); the
+	// three shil_param()s before it are rd/rs1/rs2, which sync_fpscr does not
+	// use. frchg and the two ldc..FPSCR forms deliberately do NOT set this.
+	block.Emit(shop_sync_fpscr,shil_param(),shil_param(),shil_param(),SYNC_FPSCR_SZ_ONLY);
 	state.cpu.FSZ64=!state.cpu.FSZ64;
 	
 	if (!state.cpu.is_delayslot)

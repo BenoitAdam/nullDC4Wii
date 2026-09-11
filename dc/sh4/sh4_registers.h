@@ -67,6 +67,12 @@ struct Sh4Context
 // from the faulting instruction's register field alone.
 enum { SH4CTX_OFS_FR = offsetof(Sh4Context, fr) };
 
+// SH4CTX_OFS_OLD_FPSCR is needed by the JIT_FSCHG fast path in the Wii
+// backend: `fschg` toggles FPSCR.SZ only, so the whole of UpdateFPSCR()
+// reduces to keeping old_fpscr in step, which the backend does with a
+// single stw instead of a C call bracketed by a full pinned-FPU spill.
+enum { SH4CTX_OFS_OLD_FPSCR = offsetof(Sh4Context, old_fpscr) };
+
 extern ALIGN(64) Sh4Context Sh4cntx;
 #define r Sh4cntx.r
 #define r_bank Sh4cntx.r_bank

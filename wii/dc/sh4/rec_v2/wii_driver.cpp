@@ -227,10 +227,30 @@ struct
 	// The store stays: sr_T is architectural state a later block may read.
 	bool t_in_rarg0;
 
+	// JIT_CR0. Set before each shil op: true only when this op is the block's
+	// LAST, the block exits on sr_T (BET_Cond_0/1), and this op is what writes
+	// sr_T. A T producer seeing it leaves its condition in CR0 and emits
+	// nothing, and ngen_End branches on that CR0 bit directly.
+	//
+	// "Last op" is the whole safety argument: the only code that can run
+	// between the compare and the branch is ngen_End's own, so no emitter can
+	// clobber CR0 behind our back and there is no liveness to track. A version
+	// that let the condition survive intervening ops would need every CR0
+	// writer in this file to invalidate it, and missing one is a silent
+	// wrong-branch — deliberately not attempted here.
+	bool t_exit_cr0;     // this op may hand its condition to ngen_End
+	bool cr0_live;       // it did; cr0_bit/cr0_invert describe it
+	u32  cr0_bit;        // BI_CR0_xx index holding the condition
+	bool cr0_invert;     // sr_T is the INVERSE of that bit (e.g. >= is !<)
+
 	void Reset()
 	{
 		has_jcond=false;
 		t_in_rarg0=false;
+		t_exit_cr0=false;
+		cr0_live=false;
+		cr0_bit=0;
+		cr0_invert=false;
 	}
 } compile_state;
 u32 last_block;
@@ -239,6 +259,16 @@ u32 last_block;
 // consumes it instead of storing then immediately reloading it. See the
 // t_in_rarg0 comment in compile_state.
 extern "C" int get_jit_tfwd_preset();
+
+// JIT_CR0 preset (main.cpp): let a block-ending compare leave its answer in
+// CR0 and have the conditional exit branch on it directly, instead of moving
+// the bit into a GPR only to compare it back to 0/1. See emit_t_to_cr0().
+extern "C" int get_jit_cr0_preset();
+
+// JIT_FSCHG preset (main.cpp): `fschg` toggles FPSCR.SZ only, so UpdateFPSCR()
+// has nothing to do but keep old_fpscr in step. Lets shop_sync_fpscr skip the
+// C call and the pinned-FPU spill/reload that brackets it. See shop_sync_fpscr.
+extern "C" int get_jit_fschg_preset();
 
 // JIT_FMOV preset (main.cpp): extend FPU_PIN "Phase B" (direct lfs/stfs to a
 // pinned FR, no GPR bounce) to the FASTMEM shapes in shop_readm/shop_writem.
@@ -930,6 +960,32 @@ static void emit_cr0_bit_to_rarg0(u32 cr0_bit_index)
 	ppc_rlwinmx(ppc_rarg0,ppc_rarg0,cr0_bit_index+1,31,31,0);
 }
 
+// JIT_CR0: hand a block-ending compare's condition straight to ngen_End.
+//
+// The SH4's commonest shape is a flag producer immediately followed by a
+// conditional branch on it. The compare has already set CR0 correctly, and the
+// legacy path then spends mfcr + rlwinm (+ xori) + stw + cmpi rebuilding that
+// same bit so ngen_End can compare it against 0/1 — five or six instructions,
+// one of them the CR-reading mfcr, to recover something the CPU already knew.
+//
+// When this returns true the caller has emitted NOTHING beyond its compare and
+// must NOT call binop_end(): ngen_End does both halves of the job instead. It
+// branches on the CR0 bit directly, and writes sr_T as a per-path CONSTANT —
+// which is exact, not an assumption: on the path that takes BranchBlock T is
+// (BlockType&1) by definition, and on the other path it is the complement. So
+// the architectural T a later block might read is still written, and no
+// cross-block liveness analysis is needed to justify dropping the mfcr.
+static bool emit_t_to_cr0(u32 cr0_bit_index,bool invert)
+{
+	if (!compile_state.t_exit_cr0)
+		return false;
+
+	compile_state.cr0_live   = true;
+	compile_state.cr0_bit    = cr0_bit_index;
+	compile_state.cr0_invert = invert;
+	return true;
+}
+
 // ---------------------------------------------------------------------------
 // JIT_CARRY: SH4 T bit <-> PPC XER.
 //
@@ -1040,6 +1096,8 @@ static void emit_cmp_into_cr0(shil_opcode* op,bool is_signed)
 static void emit_setcc_signed(shil_opcode* op,u32 cr0_bit_index,bool invert)
 {
 	emit_cmp_into_cr0(op,true);
+	if (emit_t_to_cr0(cr0_bit_index,invert))
+		return;		// JIT_CR0: ngen_End branches on CR0 and stores T itself
 	emit_cr0_bit_to_rarg0(cr0_bit_index);
 	if (invert)
 		ppc_xori(ppc_rarg0,ppc_rarg0,1);
@@ -1050,6 +1108,8 @@ static void emit_setcc_signed(shil_opcode* op,u32 cr0_bit_index,bool invert)
 static void emit_setcc_unsigned(shil_opcode* op,u32 cr0_bit_index,bool invert)
 {
 	emit_cmp_into_cr0(op,false);
+	if (emit_t_to_cr0(cr0_bit_index,invert))
+		return;		// JIT_CR0: ngen_End branches on CR0 and stores T itself
 	emit_cr0_bit_to_rarg0(cr0_bit_index);
 	if (invert)
 		ppc_xori(ppc_rarg0,ppc_rarg0,1);
@@ -1095,6 +1155,35 @@ void ngen_End(DecodedBlock* block)
 		{
 			//printf("COND %d\n",block->BlockType&1);
 			//die("not supported");
+			// JIT_CR0: the block's last op left its condition in CR0 and
+			// emitted nothing. Branch on that bit, and write sr_T as the
+			// constant each path implies.
+			//
+			//   T == (BlockType&1)  =>  BranchBlock
+			//   T = cr0_invert ? !bit : bit
+			// so BranchBlock is taken when
+			//   bit == (cr0_invert ? !want : want)
+			// and on that path T is `want`, on the other it is `!want`.
+			if (compile_state.cr0_live && !compile_state.has_jcond)
+			{
+				const u32  want      = block->BlockType & 1;
+				const bool bit_taken = compile_state.cr0_invert ? (want==0) : (want!=0);
+
+				ppc_label* jtrue=ppc_CreateLabel();
+				ppc_bcx(bit_taken?BO_TRUE:BO_FALSE,compile_state.cr0_bit,0,0,0);
+
+				// fall-through: BranchBlock not taken, so T is the complement.
+				ppc_li(ppc_rarg0,want^1);
+				ppc_sh_store(ppc_rarg0,reg_sr_T);
+				DoStatic(block->NextBlock);
+
+				jtrue->MarkLabel();
+				ppc_li(ppc_rarg0,want);
+				ppc_sh_store(ppc_rarg0,reg_sr_T);
+				DoStatic(block->BranchBlock);
+				break;
+			}
+
 			u32 reg;
 			if (compile_state.has_jcond)
 			{
@@ -2730,6 +2819,18 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		const bool t_prev = compile_state.t_in_rarg0;
 		compile_state.t_in_rarg0 = false;
 
+		// JIT_CR0: may THIS op hand its condition to the block exit in CR0?
+		// Only when it is the last op (nothing can run in between and clobber
+		// CR0), the block exits on sr_T, and this op is the one writing sr_T.
+		// has_jcond means the exit tests a computed value in ppc_djump instead,
+		// so the CR0 path must stay out of its way.
+		compile_state.t_exit_cr0 =
+			get_jit_cr0_preset() &&
+			!compile_state.has_jcond &&
+			(i + 1 == block->oplist.size()) &&
+			(block->BlockType == BET_Cond_0 || block->BlockType == BET_Cond_1) &&
+			op->rd.is_reg() && op->rd._reg == reg_sr_T;
+
 		switch(op->op)
 		{
 
@@ -3960,6 +4061,9 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 					else b=src_or_load(op->rs2,ppc_rarg1);
 					ppc_andx(ppc_rarg0,a1,b,1);			// and. sets CR0
 				}
+				// JIT_CR0: the and./andi. above already set CR0.EQ.
+				if (emit_t_to_cr0(BI_CR0_EQ,false))
+					break;
 				emit_cr0_bit_to_rarg0(BI_CR0_EQ);
 				binop_end(op);
 			}
@@ -4155,9 +4259,38 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		// after (fr[] now holds the new front bank). reg_flush/reload_all_fpu
 		// are no-ops when the preset is off.
 		case shop_sync_fpscr:
-			reg_flush_all_fpu();
-			ppc_call(&UpdateFPSCR);
-			reg_reload_all_fpu();
+			// JIT_FSCHG: SYNC_FPSCR_SZ_ONLY is set only by the `fschg` decoder,
+			// which toggles FPSCR.SZ (bit 20) and nothing else. FR (bit 21)
+			// cannot have changed, so ChangeFP() is impossible; RM/DN are
+			// untouched, so SetFloatStatusReg() has nothing to do (and on Wii
+			// its body is x86-only anyway). All that is left of UpdateFPSCR()
+			// is keeping old_fpscr in step -- two instructions.
+			//
+			// This matters far more than it looks. Dreamcast T&L brackets its
+			// vertex loop with fschg to get pair-width fmov, so this op fires
+			// ~2.3 times per transformed vertex; with FPU_PIN on, the legacy
+			// path below is 16 stfs + a C call + 16 lfs, every time, to change
+			// one bit that the FPU state does not depend on.
+			//
+			// old_fpscr is plain context memory (never pinned), so a raw stw is
+			// safe; fpscr itself may live in a pinned GPR, hence ppc_sh_load
+			// rather than a bare lwz. rarg0 is scratch here (shop_pref uses it
+			// the same way) and no GPR flush is needed -- this never touches
+			// r[]. The offset comes from SH4CTX_OFS_OLD_FPSCR rather than
+			// offsetof() because sh4_registers.h later does
+			// "#define old_fpscr Sh4cntx.old_fpscr", which would rewrite the
+			// member name inside the offsetof and fail to compile.
+			if ((op->flags & SYNC_FPSCR_SZ_ONLY) && get_jit_fschg_preset())
+			{
+				ppc_sh_load(ppc_rarg0, reg_fpscr);
+				ppc_stw(ppc_rarg0, ppc_contex, (u32)SH4CTX_OFS_OLD_FPSCR);
+			}
+			else
+			{
+				reg_flush_all_fpu();
+				ppc_call(&UpdateFPSCR);
+				reg_reload_all_fpu();
+			}
 			break;
 
 		// pref: store-queue prefetch. Only addresses in the SQ region trigger a

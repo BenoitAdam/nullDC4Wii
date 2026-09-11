@@ -801,6 +801,98 @@ extern "C" {
   int get_jit_mac_preset() { return g_jit_mac_preset; }
 }
 
+// JIT_FSCHG - skip UpdateFPSCR() on `fschg`.
+//
+// fschg toggles FPSCR.SZ (bit 20) and nothing else. Walk what UpdateFPSCR()
+// (dc/sh4/sh4_registers.cpp) then has left to do:
+//   * ChangeFP() runs only when fpscr.FR != old_fpscr.FR -- FR is bit 21, and
+//     fschg cannot touch it, so an FP bank swap is impossible.
+//   * SetFloatStatusReg() reacts only to RM/DN, which fschg does not touch;
+//     on Wii its whole body is #if HOST_ARCH==ARCH_X86 anyway, so it is empty.
+//   * old_fpscr = fpscr -- the only thing that actually has to happen.
+// So the fast path is one load and one store, in place of a C call bracketed
+// by reg_flush_all_fpu()/reg_reload_all_fpu().
+//
+// That bracket is why this is worth a preset rather than a footnote. With
+// FPU_PIN on it is 16 stfs + call + 16 lfs, and Dreamcast T&L brackets its
+// vertex loop with fschg to get pair-width fmov -- so it fires roughly twice
+// per transformed vertex. Measured on this hardware in ChuChu mouse mania:
+// ~1.3 MILLION sync_fpscr/s of which ~650/s (0.05%) actually changed a bank,
+// i.e. ~43 M floating-point memory operations per second spent doing nothing.
+//
+// Only `fschg` is affected. frchg (toggles FR) and ldc/ldc.l to FPSCR (writes
+// an arbitrary value) do not set SYNC_FPSCR_SZ_ONLY and keep the full call.
+//
+// Originally measured at +12-13% on branch chuchu_frameskip_speed (commit
+// 6f29688) against a 550-580K vertices/s baseline. Main has since gained
+// jit_fmov/ifb_flush/jit_tfwd/dyn_ic and sits near 610K/s, so the percentage
+// may land lower now -- the mechanism it removes is unchanged either way.
+//
+// Wii-CONFIRMED 2026-09-11, ~+10% in ChuChu mouse mania at matched load
+// (89.70->97.72% at 10.8K vertices/emulated frame, 68.63->76.80% at 16.4K,
+// 58.49->64.12% at 20.6K; peak throughput 603-614K -> 628-660K vertices/s).
+// Null in Castlevania, whose loop simply does not execute fschg hot — that is
+// the wrong game to measure this in, not a failure of the fix.
+//
+// Read at CODEGEN time: set it before launching, not mid-game.
+// 0=off (legacy full UpdateFPSCR call), 1=on (default).
+int g_jit_fschg_preset = 1;
+
+extern "C" {
+  int get_jit_fschg_preset() { return g_jit_fschg_preset; }
+}
+
+// JIT_CR0 - branch straight on CR0 at a conditional block exit.
+//
+// The SH4's commonest shape by a wide margin is "flag producer, then a
+// conditional branch on that flag" -- cmp/eq + bt, tst + bf, dt + bf.s. The
+// compare has already set PowerPC CR0 correctly. The legacy path then spends
+//
+//     mfcr   rarg0              ; read CR back out
+//     rlwinm rarg0,rarg0,k+1,31,31
+//     xori   rarg0,rarg0,1      ; only for the inverted forms (cmp/ge, cmp/hs)
+//     stw    rarg0,sr_T(ctx)
+//     cmpi   cr0,rarg0,0/1      ; ...and compare it back into CR0
+//     bc
+//
+// rebuilding a bit the processor already had. With this on the exit does:
+//
+//     bc     <the CR0 bit itself>
+//     li     rarg0,<0 or 1> ; stw rarg0,sr_T(ctx)   (on each path)
+//
+// The sr_T write is still there -- a later block may legitimately read T -- but
+// it becomes a CONSTANT, because on the path that takes BranchBlock the T value
+// is (BlockType&1) by definition and on the other path it is the complement.
+// That is what makes this safe without any cross-block liveness analysis: we
+// are not assuming T is dead, we are writing the value it provably has.
+//
+// Applies ONLY when the flag producer is the block's LAST shil op. That is the
+// entire safety argument: nothing can then run between the compare and the
+// branch, so no other emitter can clobber CR0. Blocks where a store or a
+// delay-slot add sits between the producer and the exit (the classic
+// "dt Rn / mov.l Rm,@Rn / bf.s" copy loop) keep the legacy path -- covering
+// those needs every CR0 writer in the backend to invalidate a liveness flag,
+// and missing one is a silent wrong-branch, so it is deliberately left out.
+//
+// Measured on ChuChu 2026-09-11: the top hot blocks were 13-18 executed PPC
+// instructions of which 5-6 were this sequence. Expect single digits overall,
+// not the 25%+ the per-block figure suggests -- only blocks ending in a
+// conditional branch are affected, and only when the producer is last.
+//
+// Wii-measured 2026-09-11: +2.8% on the DC BIOS boot phase (281.5 -> 294.9%
+// combined with jit_fschg, implied baseline 273.8 matching an independent run
+// to 0.02%), null in Castlevania gameplay. NOT yet exercised in ChuChu, which
+// is where the remaining question is — the Castlevania null only shows this
+// shape is absent there, not that the change is worthless.
+//
+// Read at CODEGEN time: set it before launching, not mid-game.
+// 0=off (legacy materialise-then-compare), 1=on (default).
+int g_jit_cr0_preset = 1;
+
+extern "C" {
+  int get_jit_cr0_preset() { return g_jit_cr0_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -1968,6 +2060,8 @@ void checkBiosFiles()
 #define OPT_JIT_FMOV    87   // shown on Page 6 (JIT/DYNAREC), under JIT T-FORWARD
 #define OPT_JIT_CARRY   88   // shown on Page 6 (JIT/DYNAREC), under JIT FMOV DIRECT
 #define OPT_JIT_MAC     89   // shown on Page 6 (JIT/DYNAREC), under JIT CARRY OPS
+#define OPT_JIT_FSCHG   91   // shown on Page 6 (JIT/DYNAREC), under JIT MAC OPS
+#define OPT_JIT_CR0     92   // shown on Page 6 (JIT/DYNAREC), under JIT FSCHG FAST
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2104,7 +2198,9 @@ static const int OPT_PAGE6_ROWS[] = {
   OPT_JIT_TFWD,
   OPT_JIT_FMOV,
   OPT_JIT_CARRY,
-  OPT_JIT_MAC
+  OPT_JIT_MAC,
+  OPT_JIT_FSCHG,
+  OPT_JIT_CR0
 };
 
 static const int *opt_page_rows(int page, int *count)
@@ -3059,6 +3155,24 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (FASTMEM READS)>]"); break;
     }
     printf(" jit mac.l/mac.w + saturation");
+    printf("\n");
+
+    // --- Row: JIT_FSCHG - skip UpdateFPSCR() on the SZ-only fschg ---
+    printf("%s JIT FSCHG FAST : ", (selectedRow == OPT_JIT_FSCHG) ? ">" : " ");
+    switch (g_jit_fschg_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (SZ-ONLY PATH) >]"); break;
+    }
+    printf(" fschg: 1 stw, no FPU spill+call");
+    printf("\n");
+
+    // --- Row: JIT_CR0 - conditional exit branches on CR0 directly ---
+    printf("%s JIT CR0 BRANCH : ", (selectedRow == OPT_JIT_CR0) ? ">" : " ");
+    switch (g_jit_cr0_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (NO MFCR)      >]"); break;
+    }
+    printf(" cmp+bt: branch on CR0, skip mfcr");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3180,6 +3294,8 @@ bool displayOptionsMenu()
         case OPT_JIT_FMOV:       g_jit_fmov_preset        = (g_jit_fmov_preset        + 1) % 2; break;
         case OPT_JIT_CARRY:      g_jit_carry_preset       = (g_jit_carry_preset       + 1) % 2; break;
         case OPT_JIT_MAC:        g_jit_mac_preset         = (g_jit_mac_preset         + 1) % 2; break;
+        case OPT_JIT_FSCHG:      g_jit_fschg_preset       = (g_jit_fschg_preset       + 1) % 2; break;
+        case OPT_JIT_CR0:        g_jit_cr0_preset         = (g_jit_cr0_preset         + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
@@ -3281,6 +3397,8 @@ bool displayOptionsMenu()
         case OPT_JIT_FMOV:       g_jit_fmov_preset        = (g_jit_fmov_preset        + 1) % 2; break;
         case OPT_JIT_CARRY:      g_jit_carry_preset       = (g_jit_carry_preset       + 1) % 2; break;
         case OPT_JIT_MAC:        g_jit_mac_preset         = (g_jit_mac_preset         + 1) % 2; break;
+        case OPT_JIT_FSCHG:      g_jit_fschg_preset       = (g_jit_fschg_preset       + 1) % 2; break;
+        case OPT_JIT_CR0:        g_jit_cr0_preset         = (g_jit_cr0_preset         + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;

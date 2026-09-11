@@ -5,6 +5,14 @@ struct shil_opcode;
 typedef void shil_chfp(shil_opcode* op);
 extern shil_chfp* shil_chf[];
 
+// shil_opcode::flags bit for shop_sync_fpscr. Set by the `fschg` decoder,
+// which toggles FPSCR.SZ (bit 20) and NOTHING else: FPSCR.FR cannot change,
+// so no FP bank swap is possible, and RM/DN are untouched so the host float
+// status register needs no update either. That lets a backend skip the whole
+// UpdateFPSCR() call. `frchg` (toggles FR) and `ldc Rn,FPSCR` / `ldc.l
+// @Rn+,FPSCR` (arbitrary value) must NOT set it -- they keep the full path.
+#define SYNC_FPSCR_SZ_ONLY 1
+
 enum shil_param_type
 {
     // 2 bits used for base type
