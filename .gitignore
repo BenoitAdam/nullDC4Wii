@@ -35,3 +35,7 @@ apps/nulldc4wii/boot.dol
 apps/nulldc4wii/boot.elf
 apps/apps/nulldc4wii/boot.dol
 apps/apps/nulldc4wii/boot.elf
+wii/boot_logfix.elf
+wii/boot_logfix.zip
+wii/boot_q3fix.dol
+wii/boot_q3fix.zip
