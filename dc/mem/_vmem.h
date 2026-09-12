@@ -95,6 +95,10 @@ void fastcall _vmem_WriteMem16 (u32 Address, u16 data);
 void fastcall _vmem_WriteMem32 (u32 Address, u32 data);
 void fastcall _vmem_WriteMem64 (u32 Address, u64 data);
 
+// Resolve a whole block transfer to a host pointer in one go, or 0 if the
+// range cannot be copied in bulk. See the comment on the definition.
+u8*  fastcall _vmem_GetBlockPtr(u32 Address, u32 size);
+
 // ---- Dynarec helpers ------------------------------------------------------
 // Returns the base vmap table and the appropriate function-pointer table for
 // the given access size and direction.

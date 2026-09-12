@@ -920,35 +920,13 @@ extern "C" {
 // 0=off (default), 1=on.
 extern "C" int g_jit_ccalls_preset;
 
-// JIT_RAMTRAMP - inline the system-RAM store in back-patched write trampolines.
-//
-// FASTMEM back-patches are PERMANENT and per-SITE. One SH4 store instruction
-// that writes RAM a million times and touches the store queue once is
-// downgraded to a C call forever by that one fault. The [CC] census caught the
-// result on Crazy Taxi:
-//
-//     writemem  1,128,138/s   of which a3:RAM  1,077,322/s  (95.5%)
-//     readmem       2,609/s   of which a3:RAM        489/s
-//
-// 1.08M system-RAM writes/s through the generic dispatcher versus 489 reads --
-// the asymmetry is entirely because writes are the polymorphic ones. ~25 saved
-// cycles each is roughly 3.7% of Broadway.
-//
-// Safe by construction: area 3 is page-mapped in all 4 mirrors with PP=10
-// (read/write), so the inlined store cannot fault -- it is the exact access
-// the un-patched shape would have made. Area 3 is not texture memory, so
-// nothing is owed to the texture cache either.
-//
-// Integer scalar + pair write shapes only; the census shows 13 of 782 patched
-// sites are float, so those are left on the generic path.
-//
-// Takes effect as sites are patched, so it wants a fresh launch rather than a
-// mid-game toggle. 0=off (default), 1=on.
-int g_jit_ramtramp_preset = 1;
-
-extern "C" {
-  int get_jit_ramtramp_preset() { return g_jit_ramtramp_preset; }
-}
+// BLOCKCOPY - store-queue and DMA block transfers used to run the memory
+// dispatcher once per 32-bit word. do_sqw() alone did EIGHT dispatcher calls
+// per non-TA store-queue flush. The [CC] caller split measured 1,104,636
+// system-RAM writes/s in Crazy Taxi, 95.6% of them from plain C code rather
+// than JIT code -- so this was never a dynarec problem. Lives in
+// dc/mem/sh4_mem.cpp. 0=off (default), 1=on.
+extern "C" int g_blockcopy_preset;
 
 // JIT_FSQRT - inline fsqrt as frsqrte + Newton-Raphson instead of calling libm.
 //
@@ -965,8 +943,9 @@ extern "C" {
 // bit-for-bit every time.
 //
 // Zero, negative, Inf and NaN inputs fall through one compare to the same libm
-// call as before, so their semantics are untouched. 0=off (default), 1=on.
-int g_jit_fsqrt_preset = 0;
+// call as before, so their semantics are untouched. 0=off, 1=on (default).
+// Wii-confirmed +3.5-4.3% on Crazy Taxi (95.3% of fsqrt calls eliminated).
+int g_jit_fsqrt_preset = 1;
 
 extern "C" {
   int get_jit_fsqrt_preset() { return g_jit_fsqrt_preset; }
@@ -2142,7 +2121,7 @@ void checkBiosFiles()
 #define OPT_JIT_FSCHG   91   // shown on Page 6 (JIT/DYNAREC), under JIT MAC OPS
 #define OPT_JIT_CR0     92   // shown on Page 6 (JIT/DYNAREC), under JIT FSCHG FAST
 #define OPT_JIT_CCALLS  93   // shown on Page 6 (JIT/DYNAREC), under JIT CR0 BRANCH
-#define OPT_JIT_RAMTRAMP 94  // shown on Page 6 (JIT/DYNAREC), under JIT CCALL CENSUS
+#define OPT_BLOCKCOPY   94   // shown on Page 6 (JIT/DYNAREC), under JIT CCALL CENSUS
 #define OPT_JIT_FSQRT   95   // shown on Page 6 (JIT/DYNAREC), under JIT RAM TRAMP
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
@@ -2284,7 +2263,7 @@ static const int OPT_PAGE6_ROWS[] = {
   OPT_JIT_FSCHG,
   OPT_JIT_CR0,
   OPT_JIT_CCALLS,
-  OPT_JIT_RAMTRAMP,
+  OPT_BLOCKCOPY,
   OPT_JIT_FSQRT
 };
 
@@ -3174,7 +3153,7 @@ bool displayOptionsMenu()
     printf("%s JIT IFB FLUSH  : ", (selectedRow == OPT_IFB_FLUSH) ? ">" : " ");
     switch (g_ifb_flush_preset) {
       case 0: printf("[< OFF (FULL SPILL)  >]"); break;
-      case 1: printf("[< ON (SELECTIVE)    >]"); break;
+      case 1: printf("[< ON (SELECTIVE +1%%)>]"); break;
     }
     printf(" spill only regs the opcode touches");
     printf("\n");
@@ -3210,7 +3189,7 @@ bool displayOptionsMenu()
     printf("%s JIT T-FORWARD  : ", (selectedRow == OPT_JIT_TFWD) ? ">" : " ");
     switch (g_jit_tfwd_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (NO T RELOAD)  >]"); break;
+      case 1: printf("[< ON (NO RELOAD +4%%)>]"); break;
     }
     printf(" skip the T store/reload on cmp+bt");
     printf("\n");
@@ -3219,9 +3198,9 @@ bool displayOptionsMenu()
     printf("%s JIT FMOV DIRECT: ", (selectedRow == OPT_JIT_FMOV) ? ">" : " ");
     switch (g_jit_fmov_preset) {
       case 0: printf("[< OFF (GPR BOUNCE)  >]"); break;
-      case 1: printf("[< ON (LFS/STFS)     >]"); break;
+      case 1: printf("[< ON (LFS/STFS +10%%)>]"); break;
     }
-    printf(" fmov straight to/from pinned FPR");
+    printf(" needs fpu_pin & fast_mem"); // fmov straight to/from pinned FPR
     printf("\n");
 
     // --- Row: JIT_CARRY - dynarec the carry/overflow arithmetic ---
@@ -3269,20 +3248,20 @@ bool displayOptionsMenu()
     printf(" C call-outs/second and /frame");
     printf("\n");
 
-    // --- Row: JIT_RAMTRAMP - inline RAM store in write trampolines ---
-    printf("%s JIT RAM TRAMP  : ", (selectedRow == OPT_JIT_RAMTRAMP) ? ">" : " ");
-    switch (g_jit_ramtramp_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FASTER?)      >]"); break;
+    // --- Row: BLOCKCOPY - bulk block transfers instead of per-word ---
+    printf("%s BLOCK COPY     : ", (selectedRow == OPT_BLOCKCOPY) ? ">" : " ");
+    switch (g_blockcopy_preset) {
+      case 0: printf("[< OFF (PER-WORD)    >]"); break;
+      case 1: printf("[< ON (BULK COPY+2%%)>]"); break;
     }
-    printf(" RAM inline, no C call");
+    printf(" store queue+DMA, no per-word call");
     printf("\n");
 
     // --- Row: JIT_FSQRT - inline sqrt instead of the libm call ---
     printf("%s JIT FSQRT      : ", (selectedRow == OPT_JIT_FSQRT) ? ">" : " ");
     switch (g_jit_fsqrt_preset) {
       case 0: printf("[< OFF (LIBM)        >]"); break;
-      case 1: printf("[< ON (INLINE NR)    >]"); break;
+      case 1: printf("[< ON (INLINE NR+4%%?)>]"); break;
     }
     printf(" frsqrte+Newton, no C call");
     printf("\n\n");
@@ -3409,7 +3388,7 @@ bool displayOptionsMenu()
         case OPT_JIT_FSCHG:      g_jit_fschg_preset       = (g_jit_fschg_preset       + 1) % 2; break;
         case OPT_JIT_CR0:        g_jit_cr0_preset         = (g_jit_cr0_preset         + 1) % 2; break;
         case OPT_JIT_CCALLS:     g_jit_ccalls_preset      = (g_jit_ccalls_preset      + 1) % 2; break;
-        case OPT_JIT_RAMTRAMP:   g_jit_ramtramp_preset    = (g_jit_ramtramp_preset    + 1) % 2; break;
+        case OPT_BLOCKCOPY:      g_blockcopy_preset       = (g_blockcopy_preset       + 1) % 2; break;
         case OPT_JIT_FSQRT:      g_jit_fsqrt_preset       = (g_jit_fsqrt_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
@@ -3515,7 +3494,7 @@ bool displayOptionsMenu()
         case OPT_JIT_FSCHG:      g_jit_fschg_preset       = (g_jit_fschg_preset       + 1) % 2; break;
         case OPT_JIT_CR0:        g_jit_cr0_preset         = (g_jit_cr0_preset         + 1) % 2; break;
         case OPT_JIT_CCALLS:     g_jit_ccalls_preset      = (g_jit_ccalls_preset      + 1) % 2; break;
-        case OPT_JIT_RAMTRAMP:   g_jit_ramtramp_preset    = (g_jit_ramtramp_preset    + 1) % 2; break;
+        case OPT_BLOCKCOPY:      g_blockcopy_preset       = (g_blockcopy_preset       + 1) % 2; break;
         case OPT_JIT_FSQRT:      g_jit_fsqrt_preset       = (g_jit_fsqrt_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;

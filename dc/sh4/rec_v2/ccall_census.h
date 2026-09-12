@@ -82,12 +82,49 @@ extern "C" int g_jit_ccalls_preset;
 enum { CCA_COUNT = 8 };
 extern "C" u32 g_ccall_area[2][CCA_COUNT];   // [0]=read, [1]=write
 
+// ---------------------------------------------------------------------------
+// Caller-region split for the memory dispatchers.
+//
+// The per-area split says WHERE the writes go (95% system RAM). It cannot say
+// HOW they arrive. WriteMem32 is a plain #define onto _vmem_WriteMem32, so the
+// return address IS the real caller, and one range test sorts them into:
+//
+//   * a back-patched FASTMEM trampoline, living in s_fm_pool
+//   * ordinary emitted code in CodeCache
+//   * anything else -- i.e. the emulator's own C code
+//
+// This is what closed the question. On Crazy Taxi, 95.6% of system-RAM writes
+// came back "other": block transfers (do_sqw and DMA) running the dispatcher
+// once per 32-bit word from plain C, nothing to do with the JIT at all. See
+// WriteMemBlock_nommu_ptr() and _vmem_GetBlockPtr() in dc/mem. Keep the split
+// around -- "which side of the JIT boundary is this traffic even on" turned
+// out to be the question worth asking first.
+// ---------------------------------------------------------------------------
+enum { CCS_TRAMP = 0, CCS_CODECACHE = 1, CCS_OTHER = 2, CCS_COUNT = 3 };
+extern "C" u32 g_ccall_src[2][CCS_COUNT];
+
+// Published by the Wii driver at cache-clear time; null everywhere else, which
+// simply classifies everything as CCS_OTHER rather than misreporting.
+extern "C" const u8* g_ccall_tramp_lo;
+extern "C" const u8* g_ccall_tramp_hi;
+extern "C" const u8* g_ccall_cc_lo;
+extern "C" const u8* g_ccall_cc_hi;
+
+static inline u32 ccall_src_of(const void* ra)
+{
+	const u8* q = (const u8*)ra;
+	if (q >= g_ccall_tramp_lo && q < g_ccall_tramp_hi) return CCS_TRAMP;
+	if (q >= g_ccall_cc_lo    && q < g_ccall_cc_hi)    return CCS_CODECACHE;
+	return CCS_OTHER;
+}
+
 #define CCALL_MEM(site, rw, addr) \
 	do { \
 		if (g_jit_ccalls_preset) \
 		{ \
 			g_ccall[site]++; \
 			g_ccall_area[rw][((u32)(addr) >> 26) & 7]++; \
+			g_ccall_src[rw][ccall_src_of(__builtin_return_address(0))]++; \
 		} \
 	} while (0)
 

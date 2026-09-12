@@ -211,10 +211,44 @@ void mem_Term()
 // Block memory transfer helpers
 // ---------------------------------------------------------------------------
 
+// BLOCKCOPY preset: 0 = legacy per-word dispatcher loop, 1 = one bulk copy
+// whenever the whole range resolves to a single direct-mapped region.
+// Defined here rather than in wii/main.cpp so every target links; the Wii menu
+// and game_presets just write to it. See _vmem_GetBlockPtr() for why the bulk
+// copy is byte-for-byte identical to the loop it replaces, and for the cases
+// that deliberately stay on the loop (MMIO, mirror wrap, region crossing).
+extern "C" { int g_blockcopy_preset = 0; }
+
+static void blockcopy_announce()
+{
+	static bool announced = false;
+	if (!announced)
+	{
+		announced = true;
+		printf("[blockw] BLOCKCOPY active: bulk block transfers, no per-word dispatch\n");
+		fflush(stdout);
+	}
+}
+
+// memmove, not memcpy, throughout: these are guest-to-guest transfers whose
+// source can itself be a pointer into the RAM image (pvr_sb_regs.cpp hands us
+// GetMemPtr(src, len)), so the ranges are not guaranteed to be disjoint.
+
 void MEMCALL WriteMemBlock_nommu_dma(u32 dst, u32 src, u32 size)
 {
 	// Word-at-a-time DMA copy through the normal memory accessors
 	verify((size & 3) == 0);   // must be 4-byte aligned
+	if (g_blockcopy_preset)
+	{
+		u8* d = _vmem_GetBlockPtr(dst, size);
+		u8* s = _vmem_GetBlockPtr(src, size);
+		if (d && s)
+		{
+			blockcopy_announce();
+			memmove(d, s, size);
+			return;
+		}
+	}
 	for (u32 i = 0; i < size; i += 4)
 		WriteMem32_nommu(dst + i, ReadMem32_nommu(src + i));
 }
@@ -222,6 +256,16 @@ void MEMCALL WriteMemBlock_nommu_dma(u32 dst, u32 src, u32 size)
 void MEMCALL WriteMemBlock_nommu_ptr(u32 dst, u32* src, u32 size)
 {
 	verify((size & 3) == 0);
+	if (g_blockcopy_preset)
+	{
+		u8* d = _vmem_GetBlockPtr(dst, size);
+		if (d)
+		{
+			blockcopy_announce();
+			memmove(d, src, size);
+			return;
+		}
+	}
 	for (u32 i = 0; i < size; i += 4)
 		WriteMem32_nommu(dst + i, src[i >> 2]);
 }
@@ -229,6 +273,16 @@ void MEMCALL WriteMemBlock_nommu_ptr(u32 dst, u32* src, u32 size)
 void MEMCALL WriteMemBlock_ptr(u32 addr, u32* data, u32 size)
 {
 	verify((size & 3) == 0);
+	if (g_blockcopy_preset)
+	{
+		u8* d = _vmem_GetBlockPtr(addr, size);
+		if (d)
+		{
+			blockcopy_announce();
+			memmove(d, data, size);
+			return;
+		}
+	}
 	for (u32 i = 0; i < size; i += 4)
 		WriteMem32(addr + i, data[i >> 2]);
 }

@@ -147,6 +147,58 @@ static INLINE void fastcall _vmem_writet(u32 addr, T data)
 }
 
 // ---------------------------------------------------------------------------
+// Bulk block-transfer helper.
+//
+// The block helpers in sh4_mem.cpp used to run the dispatcher once per 32-bit
+// word -- an indirect call, a table lookup and two shifts for every 4 bytes.
+// That is not a rare path: do_sqw() pushes every non-TA store-queue flush
+// through WriteMemBlock_nommu_ptr(.., 32), i.e. EIGHT dispatcher calls per
+// flush, and PVR/ch2 DMA does one per word of the entire transfer. The [CC]
+// census caught the result on Crazy Taxi -- 1,104,636 system-RAM writes/s, of
+// which 95.6% arrived from plain C code rather than from JIT code (the
+// from:tramp vs from:other split). It was never a dynarec problem.
+//
+// This resolves the whole range to a host pointer ONCE so the caller can do a
+// single memmove. It returns 0 unless every byte of [Address, Address+size)
+// lands in a single direct-mapped region, which is what keeps it safe:
+//
+//   * MMIO (ptr == 0) keeps the per-word path -- those writes have side
+//     effects and each has to reach its handler
+//   * the region mirror mask (the addr<<shift>>shift in _vmem_writet) must not
+//     wrap inside the range: a bulk copy would run off the end of the region
+//     where the per-word loop would have wrapped back to its start
+//   * the range must not cross a 16 MB dispatch page into a different region
+//
+// Sub-word accesses are excluded by the alignment test, which matters: on a
+// big-endian host _vmem_writet applies an address swizzle (addr ^= 4-sz) for
+// those, while 32-bit words are stored natively. That is precisely why a bulk
+// copy of whole words reproduces the per-word loop byte for byte.
+// ---------------------------------------------------------------------------
+u8* fastcall _vmem_GetBlockPtr(u32 Address, u32 size)
+{
+    if (size == 0 || (size & 3) != 0 || (Address & 3) != 0)
+        return 0;
+
+    const u32   page = Address >> 24;
+    const unat  iirf = (unat)_vmem_MemInfo_ptr[page];
+    void* const ptr  = (void*)(iirf & ~(unat)HANDLER_MAX);
+
+    if (ptr == 0)
+        return 0;                       // MMIO / handler region
+
+    const u32 last = Address + size - 1;
+    if ((last >> 24) != page)
+        return 0;                       // crosses into another region
+
+    const u32 shift = (u32)(iirf & HANDLER_MAX);
+    const u32 base  = (Address << shift) >> shift;
+    if (((last << shift) >> shift) != base + size - 1)
+        return 0;                       // mirror wrap inside the range
+
+    return &((u8*)ptr)[base];
+}
+
+// ---------------------------------------------------------------------------
 // Public read/write accessors
 // ---------------------------------------------------------------------------
 u8  fastcall _vmem_ReadMem8  (u32 addr) { CCALL_MEM(CC_READMEM, 0, addr); return _vmem_readt<u8> (addr); }

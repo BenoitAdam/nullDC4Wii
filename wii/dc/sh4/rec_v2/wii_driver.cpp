@@ -261,11 +261,6 @@ u32 last_block;
 // t_in_rarg0 comment in compile_state.
 extern "C" int get_jit_tfwd_preset();
 
-// JIT_RAMTRAMP preset (main.cpp): give a back-patched WRITE trampoline an
-// inlined system-RAM store ahead of its generic ReadMem/WriteMem call, the
-// same way the store-queue fast path already works. See rec_fastmem_patch().
-extern "C" int get_jit_ramtramp_preset();
-
 // JIT_FSQRT preset (main.cpp): inline fsqrt as frsqrte + Newton-Raphson
 // instead of calling libm. See the comment block above rec_fsqrt.
 extern "C" int get_jit_fsqrt_preset();
@@ -2440,6 +2435,12 @@ static void rec_fastmem_reset_pool()
 		       " %u float shapes emitted / %u float sites patched\n",
 		       s_fm_patch_count, s_fm_pool_used, FM_POOL_SIZE,
 		       s_fm_float_sites, s_fm_float_patches);
+	// Tell the [CC] census where a call-out's return address has to land to
+	// count as "came from a back-patched trampoline".
+	g_ccall_tramp_lo = s_fm_pool;
+	g_ccall_tramp_hi = s_fm_pool + FM_POOL_SIZE;
+	g_ccall_cc_lo    = CodeCache;
+	g_ccall_cc_hi    = CodeCache + CODE_SIZE;
 	s_fm_pool_used     = 0;
 	s_fm_patch_count   = 0;
 	s_fm_ring_n        = 0;
@@ -2597,33 +2598,6 @@ int rec_fastmem_patch(unsigned int pc)
 			ok&=fm_branch(site+1,0);
 		}
 	}
-	// ---- JIT_RAMTRAMP ------------------------------------------------------
-	// A back-patch is PERMANENT and per-SITE, not per-access. One SH4 store
-	// instruction that writes system RAM a million times and touches the store
-	// queue or a register once is downgraded to `bl WriteMem32` forever by
-	// that single fault -- "polymorphic sites are always correct, merely
-	// slower", as the header above puts it.
-	//
-	// Measured on hardware (Crazy Taxi, [CC] census with the per-area split):
-	//
-	//     writemem  1,128,138/s   of which a3:RAM  1,077,322/s  (95.5%)
-	//     readmem       2,609/s   of which a3:RAM        489/s
-	//
-	// 1.08 MILLION system-RAM writes a second going through the generic C
-	// dispatcher, against 489 reads -- a 2,200x asymmetry that exists only
-	// because writes are the polymorphic ones. At roughly 25 saved cycles
-	// each that is ~3.7% of Broadway.
-	//
-	// The fix mirrors the SQ fast path that is already here: test the area and
-	// do the store inline when it is RAM. This is safe by construction -- area
-	// 3 is page-mapped in all 4 mirrors and PP=10 (read/write), so the store
-	// cannot fault; it is the exact access the un-patched shape would have
-	// performed. Area 3 is not texture memory (that is area 1), so no cache
-	// invalidation is owed either.
-	//
-	// Only the two INTEGER write shapes are covered. The census shows just 13
-	// of 782 patched sites are float, so the pair/scalar float trampolines are
-	// deliberately left alone rather than widening the blast radius.
 	else if ((op6==36||op6==44||op6==38) && ra==ppc_rarg2 && dd==0)
 	{
 		// --- scalar write: stb/sth/stw rS,0(r5). Replicates ColdFrag kind 2,
@@ -2643,24 +2617,6 @@ int rec_fastmem_patch(unsigned int pc)
 				fm_w(fm_dform(op6,rt,ppc_rarg2,0));		// st{b,h,w} rS,0(r5)
 				ok&=fm_branch(site+1,0);
 				*bne |= ((u32)((u8*)fm_p-(u8*)bne))&0xFFFC;	// resolve bne -> generic
-			}
-			if (get_jit_ramtramp_preset())
-			{
-				// area = (addr >> 26) & 7; system RAM is area 3. Bits 28:26 are
-				// unaffected by the P0/P1/P2 region bits, so this reads the same
-				// for 0x0Cxxxxxx, 0x8Cxxxxxx and 0xACxxxxxx without masking first.
-				fm_w(0x54000000|((u32)areg<<21)|(ppc_rarg2<<16)|(6<<11)|(29<<6)|(31<<1));	// rlwinm r5,areg,6,29,31
-				fm_w(0x2C000000|(ppc_rarg2<<16)|3);		// cmpwi r5,3 — RAM?
-				u32* bne_ram=fm_p;
-				fm_w(0x40820000);				// bne -> generic (patched below)
-				// EA = addr & 0x1FFFFFFF, plus the BE sub-word swizzle the
-				// emitted shape applies — identical to fm_sq_addr's convention.
-				fm_w(0x54000000|((u32)areg<<21)|(ppc_rarg2<<16)|(0<<11)|(3<<6)|(31<<1));	// rlwinm r5,areg,0,3,31
-				if (sz<4)
-					fm_w(0x68000000|(ppc_rarg2<<21)|(ppc_rarg2<<16)|(4-sz));	// xori r5,r5,4-sz
-				fm_w(fm_dform(op6,rt,ppc_rarg2,0));		// st{b,h,w} rS,0(r5)
-				ok&=fm_branch(site+1,0);
-				*bne_ram |= ((u32)((u8*)fm_p-(u8*)bne_ram))&0xFFFC;
 			}
 			fm_mr(ppc_rarg0,(u32)areg);
 			fm_mr(ppc_rarg1,rt);
@@ -2689,21 +2645,6 @@ int rec_fastmem_patch(unsigned int pc)
 				fm_w(fm_dform(36,ppc_rarg3,ppc_rarg1,4));	// stw r6,4(r4)
 				ok&=fm_branch(site+2,0);
 				*bne |= ((u32)((u8*)fm_p-(u8*)bne))&0xFFFC;
-			}
-			if (get_jit_ramtramp_preset())
-			{
-				// Same RAM test; pairs are 8-aligned so there is no swizzle.
-				// r4 is the shape's own EA scratch, so it is free here, and the
-				// address (r3) and data (r5:r6) are all left untouched.
-				fm_w(0x54000000|(ppc_rarg0<<21)|(ppc_rarg1<<16)|(6<<11)|(29<<6)|(31<<1));	// rlwinm r4,r3,6,29,31
-				fm_w(0x2C000000|(ppc_rarg1<<16)|3);		// cmpwi r4,3 — RAM?
-				u32* bne_ram=fm_p;
-				fm_w(0x40820000);				// bne -> generic
-				fm_w(0x54000000|(ppc_rarg0<<21)|(ppc_rarg1<<16)|(0<<11)|(3<<6)|(31<<1));	// rlwinm r4,r3,0,3,31
-				fm_w(fm_dform(36,ppc_rarg2,ppc_rarg1,0));	// stw r5,0(r4)
-				fm_w(fm_dform(36,ppc_rarg3,ppc_rarg1,4));	// stw r6,4(r4)
-				ok&=fm_branch(site+2,0);
-				*bne_ram |= ((u32)((u8*)fm_p-(u8*)bne_ram))&0xFFFC;
 			}
 			ok&=fm_branch((void*)WriteMem64,1);
 			ok&=fm_branch(site+2,0);

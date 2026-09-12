@@ -316,12 +316,26 @@ extern "C"
 {
 	u32 g_ccall[CC_COUNT] = { 0 };
 	u32 g_ccall_area[2][CCA_COUNT] = { { 0 } };
+	u32 g_ccall_src[2][CCS_COUNT] = { { 0 } };
+	const u8* g_ccall_tramp_lo = 0;
+	const u8* g_ccall_tramp_hi = 0;
+	const u8* g_ccall_cc_lo = 0;
+	const u8* g_ccall_cc_hi = 0;
 	int g_jit_ccalls_preset = 0;
 }
 
 // SH4 physical areas. 1 is PVR VRAM, 3 is system RAM, 4 is the TA / texture
 // upload FIFO; the rest are rare enough that their names are only here so an
 // unexpected hit is recognisable rather than a bare number.
+// Which side of the JIT boundary a call-out came from. "tramp" is a
+// back-patched fastmem trampoline, "codecache" is ordinary emitted code, and
+// "other" is the emulator's own C code -- which is where the bulk of the
+// system-RAM writes turned out to live (block transfers, not the dynarec).
+static const char* const s_ccall_src_name[CCS_COUNT] =
+{
+	"from:tramp", "from:codecache", "from:other",
+};
+
 static const char* const s_ccall_area_name[CCA_COUNT] =
 {
 	"a0:boot/reg", "a1:VRAM", "a2", "a3:RAM",
@@ -404,14 +418,28 @@ extern "C" void ccall_census_dump(double seconds, double vbs)
 				       (vbs > 0.0) ? (double)g_ccall_area[rw][k] / seconds / vbs : 0.0,
 				       g_ccall[i] ? 100.0 * (double)g_ccall_area[rw][k] / (double)g_ccall[i] : 0.0);
 			}
+			for (u32 k = 0; k < CCS_COUNT; k++)
+			{
+				if (!g_ccall_src[rw][k])
+					continue;
+				printf("[CC]     %-14s %10.0f/s  %9.1f/frame  %5.1f%% of that\n",
+				       s_ccall_src_name[k],
+				       (double)g_ccall_src[rw][k] / seconds,
+				       (vbs > 0.0) ? (double)g_ccall_src[rw][k] / seconds / vbs : 0.0,
+				       g_ccall[i] ? 100.0 * (double)g_ccall_src[rw][k] / (double)g_ccall[i] : 0.0);
+			}
 		}
 	}
 
 	for (u32 i = 0; i < CC_COUNT; i++)
 		g_ccall[i] = 0;
 	for (u32 rw = 0; rw < 2; rw++)
+	{
 		for (u32 k = 0; k < CCA_COUNT; k++)
 			g_ccall_area[rw][k] = 0;
+		for (u32 k = 0; k < CCS_COUNT; k++)
+			g_ccall_src[rw][k] = 0;
+	}
 }
 
 // Instantiate canonical (portable C) implementations (SHIL_MODE 1).

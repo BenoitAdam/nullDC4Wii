@@ -389,24 +389,13 @@
                                 instead of guessing from the emitter.
                                 Debug preset — default off.
 
+        blockcopy=on        <- on/off, store-queue and DMA block transfers
+                               copy in bulk instead of running the memory
+                               dispatcher once per 32-bit word (do_sqw did
+                               8 calls per non-TA flush).
         jit_fsqrt=on        <- on/off, inlines fsqrt as frsqrte + Newton-
                                Raphson instead of calling newlib sqrtf
                                (a 25-iteration bit loop). Bit-exact.
-        jit_ramtramp=on     <- on/off, gives a back-patched FASTMEM write
-                                trampoline an inlined system-RAM store ahead of
-                                its generic WriteMem call. A back-patch is
-                                permanent and per-SITE: one SH4 store that
-                                writes RAM a million times and touches the store
-                                queue once is downgraded to a C call forever.
-                                Measured on Crazy Taxi: 1,077,322 system-RAM
-                                writes/s through the C dispatcher against 489
-                                reads. Safe by construction: area 3 is
-                                page-mapped RW in all 4 mirrors so the inlined
-                                store cannot fault, and it is not texture memory
-                                so nothing is owed to the texture cache.
-                                Integer scalar+pair shapes only. Takes effect as
-                                sites are patched, so relaunch rather than
-                                toggling mid-game. Perf preset, default off.
         sched=on            <- on/off, unified cycle-deadline event scheduler
                                 (dc/sh4/sh4_sched.cpp). Fires the completion/IRQ
                                 events whose RELATIVE ordering matters (GD-ROM
@@ -939,7 +928,7 @@ extern int g_jit_mac_preset;
 extern int g_jit_fschg_preset;
 extern int g_jit_cr0_preset;
 extern "C" int g_jit_ccalls_preset;
-extern int g_jit_ramtramp_preset;
+extern "C" int g_blockcopy_preset;
 extern int g_jit_fsqrt_preset;
 extern int g_sched_preset;
 extern int g_player_count;
@@ -1059,7 +1048,7 @@ struct GamePreset
     int jit_fschg;
     int jit_cr0;
     int jit_ccalls;
-    int jit_ramtramp;
+    int blockcopy;
     int jit_fsqrt;
     int sched;
     int debug_fb2d;
@@ -1507,7 +1496,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_fschg"))      p->jit_fschg      = parse_bool(val);
     else if (key_eq(key, "jit_cr0"))        p->jit_cr0        = parse_bool(val);
     else if (key_eq(key, "jit_ccalls"))     p->jit_ccalls     = parse_bool(val);
-    else if (key_eq(key, "jit_ramtramp"))   p->jit_ramtramp   = parse_bool(val);
+    else if (key_eq(key, "blockcopy"))      p->blockcopy      = parse_bool(val);
     else if (key_eq(key, "jit_fsqrt"))      p->jit_fsqrt      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
@@ -1603,7 +1592,7 @@ static void preset_clear(GamePreset* cur)
     cur->jit_fschg = -1;
     cur->jit_cr0 = -1;
     cur->jit_ccalls = -1;
-    cur->jit_ramtramp = -1;
+    cur->blockcopy    = -1;
     cur->jit_fsqrt    = -1;
     cur->sched = -1;
     cur->debug_fb2d = -1;
@@ -1727,7 +1716,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->jit_fschg      >= 0) { g_jit_fschg_preset      = p->jit_fschg;      printf("  jit_fschg      -> %d\n", p->jit_fschg);      }
     if (p->jit_cr0        >= 0) { g_jit_cr0_preset        = p->jit_cr0;        printf("  jit_cr0        -> %d\n", p->jit_cr0);        }
     if (p->jit_ccalls     >= 0) { g_jit_ccalls_preset     = p->jit_ccalls;     printf("  jit_ccalls     -> %d\n", p->jit_ccalls);     }
-    if (p->jit_ramtramp   >= 0) { g_jit_ramtramp_preset   = p->jit_ramtramp;   printf("  jit_ramtramp   -> %d\n", p->jit_ramtramp);   }
+    if (p->blockcopy      >= 0) { g_blockcopy_preset      = p->blockcopy;      printf("  blockcopy      -> %d\n", p->blockcopy);      }
     if (p->jit_fsqrt      >= 0) { g_jit_fsqrt_preset      = p->jit_fsqrt;      printf("  jit_fsqrt      -> %d\n", p->jit_fsqrt);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
