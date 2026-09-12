@@ -58,6 +58,16 @@ extern int g_wii_fastmem_active;
 // Call before the first block is compiled (done at ngen_mainloop entry).
 void WiiFastmem_Init(void);
 
+// Claim the 256 KB page table UP FRONT, from _vmem_reserve(), before the guest
+// RAM/VRAM block, the CACHE_VERY_FAST_PLUS texture arena and InitRenderer have
+// carved the arenas. Returns 1 if fastmem has its table (or the preset is off
+// and needs none), 0 if neither arena could spare it - in which case the caller
+// must FAIL THE BOOT and let main() return to the Homebrew Channel. Carrying on
+// with fastmem quietly disabled is NOT an acceptable fallback: it costs ~20% of
+// the frame rate and hides the cause. Idempotent; WiiFastmem_Init() reuses
+// whatever this placed.
+int WiiFastmem_ReserveHtab(void);
+
 // Implemented in wii_driver.cpp: decode the faulting fastmem site at
 // `pc` (one of the fixed shapes emitted by shop_readm/shop_writem),
 // build a slow-path trampoline in the trampoline pool and patch the

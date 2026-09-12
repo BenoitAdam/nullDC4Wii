@@ -42,8 +42,6 @@
 
 #include "types.h"
 
-#if HOST_OS == OS_WII
-
 #include <stdio.h>
 #include <string.h>
 #include <gccore.h>
@@ -53,9 +51,15 @@
 #include "dc/pvr/pvr_if.h"       // vram
 #include "dc/aica/aica_if.h"     // aica_ram
 #include "wii_fastmem.h"
+#include "wii_exit.h"          // WiiExitToLoader (ordered return to the HBC)
 
 // Preset accessor (main.cpp). 0=off (default), 1=on.
 extern "C" int get_fastmem_preset();
+// main.cpp: writes to the on-screen console AND appends to /ndclog.txt. The
+// reservation below runs while the console is still up, so its diagnostics
+// have to reach both - a plain printf would reach the screen only, and the
+// screen is gone the moment a failed boot drops back to the Homebrew Channel.
+extern "C" void wii_boot_log(const char* fmt, ...);
 
 int g_wii_fastmem_active = 0;
 
@@ -324,6 +328,144 @@ static bool fastmem_self_test(void)
     return ok;
 }
 
+// MEM1 headroom that must SURVIVE the carve for the MEM1 branch to be taken.
+// Sized from the measured boot: ~5 MB of MEM1 arena is free once the FAT
+// volumes are mounted, InitRenderer takes ~3.8 MB of it and the allocations
+// after it (opcode tables, sincos tables, GD-ROM buffers) take the rest --
+// MEM1 free reads 0 KB by the time the first block is compiled. Taking 256 KB
+// out from under all that would just move a malloc failure around in exchange
+// for a 256 KB placement tweak, so today this constant deliberately never
+// lets the MEM1 branch fire. It stays because MEM1 is the FASTER home for the
+// table and the MEM1 budget audit may yet free that room up.
+#define FASTMEM_MEM1_KEEP  (6 * 1024 * 1024)
+
+// ---------------------------------------------------------------------------
+// HTAB placement. Idempotent; 1 = the table has a home, 0 = neither arena can
+// spare one.
+//
+// Called from two places, and the FIRST is the one that matters:
+//
+//   1. WiiFastmem_ReserveHtab(), from _vmem_reserve() - before the guest
+//      RAM/VRAM block, before the CACHE_VERY_FAST_PLUS texture arena, before
+//      InitRenderer. MEM2 still has tens of MB free at that point, so fastmem
+//      cannot lose the race for its own page table.
+//   2. Here again from WiiFastmem_Init(), where it is a no-op after (1).
+//
+// It used to run ONLY at step 2 - at the first block compile, dead last, on
+// whatever the rest of the boot had left behind. Fastmem lost that race on a
+// real console (2026-09-12 logs): a 4 TB MBR USB drive reports 4096-byte
+// sectors, so libfat's sector cache costs 1 MB of MEM1 rather than 128 KB and
+// MEM1 was already at 0 KB; Jet Set Radio's tex_cache=very_fast+ preset had
+// then taken 4 MB off the top of MEM2, leaving 39 KB and no page table. Same
+// console, same drive, a game whose preset does not ask for very_fast+: 4135 KB
+// free and fastmem ran. Reserving first makes that ordering irrelevant.
+//
+// Arena choice:
+//   * MEM1 is the faster home - the hardware walker does 1-2 RANDOM 64-byte
+//     PTEG reads per DTLB miss, a latency-bound pattern where 1T-SRAM beats
+//     GDDR3, and the 2026-07-19 precursor A/B measured the MEM2 walk as the
+//     dominant fastmem tax. It is also the pool everything else is starved
+//     for, hence FASTMEM_MEM1_KEEP above.
+//   * MEM2 is carved from Arena2Hi, the TOP, exactly like the very_fast+
+//     texture arena. Growing Arena2Lo instead would shift the base address of
+//     the guest RAM/VRAM block and of everything allocated after it - the 6 MB
+//     very_fast+ attempt did that and froze the emulator during BIOS load with
+//     MEM2 still several MB free. Taken off the top, the bottom of the arena
+//     is left byte for byte as it was before fastmem existed.
+//
+// SDR1 requires HTABORG aligned to the table size, hence the alignment either
+// way; the MEM2 branch aligns DOWN so the block always stays inside the arena.
+// ---------------------------------------------------------------------------
+static int htab_reserve(void)
+{
+    if (s_htab)
+        return 1;
+
+    const u32 level = IRQ_Disable();
+
+    u8* const m1_lo = (u8*)SYS_GetArena1Lo();
+    u8* const m1_hi = (u8*)SYS_GetArena1Hi();
+    u8* const m2_lo = (u8*)SYS_GetArena2Lo();
+    u8* const m2_hi = (u8*)SYS_GetArena2Hi();
+
+    // Signed on purpose: an already-overrun arena must read as negative, not
+    // wrap to ~4 GB and sail through the comparisons below.
+    s_mem1_free_at_init = (s32)(m1_hi - m1_lo);
+    s_mem2_free_at_init = (s32)(m2_hi - m2_lo);
+
+    u8* htab = (u8*)(((u32)m1_lo + FASTMEM_HTAB_SIZE - 1) & ~(u32)(FASTMEM_HTAB_SIZE - 1));
+    if (s_mem1_free_at_init > 0 &&
+        htab + FASTMEM_HTAB_SIZE + FASTMEM_MEM1_KEEP <= m1_hi)
+    {
+        SYS_SetArena1Lo(htab + FASTMEM_HTAB_SIZE);
+        s_htab_mem1 = 1;
+    }
+    else
+    {
+        htab = (u8*)((u32)(m2_hi - FASTMEM_HTAB_SIZE) & ~(u32)(FASTMEM_HTAB_SIZE - 1));
+        if (s_mem2_free_at_init <= 0 || htab < m2_lo)
+        {
+            IRQ_Restore(level);
+            return 0;
+        }
+        SYS_SetArena2Hi(htab);
+        s_htab_mem1 = 0;
+    }
+
+    s_htab      = htab;
+    s_htab_phys = MEM_VIRTUAL_TO_PHYSICAL(htab);
+    IRQ_Restore(level);
+    return 1;
+}
+
+// The single explanation for an unplaceable page table, so both callers say the
+// same thing. wii_boot_log() rather than printf(): at reservation time that is
+// the on-screen console AND /ndclog.txt, and after InitRenderer has freopen'd
+// stdout it is /ndclog.txt either way.
+//
+// What it deliberately does NOT say is "continuing without fastmem". Quietly
+// dropping the preset costs ~20% of the frame rate and hides the cause behind a
+// line nobody reads; the caller fails the boot instead, so the user gets the
+// message on screen and a console they can fix rather than a slow emulator.
+static void htab_report_oom(void)
+{
+    wii_boot_log("\n\n"
+           "  *** OUT OF MEMORY FOR FASTMEM ***\n\n"
+           "  The MMU page table needs up to %u KB and neither arena can\n"
+           "  spare it: MEM1 has %d KB free, MEM2 has %d KB.\n\n"
+           "  A mounted USB device costs memory even when the game is on\n"
+           "  the SD card, and a drive reporting 4096-byte sectors costs\n"
+           "  1 MB of MEM1 instead of 128 KB.\n\n"
+           "  Set FASTMEM to OFF on options page 4 (CORE) - that costs\n"
+           "  about 20%% FPS but frees this memory - or unplug the drive,\n"
+           "  or try a different one.\n\n"
+           "  Fastmem is NOT being switched off for you: that would hide a\n"
+           "  20%% frame-rate loss behind this message. Please report this\n"
+           "  screen and /ndclog.txt.\n\n",
+           (FASTMEM_HTAB_SIZE * 2u) / 1024u,
+           s_mem1_free_at_init / 1024, s_mem2_free_at_init / 1024);
+}
+
+// Claim the page table before the emulator's own arena carves - see the call
+// site in _vmem_reserve(). 1 = fastmem has its table (or the preset is off and
+// needs none), 0 = it could not be placed and the caller must FAIL THE BOOT.
+extern "C" int WiiFastmem_ReserveHtab(void)
+{
+    if (!get_fastmem_preset())
+        return 1;   // nothing to reserve; the arenas stay exactly as they were
+
+    if (!htab_reserve())
+    {
+        htab_report_oom();
+        return 0;
+    }
+
+    wii_boot_log("[fastmem] HTAB %p reserved in %s (MEM1 free %d KB, MEM2 free %d KB)\n",
+                 s_htab, s_htab_mem1 ? "MEM1" : "MEM2",
+                 s_mem1_free_at_init / 1024, s_mem2_free_at_init / 1024);
+    return 1;
+}
+
 void WiiFastmem_Init(void)
 {
     static int s_tried = 0;
@@ -369,73 +511,24 @@ void WiiFastmem_Init(void)
         return;
     }
 
-    // Carve the (size-aligned - SDR1 requires HTABORG aligned to the table
-    // size) HTAB from an arena. MEM1 strongly preferred: the hardware
-    // walker does 1-2 RANDOM 64-byte PTEG reads per DTLB miss, a purely
-    // latency-bound pattern where 1T-SRAM MEM1 beats GDDR3 MEM2 - and the
-    // 2026-07-19 precursor A/B measured the MEM2 walk as the dominant
-    // fastmem tax. libogc's sbrk grows the heap by moving Arena1Lo the
-    // same way, so this carve just consumes heap headroom; fall back to
-    // MEM2 if MEM1 can't spare it (2 MB of heap must remain).
-    //
-    // NOTE: which arena this lands in depends on how far the MEM1 heap has
-    // already grown, and mounting a second FAT volume grows it - libfat's
-    // sector cache is malloc'd, sized pages x sectorsPerPage x bytesPerSector.
-    // So whether the HTAB sits in MEM1 or falls back to MEM2 can flip purely on
-    // whether a USB drive is plugged in. That makes this function one of the
-    // very few places whose behaviour is USB-dependent, which is why both
-    // branches now report themselves and neither is allowed to run off the end
-    // of its arena.
+    // The table was reserved back in _vmem_reserve(), before the guest RAM and
+    // the texture arena were carved; this is a no-op that just picks it up.
+    if (!htab_reserve())
     {
-        const u32 level = IRQ_Disable();
-        u8* lo   = (u8*)SYS_GetArena1Lo();
-        u8* hi   = (u8*)SYS_GetArena1Hi();
-        u8* htab = (u8*)(((u32)lo + FASTMEM_HTAB_SIZE - 1) & ~(u32)(FASTMEM_HTAB_SIZE - 1));
-        s_mem1_free_at_init = (s32)(hi - lo);
-        // Measured whichever branch we take, so the log line below always
-        // reports both arenas - that is the pair of numbers a bug report needs.
-        s_mem2_free_at_init = (s32)((u8*)SYS_GetArena2Hi() - (u8*)SYS_GetArena2Lo());
-        if (htab + FASTMEM_HTAB_SIZE + (2*1024*1024) <= hi)
-        {
-            SYS_SetArena1Lo(htab + FASTMEM_HTAB_SIZE);
-            s_htab_mem1 = 1;
-        }
-        else
-        {
-            lo = (u8*)SYS_GetArena2Lo();
-            u8* const hi2 = (u8*)SYS_GetArena2Hi();
-            htab = (u8*)(((u32)lo + FASTMEM_HTAB_SIZE - 1) & ~(u32)(FASTMEM_HTAB_SIZE - 1));
-            // MEM1 could not spare it and neither can MEM2: bump-allocating
-            // anyway would hand back a pointer past Arena2Hi, and the memset
-            // below would then write over IOS-owned memory. Stay inactive.
-            if (htab + FASTMEM_HTAB_SIZE > hi2)
-            {
-                IRQ_Restore(level);
-                printf("\n"
-                       "  *** OUT OF MEMORY FOR FASTMEM ***\n"
-                       "  Need %u KB for the MMU page table, but MEM1 has %d KB\n"
-                       "  free and MEM2 has %d KB.\n"
-                       "  A mounted USB device costs memory even when the game is\n"
-                       "  on the SD card. Try another USB device, or set FASTMEM to\n"
-                       "  OFF on options page 4 (CORE) - that costs about 20%% FPS\n"
-                       "  but frees this memory.\n"
-                       "  Continuing without fastmem.\n\n",
-                       (FASTMEM_HTAB_SIZE * 2u) / 1024u,
-                       s_mem1_free_at_init / 1024, s_mem2_free_at_init / 1024);
-                fflush(stdout);
-                return;
-            }
-            SYS_SetArena2Lo(htab + FASTMEM_HTAB_SIZE);
-            s_htab_mem1 = 0;
-        }
-        IRQ_Restore(level);
-        s_htab      = htab;
-        s_htab_phys = MEM_VIRTUAL_TO_PHYSICAL(htab);
+        // Unreachable on a normal boot - _vmem_reserve() would already have
+        // failed it. Getting here means the early reservation never ran, and
+        // the answer is still not to quietly drop ~20% of the frame rate. Say
+        // so and go back to the Homebrew Channel. The console is gone by now
+        // (InitRenderer took the screen), so this survives in /ndclog.txt only.
+        htab_report_oom();
+        WiiExitToLoader();   // never returns
+        return;              // belt and braces: never map through a null HTAB
     }
+
     // Say where the table landed BEFORE the MMU is switched on. If the machine
     // dies during the enable, this is the last line in the log and it names the
     // arena - the difference between "fastmem crashed" and a silent reset.
-    printf("[fastmem] HTAB %p in %s (MEM1 free %d KB, MEM2 free %d KB)\n",
+    printf("[fastmem] HTAB %p in %s (MEM1 free %d KB, MEM2 free %d KB when reserved)\n",
            s_htab, s_htab_mem1 ? "MEM1" : "MEM2 fallback",
            s_mem1_free_at_init / 1024, s_mem2_free_at_init / 1024);
     fflush(stdout);
@@ -489,10 +582,3 @@ void WiiFastmem_Init(void)
            s_htab_mem1 ? "MEM1" : "MEM2 fallback");
     fflush(stdout);
 }
-
-#else // !OS_WII
-
-int g_wii_fastmem_active = 0;
-void WiiFastmem_Init(void) {}
-
-#endif

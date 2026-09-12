@@ -432,13 +432,6 @@ void _vmem_term()
 // ---------------------------------------------------------------------------
 // Memory reservation
 // ---------------------------------------------------------------------------
-#if HOST_OS == OS_PSP
-#define SLIM_RAM ((u8*)0x0A000000)
-#elif HOST_OS != OS_WII
-ALIGN(256) u8 SLIM_RAM[ARAM_SIZE + VRAM_SIZE + RAM_SIZE];
-#endif
-
-#if HOST_OS == OS_WII
 // Live texture-cache preset (wii/main.cpp). By the time EmuMain() runs, the
 // game preset has been applied and the user has been through the options menu,
 // so this is the final value -- which lets us skip the CACHE_VERY_FAST_PLUS
@@ -451,11 +444,31 @@ extern "C" int get_texture_cache_preset();
 // would reach the screen only - and the screen is gone the moment a failed boot
 // drops back to the Homebrew Channel.
 extern "C" void wii_boot_log(const char* fmt, ...);
-#endif
+// wii/wii_fastmem.cpp: places the fastmem MMU page table. Must run before the
+// carves below - see the call site.
+extern "C" int WiiFastmem_ReserveHtab();
 
 bool _vmem_reserve()
 {
-#if HOST_OS == OS_WII
+    // ---- Fastmem page table, FIRST ----------------------------------------
+    // Its 256 KB is claimed before anything below bump-allocates, and before
+    // InitRenderer takes its share of MEM1 later on. It used to be carved at
+    // the first block compile instead - dead last, on the leavings - and on a
+    // real console that lost: with a 4 TB MBR USB drive mounted (4096-byte
+    // sectors, so libfat's cache costs 1 MB of MEM1 instead of 128 KB) MEM1 was
+    // already at 0 KB, and Jet Set Radio's tex_cache=very_fast+ preset had taken
+    // 4 MB off the top of MEM2, leaving 39 KB. The same console and drive
+    // running a game whose preset does not ask for very_fast+ had 4135 KB free
+    // and fastmem worked. Reserving here makes the boot order irrelevant.
+    //
+    // Failing the boot when it does not fit is deliberate. Continuing with
+    // fastmem silently off costs ~20% of the frame rate and buries the reason
+    // in a log line; wii_fastmem.cpp has already said what happened and what to
+    // change, main() holds that on screen until a button is pressed, and the
+    // user goes back to the Homebrew Channel with something to act on.
+    if (!WiiFastmem_ReserveHtab())
+        return false;
+
     u32 level = IRQ_Disable();
 
     // ---- MEM2 budget ------------------------------------------------------
@@ -515,11 +528,14 @@ bool _vmem_reserve()
     // preset falls back to using the slot for everything.
     extern u8* plus_tex_arena;
     extern u32 plus_tex_arena_size;
-    // Size: 4 MB. This is a HARD LIMIT, not a tuning knob. 6 MB was tried and
-    // froze the emulator during BIOS load, before the Dreamcast logo -- MEM2
-    // simply does not have it to give once AUTOSORT, the fastmem HTAB and the
-    // boot allocations have taken their share. Do not raise this without
-    // testing a cold boot on real hardware. (For reference: the textures that
+    // Size: at most 4 MB, and that 4 MB is a HARD CEILING, not a tuning knob.
+    // 6 MB was tried and froze the emulator during BIOS load, before the
+    // Dreamcast logo -- MEM2 simply does not have it to give once AUTOSORT, the
+    // fastmem HTAB and the boot allocations have taken their share. Do not
+    // raise it without testing a cold boot on real hardware. What IS adaptive
+    // is the floor: the carve below takes only what is left above a measured
+    // reserve, so the ceiling applies when MEM2 is roomy and a smaller arena is
+    // taken when it is not. (For reference: the textures that
     // overflow their slot are all VQ and decode to ~314 KB each, so 4 MB holds
     // about twelve of them. When that is not enough the preset gives up on the
     // arena on its own -- see s_plus_arena_ok in gxRend.cpp -- and falls back to
@@ -544,14 +560,47 @@ bool _vmem_reserve()
     s32 plus_arena_short_kb = -1;
     if (get_texture_cache_preset() == TEXCACHE_VERY_FAST_PLUS)
     {
-        const s32 want = 4 * 1024 * 1024;
-        const s32 keep = 4 * 1024 * 1024; // MEM2 left for everyone else
+        // Take what MEM2 can spare above a MEASURED reserve, not a flat 4 MB.
+        //
+        // The flat 4 MB only ever "worked" because fastmem - the last thing in
+        // the boot to ask for memory - silently went without. Hardware figures
+        // (2026-09-12, Jet Set Radio, two runs of the same game agreeing to the
+        // kilobyte) for what is spent AFTER this carve:
+        //
+        //     AUTOSORT buffers, in InitRenderer                 632 KB
+        //     libogc's malloc spilling out of MEM1 into MEM2   4989 KB
+        //                                                     --------
+        //                                                      5621 KB
+        //
+        // The second line is the one that was missed, and it is not this
+        // emulator's code: libogc's _sbrk_r drains the MEM1 arena to exactly
+        // 0 KB and then keeps growing the C heap in MEM2 through
+        // SYS_SetArena2Lo. Both runs spent the same 4989 KB, so it is genuine
+        // demand and not a heap expanding into whatever happens to be free.
+        // Add the fastmem page table and a 4 MB arena and the budget is ~460 KB
+        // short -- and the shortfall lands on whoever allocates last.
+        //
+        // A smaller arena is a SOFT loss: it holds fewer oversized decodes, and
+        // when it fills, s_plus_arena_ok in gxRend.cpp falls back to the
+        // address-derived slot, i.e. plain VERY_FAST. Losing fastmem is a hard
+        // ~20% of the frame rate. So the reserve wins and the arena flexes.
+        const s32 want_max = 4 * 1024 * 1024; // ceiling, see above
+        const s32 want_min = 2 * 1024 * 1024; // below this, not worth carving
+        const s32 keep     = 6 * 1024 * 1024; // 5621 KB measured + ~520 KB margin
         // Signed: if the arena were already exhausted this subtraction used to
         // wrap to ~4 GB, the guard passed, and we carved 4 MB off a top that
         // was already below the bottom -- making a bad layout worse.
         const s32 free_m2 = (s32)((u8*)SYS_GetArena2Hi() - (u8*)SYS_GetArena2Lo());
+
+        s32 want = free_m2 - keep;
+        if (want > want_max)
+            want = want_max;
         // Never take more than half of what is free, whatever the numbers say.
-        if (free_m2 > want + keep && want <= free_m2 / 2)
+        if (want > free_m2 / 2)
+            want = free_m2 / 2;
+        want &= ~(s32)63;                     // 64-byte granularity
+
+        if (want >= want_min)
         {
             u8* a = (u8*)SYS_GetArena2Hi() - want;
             a = (u8*)((unat)a & ~(unat)63); // 64-byte align, downwards
@@ -578,10 +627,6 @@ bool _vmem_reserve()
     if (plus_arena_short_kb >= 0)
         wii_boot_log("[vmem] PLUS tex arena skipped: only %d KB MEM2 free\n",
                plus_arena_short_kb);
-#else
-    u8* ram_alloc = SLIM_RAM;
-
-#endif
 
     aica_ram.size = ARAM_SIZE;
     aica_ram.data = ram_alloc;
