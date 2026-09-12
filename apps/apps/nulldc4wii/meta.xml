@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <app version="1">
-  <name>NullDC4Wii alpha 0.725</name>
+  <name>NullDC4Wii alpha 0.73</name>
   <coder>Xale00, Skmp, NulldcTeam, Joseph Jordan, Team, AI</coder>
-  <version>alpha 0.725</version>
+  <version>alpha 0.73</version>
   <release_date>20260907</release_date>
   <short_description>Dreamcast Emulator (Experimental)</short_description> 
   <long_description>NullDC4Wii is an attempt to port NullDC for Wii.

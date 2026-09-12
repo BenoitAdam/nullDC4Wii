@@ -2233,11 +2233,11 @@ static const int OPT_PAGE4_ROWS[] = {
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
 static const int OPT_PAGE5_ROWS[] = {
   OPT_LAUNCH,
-  OPT_EXIT_FIX,
   OPT_MIPMAP,
   OPT_TEX_WRAP_GUARD,
   OPT_DMA_FIX,
   OPT_SCHED,
+  OPT_EXIT_FIX,
   OPT_TRANS_ZWRITE,
   OPT_HOKUTO_HACK,
   OPT_PUYO_HACK,
@@ -2327,7 +2327,7 @@ static void printOptionsFooter(void)
 {
   int cols, rows;
   CON_GetMetrics(&cols, &rows);
-  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.726", rows);
+  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.73", rows);
 }
 
 bool displayOptionsMenu()
@@ -3928,7 +3928,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - alpha 0.725   ");
+    printf("\nNullDC4Wii - alpha 0.73   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");
