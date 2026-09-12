@@ -781,6 +781,11 @@ extern "C" int get_trans_sort_preset();
 //     depth_clip=1 (default; keeps the near-parked Z init off-plane).
 extern "C" int get_autosort_preset();
 #define AUTOSORT() (get_autosort_preset())
+// TEX_WRAP_GUARD: 0 = legacy (the persistent texture arena resets to offset 0
+// the moment a decode does not fit, whenever that happens), 1 = never recycle
+// bytes this frame already handed to GX. See fast_bump_alloc().
+extern "C" int get_tex_wrap_guard_preset();
+#define TEX_WRAP_GUARD() (get_tex_wrap_guard_preset())
 
 // ── list_order: honour PVR list-type render order, not TA submission order ──
 // Real PVR2 sorts every polygon into a per-tile OPAQUE / PUNCH-THROUGH /
@@ -1798,6 +1803,21 @@ static u32 g_texc_wraps_frame = 0; // arena wraps inside the current frame
 static u32 g_texc_allocs   = 0; // arena allocations, i.e. distinct slots handed out
 static u32 g_texc_alloc_kb = 0; // KB handed out — tells us how big the arena must be
 static u32 s_plus_wrap_frames = 0; // consecutive frames in which the arena wrapped
+static u32 g_texc_wrapskip = 0;    // TEX_WRAP_GUARD: allocations sent to the skimp
+                                   // slot rather than overwrite a live arena byte
+
+// TEX_WRAP_GUARD bookkeeping. s_fast_frame_base is where THIS frame's first
+// arena allocation landed; everything below it was handed out on an earlier
+// frame and is safe to recycle (DoRender() calls gx_sync_pending() before any
+// decoding, so the GP has finished with it). s_fast_wrapped_frame stops a second
+// wrap, which would run into this frame's own allocations from the other side.
+static u32  s_fast_frame_base    = 0;
+static bool s_fast_wrapped_frame = false;
+
+// Returned in *alloc_off_out when the guard refused the allocation and handed
+// back an address-derived skimp slot instead: that is not an arena offset, so it
+// must never be written into s_fastmap.
+#define FAST_ALLOC_SKIMP 0xFFFFFFFFu
 
 static const u32 FAST_BUMP_TOTAL = 14u * 1024u * 1024u; // 14 MB, mirrors BUMP_TOTAL
 
@@ -1833,6 +1853,8 @@ static TexMapSlot s_fastmap[FASTMAP_SIZE]; // ~16 KB, lives in BSS
 static void fast_cache_reset()
 {
   s_fast_bump_offset = 0;
+  s_fast_frame_base    = 0;
+  s_fast_wrapped_frame = false;
   memset(s_fastmap, 0xFF, sizeof(s_fastmap));
 }
 
@@ -1861,14 +1883,56 @@ static INLINE u32 fast_map_locate(u32 tex_addr, bool *found)
 // doesn't fit — rare with a 14 MB budget reused across many frames of texture
 // churn, and safe: a wrap means every previously handed-out offset may now be
 // overwritten, so every old map entry must be dropped, not just the new one.
-static TextureCacheDesc* fast_bump_alloc(u32 pixel_bytes, u32 **pixel_out, u32 *alloc_off_out)
+static TextureCacheDesc* fast_bump_alloc(u32 pixel_bytes, u32 **pixel_out,
+                                         u32 *alloc_off_out, u32 tex_addr)
 {
   u32 desc_sz  = (sizeof(TextureCacheDesc) + 31) & ~31u;
   u32 pixel_sz = (pixel_bytes + 31) & ~31u;
   u32 total    = desc_sz + pixel_sz;
   u8 *abase = tex_arena_base(); // FAST/NORMAL: vram_buffer. PLUS: its own block.
-  if (s_fast_bump_offset + total > tex_arena_limit())
+
+  // TEX_WRAP_GUARD(): once this frame has wrapped, its own earlier allocations
+  // occupy [s_fast_frame_base, limit) and the usable end moves down to meet them.
+  u32 end = (TEX_WRAP_GUARD() && s_fast_wrapped_frame) ? s_fast_frame_base
+                                                       : tex_arena_limit();
+  if (s_fast_bump_offset + total > end)
   {
+    if (TEX_WRAP_GUARD())
+    {
+      // Why the legacy reset below is unsafe mid-frame:
+      //
+      // The arena is persistent, and wrapping is how it recycles. Recycling is
+      // fine for bytes handed out on an EARLIER frame - DoRender() opens with
+      // gx_sync_pending(), so the GP has finished with all of them before any
+      // decoding starts. It is NOT fine for bytes handed out during THIS frame:
+      // the FIFO streams, so the GP is already sampling textures bound earlier
+      // in this very walk while the CPU is still decoding later ones. Resetting
+      // the offset to 0 regardless overwrites them under the GP, and it is
+      // sampled as garbage.
+      //
+      // That is not theoretical: a 3328 KB PLUS arena (2026-09-13) wrapped
+      // mid-frame in Jet Set Radio under tex_cache=very_fast+ / vq_cmpr=on and
+      // corrupted its textures. s_plus_arena_ok only gives up after 8 wrapping
+      // frames, so wraps 1-7 corrupt first.
+      //
+      // Guarded: at most one wrap per frame, and only when this frame's first
+      // allocation left room at the bottom of the arena for this one. Otherwise
+      // refuse and hand back the address-derived skimp slot - CACHE_VERY_FAST's
+      // behaviour, which spends quality on THIS texture instead of correctness
+      // on some other one that is still being drawn.
+      if (s_fast_wrapped_frame || total > s_fast_frame_base)
+      {
+        g_texc_wrapskip++;
+        TextureCacheDesc *d = skimp_slot(tex_addr);
+        *pixel_out     = (u32*)&d[1];
+        *alloc_off_out = FAST_ALLOC_SKIMP;
+        // Deliberately NOT memset: skimp slots are address-derived and
+        // persistent, so one that already holds this texture stays a cache hit,
+        // exactly as under CACHE_VERY_FAST. The caller's validity check decides.
+        return d;
+      }
+      s_fast_wrapped_frame = true;
+    }
     s_fast_bump_offset = 0;
     memset(s_fastmap, 0xFF, sizeof(s_fastmap));
     g_texc_wraps++;
@@ -2056,6 +2120,13 @@ static void tex_frame_reset()
   if (s_plus_wrap_frames >= 8 || g_texc_wraps_frame >= 8) s_plus_arena_ok = false;
   g_texc_wraps_frame = 0;
 
+  // TEX_WRAP_GUARD(): a new frame starts here. Everything the persistent arena
+  // handed out before this mark belongs to a frame the GP has already finished,
+  // so it may be recycled; everything after it may not. (This does NOT reset the
+  // arena - it is persistent across frames by design.)
+  s_fast_frame_base    = s_fast_bump_offset;
+  s_fast_wrapped_frame = false;
+
   bump_reset();       // reset arena for new frame
   hash_map_reset();   // clear hash map — O(4 KB memset), fast on PPC
   // params.vram sentinels survive across frames.
@@ -2070,18 +2141,18 @@ static void tex_frame_reset()
     if (DEBUG_MESSAGE())
     {
       u32 cached_pct = g_texc_binds ? (100u * (g_texc_binds - g_texc_decodes)) / g_texc_binds : 0u;
-      printf("[TEXC] p%d %uf binds=%u dec=%u (%u%% cached, %u/frame) miss: stride=%u new=%u sent=%u shape=%u | wraps=%u mapfull=%u arena=%u(vq=%u pal=%u oth=%u) allocs=%u allocKB=%u plusarena=%u\n",
+      printf("[TEXC] p%d %uf binds=%u dec=%u (%u%% cached, %u/frame) miss: stride=%u new=%u sent=%u shape=%u | wraps=%u mapfull=%u arena=%u(vq=%u pal=%u oth=%u) allocs=%u allocKB=%u plusarena=%u wrapskip=%u\n",
              get_texture_cache_preset(), g_texc_frames, g_texc_binds, g_texc_decodes,
              cached_pct, g_texc_decodes / g_texc_frames,
              g_texc_m_stride, g_texc_m_new, g_texc_m_sent, g_texc_m_shape,
              g_texc_wraps, g_texc_mapfull, g_texc_arena,
              g_texc_a_vq, g_texc_a_pal, g_texc_a_oth,
-             g_texc_allocs, g_texc_alloc_kb, s_plus_arena_ok ? 1u : 0u);
+             g_texc_allocs, g_texc_alloc_kb, s_plus_arena_ok ? 1u : 0u, g_texc_wrapskip);
       fflush(stdout); // log is freopen'd to SD; without this the tail is lost
     }
     g_texc_frames = g_texc_binds = g_texc_decodes = 0;
     g_texc_m_stride = g_texc_m_new = g_texc_m_sent = g_texc_m_shape = 0;
-    g_texc_wraps = g_texc_mapfull = g_texc_arena = 0;
+    g_texc_wraps = g_texc_mapfull = g_texc_arena = g_texc_wrapskip = 0;
     g_texc_a_vq = g_texc_a_pal = g_texc_a_oth = 0;
     g_texc_allocs = g_texc_alloc_kb = 0;
   }
@@ -4353,8 +4424,11 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     else
     {
       u32 alloc_off;
-      pbuff = fast_bump_alloc(decode_bytes, &pixel_buf, &alloc_off);
-      if (fidx != FASTMAP_SIZE) // table had a free slot for it
+      pbuff = fast_bump_alloc(decode_bytes, &pixel_buf, &alloc_off, tex_addr);
+      // FAST_ALLOC_SKIMP: the guard handed back an address-derived slot, not an
+      // arena offset. Registering it would make the next lookup read the arena
+      // at a bogus offset, so leave this address out of the map.
+      if (fidx != FASTMAP_SIZE && alloc_off != FAST_ALLOC_SKIMP)
       {
         s_fastmap[fidx].key         = tex_addr;
         s_fastmap[fidx].bump_offset = alloc_off;
@@ -4385,11 +4459,14 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       if (pbuff->slot_size < desc_sz + ((decode_bytes + 31) & ~31u))
       {
         u32 alloc_off;
-        pbuff = fast_bump_alloc(decode_bytes, &pixel_buf, &alloc_off);
+        pbuff = fast_bump_alloc(decode_bytes, &pixel_buf, &alloc_off, tex_addr);
         // fast_bump_alloc may have wrapped and cleared the map — re-locate.
         bool refound;
         fidx = fast_map_locate(tex_addr, &refound);
-        if (fidx != FASTMAP_SIZE)
+        // FAST_ALLOC_SKIMP: see the note at the other call sites. The stale
+        // entry for this address may survive; it is only ever re-tested against
+        // slot_size, so the worst case is this same refusal again next frame.
+        if (fidx != FASTMAP_SIZE && alloc_off != FAST_ALLOC_SKIMP)
         {
           s_fastmap[fidx].key         = tex_addr;
           s_fastmap[fidx].bump_offset = alloc_off;
@@ -4401,8 +4478,11 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     else
     {
       u32 alloc_off;
-      pbuff = fast_bump_alloc(decode_bytes, &pixel_buf, &alloc_off);
-      if (fidx != FASTMAP_SIZE) // table had a free slot for it
+      pbuff = fast_bump_alloc(decode_bytes, &pixel_buf, &alloc_off, tex_addr);
+      // FAST_ALLOC_SKIMP: the guard handed back an address-derived slot, not an
+      // arena offset. Registering it would make the next lookup read the arena
+      // at a bogus offset, so leave this address out of the map.
+      if (fidx != FASTMAP_SIZE && alloc_off != FAST_ALLOC_SKIMP)
       {
         s_fastmap[fidx].key         = tex_addr;
         s_fastmap[fidx].bump_offset = alloc_off;
@@ -6823,6 +6903,24 @@ static void *as_arena2_alloc(u32 size, u32 align)
 // audit), and GX samples/copies to MEM2 fine on Wii.
 static void as_init()
 {
+  // Only when the game actually asked for it. These buffers used to be taken on
+  // every boot "so the preset can be toggled from the menu at any time", but
+  // g_autosort_preset is settled in the options menu BEFORE the game launches --
+  // the same lifetime as the texture-cache preset that _vmem_reserve() already
+  // gates its arena on -- so a game with autosort off was paying 632 KB of MEM2
+  // for buffers nothing would ever read.
+  //
+  // That 632 KB is not spare change: it is exactly what lets the
+  // CACHE_VERY_FAST_PLUS texture arena take its full 4 MB alongside the fastmem
+  // page table. See the budget comment in dc/mem/_vmem.cpp -- with these
+  // buffers unconditional the three together are ~250 KB short, and something
+  // has to lose. s_as_ready stays false here, which is the same state the AA and
+  // alloc-failure paths below leave, and the only consumer (DoRender) checks it.
+  if (!AUTOSORT())
+  {
+    printf("[AUTOSORT] off: 632 KB MEM2 left unreserved\n");
+    return;
+  }
   if (rmode->aa)
   {
     printf("[AUTOSORT] disabled: AA pixel format has no Z24 buffer\n");

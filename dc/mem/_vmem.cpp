@@ -437,6 +437,9 @@ void _vmem_term()
 // so this is the final value -- which lets us skip the CACHE_VERY_FAST_PLUS
 // overflow arena entirely for the games that will never read it.
 extern "C" int get_texture_cache_preset();
+// wii/main.cpp: 0 = off. Settled in the options menu before the game launches,
+// same lifetime as the texture-cache preset above, so it is final here.
+extern "C" int get_autosort_preset();
 // gxRend.cpp: CACHE_VERY_FAST_PLUS() is preset 6. Keep the two in step.
 #define TEXCACHE_VERY_FAST_PLUS 6
 // wii/main.cpp: writes to the on-screen console AND appends to /ndclog.txt.
@@ -560,47 +563,51 @@ bool _vmem_reserve()
     s32 plus_arena_short_kb = -1;
     if (get_texture_cache_preset() == TEXCACHE_VERY_FAST_PLUS)
     {
-        // Take what MEM2 can spare above a MEASURED reserve, not a flat 4 MB.
+        // ALL OR NOTHING at 4 MB. A partial arena is not a smaller cache, it
+        // is a BROKEN one.
         //
-        // The flat 4 MB only ever "worked" because fastmem - the last thing in
-        // the boot to ask for memory - silently went without. Hardware figures
-        // (2026-09-12, Jet Set Radio, two runs of the same game agreeing to the
-        // kilobyte) for what is spent AFTER this carve:
+        // fast_bump_alloc() (gxRend.cpp) wraps to offset 0 the instant the next
+        // decode does not fit, and every texture already bound to GX this frame
+        // is still pointing into the bytes it then overwrites. The GP runs a
+        // frame behind the CPU under ASYNC_RENDER, so a mid-frame wrap is
+        // sampled as garbage. An arena sized "to what is left" shipped once
+        // (3328 KB, 2026-09-13) and did exactly that to Jet Set Radio under
+        // tex_cache=very_fast+ / vq_cmpr=on: texture corruption. The overflowing
+        // VQ decodes are ~314 KB each, so 4 MB holds about twelve and 3.25 MB
+        // about ten -- and JSR needs eleven or twelve live at once. There is no
+        // safe "slightly smaller"; there is only enough or none.
         //
-        //     AUTOSORT buffers, in InitRenderer                 632 KB
-        //     libogc's malloc spilling out of MEM1 into MEM2   4989 KB
-        //                                                     --------
-        //                                                      5621 KB
+        // With none, CACHE_VERY_FAST_PLUS falls back to the address-derived
+        // slot (plain VERY_FAST) -- a known, graceful quality loss instead of a
+        // corrupt frame.
+        const s32 want = 4 * 1024 * 1024;
+
+        // MEM2 that must SURVIVE this carve. Measured on hardware (2026-09-12,
+        // Jet Set Radio, two runs agreeing to the kilobyte):
         //
-        // The second line is the one that was missed, and it is not this
-        // emulator's code: libogc's _sbrk_r drains the MEM1 arena to exactly
-        // 0 KB and then keeps growing the C heap in MEM2 through
+        //     libogc's malloc spilling out of MEM1 into MEM2   4989 KB  always
+        //     AUTOSORT buffers, in InitRenderer                 632 KB  if on
+        //
+        // The first line is not this emulator's code and is the one that was
+        // missed for a long time: libogc's _sbrk_r drains the MEM1 arena to
+        // exactly 0 KB and then keeps growing the C heap in MEM2 through
         // SYS_SetArena2Lo. Both runs spent the same 4989 KB, so it is genuine
-        // demand and not a heap expanding into whatever happens to be free.
-        // Add the fastmem page table and a 4 MB arena and the budget is ~460 KB
-        // short -- and the shortfall lands on whoever allocates last.
+        // demand, not a heap expanding into whatever happens to be free.
         //
-        // A smaller arena is a SOFT loss: it holds fewer oversized decodes, and
-        // when it fills, s_plus_arena_ok in gxRend.cpp falls back to the
-        // address-derived slot, i.e. plain VERY_FAST. Losing fastmem is a hard
-        // ~20% of the frame rate. So the reserve wins and the arena flexes.
-        const s32 want_max = 4 * 1024 * 1024; // ceiling, see above
-        const s32 want_min = 2 * 1024 * 1024; // below this, not worth carving
-        const s32 keep     = 6 * 1024 * 1024; // 5621 KB measured + ~520 KB margin
+        // AUTOSORT is charged only when that preset is actually on, because
+        // as_init() now only allocates then -- which is precisely what makes a
+        // full 4 MB arena affordable alongside the fastmem page table. With
+        // autosort off the arena fits with ~390 KB to spare; with it on the
+        // three together do not fit and the arena (the optional one) backs off.
+        const s32 keep = (5 * 1024 * 1024)
+                       + (get_autosort_preset() ? 640 * 1024 : 0);
         // Signed: if the arena were already exhausted this subtraction used to
         // wrap to ~4 GB, the guard passed, and we carved 4 MB off a top that
         // was already below the bottom -- making a bad layout worse.
         const s32 free_m2 = (s32)((u8*)SYS_GetArena2Hi() - (u8*)SYS_GetArena2Lo());
 
-        s32 want = free_m2 - keep;
-        if (want > want_max)
-            want = want_max;
         // Never take more than half of what is free, whatever the numbers say.
-        if (want > free_m2 / 2)
-            want = free_m2 / 2;
-        want &= ~(s32)63;                     // 64-byte granularity
-
-        if (want >= want_min)
+        if (free_m2 > want + keep && want <= free_m2 / 2)
         {
             u8* a = (u8*)SYS_GetArena2Hi() - want;
             a = (u8*)((unat)a & ~(unat)63); // 64-byte align, downwards

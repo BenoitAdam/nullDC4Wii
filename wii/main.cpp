@@ -539,9 +539,15 @@ extern "C" {
 // Leading suspect for the cross-game post-logo stall (Rez). 0=off (legacy
 // cascade ordering, default), 1=on. EXPERIMENTAL — A/B against off.
 int g_sched_preset = 0;
+// 0 = off (legacy: the persistent texture arena resets to offset 0 whenever a
+// decode does not fit, including mid-frame, over textures the GP is still
+// sampling). 1 = on: refuse such an allocation and use the address-derived
+// skimp slot for that texture instead. See fast_bump_alloc() in gxRend.cpp.
+int g_tex_wrap_guard_preset = 0;
 
 extern "C" {
   int get_sched_preset() { return g_sched_preset; }
+  int get_tex_wrap_guard_preset() { return g_tex_wrap_guard_preset; }
 }
 
 // FASTMEM — PPC-MMU fastmem for the SH4 dynarec (wii/wii_fastmem.cpp +
@@ -2085,6 +2091,7 @@ void checkBiosFiles()
 #define OPT_MUTE_PCM16  52
 #define OPT_HUD_PASS    53
 #define OPT_SCHED       54
+#define OPT_TEX_WRAP_GUARD 96 // Page 6 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_DYNAREC     55
 #define OPT_SUBPASS_ZCLEAR 56 // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_POLY_OFFSET 57    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
@@ -2228,6 +2235,7 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_LAUNCH,
   OPT_EXIT_FIX,
   OPT_MIPMAP,
+  OPT_TEX_WRAP_GUARD,
   OPT_DMA_FIX,
   OPT_SCHED,
   OPT_TRANS_ZWRITE,
@@ -2955,6 +2963,15 @@ bool displayOptionsMenu()
     printf(" less shimmer far away");
     printf("\n");
 
+    // --- Row: TEX WRAP GUARD - no mid-frame recycling of live arena bytes ---
+    printf("%s TEX WRAP GUARD : ", (selectedRow == OPT_TEX_WRAP_GUARD) ? ">" : " ");
+    switch (g_tex_wrap_guard_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (SAFE WRAP)    >]"); break;
+    }
+    printf(" stop tex corruption in full cache");
+    printf("\n");
+
     // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
     printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? ">" : " ");
     switch (g_dma_fix_preset) {
@@ -3395,6 +3412,7 @@ bool displayOptionsMenu()
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
+        case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_DEBUG_FB2D:     g_debug_fb2d             = (g_debug_fb2d             + 1) % 2; break;
@@ -3501,6 +3519,7 @@ bool displayOptionsMenu()
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
+        case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_DEBUG_FB2D:     g_debug_fb2d             = (g_debug_fb2d             + 1) % 2; break;
@@ -4369,6 +4388,7 @@ int main(int argc, wchar *argv[])
     printf("JIT Carry Ops  : %s\n", g_jit_carry_preset ? "ON (10 OPS JITTED)" : "OFF (LEGACY)");
     printf("JIT Mac Ops    : %s\n", g_jit_mac_preset ? "ON (FASTMEM READS)" : "OFF (LEGACY)");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
+    printf("Tex wrap guard : %s\n", g_tex_wrap_guard_preset ? "ON (SAFE WRAP)" : "OFF (LEGACY)");
     printf("Dino Crisis Fix: %s\n", g_dino_crisis_inventory_hack_preset ? "ON (REDECODE)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {
