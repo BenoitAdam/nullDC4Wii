@@ -217,7 +217,14 @@ void mem_Term()
 // and game_presets just write to it. See _vmem_GetBlockPtr() for why the bulk
 // copy is byte-for-byte identical to the loop it replaces, and for the cases
 // that deliberately stay on the loop (MMIO, mirror wrap, region crossing).
-extern "C" { int g_blockcopy_preset = 0; }
+// Wii-CONFIRMED +2% ([[blockwrite-per-word-dispatch]]). Default ON.
+// Kept extern "C" like the declarations in wii/main.cpp and wii/game_presets.cpp
+// (both TUs declare it that way; changing only this side would mismatch them).
+extern "C" { int g_blockcopy_preset = 1; }
+
+extern "C" {
+  int get_blockcopy_preset() { return g_blockcopy_preset; }
+}
 
 static void blockcopy_announce()
 {

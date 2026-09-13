@@ -464,7 +464,9 @@ extern "C" {
 // channels are visited, no empty filter-envelope call, no DSP send while the
 // DSP is off, cached master volume, silent CD-audio skipped). Read directly as
 // a global by plugs/nullAICA/sgc_if.cpp and aica.cpp — it is tested 44,100x/s.
-int g_aica_fast_preset = 0;
+// Wii-CONFIRMED (Castlevania, 2026-09-13): aica% 10.0->7.7, speed +2.6%, no
+// audible change. Default ON.
+int g_aica_fast_preset = 1;
 
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
