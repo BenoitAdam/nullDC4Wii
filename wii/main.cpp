@@ -541,13 +541,18 @@ extern "C" {
 int g_sched_preset = 0;
 // 0 = off (legacy: the persistent texture arena resets to offset 0 whenever a
 // decode does not fit, including mid-frame, over textures the GP is still
-// sampling). 1 = on: refuse such an allocation and use the address-derived
-// skimp slot for that texture instead. See fast_bump_alloc() in gxRend.cpp.
+// sampling). 1 = on: drain the GP once before such a mid-frame reset. See
+// fast_bump_alloc() in gxRend.cpp.
 int g_tex_wrap_guard_preset = 0;
+// 0 = off (legacy: a cached texture keeps the clamp/flip wrap mode of the first
+// polygon that decoded it). 1 = on: every bind applies its own polygon's TSP
+// wrap mode. See SetTextureParams() in gxRend.cpp.
+int g_tex_clamp_fix_preset = 0;
 
 extern "C" {
   int get_sched_preset() { return g_sched_preset; }
   int get_tex_wrap_guard_preset() { return g_tex_wrap_guard_preset; }
+  int get_tex_clamp_fix_preset() { return g_tex_clamp_fix_preset; }
 }
 
 // FASTMEM — PPC-MMU fastmem for the SH4 dynarec (wii/wii_fastmem.cpp +
@@ -2092,6 +2097,7 @@ void checkBiosFiles()
 #define OPT_HUD_PASS    53
 #define OPT_SCHED       54
 #define OPT_TEX_WRAP_GUARD 96 // Page 6 (EXPERIMENTAL), see OPT_PAGE5_ROWS
+#define OPT_TEX_CLAMP_FIX 97  // Page 6 (EXPERIMENTAL), under TEX WRAP GUARD
 #define OPT_DYNAREC     55
 #define OPT_SUBPASS_ZCLEAR 56 // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_POLY_OFFSET 57    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
@@ -2235,6 +2241,7 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_LAUNCH,
   OPT_MIPMAP,
   OPT_TEX_WRAP_GUARD,
+  OPT_TEX_CLAMP_FIX,
   OPT_DMA_FIX,
   OPT_SCHED,
   OPT_EXIT_FIX,
@@ -2972,6 +2979,15 @@ bool displayOptionsMenu()
     printf(" stop tex corruption in full cache");
     printf("\n");
 
+    // --- Row: TEX CLAMP FIX - per-polygon wrap mode on cached textures ---
+    printf("%s TEX CLAMP FIX  : ", (selectedRow == OPT_TEX_CLAMP_FIX) ? ">" : " ");
+    switch (g_tex_clamp_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (PER POLYGON)  >]"); break;
+    }
+    printf(" fix streaked/stretched textures");
+    printf("\n");
+
     // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
     printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? ">" : " ");
     switch (g_dma_fix_preset) {
@@ -3413,6 +3429,7 @@ bool displayOptionsMenu()
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
+        case OPT_TEX_CLAMP_FIX:  g_tex_clamp_fix_preset   = (g_tex_clamp_fix_preset   + 1) % 2; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_DEBUG_FB2D:     g_debug_fb2d             = (g_debug_fb2d             + 1) % 2; break;
@@ -3520,6 +3537,7 @@ bool displayOptionsMenu()
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
+        case OPT_TEX_CLAMP_FIX:  g_tex_clamp_fix_preset   = (g_tex_clamp_fix_preset   + 1) % 2; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_DEBUG_FB2D:     g_debug_fb2d             = (g_debug_fb2d             + 1) % 2; break;
@@ -4389,6 +4407,7 @@ int main(int argc, wchar *argv[])
     printf("JIT Mac Ops    : %s\n", g_jit_mac_preset ? "ON (FASTMEM READS)" : "OFF (LEGACY)");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Tex wrap guard : %s\n", g_tex_wrap_guard_preset ? "ON (SAFE WRAP)" : "OFF (LEGACY)");
+    printf("Tex clamp fix  : %s\n", g_tex_clamp_fix_preset ? "ON (PER POLYGON)" : "OFF (LEGACY)");
     printf("Dino Crisis Fix: %s\n", g_dino_crisis_inventory_hack_preset ? "ON (REDECODE)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");
     switch (g_audio_buffers_preset) {

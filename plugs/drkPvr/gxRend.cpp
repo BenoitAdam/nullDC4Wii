@@ -782,10 +782,15 @@ extern "C" int get_trans_sort_preset();
 extern "C" int get_autosort_preset();
 #define AUTOSORT() (get_autosort_preset())
 // TEX_WRAP_GUARD: 0 = legacy (the persistent texture arena resets to offset 0
-// the moment a decode does not fit, whenever that happens), 1 = never recycle
-// bytes this frame already handed to GX. See fast_bump_alloc().
+// the moment a decode does not fit, whenever that happens), 1 = drain the GP
+// before recycling it mid-frame. See fast_bump_alloc().
 extern "C" int get_tex_wrap_guard_preset();
 #define TEX_WRAP_GUARD() (get_tex_wrap_guard_preset())
+// TEX_CLAMP_FIX: 0 = legacy (a cached texture keeps the clamp/flip wrap mode of
+// whichever polygon decoded it first), 1 = re-apply the binding polygon's own
+// TSP wrap mode on every bind. See SetTextureParams().
+extern "C" int get_tex_clamp_fix_preset();
+#define TEX_CLAMP_FIX() (get_tex_clamp_fix_preset())
 
 // ── list_order: honour PVR list-type render order, not TA submission order ──
 // Real PVR2 sorts every polygon into a per-tile OPAQUE / PUNCH-THROUGH /
@@ -1805,14 +1810,14 @@ static u32 g_texc_alloc_kb = 0; // KB handed out — tells us how big the arena 
 static u32 s_plus_wrap_frames = 0; // consecutive frames in which the arena wrapped
 static u32 g_texc_wrapskip = 0;    // TEX_WRAP_GUARD: allocations sent to the skimp
                                    // slot rather than overwrite a live arena byte
+static u32 g_texc_drains   = 0;    // TEX_WRAP_GUARD: mid-frame GP drains taken so
+                                   // that a wrap could recycle the arena safely
 
-// TEX_WRAP_GUARD bookkeeping. s_fast_frame_base is where THIS frame's first
-// arena allocation landed; everything below it was handed out on an earlier
-// frame and is safe to recycle (DoRender() calls gx_sync_pending() before any
-// decoding, so the GP has finished with it). s_fast_wrapped_frame stops a second
-// wrap, which would run into this frame's own allocations from the other side.
-static u32  s_fast_frame_base    = 0;
-static bool s_fast_wrapped_frame = false;
+// TEX_WRAP_GUARD bookkeeping: at most one mid-frame GP drain per frame. A second
+// exhaustion inside the same frame means the arena cannot hold one frame's
+// working set at all, and draining once per texture from there would stall the
+// pipe on every decode.
+static bool s_fast_drained_frame = false;
 
 // Returned in *alloc_off_out when the guard refused the allocation and handed
 // back an address-derived skimp slot instead: that is not an arena offset, so it
@@ -1852,9 +1857,8 @@ static TexMapSlot s_fastmap[FASTMAP_SIZE]; // ~16 KB, lives in BSS
 
 static void fast_cache_reset()
 {
-  s_fast_bump_offset = 0;
-  s_fast_frame_base    = 0;
-  s_fast_wrapped_frame = false;
+  s_fast_bump_offset   = 0;
+  s_fast_drained_frame = false;
   memset(s_fastmap, 0xFF, sizeof(s_fastmap));
 }
 
@@ -1891,37 +1895,46 @@ static TextureCacheDesc* fast_bump_alloc(u32 pixel_bytes, u32 **pixel_out,
   u32 total    = desc_sz + pixel_sz;
   u8 *abase = tex_arena_base(); // FAST/NORMAL: vram_buffer. PLUS: its own block.
 
-  // TEX_WRAP_GUARD(): once this frame has wrapped, its own earlier allocations
-  // occupy [s_fast_frame_base, limit) and the usable end moves down to meet them.
-  u32 end = (TEX_WRAP_GUARD() && s_fast_wrapped_frame) ? s_fast_frame_base
-                                                       : tex_arena_limit();
-  if (s_fast_bump_offset + total > end)
+  if (s_fast_bump_offset + total > tex_arena_limit())
   {
     if (TEX_WRAP_GUARD())
     {
       // Why the legacy reset below is unsafe mid-frame:
       //
-      // The arena is persistent, and wrapping is how it recycles. Recycling is
-      // fine for bytes handed out on an EARLIER frame - DoRender() opens with
-      // gx_sync_pending(), so the GP has finished with all of them before any
-      // decoding starts. It is NOT fine for bytes handed out during THIS frame:
-      // the FIFO streams, so the GP is already sampling textures bound earlier
-      // in this very walk while the CPU is still decoding later ones. Resetting
-      // the offset to 0 regardless overwrites them under the GP, and it is
-      // sampled as garbage.
+      // The arena is persistent, and wrapping is how it recycles. But the FIFO
+      // streams: while the CPU decodes the texture for one strip, the GP is
+      // still rasterizing strips handed to it earlier in this same walk. Every
+      // byte those earlier strips sample is live, and resetting the offset to 0
+      // decodes straight over the bottom of the arena while they are read.
       //
       // That is not theoretical: a 3328 KB PLUS arena (2026-09-13) wrapped
       // mid-frame in Jet Set Radio under tex_cache=very_fast+ / vq_cmpr=on and
       // corrupted its textures. s_plus_arena_ok only gives up after 8 wrapping
       // frames, so wraps 1-7 corrupt first.
       //
-      // Guarded: at most one wrap per frame, and only when this frame's first
-      // allocation left room at the bottom of the arena for this one. Otherwise
-      // refuse and hand back the address-derived skimp slot - CACHE_VERY_FAST's
-      // behaviour, which spends quality on THIS texture instead of correctness
-      // on some other one that is still being drawn.
-      if (s_fast_wrapped_frame || total > s_fast_frame_base)
+      // The bottom of the arena is the worst possible place to assume is free.
+      // Entries allocated on earlier frames live there, and a cache HIT binds
+      // one without re-decoding it, so those old bytes carry nearly every bind
+      // in the frame - Jet Set Radio measures ~20000 binds/s against ~25
+      // decodes/s. An earlier-frame entry is not idle just because the frame it
+      // was decoded on has ended; it is idle when the GP says so.
+      //
+      // So ask the GP. Draining here makes every byte handed out so far provably
+      // dead and the wrap provably safe, and costs one pipeline stall at a rate
+      // the [TEXC] line measures in wraps per SECOND, not per frame.
+      if (!s_fast_drained_frame)
       {
+        GX_DrawDone(); // GP is finished with every texture bound so far
+        s_fast_drained_frame = true;
+        g_texc_drains++;
+      }
+      else
+      {
+        // Second exhaustion in one frame: the working set does not fit the arena
+        // at all, and draining per texture from here would stall the pipe on
+        // every decode. Hand back the address-derived skimp slot instead -
+        // CACHE_VERY_FAST's behaviour - and let s_plus_arena_ok retire the arena
+        // if the scene keeps this up.
         g_texc_wrapskip++;
         TextureCacheDesc *d = skimp_slot(tex_addr);
         *pixel_out     = (u32*)&d[1];
@@ -1931,7 +1944,6 @@ static TextureCacheDesc* fast_bump_alloc(u32 pixel_bytes, u32 **pixel_out,
         // exactly as under CACHE_VERY_FAST. The caller's validity check decides.
         return d;
       }
-      s_fast_wrapped_frame = true;
     }
     s_fast_bump_offset = 0;
     memset(s_fastmap, 0xFF, sizeof(s_fastmap));
@@ -2120,12 +2132,10 @@ static void tex_frame_reset()
   if (s_plus_wrap_frames >= 8 || g_texc_wraps_frame >= 8) s_plus_arena_ok = false;
   g_texc_wraps_frame = 0;
 
-  // TEX_WRAP_GUARD(): a new frame starts here. Everything the persistent arena
-  // handed out before this mark belongs to a frame the GP has already finished,
-  // so it may be recycled; everything after it may not. (This does NOT reset the
-  // arena - it is persistent across frames by design.)
-  s_fast_frame_base    = s_fast_bump_offset;
-  s_fast_wrapped_frame = false;
+  // TEX_WRAP_GUARD(): a new frame starts here, so the one mid-frame GP drain a
+  // wrap is allowed to spend is available again. (This does NOT reset the arena
+  // - it is persistent across frames by design.)
+  s_fast_drained_frame = false;
 
   bump_reset();       // reset arena for new frame
   hash_map_reset();   // clear hash map — O(4 KB memset), fast on PPC
@@ -2138,21 +2148,22 @@ static void tex_frame_reset()
   // the whole very_fast/very_fast_plus investigation was settled - keep it.
   if (++g_texc_frames >= 60)
   {
-    if (DEBUG_MESSAGE())
+    if (1)
     {
       u32 cached_pct = g_texc_binds ? (100u * (g_texc_binds - g_texc_decodes)) / g_texc_binds : 0u;
-      printf("[TEXC] p%d %uf binds=%u dec=%u (%u%% cached, %u/frame) miss: stride=%u new=%u sent=%u shape=%u | wraps=%u mapfull=%u arena=%u(vq=%u pal=%u oth=%u) allocs=%u allocKB=%u plusarena=%u wrapskip=%u\n",
+      printf("[TEXC] p%d %uf binds=%u dec=%u (%u%% cached, %u/frame) miss: stride=%u new=%u sent=%u shape=%u | wraps=%u mapfull=%u arena=%u(vq=%u pal=%u oth=%u) allocs=%u allocKB=%u plusarena=%u wrapskip=%u drains=%u\n",
              get_texture_cache_preset(), g_texc_frames, g_texc_binds, g_texc_decodes,
              cached_pct, g_texc_decodes / g_texc_frames,
              g_texc_m_stride, g_texc_m_new, g_texc_m_sent, g_texc_m_shape,
              g_texc_wraps, g_texc_mapfull, g_texc_arena,
              g_texc_a_vq, g_texc_a_pal, g_texc_a_oth,
-             g_texc_allocs, g_texc_alloc_kb, s_plus_arena_ok ? 1u : 0u, g_texc_wrapskip);
+             g_texc_allocs, g_texc_alloc_kb, s_plus_arena_ok ? 1u : 0u, g_texc_wrapskip,
+             g_texc_drains);
       fflush(stdout); // log is freopen'd to SD; without this the tail is lost
     }
     g_texc_frames = g_texc_binds = g_texc_decodes = 0;
     g_texc_m_stride = g_texc_m_new = g_texc_m_sent = g_texc_m_shape = 0;
-    g_texc_wraps = g_texc_mapfull = g_texc_arena = g_texc_wrapskip = 0;
+    g_texc_wraps = g_texc_mapfull = g_texc_arena = g_texc_wrapskip = g_texc_drains = 0;
     g_texc_a_vq = g_texc_a_pal = g_texc_a_oth = 0;
     g_texc_allocs = g_texc_alloc_kb = 0;
   }
@@ -2280,6 +2291,7 @@ bool g_split_screen_cached     = false; // same idea, for SPLIT_SCREEN(): gates
 bool g_fixed_depth_cached      = false; // same idea, for FIXED_DEPTH_*(): skips
                                         // the per-vertex min/max W tracking
 bool  g_legacy_depth_cached    = false; // same idea, for LEGACY_DEPTH()
+bool  g_tex_clamp_fix_cached   = false; // same idea, for TEX_CLAMP_FIX(): read per texture bind
 float g_vert_z_clamp           = 0.0001f; // vert_base 1/W floor: 0.0001 normally,
                                         // 0.001 under LEGACY_DEPTH (1bb8c27).
                                         // A per-frame global rather than a
@@ -2653,6 +2665,7 @@ void reset_vtx_state()
   g_fog_cached              = FOG();
   g_split_screen_cached     = SPLIT_SCREEN();
   g_legacy_depth_cached     = LEGACY_DEPTH();
+  g_tex_clamp_fix_cached    = TEX_CLAMP_FIX();
   // 1bb8c27 tracked nothing per vertex, so legacy takes the "skip tracking" path
   // that FIXED_DEPTH_*() uses; DoRender() supplies the planes for both.
   g_fixed_depth_cached      = !FIXED_DEPTH_OFF() || g_legacy_depth_cached;
@@ -4619,6 +4632,9 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
   if (already_decoded_this_frame)
   {
+    if (g_tex_clamp_fix_cached) // see the bind at the end of this function
+      GX_InitTexObjWrapMode(&pbuff->tex, (u8)TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
+                                         (u8)TexUV(mod->tsp.FlipV, mod->tsp.ClampV));
     GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
     s_tex_is_yuv_tev = yuv_tev;
     if (yuv_tev)
@@ -5830,6 +5846,14 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       GX_InvalidateTexAll();
   }
 
+  // TEX_CLAMP_FIX(): Clamp/Flip are per-POLYGON TSP bits, but the GXTexObj keeps
+  // the wrap of whichever polygon decoded it and no validity check looks at them
+  // (shape_key only keeps TSP bits 0-5). A tiled floor that inherits a clamp
+  // smears its edge texels to infinity. Rewriting the CPU-side object is safe:
+  // GX_LoadTexObj copies it into the FIFO, so queued draws keep their mode.
+  if (g_tex_clamp_fix_cached)
+    GX_InitTexObjWrapMode(&pbuff->tex, (u8)TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
+                                       (u8)TexUV(mod->tsp.FlipV, mod->tsp.ClampV));
   GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
   s_tex_is_yuv_tev = yuv_tev;
   if (yuv_tev)
@@ -7531,12 +7555,12 @@ void DoRender()
   gx_sync_pending();
 
   /* commented to help prevent FIFO */
-  /*
+  
   if(1) {
     printf("MEM1 free: %.2f MB\n", ((unat)SYS_GetArena1Hi() - (unat)SYS_GetArena1Lo()) / 1024.f / 1024);
     printf("MEM2 free: %.2f MB\n", ((unat)SYS_GetArena2Hi() - (unat)SYS_GetArena2Lo()) / 1024.f / 1024.f);
   }
-    */
+    
 
   // 240p (non-interlaced NTSC/PAL) modes only use a fraction of the nominal
   // 640x480 canvas (shrink it so the scene still fills the output), while

@@ -399,7 +399,11 @@
         tex_wrap_guard=on   <- on/off, stops the persistent texture arena from
                                 recycling bytes the GPU is still sampling this
                                 frame (texture corruption when the cache fills).
-                                Costs cache quality on the refused texture only.
+                                Drains the GPU once before recycling mid-frame.
+        tex_clamp_fix=on    <- on/off, a cached texture uses the wrap mode
+                                (clamp/flip) of the polygon drawing it, not of
+                                the first polygon that decoded it. Fixes tiled
+                                surfaces streaking to infinity (JSR floor).
         sched=on            <- on/off, unified cycle-deadline event scheduler
                                 (dc/sh4/sh4_sched.cpp). Fires the completion/IRQ
                                 events whose RELATIVE ordering matters (GD-ROM
@@ -936,6 +940,7 @@ extern "C" int g_blockcopy_preset;
 extern int g_jit_fsqrt_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
+extern int g_tex_clamp_fix_preset;
 extern int g_player_count;
 extern int g_controller_type;
 extern int g_framebuffer_2d;
@@ -1057,6 +1062,7 @@ struct GamePreset
     int jit_fsqrt;
     int sched;
     int tex_wrap_guard;
+    int tex_clamp_fix;
     int debug_fb2d;
     int debug_message;
     int debug_loop;
@@ -1506,6 +1512,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_fsqrt"))      p->jit_fsqrt      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
+    else if (key_eq(key, "tex_clamp_fix"))  p->tex_clamp_fix  = parse_bool(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
     else if (key_eq(key, "debug_loop"))     p->debug_loop     = parse_bool(val);
@@ -1603,6 +1610,7 @@ static void preset_clear(GamePreset* cur)
     cur->jit_fsqrt    = -1;
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
+    cur->tex_clamp_fix  = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
     cur->debug_loop = -1;
@@ -1728,6 +1736,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->jit_fsqrt      >= 0) { g_jit_fsqrt_preset      = p->jit_fsqrt;      printf("  jit_fsqrt      -> %d\n", p->jit_fsqrt);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }
+    if (p->tex_clamp_fix  >= 0) { g_tex_clamp_fix_preset  = p->tex_clamp_fix;  printf("  tex_clamp_fix  -> %d\n", p->tex_clamp_fix);  }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }
     if (p->debug_loop     >= 0) { g_debug_loop            = p->debug_loop;     printf("  debug_loop     -> %d\n", p->debug_loop);     }
