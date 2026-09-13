@@ -460,6 +460,12 @@ extern "C" {
   int get_mute_pcm16_preset() { return g_mute_pcm16_preset; }
 }
 
+// 0=off (legacy mixer), 1=on (same samples, less work per sample: only playing
+// channels are visited, no empty filter-envelope call, no DSP send while the
+// DSP is off, cached master volume, silent CD-audio skipped). Read directly as
+// a global by plugs/nullAICA/sgc_if.cpp and aica.cpp — it is tested 44,100x/s.
+int g_aica_fast_preset = 0;
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -2098,6 +2104,7 @@ void checkBiosFiles()
 #define OPT_SCHED       54
 #define OPT_TEX_WRAP_GUARD 96 // Page 6 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_TEX_CLAMP_FIX 97  // Page 6 (EXPERIMENTAL), under TEX WRAP GUARD
+#define OPT_AICA_FAST   98    // Page 4 (AUDIO), under MUTE 16BIT PCM
 #define OPT_DYNAREC     55
 #define OPT_SUBPASS_ZCLEAR 56 // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_POLY_OFFSET 57    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
@@ -2222,7 +2229,8 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_LAUNCH,
   OPT_AUDIO_BUFFERS,
   OPT_CDDA,
-  OPT_MUTE_PCM16
+  OPT_MUTE_PCM16,
+  OPT_AICA_FAST
 };
 
 // Page 4 - CORE
@@ -2894,6 +2902,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (SILENCE 16B)  >]"); break;
     }
     printf(" ChuChu Rocket echoey SFX fix");
+    printf("\n");
+
+    // --- Row: AICA fast mixer (plugs/nullAICA/sgc_if.cpp GenerateAllFast) ---
+    printf("%s AICA FAST      : ", (selectedRow == OPT_AICA_FAST) ? ">" : " ");
+    switch (g_aica_fast_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FASTER)       >]"); break;
+    }
+    printf(" same sound, less CPU");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3425,6 +3442,7 @@ bool displayOptionsMenu()
         case OPT_JIT_FSQRT:      g_jit_fsqrt_preset       = (g_jit_fsqrt_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
+        case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
@@ -3533,6 +3551,7 @@ bool displayOptionsMenu()
         case OPT_JIT_FSQRT:      g_jit_fsqrt_preset       = (g_jit_fsqrt_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
+        case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
@@ -4461,6 +4480,7 @@ int main(int argc, wchar *argv[])
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("CDDA Music     : %s\n", g_cdda_preset ? "ON (CD MUSIC)" : "OFF (LEGACY)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
+    printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
     printf("BG Polygon     : %s\n", g_bg_poly_preset ? "ON (CORRECT)" : "OFF (FASTER)");
     printf("X Scaler       : %s\n", g_x_scaler_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
     printf("Y Scaler       : %s\n", g_y_scaler_preset ? "ON (VSCALEFACTOR)" : "OFF (LEGACY)");

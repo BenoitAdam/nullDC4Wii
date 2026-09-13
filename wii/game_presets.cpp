@@ -642,6 +642,12 @@
                                 ChuChu Rocket's echoey/slow-motion 16-bit SFX. Note
                                 this also mutes 16-bit music/voices, so it is a
                                 per-game hack, not a general fix.
+        aica_fast=on        <- on/off, cheaper AICA sound mixer (see sgc_if.cpp
+                                GenerateAllFast()). Same output samples as off:
+                                only playing channels are visited, the empty
+                                filter-envelope call is gone, no DSP send while
+                                the DSP is off, master volume is cached, silent
+                                CD-audio sectors are skipped. off (default, legacy).
         bg_poly=on          <- on/off, background polygon rendering (see gxRend.cpp
                                 BG_POLY_FIX()). ISP_BACKGND_T's 3 vertices are
                                 normally only used for the EFB clear color;
@@ -905,6 +911,7 @@ extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
 extern int g_cdda_preset;
 extern int g_mute_pcm16_preset;
+extern int g_aica_fast_preset;
 extern int g_bg_poly_preset;
 extern int g_layer_sort_preset;
 extern int g_hokuto_hack_preset;
@@ -1027,6 +1034,7 @@ struct GamePreset
     int show_fps;
     int cdda;
     int mute_pcm16;
+    int aica_fast;
     int bg_poly;
     int layer_sort;
     int hokuto_hack;
@@ -1477,6 +1485,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "show_fps"))       p->show_fps       = parse_bool(val);
     else if (key_eq(key, "cdda"))           p->cdda           = parse_bool(val);
     else if (key_eq(key, "mute_pcm16"))     p->mute_pcm16     = parse_bool(val);
+    else if (key_eq(key, "aica_fast"))      p->aica_fast      = parse_bool(val);
     else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
     else if (key_eq(key, "layer_sort"))     p->layer_sort     = parse_bool(val);
     else if (key_eq(key, "hokuto_hack"))    p->hokuto_hack    = parse_bool(val);
@@ -1575,6 +1584,7 @@ static void preset_clear(GamePreset* cur)
     cur->show_fps = -1;
     cur->cdda = -1;
     cur->mute_pcm16 = -1;
+    cur->aica_fast = -1;
     cur->bg_poly = -1;
     cur->layer_sort = -1;
     cur->hokuto_hack = -1;
@@ -1693,6 +1703,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->show_fps       >= 0) { g_show_fps_overlay     = p->show_fps;        printf("  show_fps       -> %d\n", p->show_fps);       }
     if (p->cdda           >= 0) { g_cdda_preset          = p->cdda;            printf("  cdda           -> %d\n", p->cdda);           }
     if (p->mute_pcm16     >= 0) { g_mute_pcm16_preset    = p->mute_pcm16;      printf("  mute_pcm16     -> %d\n", p->mute_pcm16);     }
+    if (p->aica_fast      >= 0) { g_aica_fast_preset     = p->aica_fast;       printf("  aica_fast      -> %d\n", p->aica_fast);      }
     if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
     if (p->layer_sort     >= 0) { g_layer_sort_preset    = p->layer_sort;      printf("  layer_sort     -> %d\n", p->layer_sort);     }
     if (p->hokuto_hack    >= 0) { g_hokuto_hack_preset   = p->hokuto_hack;     printf("  hokuto_hack    -> %d\n", p->hokuto_hack);    }

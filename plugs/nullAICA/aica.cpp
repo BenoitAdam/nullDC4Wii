@@ -54,12 +54,22 @@ u32 GetL(u32 witch)
 // vbaARM/arm_mem.cpp; an extern "C" wrapper here breaks the link.
 void FASTCALL ArmInterruptChange(u32 bits, u32 L);
 
+extern int g_aica_fast_preset;   // wii/main.cpp
+
 void update_arm_interrupts()
 {
     u32 p_ints = SCIEB->full & SCIPD->full;
 
     u32 Lval = 0;
-    if (p_ints)
+    if (p_ints && g_aica_fast_preset)
+    {
+        // Runs every sample. Lowest pending source among bits 0..10, same as
+        // the loop below; SAMPLE_DONE is bit 10, so the loop often ran all 11.
+        const u32 low = p_ints & 0x7FF;
+        if (low)
+            Lval = GetL(__builtin_ctz(low));
+    }
+    else if (p_ints)
     {
         u32 bit_value = 1;
         for (u32 i = 0; i < 11; i++)

@@ -417,6 +417,12 @@ struct ChannelEx
     bool enabled;
     int  ChanelNumber;
 
+    // Bit n set <=> Chans[n].enabled. Kept in step by enable()/disable() (the
+    // only writers of `enabled`) whatever aica_fast says, so flipping the
+    // preset never starts from a stale mask.
+    static u32 active_lo;   // channels 0..31
+    static u32 active_hi;   // channels 32..63
+
     void Init(int cn, u8* ccd_raw)
     {
         ccd = (ChannelCommonData*)&ccd_raw[cn * 0x80];
@@ -428,10 +434,19 @@ struct ChannelEx
     void disable()
     {
         enabled = false;
+        const u32 n = (u32)(this - Chans);
+        if (n < 32) active_lo &= ~(1u << n);
+        else        active_hi &= ~(1u << (n - 32));
         SetAegState(EG_Release);
         AEG.SetValue(0x3FF);
     }
-    void enable() { enabled = true; }
+    void enable()
+    {
+        enabled = true;
+        const u32 n = (u32)(this - Chans);
+        if (n < 32) active_lo |= 1u << n;
+        else        active_hi |= 1u << (n - 32);
+    }
 
     INLINE SampleType InterpolateSample()
     {
@@ -875,6 +890,86 @@ void FASTCALL AegStep(ChannelEx* ch)
 template<u32 state>
 void FASTCALL FegStep(ChannelEx* ch) { /* stub */ }
 
+// ---------------------------------------------------------------------------
+// aica_fast preset: produces exactly the same samples as ChannelEx::Step() /
+// GenerateAll(), for less work per sample. Differences, all output-neutral:
+//   * only channels whose bit is set in active_lo/hi are visited; the mask is
+//     snapshotted, which matches the per-channel `enabled` test because a
+//     channel's step can only disable ITSELF
+//   * no StepFEG call: every FegStep<> is an empty stub
+//   * the DSP send is computed only when the DSP runs, or when the rare
+//     envelope silence test below needs it
+//   * the AEG step is a direct call picked by AEG.state instead of the StepAEG
+//     pointer; SetAegState() is the only writer of either and sets both
+//   * left/right accumulate in locals and are written back once
+// ---------------------------------------------------------------------------
+extern int g_aica_fast_preset;   // wii/main.cpp; read directly, 44,100x/s
+
+static INLINE void ChannelStepFast(ChannelEx* ch, bool dsp_on, SampleType& ml, SampleType& mr)
+{
+    SampleType sample = ch->InterpolateSample();
+
+    u32 ofsatt = ch->lfo.alfo + (ch->AEG.GetValue() >> 2);
+    ofsatt = min(ofsatt, 255u);
+
+    u32 const max_att = ((16 << 4) - 1) - ofsatt;
+    s32* logtable = ofsatt + tl_lut;
+
+    u32 dl = min(ch->VolMix.DLAtt, max_att);
+    u32 dr = min(ch->VolMix.DRAtt, max_att);
+
+    SampleType oLeft  = FPMul(sample, logtable[dl], 15);
+    SampleType oRight = FPMul(sample, logtable[dr], 15);
+
+    SampleType oDsp = 0;
+    if (dsp_on)
+    {
+        u32 ds = min(ch->VolMix.DSPAtt, max_att);
+        oDsp = FPMul(sample, logtable[ds], 15);
+    }
+
+    if ((ch->AEG.state != EG_Attack) && (ch->AEG.state != EG_Release) &&
+        (ch->AEG.Decay2Value == 0))
+    {
+        if (!dsp_on)
+        {
+            u32 ds = min(ch->VolMix.DSPAtt, max_att);
+            oDsp = FPMul(sample, logtable[ds], 15);
+        }
+        if ((s64)(oLeft + oRight + oDsp) == 0)
+            ch->SetAegState(EG_Attack);
+    }
+
+    if (dsp_on)
+        *ch->VolMix.DSPOut += oDsp;
+    ml += oLeft;
+    mr += oRight;
+
+    switch (ch->AEG.state)
+    {
+    case EG_Attack:  AegStep<0>(ch); break;
+    case EG_Decay1:  AegStep<1>(ch); break;
+    case EG_Decay2:  AegStep<2>(ch); break;
+    case EG_Release: AegStep<3>(ch); break;
+    }
+    ch->StepStream(ch);
+    ch->lfo.Step(ch);
+}
+
+static void GenerateAllFast(bool dsp_on)
+{
+    SampleType ml = mixl;
+    SampleType mr = mixr;
+
+    for (u32 m = ChannelEx::active_lo; m; m &= m - 1)
+        ChannelStepFast(&ChannelEx::Chans[__builtin_ctz(m)], dsp_on, ml, mr);
+    for (u32 m = ChannelEx::active_hi; m; m &= m - 1)
+        ChannelStepFast(&ChannelEx::Chans[32 + __builtin_ctz(m)], dsp_on, ml, mr);
+
+    mixl = ml;
+    mixr = mr;
+}
+
 void staticinitialise()
 {
     STREAM_STEP_LUT[0][0][0]=&StreamStep<0,0,0>; STREAM_STEP_LUT[1][0][0]=&StreamStep<1,0,0>;
@@ -914,6 +1009,8 @@ void staticinitialise()
 
 #define AicaChannel ChannelEx
 AicaChannel AicaChannel::Chans[64];
+u32 AicaChannel::active_lo = 0;
+u32 AicaChannel::active_hi = 0;
 #define Chans AicaChannel::Chans
 
 double dbToval(double db) { return pow(10, db / 20.0); }
@@ -1000,6 +1097,9 @@ void WriteCommonReg8(u32 reg, u32 data)
 #define CDDA_SIZE  (2352/2)
 s16 cdda_sector[CDDA_SIZE] = {0};
 u32 cdda_index = CDDA_SIZE << 1;
+// True while cdda_sector holds only zeros. Refreshed on every refill in both
+// modes, so it is never stale when aica_fast is switched on mid-sector.
+static bool cdda_silent = false;
 
 // CDDA_FIX(): feed GD-ROM Red Book audio (CD music tracks) into the AICA
 // EXTS0 mixer input. Preset-gated, default OFF: pulls one 2352-byte sector
@@ -1010,11 +1110,21 @@ void FASTCALL gdrom_get_cdda(s16* sector);
 
 void AICA_Sample()
 {
+    const bool fast   = g_aica_fast_preset != 0;
+    const bool dsp_on = aica_settings.DSPEnabled != 0;
+
     mixl = 0;
     mixr = 0;
-    memset(dsp.MIXS, 0, sizeof(dsp.MIXS));
 
-    ChannelEx::GenerateAll();
+    // MIXS is only read by the DSP. aica_fast stops writing it while the DSP
+    // is off, so there is nothing to clear either.
+    if (!fast || dsp_on)
+        memset(dsp.MIXS, 0, sizeof(dsp.MIXS));
+
+    if (fast)
+        GenerateAllFast(dsp_on);
+    else
+        ChannelEx::GenerateAll();
 
     // CDDA input — refill the sector buffer every 588 stereo frames.
     if (cdda_index >= CDDA_SIZE)
@@ -1039,13 +1149,26 @@ void AICA_Sample()
         {
             memset(cdda_sector, 0, sizeof(cdda_sector));
         }
+
+        // Stops at the first non-zero sample, so a playing track costs almost
+        // nothing; only a silent sector is scanned whole (~75 times a second).
+        cdda_silent = true;
+        for (u32 i = 0; i < CDDA_SIZE; i++)
+        {
+            if (cdda_sector[i] != 0)
+            {
+                cdda_silent = false;
+                break;
+            }
+        }
     }
     s32 EXTS0L = cdda_sector[cdda_index];
     s32 EXTS0R = cdda_sector[cdda_index + 1];
     cdda_index += 2;
 
-    // CDDA mix
-    if (aica_settings.CDDAMute == 0)
+    // CDDA mix. VOLPAN of a zero sample adds zero, so aica_fast skips a
+    // silent sector.
+    if (aica_settings.CDDAMute == 0 && !(fast && cdda_silent))
     {
         VOLPAN(EXTS0L, dsp_out_vol[16].EFSDL, dsp_out_vol[16].EFPAN, mixl, mixr);
         VOLPAN(EXTS0R, dsp_out_vol[17].EFSDL, dsp_out_vol[17].EFPAN, mixl, mixr);
@@ -1078,9 +1201,28 @@ void AICA_Sample()
         mixr = mixl;
     }
 
-    // Master volume
+    // Master volume. The float math (u32->float, fdivs, float->int) only has
+    // to rerun when one of its two inputs changes; volume_lut is fixed after
+    // sgc_Init().
     u32 mvol = CommonData->MVOL;
-    s32 val  = (s32)(volume_lut[mvol] * aica_settings.Volume / 100.0f);
+    s32 val;
+    if (fast)
+    {
+        static u32 cached_mvol = ~0u;
+        static u32 cached_vol  = ~0u;
+        static s32 cached_val  = 0;
+        if (mvol != cached_mvol || aica_settings.Volume != cached_vol)
+        {
+            cached_mvol = mvol;
+            cached_vol  = aica_settings.Volume;
+            cached_val  = (s32)(volume_lut[mvol] * aica_settings.Volume / 100.0f);
+        }
+        val = cached_val;
+    }
+    else
+    {
+        val = (s32)(volume_lut[mvol] * aica_settings.Volume / 100.0f);
+    }
 
     mixl = (s32)FPMul((s64)mixl, val, 15);
     mixr = (s32)FPMul((s64)mixr, val, 15);
