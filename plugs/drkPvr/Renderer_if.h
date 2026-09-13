@@ -25,6 +25,19 @@ extern u64 RenderTicks;
 extern u64 TaTicks;
 extern u32 TaCalls;
 
+// Sound split, same wall-time method. armUpdateARM (plugs/vbaARM/arm_aica.cpp)
+// runs BOTH the ARM7 core and the 44.1 kHz AICA synthesis, so one bracket
+// cannot say which of them to optimise (ARM7 JIT vs synthesis work):
+//   ArmTicks     - arm_Run() only
+//   AicaTicks    - the libAICA_TimeStep() loop, INCLUDING SndWaitTicks
+//   SndWaitTicks - wii_audio_push_sample()'s pacing sleep (AudioBuffers >= 1),
+//                  which is idle time, so the stats line subtracts it from aica.
+// Brackets: ~3 mftb reads per armUpdateARM call (~56K calls/s in ACCURATE),
+// roughly 0.1-0.2% of the CPU.
+extern u64 ArmTicks;
+extern u64 AicaTicks;
+extern u64 SndWaitTicks;
+
 #if HOST_OS == OS_WII
 #include <ogc/lwp_watchdog.h>
 #define PERF_TICKS() gettime()

@@ -3,6 +3,27 @@
 #include "arm_mem.h"
 #include <math.h>
 
+// Wall-time split for the stats line (plugs/drkPvr/Renderer_if.h has the
+// rationale). Declared here rather than by including Renderer_if.h, which
+// would drag the whole renderer into the ARM core.
+extern u64 ArmTicks;
+extern u64 AicaTicks;
+
+#if HOST_OS == OS_WII
+// config.h poisons BIG_ENDIAN/LITTLE_ENDIAN; libogc defines them. Same dance
+// as arm7.cpp.
+#ifdef BIG_ENDIAN
+#  undef BIG_ENDIAN
+#endif
+#ifdef LITTLE_ENDIAN
+#  undef LITTLE_ENDIAN
+#endif
+#include <ogc/lwp_watchdog.h>   // gettime() - inline mftb read, no call
+#define ARM_PERF_TICKS() gettime()
+#else
+#define ARM_PERF_TICKS() ((u64)0)
+#endif
+
 // Real AICA sample step (nullAICA). Declared here to avoid pulling the whole
 // nullAICA header into the ARM core; one call generates exactly one 44.1 kHz
 // stereo sample and pushes it to the audio sink via wii_WriteSample().
@@ -38,6 +59,8 @@ void FASTCALL armUpdateARM(u32 Cycles)
 {
 	static u32 aica_cycle_acc = 0;
 
+	const u64 t_arm = ARM_PERF_TICKS();
+
 	// Run the ARM7 for this slice (cycle budget scaled by arm_sh4_bias,
 	// further divided by the per-game arm7_speed preset stage).
 	{
@@ -46,6 +69,9 @@ void FASTCALL armUpdateARM(u32 Cycles)
 		if (stage > 3) stage = 3;
 		arm_Run((Cycles / arm_sh4_bias) >> stage);
 	}
+
+	const u64 t_aica = ARM_PERF_TICKS();
+	ArmTicks += t_aica - t_arm;
 
 	// Refresh the cached samples-per-cycle only when the underclock preset
 	// changed (never during gameplay — set at game load / in the menu).
@@ -61,9 +87,17 @@ void FASTCALL armUpdateARM(u32 Cycles)
 	// Advance the AICA sample generator by however many whole samples elapsed
 	// during this slice, carrying the remainder for exact long-run timing.
 	aica_cycle_acc += Cycles;
-	while (aica_cycle_acc >= aica_sample_cycles)
+	if (aica_cycle_acc >= aica_sample_cycles)
 	{
-		aica_cycle_acc -= aica_sample_cycles;
-		libAICA_TimeStep();
+		do
+		{
+			aica_cycle_acc -= aica_sample_cycles;
+			libAICA_TimeStep();
+		}
+		while (aica_cycle_acc >= aica_sample_cycles);
+
+		// Clock read skipped when no sample ran (about 1 call in 5 in
+		// ACCURATE); the span also covers the sh4_clock check above, a compare.
+		AicaTicks += ARM_PERF_TICKS() - t_aica;
 	}
 }

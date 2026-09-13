@@ -17,6 +17,7 @@
 #include <ogc/lwp_watchdog.h>   // gettime(), ticks_to_millisecs()
 
 #define SH4_IRQ_BIT (1<<(u8)holly_SPU_IRQ)
+#define AICA_RATE_DIAG 0   // 1 = count real libAICA_TimeStep() calls/sec (see there)
 
 CommonData_struct* CommonData;
 DSPData_struct*    DSPData;
@@ -296,6 +297,10 @@ void libAICA_TimeStep()
     update_arm_interrupts();
     UpdateSh4Ints();
 
+#if AICA_RATE_DIAG
+    // Off by default: even with the printf commented out, this ran a gettime()
+    // and a 64-bit ticks->ms division (a libgcc call on the 750) 44,100x/s.
+    //
     // Diagnostic: measure the ACTUAL rate of libAICA_TimeStep() calls (i.e.
     // AICA_Sample() generation) against a real hardware wall-clock timer,
     // independent of the emulator's own SH4-cycle accounting. Should read
@@ -316,4 +321,5 @@ void libAICA_TimeStep()
         sample_count = 0;
         last_check_ms = now_ms;
     }
+#endif
 }

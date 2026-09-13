@@ -31,6 +31,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <ogc/cache.h>        // DCFlushRange
+#include <ogc/lwp_watchdog.h> // gettime() for the pacing-wait timer
 
 // Set to 1 by wii_audio_aica_ready() once AICA_Init() has run. Until then
 // wii_audio_push_sample() is a no-op.
@@ -126,6 +127,10 @@ extern "C" void wii_audio_shutdown()
 
 static volatile int fill_pos = 0;
 
+// Idle time spent in the pacing wait below; subtracted from the stats line's
+// aica% (plugs/drkPvr/Renderer_if.h).
+extern u64 SndWaitTicks;
+
 // Audio sink — one 44.1 kHz stereo sample per call from AICA_Sample() (driven
 // by the SH4 timeslice via armUpdateARM). Fills the staging buffer; on
 // completion publishes it and, when AudioBuffers >= 1, blocks until the
@@ -162,8 +167,10 @@ void wii_audio_push_sample(s16 l, s16 r)
     // (23.2 ms at 44.1 kHz), so a healthy callback never reaches the cap;
     // giving up just drops this buffer, which costs an audio glitch instead of
     // a dead console.
+    const u64 wait_t0 = gettime();
     for (int spins = 0; stage_ready && spins < 2000; spins++)
         usleep(50);
+    SndWaitTicks += gettime() - wait_t0;
 }
 
 // Legacy no-op kept so existing call sites (gxRend present path) still link.
