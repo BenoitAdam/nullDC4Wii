@@ -20,7 +20,7 @@ assignees: BenoitAdam
 
 
 ### Did you test on older versions of NullDC4Wii
-Suggested version :
+*Suggested version :*
 - alpha 0.28
 - alpha 0.40
 - alpha 0.50
@@ -43,7 +43,10 @@ Suggested version :
 
 
 ### Describe the bug : 
-A clear and concise description of what the bug is.
+*A clear and concise description of what the bug is.*
+
+#### Does the bug happens everytime or randomly ?
+*please test at least twice*
 
 #### To Reproduce
 Steps to reproduce the behavior:
