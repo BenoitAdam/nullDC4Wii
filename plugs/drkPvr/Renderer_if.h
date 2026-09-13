@@ -38,6 +38,18 @@ extern u64 ArmTicks;
 extern u64 AicaTicks;
 extern u64 SndWaitTicks;
 
+// Inside aica: where synthesis time goes, printed as vox:N%(V).
+//   AicaVoxTicks    - AICA_Sample()'s channel loop only (per-voice work);
+//                     aica% minus vox% is the fixed per-sample work
+//                     (CDDA, master volume, timers, interrupts, buffer push)
+//   AicaVoiceSum    - voices stepped, summed over samples. Counted by the
+//                     aica_fast loop only, so V reads 0 with aica_fast off.
+//   AicaSampleCount - samples generated, to average AicaVoiceSum
+// Cost: 2 mftb reads per sample (44,100/s), well under 0.1% of the CPU.
+extern u64 AicaVoxTicks;
+extern u32 AicaVoiceSum;
+extern u32 AicaSampleCount;
+
 #if HOST_OS == OS_WII
 #include <ogc/lwp_watchdog.h>
 #define PERF_TICKS() gettime()

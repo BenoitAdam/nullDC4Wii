@@ -357,6 +357,11 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 double aica_pct = PERF_TICKS_US(aica_net)     / 1e6 / tdiff * 100.0;
                 double snd_pct  = PERF_TICKS_US(SndWaitTicks) / 1e6 / tdiff * 100.0;
 
+                // Part of aica%: the per-voice channel loop, and the average
+                // number of voices it stepped per sample (aica_fast only).
+                double vox_pct  = PERF_TICKS_US(AicaVoxTicks) / 1e6 / tdiff * 100.0;
+                double voices   = AicaSampleCount ? (double)AicaVoiceSum / AicaSampleCount : 0.0;
+
                 VertexCount     = 0;
                 StripCount      = 0;
                 RenderTicks     = 0;
@@ -365,6 +370,9 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 ArmTicks        = 0;
                 AicaTicks       = 0;
                 SndWaitTicks    = 0;
+                AicaVoxTicks    = 0;
+                AicaVoiceSum    = 0;
+                AicaSampleCount = 0;
                 FrameCount      = 0;
                 spg_VblankCount = 0;
 
@@ -400,14 +408,14 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
 
 #ifndef TARGET_PSP
                 printf(
-                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK v/st:%.1f rnd:%.1f%% ta:%.1f%%(%.0fk/s) arm:%.1f%% aica:%.1f%% snd:%.1f%%\n",
+                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK v/st:%.1f rnd:%.1f%% ta:%.1f%%(%.0fk/s) arm:%.1f%% aica:%.1f%% vox:%.1f%%(%.1f) snd:%.1f%%\n",
                     spd_cpu * 100.0 / 200.0, spd_vbs,
                     mode, res, fullvbs,
                     spd_fps,
                     (spd_fps > 0.0 ? mv / spd_fps / tdiff : 0.0),
                     mv / tdiff,
                     vps, rnd_pct, ta_pct, ta_kps,
-                    arm_pct, aica_pct, snd_pct);
+                    arm_pct, aica_pct, vox_pct, voices, snd_pct);
                 fflush(stdout); // once per 1s: keep the log tail intact if the Wii is powered off
 
                 ifb_probe_dump(tdiff);   // no-op unless the IFB PROBE preset is on

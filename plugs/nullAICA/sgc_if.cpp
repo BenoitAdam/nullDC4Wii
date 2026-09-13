@@ -2,6 +2,27 @@
 #include "dsp.h"
 #include "aica_mem.h"
 #include <math.h>
+
+// Stats-line counters (plugs/drkPvr/Renderer_if.h). Declared here rather than
+// by including Renderer_if.h, which would drag the renderer into the mixer.
+extern u64 AicaVoxTicks;
+extern u32 AicaVoiceSum;
+extern u32 AicaSampleCount;
+
+#if HOST_OS == OS_WII
+// config.h poisons BIG_ENDIAN/LITTLE_ENDIAN; libogc defines them.
+#ifdef BIG_ENDIAN
+#  undef BIG_ENDIAN
+#endif
+#ifdef LITTLE_ENDIAN
+#  undef LITTLE_ENDIAN
+#endif
+#include <ogc/lwp_watchdog.h>   // gettime() - inline mftb read, no call
+#define SGC_PERF_TICKS() gettime()
+#else
+#define SGC_PERF_TICKS() ((u64)0)
+#endif
+
 #undef FAR
 
 //#define CLIP_WARN
@@ -960,14 +981,16 @@ static void GenerateAllFast(bool dsp_on)
 {
     SampleType ml = mixl;
     SampleType mr = mixr;
+    u32 voices = 0;
 
-    for (u32 m = ChannelEx::active_lo; m; m &= m - 1)
+    for (u32 m = ChannelEx::active_lo; m; m &= m - 1, voices++)
         ChannelStepFast(&ChannelEx::Chans[__builtin_ctz(m)], dsp_on, ml, mr);
-    for (u32 m = ChannelEx::active_hi; m; m &= m - 1)
+    for (u32 m = ChannelEx::active_hi; m; m &= m - 1, voices++)
         ChannelStepFast(&ChannelEx::Chans[32 + __builtin_ctz(m)], dsp_on, ml, mr);
 
     mixl = ml;
     mixr = mr;
+    AicaVoiceSum += voices;
 }
 
 void staticinitialise()
@@ -1121,10 +1144,13 @@ void AICA_Sample()
     if (!fast || dsp_on)
         memset(dsp.MIXS, 0, sizeof(dsp.MIXS));
 
+    const u64 t_vox = SGC_PERF_TICKS();
     if (fast)
         GenerateAllFast(dsp_on);
     else
         ChannelEx::GenerateAll();
+    AicaVoxTicks += SGC_PERF_TICKS() - t_vox;
+    AicaSampleCount++;
 
     // CDDA input — refill the sector buffer every 588 stereo frames.
     if (cdda_index >= CDDA_SIZE)
