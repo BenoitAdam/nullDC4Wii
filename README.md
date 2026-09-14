@@ -173,7 +173,7 @@ https://wiibrew.org/wiki/NullDC4Wii/Compatibility
 
 ## Presets
 
-Presets are grouped in the in-emulator menu across 6 pages. The order below follows that exact same order (Page 1 to Page 6).
+Presets are grouped in the in-emulator menu across **7 pages**. The order below follows the exact same order shown on screen (Page 1 to Page 7). "Default" below is what actually ships out of the box, from `game_presets.cfg`'s `[default]` section (applied on every launch before any per-game section) - see [game_presets.cfg](#game_presetscfg) further down for how to override any of this per game.
 
 ### Page 1 : General
 
@@ -189,14 +189,14 @@ Presets are grouped in the in-emulator menu across 6 pages. The order below foll
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF (uncapped)** | Emulator can run above 100% speed | Uncapped |
+| **OFF (uncapped, default)** | Emulator can run above 100% speed | Uncapped |
 | **ON (cap 100%)** | Stops speed exceeding 100% | Capped |
 
 #### SHOW FPS
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF** | No overlay | Nothing displayed |
+| **OFF (default)** | No overlay | Nothing displayed |
 | **ON** | Displays gameplay FPS and speed overlay | Overlay shown |
 
 #### 🖼️ Graphics Preset
@@ -225,30 +225,54 @@ NEW behavior (from alpha 0.64) :
 - Use LOW for 240p games/modes
 - Use NORMAL for other games
 
-
-
 Important note : LOW can cause Z-Fighting (example in jet set radio, see https://github.com/BenoitAdam/nullDC4Wii/issues/115)
+
+The old HIGH/EXTRA levels were nothing but NORMAL plus a fixed `lod_bias`/bias-clamp/anisotropic bundle - those are now the three separate presets below (GX / LOD BIAS / ANISO), so any combination is possible instead of only the 4 fixed tiers.
+
+#### GX (LOD extras)
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | `GX_DISABLE` on `GX_InitTexObjLOD`'s biasclamp + edgelod | Standard |
+| **ON (default)** | `GX_ENABLE` on biasclamp + edgelod | biasclamp stops LOD_BIAS pushing a minified texel past the point its footprint no longer covers the pixel; edgelod computes LOD from adjacent instead of diagonal texels |
+
+ANISO forces this on by itself, since libogc requires edgelod whenever anisotropy > 1.
+
+#### LOD BIAS
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **-1.0 / -0.75 / -0.5** | Sharpen: samples a larger mip level than the footprint asks for | Sharper, can shimmer |
+| **0.0 (default)** | Hardware default | True no-op |
+| **+0.5** | Blur | Softer |
+
+#### ANISO
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **0x (off, default)** | No anisotropic filtering | Standard |
+| **2x / 4x** | Anisotropic filtering (Hollywood tops out at 4x - no 8x on this GPU) | Sharper on steep-angle surfaces, costs fill rate |
+
+Requires MIPMAP set to FAST or TRILINEAR (Page 6) - does nothing while mipmaps are off, since anisotropy is only iterated with a `GX_LIN_MIP_LIN` min filter.
 
 #### TEXTURE CACHE
 
 | Mode | Settings | Rendering | 
 |------|----------| ------------------------- | 
 | **VERY_FAST** | skmp original algorythm (magic numbers). Buggy in most games  | Max FPS |
+| **VERY_FAST+** | very_fast's address-derived slots, but oversized textures route into a properly-sized arena instead of overrunning the next slot (3 targeted fixes - stride surfaces, stride sizing, mip sentinel). Try this first when very_fast is the only fast option but shows corruption | Max FPS, safer than VERY_FAST |
 | **FAST** | Best performance/accuracy in most case  | Almost Max FPS |
 | **NORMAL (default)** | Display mostly correctly | Good FPS |
 | **QUALITY (SLOW)** | Best accuracy. Display correctly | Mid FPS |
 
 Can have huge FPS impact, try to have the lowest parameter.
 
-#### 4BPP MODE / 8BPP MODE
+#### VQ CMPR
 
-| Mode (4BPP/8BPP) | Settings | Rendering | 
-|------|----------| ------------------------- | 
-| **I4_STUB/I8_STUB** | Dummy algorythm  | Some element doesn't display at all, for max FPS |
-| **OPTIMIZED** | Served as test, in the end CI4/CI(FAST) is better | Very good FPS |
-| **CI4 (FAST)/CI8 (FAST)** | Best performance/quality | Very good FPS |
-| **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Mid FPS |
-| **RGB565 (ACCURATE)** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | VQ textures decode to 16bpp | Standard |
+| **ON** | VQ textures decode straight to GX CMPR/DXT1 (4 bits/texel) | Pairs with TEXTURE CACHE VERY_FAST/VERY_FAST+: a VQ texture now fits its address-derived slot instead of overrunning its neighbour - the classic VERY_FAST VQ corruption. Second lossy pass on top of VQ, so smooth gradients can band; 565 VQ only |
 
 #### FRAMESKIPPING
 
@@ -257,9 +281,10 @@ Can have huge FPS impact, try to have the lowest parameter.
 | **0 (default)** | No frame skipped | Every frame drawn |
 | **1** | Skip 1 frame | Faster, less smooth |
 | **2** | Skip 2 frames | Faster still, less smooth |
-| **AUTO** | Skips frames automatically depending on load | Adaptive |
+| **AUTO** | Skips frames while behind real time, min 1 render in 4 | Adaptive, holds emulated time at 100% |
+| **AUTO_MAX** | Same as AUTO, but up to 9 skips in a row | Speed over framerate |
 
-Still on testing, doesn't have the expected effect for now  
+The FPS counter shows the RENDER rate, so a low FPS with SPEED at 100% is working as intended.
 
 #### 2D FRAMEBUFFER
 
@@ -268,7 +293,7 @@ Still on testing, doesn't have the expected effect for now
 | **NO (default)** | Disable | Standard rendering |
 | **YES** | Enable 2D framebuffer | Try for 2D games |
 
-Still on testing  
+Still on testing. `debug_log_framebuffer2d` (Page 6 debug logs) tells you whether a given game would even take this path before enabling it.
 
 #### ADVANCED_ALPHA
 
@@ -303,7 +328,7 @@ note : ADVANCED ALPHA and BLEND_MODE needs to be on for FPS_BOOST
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF (faster)** | Legacy: PT polys drawn last in TR blend state | Faster, less accurate |
+| **OFF (legacy, default)** | PT polys drawn last in TR blend state | Faster, less accurate |
 | **ON (correct)** | OP → PT → TR order + PT_ALPHA_REF alpha test | Correct PT list alpha test |
 
 Needed in lot of games
@@ -315,24 +340,27 @@ Needed in lot of games
 | **OFF (default)** | Disable | not Accurate (faster) |
 | **ON** | can display stuff | Accurate |
 
-Can resolve flickering in some games
-Needed in lot of games
+Can resolve flickering in some games. Needed in lot of games. Superseded by AUTOSORT (Page 3) for intersecting/interleaved geometry that a painter sort alone can't fix.
 
 #### RENDER TO TEX
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF (faster)** | RTT frames dropped (legacy) | Faster, mirrors/TV screens missing |
+| **OFF (faster, default)** | RTT frames dropped (legacy) | Faster, mirrors/TV screens missing |
 | **ON (correct)** | EFB copied back into VRAM | Correct mirrors/TV screens |
+| **OVERLAY (carry)** | Pass not resolved as a texture - its geometry is carried into the next display frame and drawn last, flat on top (parked on the near plane, `GX_ALWAYS`, no Z-write) | For passes the game composites itself as an overlay rather than as a texture, e.g. Silent Scope's sniper crosshair |
+| **KEEP** | ON, plus the render does NOT consume the TA list, matching real hardware (the ISP/TSP just walk the tile arrays, which stay valid until `TA_LIST_INIT`) | For a game that renders one accumulated list twice with different write addresses/clip windows, e.g. Silent Scope's scope disc + 24x-magnified world. Pair with SPLIT SCREEN so the magnified half stays inside its own tile clip |
 
-Needed in some games
+Needed in some games. With OFF, a dropped pass's geometry still leaks into the next frame (drawn first, misclassified as opaque) - that's why some overlays half-show even with this off.
 
 #### SPLIT SCREEN
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF (faster)** | Every render pass presented fullscreen (legacy) | Faster |
-| **ON (correct)** | Partial-clip passes scissored, presented once per vblank | Correct 2P viewports, e.g. Daytona USA |
+| **OFF (faster, default)** | Every render pass presented fullscreen (legacy) | Faster |
+| **ON / TILE CLIP** | Both viewports in ONE render pass, each carrying a PVR User Tile Clip rect | Correct 2P viewports, e.g. Daytona USA |
+| **MULTI-PASS** | One RENDER_START per viewport, into its own band of the EFB; ONE assembled frame is presented | Fixes heavy 2P flicker (player1/player2/player1 alternating) in Le Mans 24 Hours, Demolition Racer, Magical Racing Tour |
+| **BOTH** | Per-poly tile clips inside multi-pass renders | Combination of the two above |
 
 Needed for 2 players splitscreen or any 2 camera angle games.
 
@@ -344,7 +372,26 @@ Needed for 2 players splitscreen or any 2 camera angle games.
 |------|----------| ------------------------- |
 | **CMPR (DXT1)** | Compressed format | Use if some movie displays white |
 | **RGBA8** | Uncompressed, full quality | Slower |
-| **RGB565 (default, faster)** | Uncompressed, no alpha | Faster |
+| **RGB565** | Uncompressed, no alpha | Faster |
+| **TEV (default)** | No CPU colour math at all: the YUV422 source uploads as raw I8 luma + IA8 chroma planes and the BT.601 matrix runs in the GameCube/Wii TEV combiner instead | Fastest, chroma gets hardware bilinear the CPU paths never had; 8-bit TEV coefficients drift ~1-2 LSB from the CPU matrix |
+
+#### YUV STRIDE
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF** | Always decode at the texture's declared (power-of-two) width | Slices a non-padded FMV frame into repeated strips |
+| **AUTO** | Use the real per-row pitch only for a texture the YUV converter actually wrote | Fixed Bomberman's intro, Test Drive 6, Dino Crisis |
+| **ALWAYS** | Take the pitch from `TA_YUV_TEX_CTRL` for EVERY YUV422 texture | Old behaviour; a game that never programs that register gets it decoded as 16x16 (Soul Calibur's character select went mostly black) |
+| **TEXCTL (default)** | AUTO, plus `TCW.StrideSel` (`TEXT_CONTROL[4:0] x 32` texels) as a fallback for surfaces AUTO's converter-address tracking never saw (it only remembers 4 base addresses) | Also fixes the planar RGB path. If a movie is still messy under AUTO, try this before ALWAYS |
+
+#### YUV TWIDDLE FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Twiddled YUV422 textures decode with luma/chroma swapped | Green<->magenta duotone with 1-column striping on affected art |
+| **ON (default)** | Correct luma/chroma extraction for twiddled YUV422 | Fixes static YUV artwork such as Virtua Fighter 3tb's "FIRST MATCH" loading screen |
+
+Static YUV artwork only, NOT movie playback - real (planar) FMV is unaffected either way.
 
 #### Vertex Color
 
@@ -354,6 +401,22 @@ Needed for 2 players splitscreen or any 2 camera angle games.
 | **ON (default)** | Intensity color | Accurate |
 
 Color some pixel (Used in Jet Set Radio Future and Crazy Taxi 1/2)
+
+#### SPRITE COLOR
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Every sprite's Base Colour field discarded, drawn as hardcoded white | A black sprite with `ModulateAlpha` shading draws white instead |
+| **ON (default)** | Honours a Sprite's own packed Base Colour (all 4 corners) | Correct - found via Fighting Vipers 2's SEGA screen, whose full-screen black backdrop is a sprite that drew as a white plate |
+
+Pair with VTX ALPHA for sprite-based fades.
+
+#### VTX ALPHA
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Vertex alpha forced to 0xFF on every ARGB1555 polygon regardless of TSP.UseAlpha - a deliberate hack for ARGB1555 cutout fonts (Test Drive 6) | Keeps cutout fonts correct |
+| **ON** | Honours `TSP.UseAlpha` as the hardware does | Needed by anything that FADES via vertex alpha on an ARGB1555 surface, e.g. Fighting Vipers 2's SEGA screen full-screen fade |
 
 #### DECAL_ALPHA
 
@@ -368,12 +431,21 @@ See more : https://github.com/BenoitAdam/nullDC4Wii/issues/68
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF (a bit faster)** | Disable | Thin black seam lines between 2D tiles/sprites remain |
-| **ON (default)** | Half-texel UV inset | Fixes black lines between 2D tiles |
+| **OFF (a bit faster, default)** | Disable | Thin black seam lines between 2D tiles/sprites remain |
+| **ON** | Half-texel UV inset | Fixes black lines between 2D tiles |
 
-Use this or LOW to fix seam lines. See https://github.com/BenoitAdam/nullDC4Wii/issues/18
+Use this or LOW graphics to fix seam lines. See https://github.com/BenoitAdam/nullDC4Wii/issues/18
 
 Warning : ON causes a bug with Vertex Displacement (water mostly) : https://github.com/BenoitAdam/nullDC4Wii/issues/119
+
+#### FOG
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | `TSP.FogCtrl` decoded but never applied | Nothing ever fogged |
+| **ON** | Per-polygon PVR2 fog honouring `TSP.FogCtrl`: LUT (`FOG_TABLE`/`FOG_DENSITY`), per-vertex (offset-colour alpha), or LUT mode 2, evaluated per vertex and blended by one extra TEV stage | Distance haze instead of geometry popping in at the draw distance - racers/outdoor games mostly |
+
+Costs 4 bytes/vertex + one TEV stage on fogged polygons only, and recolours every fogged polygon in the scene - stays per-game.
 
 #### BG POLYGON
 
@@ -381,6 +453,8 @@ Warning : ON causes a bug with Vertex Displacement (water mostly) : https://gith
 |------|----------| ------------------------- |
 | **OFF (faster, default)** | v0 color used for EFB clear only, no background quad drawn | Faster |
 | **ON (correct)** | Barycentric-extrapolated background quad drawn | Correct bg gradient/texture, e.g. Who Wants to Be a Millionaire |
+
+Caused an FPS regression in other games when left unconditionally on - enable per-game only.
 
 #### RGB565 ALPHA
 
@@ -391,6 +465,118 @@ Warning : ON causes a bug with Vertex Displacement (water mostly) : https://gith
 
 May disapear in a future
 
+#### JOJO FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF** | Disable | Pre-fix behavior |
+| **ON (default)** | TLUT-reupload-skip + CACHE_FAST PalSelect-masking | For JoJo's Bizarre Adventure |
+
+Has to be used with CI4_FAST/CI8_FAST to reduce massive FPS drop in battle. May use the same technique in other games.
+
+#### OFFSET COLOR
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Offset/specular color dropped | Standard |
+| **ON (default)** | PIX = base*tex + offset via 2nd TEV stage | Correct specular highlights |
+
+Costs 4 bytes/vertex of FIFO + a second TEV stage on offset polys. May cause white surface on some games (ie = berserk, Tokyo highway challenge...). May fix black surface on some games (ie = sega worldwide soccer)
+
+#### 4BPP MODE / 8BPP MODE
+
+| Mode (4BPP/8BPP) | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **I4_STUB/I8_STUB** | Dummy algorythm  | Some element doesn't display at all, for max FPS |
+| **OPTIMIZED** | Served as test, in the end CI4/CI(FAST) is better | Very good FPS |
+| **CI4 (FAST)/CI8 (FAST) (default)** | Best performance/quality | Very good FPS |
+| **CI4 (NORMAL)/CI8 (NORMAL)** | Advanced algorythm for CI4/CI8 | Mid FPS |
+| **RGB565 (ACCURATE)** | Most advanced algorythm | Can have massive FPS dropdown (1 FPS) on some games |
+
+### Page 3 : Depth & Width
+
+#### DEPTH_CLIP
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | XF Z-clipping on, no near margin | 2D/menus can be invisible on real Wii |
+| **NEAR MARGIN (default)** | Pads vtx_min_Z 0.1% so the nearest 2D layer can't land exactly on the near clip plane | Recommended for Wii - CONFIRMED, fixes ChuChu Rocket and Crazy Taxi menu/intro with no downside seen |
+| **NO CLIP (Dolphin)** | Matches Dolphin: out-of-range depth clamps instead of the poly vanishing | Regressed Crazy Taxi when combined with FIXED DEPTH=TIGHT - avoid that combo |
+
+It's basically like FIXED_DEPTH, leave it to NEAR MARGIN
+
+#### FIXED_DEPTH
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **OFF / DYNAMIC (default)** | Legacy per-vertex min/max W tracking, fits Z range to the scene each frame | Good |
+| **WIDE** | Skips that tracking, fixed planes W=[0.0001..100000] - safe everywhere, coarser Z | can help display some stuff - mostly for debug, more Z-fighting risk |
+| **TIGHT** | Fixed planes W=[0.1..25000] - much finer Z, but geometry outside that range clips | can help display some stuff |
+
+FIXED_DEPTH can help flickering and Z-Fighting
+
+#### HUD_PASS
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **OFF (default)** | -  | Not active |
+| **OVERLAY (no Z-write)** | Help hud to display when FIXED_DEPTH is on TIGHT | accurate, but may be overdrawn by geometry drawn after it |
+| **PROTECT (Z-write at near plane)** | Help hud to display when FIXED_DEPTH is on TIGHT | Perfect - use if OVERLAY leaves polys in front of the HUD |
+
+Mostly needed if Fixed Depth is set to tight. A no-op on its own (dynamic/wide ranges never clip the HUD). Fixes the "Z-fighting gone but HUD vanished" case in Rayman 2 / Cannon Spike.
+
+#### LEGACY DEPTH
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | Current depth pipeline | Standard |
+| **ON** | Reproduces the depth pipeline exactly as it stood at commit `1bb8c27`: fixed planes NEAR=0.001/FAR=10000*1.001, `vert_base` 1/W clamp at 0.001 (not 0.0001), no per-vertex min/max tracking or margin/HUD fixups | For a game that only rendered correctly at that old commit - Buggy Heat's logo/VMU screen/gameplay. Overrides FIXED DEPTH; the 0.001 clamp is the one thing FIXED DEPTH cannot express |
+
+Shown first on this page in-game, right after LAUNCH.
+
+#### SUBPASS ZCLEAR
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Single shared depth pass - a later pass inherits whatever the main scene left in the Z buffer | Standard |
+| **ON** | Re-parks the whole Z buffer at a known W via a full-canvas `GX_ALWAYS` quad (colour untouched) right before a later geometry group | Gives e.g. a HUD PASS=PROTECT overlay a clean depth baseline instead of the main scene's leftovers |
+
+#### PPZ_WRITE : PER POLYGON Z WRITE
+
+| Mode | Settings | Rendering | 
+|------|----------| ------------------------- | 
+| **NO** | No Per Polygon Z Write  | More compatible |
+| **YES (default)** | Per Polygon Z Write | More accurate |
+
+Try putting NO if you experience troubles, with HUD for example.
+
+#### ISP_DEPTH_FUNC
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Disable | Standard |
+| **ON (opaque/PT)** | Per-poly depth test on opaque/PT lists, honouring each polygon's actual `isp.DepthMode` register instead of the fixed GEQUAL painter compare (translucent list stays GEQUAL, matching real PVR autosort) | Experimental |
+| **ON (all lists)** | Same, applied to all lists | Experimental |
+
+Different from LAYER SORT below: this reads the hardware's own per-polygon compare mode instead of a heuristic sort.
+
+#### ISP_CULL
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Disable (never cull) | Standard |
+| **ON** | Per-poly backface cull from `isp.CullMode` | Experimental |
+| **ON (swap winding)** | Per-poly backface cull, two cullable windings swapped | Use if plain ON makes geometry vanish / look inside-out |
+
+#### AUTOSORT
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Disable | Standard |
+| **1-4 layers (slow)** | Real per-pixel PVR autosort via GX depth peeling, value = max translucent depth layers composited per pixel | Stronger than TRANS_SORT's per-strip painter sort, for intersecting/interleaved translucent geometry. Very GPU-heavy (~2 extra TR walks + 2 EFB Z copies per layer) - use 2 or 3 only where needed, per-game only. Best paired with PUNCH THROUGH=ON |
+
+Overrides TRANS_SORT; LAYER SORT overrides this.
+
 #### LAYER SORT
 
 | Mode | Settings | Rendering |
@@ -400,55 +586,41 @@ May disapear in a future
 
 Helps determine what should be front and back trough looking at texture format/properties. For games that submit their whole 2D scene at a single depth and rely on the Dreamcast's per-pixel autosort: background plates draw first, then stage art, then stage sprites, then everything else. Game-agnostic — used by Hokuto no Ken and Street Fighter III. Was part of the HOKUTO HACK before alpha0.66.
 
-#### JOJO FIX
+#### LIST ORDER
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF** | Disable | Pre-fix behavior |
-| **ON (default)** | Enable fix | For JoJo's Bizarre Adventure |
+| **OFF (legacy, default)** | Flat strip buffer walked in submission order | Assumes the game submits its opaque list first |
+| **ON** | If the opaque list opened AFTER the translucent one, its range is drawn first, as real hardware would | Fixes "gameplay visible for a moment, then a big background image covers everything" - Puyo Puyo 4/DA!, whose two full-screen background plates go out in the OPAQUE list after the gameplay sprites |
 
-Has to be used with CI4_FAST/CI8_FAST to reduce massive FPS drop in battle. May use the same technique in other games.
-
-### Page 3 : Depth & Width
-
-#### DEPTH_CLIP
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (legacy)** | XF Z-clipping on, no near margin | 2D/menus can be invisible on real Wii |
-| **NEAR MARGIN (Wii, default)** | Pads vtx_min_Z 0.1% so the nearest 2D layer can't land exactly on the near clip plane | Recommended for Wii |
-| **NO CLIP (Dolphin)** | Matches Dolphin: out-of-range depth clamps instead of the poly vanishing | Matches Dolphin behavior |
-
-It's basically like FIXED_DEPTH, leave it to NEAR MARGIN
-
-#### FIXED_DEPTH
-
-| Mode | Settings | Rendering | 
-|------|----------| ------------------------- | 
-| **NO (default)** | Disable | Good |
-| **WIDE** | can help display some stuff - mostly for debug | Bad |
-| **TIGHT** | can help display some stuff | Good |
-
-FIXED_DEPTH can help flickering and Z-Fighting
-
-#### HUD_PASS
-
-| Mode | Settings | Rendering | 
-|------|----------| ------------------------- | 
-| **NO (default)** | -  | Not active |
-| **Overlay** | Help hud to display when FIXED_DEPTH is on TIGHT | accurate |
-| **Protect** | Help hud to display when FIXED_DEPTH is on TIGHT | Perfect |
-Mostly needed if Fixed Depth is set to tight
-
+Bit-identical to OFF for any game that submits OP first (condition never fires).
 
 #### X SCALER
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF (legacy)** | PVR SCALER_CTL.hscale support disabled | Standard |
-| **ON (default)** | PVR SCALER_CTL.hscale support | ON for Omicron / Wacky Races (render 1280 wide, scaler halves 2:1) |
+| **OFF (legacy)** | PVR SCALER_CTL.hscale support disabled | Only the LEFT HALF of the image shows in affected games |
+| **ON (default)** | PVR SCALER_CTL.hscale support | For Omicron / Wacky Races (render 1280 wide, scaler halves 2:1) |
 
 For Nomad Soul and Wacky Racer. Maybe other games
+
+#### Y SCALER
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | `SCALER_CTL.vscalefactor` ignored | Only a SLICE of the image shows in affected games |
+| **ON** | Scales the projected canvas height by that factor (6.10 fixed point, 0x400=1.0 - above 1.0 the CORE renders taller and the scaler shrinks on write / vertical SSAA, below 1.0 the opposite) | Whole scene shows - needed for Silent Scope's sniper scope to be 100% accurate |
+
+The vertical counterpart of X SCALER - same register family, other axis.
+
+#### H SCALER
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | `VO_CONTROL.pixel_double` ignored | In low-res video modes the framebuffer holds a HALF-width (320) image doubled by the video DAC - scene is drawn in a 320-wide screen space, filling only the LEFT HALF of a 640 canvas |
+| **ON** | Halves the projected canvas to match | Whole scene shows - mandatory for several games, and needed for 2-player splitscreen in some |
+
+Register-driven counterpart of CANVAS WIDTH below, which stays the manual override for games that render narrow WITHOUT setting the bit. An explicit CANVAS WIDTH wins over this.
 
 #### CANVAS WIDTH
 
@@ -459,14 +631,12 @@ For Nomad Soul and Wacky Racer. Maybe other games
 
 See compatiblity wiki for more info
 
-#### PPZ_WRITE : PER POLYGON Z WRITE
+#### POLY OFFSET
 
-| Mode | Settings | Rendering | 
-|------|----------| ------------------------- | 
-| **NO** | No Per Polygon Z Write  | More compatible |
-| **YES (default)** | Per Polygon Z Write | More accurate |
-
-Try putting NO if you experience troubles, with HUD for example.
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No bias | Legacy |
+| **Tier 1-3** | Native polygon offset / Z bias via a Z-texture in ADD mode (`GX_SetZTexture`), applied to the Punch-Through list - increasing bias strength | GX equivalent of the co-planar decal/shadow/road-marking sort that real PVR tile order used to give for free (real hardware has no `glPolygonOffset`-style register) |
 
 ### Page 4 : Audio
 
@@ -495,7 +665,14 @@ Put audio buffers = 1 generally leads to good audio. To the cost of FPS unfortun
 | **OFF (legacy, default)** | All AICA sample formats audible | Standard |
 | **ON (silence 16B)** | 16-bit PCM channels silenced at KEY_ON | Fixes ChuChu Rocket's echoey 16-bit SFX (also mutes any other 16-bit music/voices, so game-specific) |
 
-### Page 5 : Core / Special Hack
+#### AICA FAST
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | All 64 AICA channels visited every sample, even idle ones | Standard |
+| **ON (default)** | Only playing channels are visited, empty filter-envelope call skipped, no DSP send while the DSP is off, master volume cached, silent CD-audio skipped | Same output samples, cheaper mixer - Wii-CONFIRMED: aica% 10.0->7.7, speed +2.6%, no audible change |
+
+### Page 5 : Core
 
 #### 🧮 Calculation Accuracy Preset
 
@@ -553,55 +730,17 @@ Underclocking is supposed to raise FPS. Didn't see any difference
 
 5 mhz generally works and bring FPS boost
 
-#### JIT SBP
+#### ARM7 JIT
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF** | No stale/self-modified block guard | Fastest, riskiest |
-| **KNOWN (default)** | Guards known self-modifying regions | Balanced |
-| **ALL RAM (slow)** | Guards all RAM | Safest, slowest |
+| **OFF (interpreter)** | Cached ARM7 interpreter | Standard audio |
+| **ON (basic)** | ARM code translated to PPC, same results/timing as the interpreter | Faster, Wii-confirmed |
+| **ON (linked, default)** | Same, plus blocks branch straight to each other instead of going back through the dispatcher after every branch | Fastest, Wii-confirmed |
 
-Generally work, no difference
+A conformance test suite runs once at ARM init (see `[ARM7JIT]` in `/ndclog.txt`); a failure falls back to the interpreter automatically. Compare `arm:%` on the stats line and listen before keeping a change.
 
-#### FASTMEM
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (legacy)** | Standard PPC-MMU memory access | Slower |
-| **ON (faster, default)** | Branchless JIT MMU-mapped memory access | Faster |
-
-Crash observed in Re-Volt when launching a race. Only game that does that for now.
-
-#### JIT BCACHE
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (legacy, default)** | Legacy dynamic-branch dispatch | Standard |
-| **ON (flat)** | Flat, 1-cacheline dynamic jump dispatch | Faster dispatch |
-
-L1/L2 cache related. Can help heavy scene with Fast cache like in Shenmue intro maybe
-
-#### FPU PIN
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (legacy, default)** | fr0-15 not pinned | Standard |
-| **ON (experimental)** | Pins fr0-15 to real PPC FPU registers f14..f29 | Experimental, Floating Point Unit related |
-
-Can help heavy scene with Fast cache like in Shenmue intro maybe
-
-#### JIT ALIGN
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (legacy, default)** | No block alignment | Standard |
-| **ON (32B lines)** | Pads every SH4-dynarec block entry to a 32-byte L1 cache line | Better cache hygiene, L1/L2 cache related |
-
-L1/L2 cache related. Can help heavy scene with Fast cache like in Shenmue intro maybe
-
-### Page 6 : Experimental/Debug
-
-These doesn't make any change, or usually worse.
+### Page 6 : Experimental Stuff & Debug
 
 #### MIPMAPS
 
@@ -611,52 +750,53 @@ These doesn't make any change, or usually worse.
 | **FAST** | Generated GX mip chain + nearest-mip bilinear | Less shimmer far away |
 | **TRILINEAR (slow)** | Best quality | Best quality, halves texture fill rate (e.g. -40% in Test Drive 6) |
 
-#### OFFSET COLOR
+Required for ANISO (Page 1) to have any effect.
+
+#### TEX WRAP GUARD
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF (legacy, default)** | Offset/specular color dropped | Standard |
-| **ON (correct)** | PIX = base*tex + offset via 2nd TEV stage | Correct specular highlights |
+| **OFF (legacy, default)** | Persistent texture arena wraps without draining the GPU first | If the GPU is still sampling old textures when the 14 MB cache arena wraps, their bytes get overwritten mid-sample - arena-wrap race corruption |
+| **ON** | Mid-frame, if the arena fills, calls `GX_DrawDone()` to drain the GPU queue before wrapping; a second exhaustion in the same frame falls back to the skimp slot | Wii-CONFIRMED mechanism (watch `[TEXC] drains=/wraps=`); did NOT fix the JSR intro streaking it was tried against, so it's not a general streak fix |
 
-May cause white surface on some games (ie = berserk, Tokyo highway challenge...)  
-May fix black surface on some games (ie = sega worldwide soccer)  
-
-#### ISP_DEPTH_FUNC
+#### TEX CLAMP FIX
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF (legacy, default)** | Disable | Standard |
-| **ON (opaque/PT)** | Per-poly depth test on opaque/PT lists | Experimental |
-| **ON (all lists)** | Per-poly depth test on all lists | Experimental |
-
-#### ISP_CULL
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (legacy, default)** | Disable | Standard |
-| **ON** | Per-poly backface cull | Experimental |
-| **ON (swap winding)** | Per-poly backface cull, two cullable windings swapped | Experimental |
-
-#### AUTOSORT
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (legacy, default)** | Disable | Standard |
-| **N layers (slow)** | Real per-pixel PVR autosort via GX depth peeling, N = max translucent depth layers per pixel | Very GPU-heavy (~2 extra TR walks + 2 EFB Z copies per layer) — per-game only |
+| **OFF (legacy, default)** | A cached texture keeps the FIRST polygon's ClampU/V+FlipU/V wrap mode forever, since those are per-POLYGON TSP bits baked into `GXTexObj` only on decode | A tiled floor inheriting `GX_CLAMP` smears its edge texels to infinity - "streaked"/"infinite X or Y" symptom |
+| **ON** | Every texture bind re-applies the binding polygon's own wrap mode via `GX_InitTexObjWrapMode` before `GX_LoadTexObj` | Wii-CONFIRMED: fixes streaked textures in Crazy Taxi (VERY_FAST+ trees), Deadly Skies (FAST/VERY_FAST+ floors), Jet Set Radio (VERY_FAST+ intro). Does NOT fix Shadow Man's sky (QUALITY cache re-decodes every frame, never susceptible) |
 
 #### DMA FIX
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
 | **OFF (legacy)** | Disable | Standard |
-| **ON (default)** | ch2/PVR/Sort/AICA-G2 DMA correctness fixes | Fixes related to loading CDI/GDI file |
+| **ON (default)** | ch2/PVR/Sort/AICA-G2 DMA correctness fixes ported from the verified-working NullDC PSP port | Fixes related to loading CDI/GDI file |
 
 #### SCHED (ORDER)
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **OFF (cascade, default)** | Legacy cascade scheduling | Standard |
-| **ON (deadline)** | Unified cycle-deadline scheduler | Hardware-order DMA/IRQ completions, related to loading CDI/GDI file (experimental) |
+| **OFF (cascade, default)** | Legacy Medium/Slow/VerySlow timeslice cascade | Standard |
+| **ON (deadline)** | Unified cycle-deadline scheduler: GD-ROM read-done, ch2/PVR/AICA-DMA completion, render-done and TA list-end fire through one deadline queue in true hardware order | Experimental, related to loading CDI/GDI file |
+
+#### EXIT FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Bare `exit(0)` | Can leave a black screen with the Wii still on when returning to the Homebrew Channel |
+| **SAFE SHUTDOWN (default)** | Ordered teardown before exit | Fixes the black-screen hang |
+| **SAFE + WATCHDOG** | Safe shutdown + loader-stub watchdog | For a hang the plain safe shutdown doesn't catch |
+| **SAFE + WATCHDOG + HOST POLL** | Same, plus polls the exit combo host-side once a frame | For a game that stopped polling Maple, so the exit combo itself can still fire |
+
+#### TRANS ZWRITE (debug only)
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **ON (default)** | Legacy: the TR list inherits the frame-wide GEQUAL compare WITH depth write, so the first translucent strip submitted near depth stamps the Z buffer and depth-rejects farther translucent strips behind it | One near full-screen quad can hide the rest of the list |
+| **OFF** | Keeps the depth TEST (opaque geometry still occludes translucent behind it) but drops the write, so translucent strips composite in submission order | DEBUG ONLY: hides the Dreamcast BIOS boot logo, which needs the depth ordering this removes |
+
+Survives purely as an investigation tool for scenes where translucent strips wrongly occlude each other.
 
 #### HOKUTO HACK
 
@@ -667,12 +807,197 @@ May fix black surface on some games (ie = sega worldwide soccer)
 
 Refines LAYER SORT using Hokuto no Ken's own VRAM texture addresses, for the debris tiles that texture format/properties alone cannot tell apart from the fighters. Needs LAYER SORT on — it does nothing by itself — and only works for stage 1/2 at the moment. Leave it off in every other game.
 
+#### PUYO HACK
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | Disable | Standard |
+| **ON** | Folds Puyo Puyo 4's own two hardcoded backdrop VRAM addresses into the LAYER BACK TEX tier-4 sort | Fixes the gameplay playfields (puyos going dim behind the grid) and the intro/main screen background (fading UI/logo pieces buried under it) |
+
+Puyo Puyo 4 ONLY. A menu-row twin of the cfg-only `layer_back_tex` key (see game_presets.cfg below) so the fix works without touching the SD card at all - e.g. from inside Dolphin.
+
+#### DINO CRISIS INVENTORY FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | Disable | Standard |
+| **ON (redecode)** | Per-game hardcoded texture redecode hack (icon slot) | Dino Crisis inventory fix |
+
+Hardcoded to one address - meaningless for any other game.
+
 #### SH4 CORE
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
 | **INTERPRETER** | Interpreted SH4 core | Slow, for debugging only |
 | **DYNAREC (default)** | JIT recompiler | Fast |
+
+#### Debug logs
+
+All default OFF, all write to `/ndclog.txt` on the card, costing a card write every frame while on - turn back off once a log has answered its question.
+
+| Row | What it logs |
+|-----|--------------|
+| **Dbg FB2D Log** | Whether a game ever takes the bit-24 render path 2D FRAMEBUFFER (Page 1) would act on - answers "is it worth trying on this game?" before flipping it |
+| **Debug Message** | Renderer trace (`[PATH]`, `[FB]`, `[RTT]`...) |
+| **Debug Loop** | Per-loop CPU/GD-ROM/IO trace. VERY slow |
+| **Debug GDROM** | GD-ROM / CDDA SPI command trace |
+| **Debug Skip Tex** | Hides every polygon using one texture (VRAM address, hex or decimal, from a `[SCN]` census `addr=` field). Diagnostic only - it REMOVES geometry, never fixes anything. Answers whether an element is missing because something draws OVER it, or because it's drawn wrong itself - this is how the Hokuto no Ken layering bug was pinned down |
+
+### Page 7 : JIT/DYNAREC
+
+Perf and diagnostic presets for the SH4 dynarec and its interpreter-fallback path. Several read at COMPILE time, not per-frame - set them before launching, not mid-game.
+
+#### JIT SBP
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF** | No stale/self-modified block guard | Fastest, riskiest |
+| **KNOWN (default)** | Guards known self-modifying regions (DOA2LE, Shenmue 1/2, ...) plus the boot-entry cache flush | Balanced |
+| **ALL RAM (slow)** | Guards all RAM | Safest, slowest, diagnosis only |
+
+#### FASTMEM
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Standard PPC-MMU memory access | Slower |
+| **ON (faster, default)** | Branchless JIT MMU-mapped memory access via segment regs + hashed page table; MMIO/SQ/BIOS accesses DSI-fault once and back-patch to slow-path trampolines | Faster |
+
+Crash observed in Re-Volt when launching a race. Only game that does that for now.
+
+#### JIT BCACHE
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Dynamic jumps (jmp/rts/bsrf) chase `cache[]` -> `DynarecBlock` across two cache lines + a counter write | Standard |
+| **ON (flat, default)** | One flat, 1-cacheline `{addr, code}` dispatch entry per dynamic jump | Faster dispatch. L1/L2 cache related - can help heavy scenes like Shenmue's intro |
+
+#### JIT DYN IC
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF** | No inline cache on dynamic branch exits | Standard |
+| **ON (JSR/JMP)** | Per-site inline cache on JSR/JMP dynamic exits | Experimental |
+| **ON (+RTS, default)** | Same, plus RTS | Wii-measured +0.98% - the whole win is in RTS sites; JSR prediction actually runs backwards, so there isn't much more to gain here |
+
+#### FPU PIN
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | fr0-15 not pinned | Standard |
+| **ON (default)** | Pins SH4 fr0-15 to real PPC FPU registers f14..f29 for the whole session | Speeds up geometry-heavy games (fadd/fmul/fmac/fipr/ftrv/cvt_* stop round-tripping through memory) |
+
+#### JIT ALIGN
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | No block alignment | Standard |
+| **ON (32B lines, default)** | Pads every SH4-dynarec block entry to a 32-byte Broadway L1 cache line | Cache-hygiene only, no logic change, marginal effect |
+
+#### JIT IFB FLUSH
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (full spill)** | Every interpreter-fallback opcode (28 of them, incl. `div1`, `addc`, `subc`, `mac.l`, `tas.b`...) gets a FULL register-file spill - 15 stores + 15 loads, +32 more with FPU PIN on | Correct, slow |
+| **ON (selective, default)** | Narrows the spill per opcode to only the GPR/float registers that opcode actually touches, via a closed allow-list | Same result, cheaper. `div1` is the costly one - SH4 has no divide instruction, so a 32-bit software division is ~32 `div1` calls, each paying the spill |
+
+An opcode not on the allow-list keeps the full spill either way - slow, never wrong. Best candidates: games doing lots of integer division. Pair with JIT IFB PROBE to see if a game issues enough to matter.
+
+#### JIT IFB PROBE (diagnostic)
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No counting | Standard |
+| **ON (logs [IFB])** | Counts interpreter fallbacks per opcode, writes an `[IFB]` breakdown to `/ndclog.txt` once a second: total/s, how much JIT IFB FLUSH could narrow, spill memory-op rate with/without it | Costs 4 instructions per fallback site - turn off for timing runs |
+
+Read at compile time - set before launching.
+
+#### JIT NEW OPS
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | 9 opcodes (`stc SR`, `stc.l SR`, `ldc.l SR`, `ldc SR`, `lds FPSCR`, `lds.l FPSCR`, `rotcl`, `rotcr`, `tas.b`) always fell back to the interpreter even though dynarec code for them already existed - it just wasn't reachable from the opcode table | Full interpreter call-out + register spill every time |
+| **ON (9 ops jitted, default)** | Wires all 9 into the dispatch table | `stc SR` alone measured up to 96k/s in ChuChu Rocket scenes; all 9 now skip JIT IFB FLUSH's allow-list entirely |
+
+Changes SH4 codegen - read at compile time. Run JIT IFB PROBE first to see if a game issues enough of these.
+
+#### JIT HOTBLOCKS (diagnostic)
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No counting | Standard |
+| **ON (logs [HOT])** | Counts executions per compiled SH4 block, writes the hottest ones to `/ndclog.txt` once a second as `[HOT]` lines with codegen density (PPC bytes/SH4-opcode), plus a full SH4+PPC dump of the top block twice per session | Costs 4 instructions per block entry - turn off for timing runs. Covers everything JIT IFB PROBE doesn't (i.e. non-fallback codegen) |
+
+Read at compile time - set before launching.
+
+#### JIT T-FORWARD
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | A compare followed by `bt`/`bf` (the commonest branch shape on SH4) emits `stw T` then `lwz T` back to back - a load-hit-store stall on Broadway to recover a value that never left the register | Standard |
+| **ON (no T reload, default)** | Forwards the T bit straight from the register it was just computed in to the branch that consumes it - only when the compare is the immediately preceding op; the store stays since a later block may read T | Found via JIT HOTBLOCKS on the #1 block of a ChuChu scene |
+
+Changes SH4 codegen - read at compile time.
+
+#### JIT FMOV DIRECT
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (GPR bounce)** | `fmov` reads/writes bounce through a GPR and memory | Standard |
+| **ON (LFS/STFS, default)** | `fmov` reads/writes straight to/from the pinned FPRs on the fastmem path | **+10% Wii-CONFIRMED** (Castlevania 103%→113%). Needs FPU PIN + FASTMEM both on - this "Phase B" of FPU PIN had been disabled in every real run until fixed |
+
+#### JIT CARRY OPS
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | `addc`/`subc`/`negc`/`addv`/`subv`/`div1`/`cmp-str`/`xtrct`/`swap.b`/`clrmac` always call the interpreter | Standard |
+| **ON (10 ops jitted, default)** | Real SHIL ops mapping T onto PPC `XER[CA]`/`XER[OV]` | With JIT IFB FLUSH on, a fallback is ~35-45 cycles; expect tenths of a percent, not a breakthrough (~0.3% of frame in Castlevania). Also a correctness fix: the interpreter's `div1` had the wrong Q^M^carry step |
+
+#### JIT MAC OPS
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | `mac.l`/`mac.w` call the interpreter, including their memory reads | Standard |
+| **ON (fastmem reads, default)** | Their `@Rm+`/`@Rn+` reads become ordinary `readm` ops through FASTMEM instead of the interpreter's `ReadMem`; `mullw`/`mulhw` + `addc`/`adde` inlined | Also makes `SR.S=1` saturation mode work - it used to be fatal for `mac.l` and silently skipped for `mac.w` |
+
+Expect little effect for most games - the SH4 has a real FPU, so MAC is rarer here than on the SH2 this technique came from.
+
+#### JIT FSCHG FAST
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | `fschg` (toggles `FPSCR.SZ` only) still calls the full `UpdateFPSCR()` - a C call + 16 `lfs` + 16 `stfs` just to keep `old_fpscr` in step | Standard |
+| **ON (1 stw, default)** | One `stw` instead | DC's vertex T&L brackets its loop with `fschg`, firing ~2.3x per transformed vertex. **Wii-CONFIRMED +10%** in ChuChu mouse mania at matched load; null in Castlevania (doesn't run this hot) |
+
+#### JIT CR0 BRANCH
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | A conditional block exit rebuilds T via `mfcr`/`rlwinm`/`stw`/`cmpi` | Standard |
+| **ON (default)** | Branches directly on the PPC CR0 bit the compare already set (sr_T is still written, since a later block may read it) | Wii-measured +2.8% on BIOS boot phase; null in Castlevania gameplay. Only fires when the flag producer is the block's LAST op |
+
+#### JIT CCALL CENSUS (diagnostic)
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No counting | Standard |
+| **ON** | Counts every C function the dynarec still calls out to, prints a `[CC]` block once a second (per-second AND per-frame rates: scheduler tick, interrupt, `bm_GetCode`, `do_sqw`/TA, `UpdateSR`, `UpdateFPSCR`, fsqrt, fsrra, ReadMem/WriteMem misses, mac saturation) | Far cheaper than JIT HOTBLOCKS since counters live inside the callees, but still re-measure speed with it off before trusting a comparison |
+
+The census that found `writemem` at 1.1M calls/s in Crazy Taxi (57% of all JIT call-outs), which led to BLOCKCOPY below.
+
+#### BLOCKCOPY
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Store-queue flushes and PVR/ch2 DMA transfers run the memory dispatcher once per 32-bit word | Standard |
+| **ON (default)** | Bulk copy instead | **Wii-CONFIRMED +2%**. Crazy Taxi measured 1,104,636 system-RAM writes/s, 95.6% from plain C code rather than JIT code. MMIO, mirror wraps and region crossings still take the per-word path |
+
+#### JIT FSQRT
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | `fsqrt` calls newlib `sqrtf` - a 25-iteration shift-and-subtract bit loop bracketed by two load-hit-store stack round-trips (~300 cycles) | Standard |
+| **ON (default)** | Inline `frsqrte` + 3 Newton-Raphson steps + an exact-residual step, verified bit-identical to `sqrtf` over 2.07M simulated cases | **Wii-CONFIRMED +3.5-4.3%** (Crazy Taxi, which measured 167,906 fsqrt/s). Zero, negative, Inf and NaN still take the old libm call - `frsqrte` alone is only a 5-bit estimate and once distorted the BIOS swirl |
 
 ### Game Specific Presets
 
@@ -684,7 +1009,11 @@ Vertex color is a special method on Dreamcast to color stuff. Notable example in
 
 Same for Jet Set Radio, will add color to the logo.
 
+LEGACY DEPTH (Buggy Heat) reproduces one specific old commit's depth pipeline verbatim, for a game that only ever rendered correctly at that point in history.
 
+PUYO HACK (Puyo Puyo 4 / DA!) and its cfg-only twin `layer_back_tex`/`layer_front_tex` (see game_presets.cfg below) fix 2D games that submit a backdrop or overlay plate at the same depth as the sprites it should stay behind/in front of - painter order alone can't tell them apart.
+
+`wince=yes` in game_presets.cfg is not a rendering preset - it just shows a warning after the options menu ("this is a WinCE game, not supported yet - A: launch anyway, B: back to file list") instead of silently failing to boot, for the handful of Dreamcast games built on Sega's Windows CE devkit instead of plain Katana.
 
 See Compatiblity guide for hints depending of the games
 
