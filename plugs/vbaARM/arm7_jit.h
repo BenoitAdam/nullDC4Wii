@@ -8,3 +8,4 @@ void arm_jit_after_init();       // end of arm_Init(): one-time conformance self
 void arm_jit_on_reset();         // end of arm_Reset(): latch engine, flush the cache
 bool arm_jit_active();           // true -> arm_Run() goes through arm_jit_run()
 void arm_jit_run(u32 CycleCount);
+void arm_jit_census_dump(double seconds);   // [ARMJIT] counters, jit_ccalls probe only

@@ -18,6 +18,15 @@
 //         the slow-path C calls.
 // Blocks never return: they leave through the dispatch stub (FIQ check, budget
 // check, next block) or the exit_now stub (mid-block budget exit, no FIQ check).
+//
+// Levels (arm7_jit preset, latched at arm_Reset):
+//   1  every block exit goes through the C dispatcher
+//   2  + static exits (B/BL, block cap) patched into direct branches
+//   3  + the dispatch stub does FIQ/budget/table lookup in emitted code and
+//        only calls C when one of them says so, and return-shaped dynamic
+//        exits (MOV pc,Rm / SUBS pc,lr,#n / LDR pc,[Rn,#n] / LDM ..pc) get a
+//        per-site cache of their last target. All three keep DISPATCH()
+//        semantics: FIQ sample, budget check, then the block.
 
 #include "arm7.h"
 #include "arm_mem.h"
@@ -92,7 +101,25 @@ static void*  s_stub_dispatch;
 static void*  s_stub_exit_now;
 static void*  s_stub_exit;
 static void*  s_stub_link;
+static void*  s_stub_icmiss;
 static bool   s_link;               // arm7_jit >= 2: static exits patched into direct branches
+static bool   s_retcache;           // arm7_jit >= 3: emitted dispatch + per-site return cache
+static u32    s_slices;             // arm_jit_run calls: the clock for return-cache demotion
+
+// Census (printed with the jit_ccalls probe, latched at reset so the emitted
+// counters and the C ones always describe the same blocks). Costs nothing
+// when off: emitted counters are simply not generated.
+enum
+{
+	ARMC_SLICE, ARMC_BLOCK, ARMC_DISPATCH, ARMC_DISPATCH_C, ARMC_FIQ,
+	ARMC_COMPILE, ARMC_LINK_C, ARMC_DYN, ARMC_IC_SITE, ARMC_IC_MISS,
+	ARMC_IC_PATCH, ARMC_IC_DEMOTE, ARMC_RD_SLOW, ARMC_WR_SLOW, ARMC_LDM,
+	ARMC_STM, ARMC_OTHER, ARMC_COUNT
+};
+extern "C" int g_jit_ccalls_preset;   // dc/sh4/rec_v2/shil.cpp
+static bool   s_census;
+static u32    s_cnt[ARMC_COUNT];
+#define ARMC(i) do { if (s_census) s_cnt[i]++; } while (0)
 
 // Block-table entries written since the last flush. The table is 2 MB and the
 // self-test alone resets ~45 times, so a flush clears only this range, unless
@@ -182,6 +209,20 @@ static void e_call(void* f)
 	s_pc15_known = false;   // conservative: helpers may write reg[15]
 }
 
+// Census counter bump (r11/r12, flags untouched). Emitted only with the census on.
+static const u32 COUNT_WORDS = 4;
+static void e_count(u32 idx)
+{
+	if (!s_census)
+		return;
+	u32* start = emit_ptr;
+	u32 lo = ppc_addr_high(12, &s_cnt[idx]);
+	ppc_lwz(11, 12, lo);
+	ppc_addi(11, 11, 1);
+	ppc_stw(11, 12, lo);
+	verify(emit_ptr - start == (s32)COUNT_WORDS);
+}
+
 static u32* e_bc_placeholder(u32 bo, u32 bi)
 {
 	u32* site = emit_ptr;
@@ -229,10 +270,10 @@ static void e_ca_from_c()
 }
 
 // ── Slow-path memory helpers ─────────────────────────────────────────────────
-static u32  jit_rd32(u32 a)        { return arm_ReadMem32(a); }
-static u32  jit_rd8(u32 a)         { return arm_ReadMem8(a); }
-static void jit_wr32(u32 a, u32 v) { arm_WriteMem32(a, v); }
-static void jit_wr8(u32 a, u32 v)  { arm_WriteMem8(a, (u8)v); }
+static u32  jit_rd32(u32 a)        { ARMC(ARMC_RD_SLOW); return arm_ReadMem32(a); }
+static u32  jit_rd8(u32 a)         { ARMC(ARMC_RD_SLOW); return arm_ReadMem8(a); }
+static void jit_wr32(u32 a, u32 v) { ARMC(ARMC_WR_SLOW); arm_WriteMem32(a, v); }
+static void jit_wr8(u32 a, u32 v)  { ARMC(ARMC_WR_SLOW); arm_WriteMem8(a, (u8)v); }
 
 // ── Cold stub queue ──────────────────────────────────────────────────────────
 // Out-of-line code (budget exits, failed conditions, slow memory paths) is
@@ -283,6 +324,44 @@ static void e_link(u32 target)
 	ppc_addis(3, 0, target >> 16);
 	ppc_ori(3, 3, target & 0xFFFF);
 	ppc_call(s_stub_link);
+}
+
+// Return-cache site bookkeeping (arm7_jit >= 3, see jit_icmiss_c).
+static const u32 IC_SITE_WORDS    = 7;
+static const u32 IC_UNRESOLVED    = 0x48000004;   // w3 `b +4`: nothing cached yet
+static const u32 IC_REPROBE       = 64;           // misses tolerated before re-patching
+static const u32 IC_DEMOTE_SLICES = 1024;         // re-patch due again this soon -> give up
+
+// Leave the block for a pc known only at run time (r3). With the return cache,
+// a cacheable exit is emitted as
+//     w0 addis r4,r3,-pc@h        r4 = r3 - cached pc (high half)
+//     w1 cmplwi r4,pc@l           ...low half: equal <=> same target
+//     w2 bne   w4
+//     w3 b     link entry         (b w4 until the first patch)
+//     w4 bl    icmiss_stub        LR = w5
+//     w5 .long misses left before the next re-patch (0 = patch on the next miss)
+//     w6 .long s_slices at the last patch
+// A hit lands on the target's link entry (FIQ sample), then its instruction 0
+// (budget check): the same DISPATCH() the dispatcher would have done.
+static void e_dyn_exit(bool cacheable)
+{
+	e_count(ARMC_DYN);
+	if (!s_retcache || !cacheable)
+	{
+		ppc_jump(s_stub_dispatch);
+		return;
+	}
+
+	e_count(ARMC_IC_SITE);                     // must stay right before w0 (demotion)
+	u32* site = emit_ptr;
+	ppc_addis(4, 3, 0);
+	ppc_cmpli(0, 4, 0, 0);
+	ppc_bcx(BO_FALSE, BI_CR0_EQ, 2, 0, 0);
+	ppc_bx(1, 0, 0);
+	ppc_call(s_stub_icmiss);
+	ppc_emit(0);
+	ppc_emit(0);
+	verify(emit_ptr - site == (s32)IC_SITE_WORDS && site[3] == IC_UNRESOLVED);
 }
 
 static void flush_cold()
@@ -349,12 +428,13 @@ static void flush_cold()
 }
 
 // ── Helpers mirroring the cached labels that stay in C ───────────────────────
-static int jit_stm(u32 op)      { int t = 0; arm_cached_stm(op, t);        return t; }
-static int jit_ldm_nopc(u32 op) { int t = 0; arm_cached_ldm(op, t, false); return t; }
-static int jit_ldm_pc(u32 op)   { int t = 0; arm_cached_ldm(op, t, true);  return t; }
+static int jit_stm(u32 op)      { ARMC(ARMC_STM); int t = 0; arm_cached_stm(op, t);        return t; }
+static int jit_ldm_nopc(u32 op) { ARMC(ARMC_LDM); int t = 0; arm_cached_ldm(op, t, false); return t; }
+static int jit_ldm_pc(u32 op)   { ARMC(ARMC_LDM); int t = 0; arm_cached_ldm(op, t, true);  return t; }
 
 static void jit_swp(u32 op)      // lbl_swp / lbl_swpb
 {
+	ARMC(ARMC_OTHER);
 	u32 rd = (op >> 12) & 0xF, rn = (op >> 16) & 0xF, rm = op & 0xF;
 	u32 address = arm_Reg[rn].I;
 	if (op & 0x00400000)
@@ -373,6 +453,7 @@ static void jit_swp(u32 op)      // lbl_swp / lbl_swpb
 
 static void jit_msr_cpsr(u32 opcode)   // lbl_msr_cpsr
 {
+	ARMC(ARMC_OTHER);
 	CPUUpdateCPSR();
 	u32 value;
 	if (opcode & 0x02000000)
@@ -399,6 +480,7 @@ static void jit_msr_cpsr(u32 opcode)   // lbl_msr_cpsr
 
 static void jit_msr_spsr(u32 opcode)   // lbl_msr_spsr
 {
+	ARMC(ARMC_OTHER);
 	if (armMode > 0x10 && armMode < 0x1f)
 	{
 		u32 value;
@@ -419,17 +501,20 @@ static void jit_msr_spsr(u32 opcode)   // lbl_msr_spsr
 
 static void jit_swi(u32 op)             // lbl_swi (after its +3 and SET_PC_READ)
 {
+	ARMC(ARMC_OTHER);
 	CPUSoftwareInterrupt(op & 0x00FFFFFF);
 }
 
 static void jit_undefined(u32 op, u32 pc)   // lbl_undefined (after SET_PC_READ)
 {
+	ARMC(ARMC_OTHER);
 	printf("Undefined ARM instruction (jit) %08x at %08x\n", op, pc);
 	CPUUndefinedException();
 }
 
 static void jit_dp_switchmode()        // data-processing S with Rd == r15
 {
+	ARMC(ARMC_OTHER);
 	CPUSwitchMode(arm_Reg[17].I & 0x1f, false, true);
 }
 
@@ -438,6 +523,7 @@ static void jit_dp_switchmode()        // data-processing S with Rd == r15
 // kind bit 2 is set. Reads Rm and Rs from memory exactly like the uop does.
 static u32 jit_shift_reg(u32 rm, u32 rs, u32 kind)
 {
+	ARMC(ARMC_OTHER);
 	u32 v = arm_Reg[rm].I;
 	u32 s = arm_Reg[rs].I & 0xFF;
 	bool cw = (kind & 4) != 0;
@@ -510,8 +596,10 @@ static void* jit_lookup(u32 pc)
 // DISPATCH(): FIQ sample, budget check, then the block for pc.
 static void* jit_dispatch_c(u32 pc, s32 budget)
 {
+	ARMC(ARMC_DISPATCH_C);
 	if (armFiqEnable && e68k_out)
 	{
+		ARMC(ARMC_FIQ);
 		arm_Reg[15].I = pc + 4;
 		CPUFiq();
 		pc = arm_ArmNextPC;
@@ -536,6 +624,7 @@ static void* jit_dispatch_c(u32 pc, s32 budget)
 // FIQ sample itself; instruction 0's own budget check does the rest.
 static void* jit_link_c(u32 pc, s32 budget, u32* lr)
 {
+	ARMC(ARMC_LINK_C);
 	if ((armFiqEnable && e68k_out) || budget <= 0)
 		return jit_dispatch_c(pc, budget);
 
@@ -549,6 +638,47 @@ static void* jit_link_c(u32 pc, s32 budget, u32* lr)
 		*site = 0x48000000 | ((u32)d & 0x03FFFFFC);
 		make_address_range_executable(site, 4);
 	}
+	return code;
+}
+
+// Return-cache miss with its countdown at 0 (the icmiss stub decrements it in
+// emitted code otherwise and uses the plain dispatcher). lr = &w5 of the site.
+// Normally: (re)point the site at this target, DISPATCH() semantics for the
+// jump itself. A site due for re-patching again within IC_DEMOTE_SLICES of the
+// last patch keeps missing at a high rate (a jump table, or a helper returning
+// to two alternating callers), so it is turned into a plain `b dispatch`.
+static void* jit_icmiss_c(u32 pc, s32 budget, u32* lr)
+{
+	if ((armFiqEnable && e68k_out) || budget <= 0)
+		return jit_dispatch_c(pc, budget);      // countdown stays 0: retry next miss
+
+	u32 flushes = s_flushes;
+	void* code = jit_lookup(pc);
+	if (s_flushes != flushes)
+		return code;                            // the site was flushed with the cache
+
+	u32* site = lr - 5;
+	if (site[3] != IC_UNRESOLVED && s_slices - site[6] < IC_DEMOTE_SLICES)
+	{
+		// Over the site's own census counter when there is one, so a demoted
+		// site stops counting as a cached one (s_census is per cache generation).
+		u32* at = s_census ? site - COUNT_WORDS : site;
+		s32 d = (s32)((u8*)s_stub_dispatch - (u8*)at);
+		*at = 0x48000000 | ((u32)d & 0x03FFFFFC);
+		make_address_range_executable(at, 4);
+		ARMC(ARMC_IC_DEMOTE);
+		return code;
+	}
+
+	u32* link = (u32*)code - ((u32*)code)[-2];
+	s32 d = (s32)((u8*)link - (u8*)&site[3]);
+	site[0] = (site[0] & 0xFFFF0000) | ((0u - (pc >> 16)) & 0xFFFF);
+	site[1] = (site[1] & 0xFFFF0000) | (pc & 0xFFFF);
+	site[3] = 0x48000000 | ((u32)d & 0x03FFFFFC);
+	site[5] = IC_REPROBE;
+	site[6] = s_slices;
+	make_address_range_executable(site, 4 * 4);
+	ARMC(ARMC_IC_PATCH);
 	return code;
 }
 
@@ -573,6 +703,38 @@ static void emit_stubs()
 
 	// dispatch: r3 = pc
 	s_stub_dispatch = emit_ptr;
+	e_count(ARMC_DISPATCH);
+	if (s_retcache)
+	{
+		// DISPATCH() in emitted code. Any of FIQ pending, budget spent or block
+		// not compiled falls through to jit_dispatch_c, which redoes all three.
+		u32 k = 0;
+		while (k < 30 && (2u << k) <= s_entry_mask + 1)
+			k++;                                   // table holds 2^k entries (k <= 30)
+		u32 tbl = (u32)s_entries;
+		u32 lo  = tbl & 0xFFFF;
+		u32 hi  = (tbl - (u32)(s32)(s16)lo) >> 16;
+		u32* miss[4];
+
+		e_load_byte(4, &armFiqEnable);
+		e_load_byte(5, &e68k_out);
+		ppc_andx(4, 4, 5, 1);
+		miss[0] = e_bc_placeholder(BO_FALSE, BI_CR0_EQ);
+		ppc_cmpi(0, R_BUD, 0, 0);
+		miss[1] = e_bc_placeholder(BO_FALSE, BI_CR0_GT);
+		e_rlwinm(4, 3, 0, 30 - k, 29);             // ((pc >> 2) & mask) * 4
+		ppc_addis(4, 4, hi);
+		ppc_lwz(5, 4, lo);                         // code = s_entries[...]
+		ppc_cmpli(0, 5, 0, 0);
+		miss[2] = e_bc_placeholder(BO_TRUE, BI_CR0_EQ);
+		ppc_lwz(6, 5, (u32)-4);                    // code[-1] == pc ?
+		ppc_cmpl(0, 6, 3, 0);
+		miss[3] = e_bc_placeholder(BO_FALSE, BI_CR0_EQ);
+		ppc_mtctr(5);
+		ppc_bctr();
+		for (u32 i = 0; i < 4; i++)
+			patch_bc(miss[i], emit_ptr);
+	}
 	ppc_mr(4, R_BUD);
 	ppc_call((void*)&jit_dispatch_c);
 	ppc_cmpli(0, 3, 0, 0);
@@ -605,6 +767,27 @@ static void emit_stubs()
 	e_bc_to(BO_TRUE, BI_CR0_EQ, (u32*)s_stub_exit);
 	ppc_mtctr(3);
 	ppc_bctr();
+
+	// icmiss: r3 = pc, LR = &w5 of the return-cache site that missed
+	s_stub_icmiss = emit_ptr;
+	if (s_retcache)
+	{
+		e_count(ARMC_IC_MISS);
+		ppc_mflr(5);
+		ppc_lwz(6, 5, 0);
+		ppc_cmpli(0, 6, 0, 0);
+		u32* to_c = e_bc_placeholder(BO_TRUE, BI_CR0_EQ);
+		ppc_addi(6, 6, (u32)-1);                   // not due yet: count it down,
+		ppc_stw(6, 5, 0);
+		ppc_jump(s_stub_dispatch);                 // and take the plain dispatcher
+		patch_bc(to_c, emit_ptr);
+		ppc_mr(4, R_BUD);
+		ppc_call((void*)&jit_icmiss_c);
+		ppc_cmpli(0, 3, 0, 0);
+		e_bc_to(BO_TRUE, BI_CR0_EQ, (u32*)s_stub_exit);
+		ppc_mtctr(3);
+		ppc_bctr();
+	}
 
 	s_code_blocks = emit_ptr;
 	emit_ptr = saved_emit_ptr;
@@ -893,7 +1076,12 @@ static void emit_dp(u32 pc, u32 op, bool& last)
 		}
 		else
 			e_rlwinm(3, 7, 0, 0, 29);
-		ppc_jump(s_stub_dispatch);
+		// MOV pc,Rm (returns, calls through a register) and SUB(S) pc,Rn,#n
+		// (exception returns) usually go back to one place per site; anything
+		// computed from pc or shifted is a jump table and would only thrash.
+		bool plain_rm = !(op & 0x02000000) && ((op >> 4) & 0xFF) == 0;
+		e_dyn_exit((op4 == 0xD && plain_rm) ||
+		           (op4 == 0x2 && (op & 0x02000000) && rn != 15));
 		last = true;
 	}
 }
@@ -1036,7 +1224,7 @@ static void emit_mem(u32 pc, u32 op, bool& last)
 		{
 			e_ticks(2);
 			e_rlwinm(3, 3, 0, 0, 29);
-			ppc_jump(s_stub_dispatch);
+			e_dyn_exit(!I && rn != 15);            // LDR pc,[sp],#4 yes; tables no
 			last = true;
 		}
 	}
@@ -1132,7 +1320,7 @@ static void emit_insn(u32 block_pc, u32 pc, u32 op, bool& last, bool& blockSafe)
 			{
 				u32 lo = ppc_addr_high(3, &arm_ArmNextPC);
 				ppc_lwz(3, 3, lo);
-				ppc_jump(s_stub_dispatch);
+				e_dyn_exit(true);                  // LDMFD sp!,{..,pc}: function return
 				last = true;
 			}
 			blockSafe = false;
@@ -1178,7 +1366,7 @@ static void emit_insn(u32 block_pc, u32 pc, u32 op, bool& last, bool& blockSafe)
 		}
 		u32 lo = ppc_addr_high(3, &arm_ArmNextPC);
 		ppc_lwz(3, 3, lo);
-		ppc_jump(s_stub_dispatch);
+		e_dyn_exit(false);
 		last = true;
 	}
 
@@ -1230,6 +1418,8 @@ static void* compile_block(u32 block_pc)
 
 	s_cold_n = 0;
 	s_pending_n = 0;
+	ARMC(ARMC_COMPILE);
+	e_count(ARMC_BLOCK);
 
 	bool last = false;
 	bool blockSafe = true;
@@ -1312,7 +1502,9 @@ void arm_jit_on_reset()
 		s_table_foreign = true;   // the cached interpreter owns the table now
 		return;
 	}
-	s_link = get_arm7_jit_preset() >= 2;
+	s_link     = get_arm7_jit_preset() >= 2;
+	s_retcache = get_arm7_jit_preset() >= 3;
+	s_census   = g_jit_ccalls_preset != 0;
 
 	jit_flush(true);
 	if (!s_announced)
@@ -1330,7 +1522,33 @@ bool arm_jit_active()
 
 void arm_jit_run(u32 CycleCount)
 {
+	s_slices++;
+	ARMC(ARMC_SLICE);
 	((void (*)(s32))s_stub_entry)((s32)CycleCount);
+}
+
+// Once a second from the SPG stats block, next to the jit_ccalls [CC] dump.
+void arm_jit_census_dump(double seconds)
+{
+	if (!s_census || !s_active || seconds <= 0.0)
+		return;
+
+	u32 c[ARMC_COUNT];
+	memcpy(c, s_cnt, sizeof(c));
+	memset(s_cnt, 0, sizeof(s_cnt));
+	#define PER_S(i) ((double)c[i] / seconds)
+
+	printf("[ARMJIT] level %d  slices %.0f/s  block entries %.0f/s  compiles %.0f/s  fiq %.0f/s\n",
+	       get_arm7_jit_preset(), PER_S(ARMC_SLICE), PER_S(ARMC_BLOCK), PER_S(ARMC_COMPILE), PER_S(ARMC_FIQ));
+	printf("[ARMJIT]   dispatch stub %.0f/s (into C %.0f/s)  static link C %.0f/s\n",
+	       PER_S(ARMC_DISPATCH), PER_S(ARMC_DISPATCH_C), PER_S(ARMC_LINK_C));
+	printf("[ARMJIT]   dynamic exits %.0f/s  cached sites %.0f/s  hits %.0f/s  misses %.0f/s  repatches %.0f/s  demoted %u\n",
+	       PER_S(ARMC_DYN), PER_S(ARMC_IC_SITE),
+	       c[ARMC_IC_SITE] >= c[ARMC_IC_MISS] ? (double)(c[ARMC_IC_SITE] - c[ARMC_IC_MISS]) / seconds : 0.0,
+	       PER_S(ARMC_IC_MISS), PER_S(ARMC_IC_PATCH), c[ARMC_IC_DEMOTE]);
+	printf("[ARMJIT]   C helpers/s: slow read %.0f  slow write %.0f  ldm %.0f  stm %.0f  other %.0f\n",
+	       PER_S(ARMC_RD_SLOW), PER_S(ARMC_WR_SLOW), PER_S(ARMC_LDM), PER_S(ARMC_STM), PER_S(ARMC_OTHER));
+	#undef PER_S
 }
 
 void arm_jit_after_init()
@@ -1367,5 +1585,6 @@ void arm_jit_after_init() {}
 void arm_jit_on_reset() {}
 bool arm_jit_active() { return false; }
 void arm_jit_run(u32) {}
+void arm_jit_census_dump(double) {}
 
 #endif

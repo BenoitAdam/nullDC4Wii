@@ -120,13 +120,18 @@
                                 (off/legacy); per-game, verify music/SFX
                                 timing by ear before keeping — stage 2 has
                                 been found to break audio timing.
-        arm7_jit=2          <- 0/1/2 (off/on = 0/1), ARM7 sound-CPU recompiler
+        arm7_jit=2          <- 0/1/2/3 (off/on = 0/1), ARM7 sound-CPU recompiler
                                 (see plugs/vbaARM/arm7_jit.cpp). 0 runs the
                                 cached interpreter; 1 translates ARM code to
                                 PPC with the same results and timing; 2
                                 (default) also links blocks directly instead
                                 of returning to the dispatcher after every
-                                branch. Both 1 and 2 Wii-confirmed. The arm7di conformance tests run
+                                branch. Both 1 and 2 Wii-confirmed. 3 also
+                                does the dispatcher's work in emitted code and
+                                caches each return's last target (MOV pc,lr /
+                                LDMFD ..pc); awaiting Wii A/B against 2.
+                                With jit_ccalls=on it prints [ARMJIT] counters.
+                                The arm7di conformance tests run
                                 once at ARM init and a failure falls back to
                                 the interpreter.
         sh4_clock=175      <- 150..200, SH4 underclock: effective SH4 core
