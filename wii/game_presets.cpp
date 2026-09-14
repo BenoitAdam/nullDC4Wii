@@ -120,13 +120,15 @@
                                 (off/legacy); per-game, verify music/SFX
                                 timing by ear before keeping — stage 2 has
                                 been found to break audio timing.
-        arm7_jit=on         <- on/off, ARM7 sound-CPU recompiler (see
-                                plugs/vbaARM/arm7_jit.cpp). off (default) runs
-                                the cached interpreter; on translates ARM code
-                                to PPC with the same results and timing. The
-                                arm7di conformance tests run once at ARM init
-                                and a failure falls back to the interpreter.
-                                Experimental.
+        arm7_jit=2          <- 0/1/2 (off/on = 0/1), ARM7 sound-CPU recompiler
+                                (see plugs/vbaARM/arm7_jit.cpp). 0 runs the
+                                cached interpreter; 1 translates ARM code to
+                                PPC with the same results and timing; 2
+                                (default) also links blocks directly instead
+                                of returning to the dispatcher after every
+                                branch. Both 1 and 2 Wii-confirmed. The arm7di conformance tests run
+                                once at ARM init and a failure falls back to
+                                the interpreter.
         sh4_clock=175      <- 150..200, SH4 underclock: effective SH4 core
                                 clock in MHz (clamped to [150,200]; see
                                 plugins/plugin_types.h SH4_CLOCK_EFF). 200
@@ -1507,7 +1509,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "poly_offset"))    p->poly_offset    = atoi(val);
     else if (key_eq(key, "audio_buffers"))  p->audio_buffers  = parse_audio_buffers(val);
     else if (key_eq(key, "arm7_speed"))     p->arm7_speed     = atoi(val);
-    else if (key_eq(key, "arm7_jit"))       p->arm7_jit       = parse_bool(val);
+    else if (key_eq(key, "arm7_jit"))       p->arm7_jit       = (val[0] >= '0' && val[0] <= '9') ? atoi(val) : parse_bool(val);
     else if (key_eq(key, "sh4_clock"))      p->sh4_clock      = parse_sh4_clock(val);
     else if (key_eq(key, "jit_sbp"))        p->jit_sbp        = atoi(val);
     else if (key_eq(key, "dma_fix"))        p->dma_fix        = parse_bool(val);

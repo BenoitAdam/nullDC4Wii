@@ -90,6 +90,9 @@ static u32    s_entry_mask;
 static void*  s_stub_entry;
 static void*  s_stub_dispatch;
 static void*  s_stub_exit_now;
+static void*  s_stub_exit;
+static void*  s_stub_link;
+static bool   s_link;               // arm7_jit >= 2: static exits patched into direct branches
 
 // Block-table entries written since the last flush. The table is 2 MB and the
 // self-test alone resets ~45 times, so a flush clears only this range, unless
@@ -258,6 +261,30 @@ static void cold_push(u32 kind, u32* site, u32 pc, u32* back, u32 size)
 	c.kind = kind; c.site = site; c.pc = pc; c.back = back; c.size = size;
 }
 
+// Leave the block for a pc known at compile time (DISPATCH_PC semantics).
+static void e_link(u32 target)
+{
+	if (!s_link)
+	{
+		ppc_li(3, target);
+		ppc_jump(s_stub_dispatch);
+		return;
+	}
+
+	// Target already compiled: branch straight to its link entry.
+	void* code = s_entries[(target >> 2) & s_entry_mask];
+	if (code && ((u32*)code)[-1] == target)
+	{
+		ppc_jump((u32*)code - ((u32*)code)[-2]);
+		return;
+	}
+
+	// Fixed 3-word shape: jit_link_c patches the first word.
+	ppc_addis(3, 0, target >> 16);
+	ppc_ori(3, 3, target & 0xFFFF);
+	ppc_call(s_stub_link);
+}
+
 static void flush_cold()
 {
 	if (!s_cold_n)
@@ -279,8 +306,7 @@ static void flush_cold()
 			break;
 
 		case CK_FAIL_LAST:                 // COND_FAIL on a block-ending insn
-			ppc_li(3, c.pc);
-			ppc_jump(s_stub_dispatch);
+			e_link(c.pc);
 			break;
 
 		case CK_FAIL:                      // COND_FAIL mid-block: DISPATCH() samples FIQ
@@ -471,6 +497,16 @@ static u32 jit_shift_reg(u32 rm, u32 rs, u32 kind)
 // ── Dispatch (called from the dispatch stub) ─────────────────────────────────
 static void* compile_block(u32 block_pc);
 
+// Block layout (see compile_block): code[-1] = ARM pc, code[-2] = words from
+// the link entry to code.
+static void* jit_lookup(u32 pc)
+{
+	void* code = s_entries[(pc >> 2) & s_entry_mask];
+	if (!code || ((u32*)code)[-1] != pc)
+		code = compile_block(pc);
+	return code;
+}
+
 // DISPATCH(): FIQ sample, budget check, then the block for pc.
 static void* jit_dispatch_c(u32 pc, s32 budget)
 {
@@ -488,9 +524,31 @@ static void* jit_dispatch_c(u32 pc, s32 budget)
 		return 0;
 	}
 
-	void* code = s_entries[(pc >> 2) & s_entry_mask];
-	if (!code || ((u32*)code)[-1] != pc)
-		code = compile_block(pc);
+	return jit_lookup(pc);
+}
+
+// Linked exits (arm7_jit >= 2). A static exit (B/BL target, failed condition on
+// a block-ending instruction, block cap) is emitted as
+//     lis r3,pc@h / ori r3,r3,pc@l / bl link_stub
+// Its first run lands here with the same DISPATCH() semantics as above. Then,
+// unless compiling flushed the cache (the site died with it), the lis word is
+// overwritten with `b` to the target's link entry, which repeats DISPATCH()'s
+// FIQ sample itself; instruction 0's own budget check does the rest.
+static void* jit_link_c(u32 pc, s32 budget, u32* lr)
+{
+	if ((armFiqEnable && e68k_out) || budget <= 0)
+		return jit_dispatch_c(pc, budget);
+
+	u32 flushes = s_flushes;
+	void* code = jit_lookup(pc);
+	if (s_flushes == flushes)
+	{
+		u32* site = lr - 3;
+		u32* link = (u32*)code - ((u32*)code)[-2];
+		s32 d = (s32)((u8*)link - (u8*)site);
+		*site = 0x48000000 | ((u32)d & 0x03FFFFFC);
+		make_address_range_executable(site, 4);
+	}
 	return code;
 }
 
@@ -529,6 +587,7 @@ static void emit_stubs()
 	{ u32 lo = ppc_addr_high(4, &arm_ArmNextPC); ppc_stw(3, 4, lo); }
 
 	// exit
+	s_stub_exit = emit_ptr;
 	patch_bc(to_exit, emit_ptr);
 	for (u32 i = 0; i < 8; i++)
 		ppc_lwz(24 + i, 1, 32 + i * 4);
@@ -536,6 +595,16 @@ static void emit_stubs()
 	ppc_mtlr(0);
 	ppc_addi(1, 1, 64);
 	ppc_blr();
+
+	// link: r3 = target pc, LR = just past the exit's `bl`
+	s_stub_link = emit_ptr;
+	ppc_mflr(5);
+	ppc_mr(4, R_BUD);
+	ppc_call((void*)&jit_link_c);
+	ppc_cmpli(0, 3, 0, 0);
+	e_bc_to(BO_TRUE, BI_CR0_EQ, (u32*)s_stub_exit);
+	ppc_mtctr(3);
+	ppc_bctr();
 
 	s_code_blocks = emit_ptr;
 	emit_ptr = saved_emit_ptr;
@@ -1087,8 +1156,7 @@ static void emit_insn(u32 block_pc, u32 pc, u32 op, bool& last, bool& blockSafe)
 				bool selfLoop = blockSafe && target >= block_pc && target <= pc;
 				e_ticks(selfLoop ? 103 : 3);
 			}
-			ppc_li(3, target);
-			ppc_jump(s_stub_dispatch);
+			e_link(target);
 			last = true;
 		}
 	}
@@ -1140,11 +1208,25 @@ static void* compile_block(u32 block_pc)
 		jit_flush(false);
 	}
 
-	u32* hdr = s_code_cur;
-	hdr[0] = block_pc;
+	u32* start = s_code_cur;
 	u32* saved_emit_ptr = emit_ptr;
-	emit_ptr = hdr + 1;
+	emit_ptr = start;
+
+	// Link entry (used by patched static exits): DISPATCH()'s FIQ sample. No
+	// FIQ -> skip the two data words into the code, whose instruction 0 does
+	// the budget check. The dispatcher already sampled FIQ and enters at code.
+	e_load_byte(3, &armFiqEnable);
+	e_load_byte(4, &e68k_out);
+	ppc_andx(3, 3, 4, 1);
+	u32* no_fiq = e_bc_placeholder(BO_TRUE, BI_CR0_EQ);
+	ppc_li(3, block_pc);
+	ppc_jump(s_stub_dispatch);
+	u32* len_word = emit_ptr;
+	ppc_emit(0);            // code[-2]: words from the link entry to code
+	ppc_emit(block_pc);     // code[-1]: ARM pc, checked by jit_lookup
 	void* code = emit_ptr;
+	patch_bc(no_fiq, (u32*)code);
+	*len_word = (u32)((u32*)code - start);
 
 	s_cold_n = 0;
 	s_pending_n = 0;
@@ -1167,8 +1249,7 @@ static void* compile_block(u32 block_pc)
 		{
 			// lbl_rehome: re-dispatch at the next instruction
 			mark_insn_start();
-			ppc_li(3, pc);
-			ppc_jump(s_stub_dispatch);
+			e_link(pc);
 			break;
 		}
 
@@ -1181,9 +1262,9 @@ static void* compile_block(u32 block_pc)
 
 	u32* end = emit_ptr;
 	emit_ptr = saved_emit_ptr;
-	verify((u32)(end - hdr) < MAX_BLOCK_WORDS);
+	verify((u32)(end - start) < MAX_BLOCK_WORDS);
 
-	make_address_range_executable(hdr, (u32)((u8*)end - (u8*)hdr));
+	make_address_range_executable(start, (u32)((u8*)end - (u8*)start));
 	s_code_cur = end;
 	u32 idx = (block_pc >> 2) & s_entry_mask;
 	s_entries[idx] = code;
@@ -1231,6 +1312,7 @@ void arm_jit_on_reset()
 		s_table_foreign = true;   // the cached interpreter owns the table now
 		return;
 	}
+	s_link = get_arm7_jit_preset() >= 2;
 
 	jit_flush(true);
 	if (!s_announced)
