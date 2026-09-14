@@ -120,7 +120,14 @@
                                 (off/legacy); per-game, verify music/SFX
                                 timing by ear before keeping — stage 2 has
                                 been found to break audio timing.
-        sh4_clock=175       <- 150..200, SH4 underclock: effective SH4 core
+        arm7_jit=on         <- on/off, ARM7 sound-CPU recompiler (see
+                                plugs/vbaARM/arm7_jit.cpp). off (default) runs
+                                the cached interpreter; on translates ARM code
+                                to PPC with the same results and timing. The
+                                arm7di conformance tests run once at ARM init
+                                and a failure falls back to the interpreter.
+                                Experimental.
+        sh4_clock=175      <- 150..200, SH4 underclock: effective SH4 core
                                 clock in MHz (clamped to [150,200]; see
                                 plugins/plugin_types.h SH4_CLOCK_EFF). 200
                                 (default) is real-Dreamcast full speed. Lower
@@ -924,6 +931,7 @@ extern int g_subpass_zclear_preset;
 extern int g_poly_offset_preset;
 extern int g_audio_buffers_preset;
 extern int g_arm7_speed_preset;
+extern int g_arm7_jit_preset;
 extern int g_sh4_clock_preset;
 extern int g_jit_sbp_preset;
 extern int g_dma_fix_preset;
@@ -1047,6 +1055,7 @@ struct GamePreset
     int poly_offset;
     int audio_buffers;
     int arm7_speed;
+    int arm7_jit;
     int sh4_clock;
     int jit_sbp;
     int dma_fix;
@@ -1498,6 +1507,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "poly_offset"))    p->poly_offset    = atoi(val);
     else if (key_eq(key, "audio_buffers"))  p->audio_buffers  = parse_audio_buffers(val);
     else if (key_eq(key, "arm7_speed"))     p->arm7_speed     = atoi(val);
+    else if (key_eq(key, "arm7_jit"))       p->arm7_jit       = parse_bool(val);
     else if (key_eq(key, "sh4_clock"))      p->sh4_clock      = parse_sh4_clock(val);
     else if (key_eq(key, "jit_sbp"))        p->jit_sbp        = atoi(val);
     else if (key_eq(key, "dma_fix"))        p->dma_fix        = parse_bool(val);
@@ -1597,6 +1607,7 @@ static void preset_clear(GamePreset* cur)
     cur->poly_offset = -1;
     cur->audio_buffers = -2; // -2 = absent (leave live state alone); -1 is a real value here (see parse_audio_buffers)
     cur->arm7_speed = -1;
+    cur->arm7_jit = -1;
     cur->sh4_clock = -1;
     cur->jit_sbp = -1;
     cur->dma_fix = -1;
@@ -1724,6 +1735,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->poly_offset    >= 0) { g_poly_offset_preset   = p->poly_offset;     printf("  poly_offset    -> %d\n", p->poly_offset);    }
     if (p->audio_buffers  != -2) { g_audio_buffers_preset = p->audio_buffers;  printf("  audio_buffers  -> %d\n", p->audio_buffers);  }
     if (p->arm7_speed     >= 0) { g_arm7_speed_preset     = p->arm7_speed;     printf("  arm7_speed     -> %d\n", p->arm7_speed);     }
+    if (p->arm7_jit       >= 0) { g_arm7_jit_preset       = p->arm7_jit;       printf("  arm7_jit       -> %d\n", p->arm7_jit);       }
     if (p->sh4_clock      >= 0) { g_sh4_clock_preset      = p->sh4_clock;      printf("  sh4_clock      -> %d\n", p->sh4_clock);      }
     if (p->jit_sbp        >= 0) { g_jit_sbp_preset        = p->jit_sbp;        printf("  jit_sbp        -> %d\n", p->jit_sbp);        }
     if (p->dma_fix        >= 0) { g_dma_fix_preset        = p->dma_fix;        printf("  dma_fix        -> %d\n", p->dma_fix);        }

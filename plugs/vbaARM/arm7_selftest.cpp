@@ -33,9 +33,12 @@ extern u8* arm_aica_ram;
 static const u32 END_MARKER = 0xDEADBEEFu;
 static const u32 MAX_INSNS  = 100000;   // safety limit, matches Rust MAX_CYCLES
 
-// 2 MB scratch ARAM (matches ARAM_SIZE so the core's ARAM_MASK behaves exactly
-// as in real operation). Static so it lives for the whole run with no heap use.
-static u8 s_test_aram[ARAM_SIZE];
+// Scratch ARAM = the core's real sound RAM (ARAM_SIZE, so ARAM_MASK behaves as
+// in real operation). A private 2 MB static array used to live here: that is
+// 2 MB of MEM1 the moment anything links this file, and the arm7_jit preset
+// does. So the tests must run before any game code (the ARM7 JIT runs them from
+// arm_Init()), and the RAM is zeroed again when they finish.
+static u8* s_test_aram = 0;
 
 // Decode r1 error flags into a short human-readable string (matches Rust).
 static void decode_r1_errors(u32 r1, char* out, int out_sz)
@@ -60,8 +63,7 @@ static bool run_one(const Arm7SelfTest& t)
 {
     // Point the core at our scratch ARAM and clear it.
     arm_aica_ram = s_test_aram;
-    for (u32 i = 0; i < ARAM_SIZE; i++)
-        s_test_aram[i] = 0;
+    memset(s_test_aram, 0, ARAM_SIZE);
 
     // Load the binary one byte at a time so the BE byte-swap is applied.
     for (u32 i = 0; i < t.size; i++)
@@ -125,9 +127,16 @@ int arm_RunSelfTests()
     // writeback address is wrong (showed up as BAD_Rn in the LDM/STM tests).
     arm_Init();
 
-    // Preserve the caller's ARAM pointer; the emulator wires this up later via
-    // arm_init_mem(), but be safe in case the order ever changes.
+    // The sound RAM doubles as the test scratch (see s_test_aram), so it has to
+    // exist already: arm_init_mem() runs before arm_Init() in armInit().
     u8* saved_aram = arm_aica_ram;
+    if (!saved_aram)
+    {
+        printf("[ARM7TEST] no sound RAM yet (call after arm_init_mem) - not run\n");
+        printf("==========================================================\n\n");
+        return -1;
+    }
+    s_test_aram = saved_aram;
 
     int failed = 0;
     for (int i = 0; i < arm7_selftest_count; i++)
@@ -136,6 +145,7 @@ int arm_RunSelfTests()
             failed++;
     }
 
+    memset(saved_aram, 0, ARAM_SIZE);
     arm_aica_ram = saved_aram;
     arm_SetEnabled(false);   // leave the core disabled; emulator re-enables later
 

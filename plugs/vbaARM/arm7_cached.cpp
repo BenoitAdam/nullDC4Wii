@@ -186,6 +186,18 @@ static u32          ARM7_CACHE_LAST_OP;
 // initializes the dispatch sentinel and clears every entrypoint to it.
 static bool         s_cache_dirty = true;
 
+// The ARM7 JIT (arm7_jit.cpp) runs instead of this engine when the arm7_jit
+// preset is on, and reuses these two buffers rather than adding 4 MB of its
+// own. arm_Reset() latches one engine and flushes both (s_cache_dirty makes
+// this engine rebuild its tables before its next run).
+void arm7_cached_borrow_buffers(u8** code, u32* code_bytes, void*** entries, u32* entry_count)
+{
+	*code        = (u8*)ARM7_CACHE;
+	*code_bytes  = (u32)sizeof(ARM7_CACHE);
+	*entries     = (void**)ARM7_ENTRYPOINTS;
+	*entry_count = ARM7_EP_SIZE;
+}
+
 // Condition handling is now per-uop (lbl_cond_<cc> guard uops in
 // arm_Run_Cached); the old cond_check() helper is no longer needed.
 
@@ -224,7 +236,8 @@ static inline u32 arm_blockBase(u32 opcode, u32* outFirst, u32* outWb)
 	return base;
 }
 
-static void arm_cached_stm(u32 opcode, int& clockTicks)
+// Not static: the ARM7 JIT calls these for LDM/STM.
+void arm_cached_stm(u32 opcode, int& clockTicks)
 {
 	u32 first, wb;
 	int base = arm_blockBase(opcode, &first, &wb);
@@ -266,7 +279,7 @@ static void arm_cached_stm(u32 opcode, int& clockTicks)
 	}
 }
 
-static void arm_cached_ldm(u32 opcode, int& clockTicks, bool hasPC)
+void arm_cached_ldm(u32 opcode, int& clockTicks, bool hasPC)
 {
 	u32 first, wb;
 	int base = arm_blockBase(opcode, &first, &wb);

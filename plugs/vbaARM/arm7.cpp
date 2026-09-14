@@ -1,5 +1,8 @@
 #include "arm7.h"
 #include "arm_mem.h"
+#include "arm7_jit.h"
+
+#define ARM7_FIQ_DIAG 0   // 1 = count real FIQs serviced per second (see CPUFiq)
 
 // config.h (pulled in transitively via arm7.h -> ... -> types.h) deliberately
 // poisons BIG_ENDIAN and LITTLE_ENDIAN to catch accidental use; must undef
@@ -168,6 +171,10 @@ void arm_Init()
 				count++;
 		cpuBitsSet[i] = count;
 	}
+
+	// arm7_jit preset: run the conformance self-test on the JIT once, before
+	// any game code (falls back to the cached interpreter on failure).
+	arm_jit_after_init();
 }
 
 void CPUSwitchMode(int mode, bool saveState, bool breakLoop)
@@ -382,6 +389,9 @@ void arm_Reset()
 	// Flush the predecode cache: the only invalidation point (per design).
 	arm_Run_Cached(0, true);
 #endif
+	// Latch cached vs JIT for this run (arm7_jit preset) and flush the JIT.
+	// Must come after the cached flush: both engines share its buffers.
+	arm_jit_on_reset();
 }
 
 void CPUInterrupt()
@@ -416,6 +426,10 @@ void CPUFiq()
 	armNextPC = reg[15].I;
 	reg[15].I += 4;
 
+#if ARM7_FIQ_DIAG
+	// Off by default: even with the printf commented out this ran a gettime()
+	// and a 64-bit ticks->ms division (a libgcc call on the 750) on every FIQ.
+	//
 	// Diagnostic: measure the ACTUAL real-time rate at which the ARM7 core
 	// services FIQs (AICA's interrupt line -> e68k -> FIQ pin), using a real
 	// hardware wall-clock timer. The AICA-side interrupt-pending signal is
@@ -438,6 +452,7 @@ void CPUFiq()
 		fiq_count = 0;
 		last_check_ms = now_ms;
 	}
+#endif
 }
 
 
@@ -458,6 +473,12 @@ void arm_Run(u32 CycleCount)
 {
   if (!Arm7Enabled)
 	 return;
+
+	if (arm_jit_active())
+	{
+		arm_jit_run(CycleCount);
+		return;
+	}
 
 #ifdef ARM7_USE_CACHED
 	arm_Run_Cached(CycleCount, false);
