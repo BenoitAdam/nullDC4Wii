@@ -2104,7 +2104,7 @@ void checkBiosFiles()
 #define OPT_AUTOSORT    40    // now shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_RENDER_DELAY 41
 #define OPT_SHOW_FPS    42
-#define OPT_ARM7_SPEED  43
+#define OPT_ARM7_SPEED  43    // now shown on Page 4 (AUDIO), see OPT_PAGE3_ROWS
 #define OPT_SH4_CLOCK   44
 #define OPT_JIT_SBP     45
 #define OPT_DMA_FIX     46
@@ -2119,7 +2119,7 @@ void checkBiosFiles()
 #define OPT_TEX_WRAP_GUARD 96 // Page 6 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_TEX_CLAMP_FIX 97  // Page 6 (EXPERIMENTAL), under TEX WRAP GUARD
 #define OPT_AICA_FAST   98    // Page 4 (AUDIO), under MUTE 16BIT PCM
-#define OPT_ARM7_JIT    99    // Page 5 (CORE), under ARM7 SPEED
+#define OPT_ARM7_JIT    99    // now shown on Page 4 (AUDIO), under ARM7 SPEED, see OPT_PAGE3_ROWS
 #define OPT_DYNAREC     55
 #define OPT_SUBPASS_ZCLEAR 56 // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_POLY_OFFSET 57    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
@@ -2245,7 +2245,9 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_AUDIO_BUFFERS,
   OPT_CDDA,
   OPT_MUTE_PCM16,
-  OPT_AICA_FAST
+  OPT_AICA_FAST,
+  OPT_ARM7_SPEED,
+  OPT_ARM7_JIT
 };
 
 // Page 4 - CORE
@@ -2255,9 +2257,7 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_ASYNC_RENDER,
   OPT_RENDER_DELAY,
   OPT_TMEM_CACHE,
-  OPT_SH4_CLOCK,
-  OPT_ARM7_SPEED,
-  OPT_ARM7_JIT
+  OPT_SH4_CLOCK
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -2927,6 +2927,26 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (FASTER)       >]"); break;
     }
     printf(" same sound, less CPU");
+    printf("\n");
+
+    // --- Row: ARM7 sound-CPU speed divider (plugs/vbaARM/arm_aica.cpp) ---
+    printf("%s ARM7 SPEED     : ", (selectedRow == OPT_ARM7_SPEED) ? ">" : " ");
+    switch (g_arm7_speed_preset) {
+      case 0: printf("[< 10MHZ (DEFAULT)   >]"); break;
+      case 1: printf("[< 5MHZ (FASTER)     >]"); break;
+      case 2: printf("[< 2.5MHZ (RISKY)    >]"); break;
+    }
+    printf(" sound CPU clock - check audio!");
+    printf("\n");
+
+    // --- Row: ARM7 JIT (plugs/vbaARM/arm7_jit.cpp) ---
+    printf("%s ARM7 JIT       : ", (selectedRow == OPT_ARM7_JIT) ? ">" : " ");
+    switch (g_arm7_jit_preset) {
+      case 0: printf("[< OFF (INTERPRETER) >]"); break;
+      case 1: printf("[< ON (BASIC)        >]"); break;
+      case 2: printf("[< ON (LINKED)       >]"); break;
+    }
+    printf(" sound CPU recompiler");
     printf("\n\n");
 
     printOptionsFooter();
@@ -2977,26 +2997,6 @@ bool displayOptionsMenu()
     else
       printf("[< %3dMHZ (UNDERCLK) >]", g_sh4_clock_preset);
     printf(" lower=faster host,slower game");
-    printf("\n");
-
-    // --- Row: ARM7 sound-CPU speed divider (plugs/vbaARM/arm_aica.cpp) ---
-    printf("%s ARM7 SPEED     : ", (selectedRow == OPT_ARM7_SPEED) ? ">" : " ");
-    switch (g_arm7_speed_preset) {
-      case 0: printf("[< 10MHZ (DEFAULT)   >]"); break;
-      case 1: printf("[< 5MHZ (FASTER)     >]"); break;
-      case 2: printf("[< 2.5MHZ (RISKY)    >]"); break;
-    }
-    printf(" sound CPU clock - check audio!");
-    printf("\n");
-
-    // --- Row: ARM7 JIT (plugs/vbaARM/arm7_jit.cpp) ---
-    printf("%s ARM7 JIT       : ", (selectedRow == OPT_ARM7_JIT) ? ">" : " ");
-    switch (g_arm7_jit_preset) {
-      case 0: printf("[< OFF (INTERPRETER) >]"); break;
-      case 1: printf("[< ON (BASIC)        >]"); break;
-      case 2: printf("[< ON (LINKED)       >]"); break;
-    }
-    printf(" sound CPU recompiler");
     printf("\n\n");
 
     printOptionsFooter();

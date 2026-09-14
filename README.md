@@ -672,6 +672,28 @@ Put audio buffers = 1 generally leads to good audio. To the cost of FPS unfortun
 | **OFF (legacy)** | All 64 AICA channels visited every sample, even idle ones | Standard |
 | **ON (default)** | Only playing channels are visited, empty filter-envelope call skipped, no DSP send while the DSP is off, master volume cached, silent CD-audio skipped | Same output samples, cheaper mixer - Wii-CONFIRMED: aica% 10.0->7.7, speed +2.6%, no audible change |
 
+#### ARM7 SPEED
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **10MHZ (default)** | Sound CPU at normal speed | Standard audio |
+| **5MHZ (faster)** | Underclocked sound CPU | Faster, check audio! |
+| **2.5MHZ (risky)** | Heavily underclocked sound CPU | Risky, check audio! |
+
+5 mhz generally works and bring FPS boost
+
+#### ARM7 JIT
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (interpreter)** | Cached ARM7 interpreter | Standard audio |
+| **ON (basic)** | ARM code translated to PPC, same results/timing as the interpreter | Faster, Wii-confirmed |
+| **ON (linked, default)** | Same, plus blocks branch straight to each other instead of going back through the dispatcher after every branch | Fastest, Wii-confirmed |
+
+A conformance test suite runs once at ARM init (see `[ARM7JIT]` in `/ndclog.txt`); a failure falls back to the interpreter automatically. Compare `arm:%` on the stats line and listen before keeping a change.
+
+ARM7 SPEED and ARM7 JIT both govern the sound co-processor, so they moved here from Page 5 (Core) to sit next to the other audio presets.
+
 ### Page 5 : Core
 
 #### 🧮 Calculation Accuracy Preset
@@ -719,26 +741,6 @@ Haven't seen any effect but keeping on for now
 | **Underclock (150-200MHz, step 5)** | Lower value = fewer emulated cycles per real second | Lower = faster host, slower game |
 
 Underclocking is supposed to raise FPS. Didn't see any difference
-
-#### ARM7 SPEED
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **10MHZ (default)** | Sound CPU at normal speed | Standard audio |
-| **5MHZ (faster)** | Underclocked sound CPU | Faster, check audio! |
-| **2.5MHZ (risky)** | Heavily underclocked sound CPU | Risky, check audio! |
-
-5 mhz generally works and bring FPS boost
-
-#### ARM7 JIT
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (interpreter)** | Cached ARM7 interpreter | Standard audio |
-| **ON (basic)** | ARM code translated to PPC, same results/timing as the interpreter | Faster, Wii-confirmed |
-| **ON (linked, default)** | Same, plus blocks branch straight to each other instead of going back through the dispatcher after every branch | Fastest, Wii-confirmed |
-
-A conformance test suite runs once at ARM init (see `[ARM7JIT]` in `/ndclog.txt`); a failure falls back to the interpreter automatically. Compare `arm:%` on the stats line and listen before keeping a change.
 
 ### Page 6 : Experimental Stuff & Debug
 
