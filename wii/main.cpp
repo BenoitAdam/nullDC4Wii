@@ -493,7 +493,9 @@ extern "C" {
 // 2=on + static exits patched into direct block-to-block branches (default;
 // both levels Wii-confirmed 2026-09-14),
 // 3=2 + dispatch done in emitted code + per-site cache for return targets
-// (MOV pc,lr / LDMFD ..pc); built 2026-09-14, awaiting Wii A/B against 2.
+// (MOV pc,lr / LDMFD ..pc); Wii-measured 2026-09-15: arm: 8.49% -> 8.29%
+// in the same Castlevania scene (about 1.5% of the ARM cost),
+// 4=3 + LDM/STM (push/pop) inline instead of a C loop; awaiting Wii A/B vs 3.
 // Latched at every ARM reset. When on, the arm7di conformance tests run once
 // at ARM init and a failure falls back to the interpreter for the session.
 int g_arm7_jit_preset = 2;
@@ -2948,6 +2950,7 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (BASIC)        >]"); break;
       case 2: printf("[< ON (LINKED)       >]"); break;
       case 3: printf("[< ON (RET CACHE)    >]"); break;
+      case 4: printf("[< ON (FAST STACK)   >]"); break;
     }
     printf(" sound CPU recompiler");
     printf("\n\n");
@@ -3448,7 +3451,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
-        case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 3) % 4; break;
+        case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 4) % 5; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
@@ -3558,7 +3561,7 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
-        case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 1) % 4; break;
+        case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 1) % 5; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
@@ -4430,7 +4433,8 @@ int main(int argc, wchar *argv[])
       case 1: printf("5MHZ (FASTER)\n");   break;
       case 2: printf("2.5MHZ (RISKY)\n");  break;
     }
-    printf("ARM7 JIT       : %s\n", g_arm7_jit_preset == 3 ? "ON (RET CACHE)" :
+    printf("ARM7 JIT       : %s\n", g_arm7_jit_preset == 4 ? "ON (FAST STACK)" :
+                                    g_arm7_jit_preset == 3 ? "ON (RET CACHE)" :
                                     g_arm7_jit_preset == 2 ? "ON (LINKED)" :
                                     g_arm7_jit_preset == 1 ? "ON (BASIC)"  : "OFF (INTERPRETER)");
     printf("SH4 Clock      : %dMHz%s\n", g_sh4_clock_preset,

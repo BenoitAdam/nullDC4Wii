@@ -27,12 +27,22 @@
 //        exits (MOV pc,Rm / SUBS pc,lr,#n / LDR pc,[Rn,#n] / LDM ..pc) get a
 //        per-site cache of their last target. All three keep DISPATCH()
 //        semantics: FIQ sample, budget check, then the block.
+//   4  + LDM/STM inline when every word is in ARAM (push/pop), C otherwise.
 
 #include "arm7.h"
 #include "arm_mem.h"
 #include "arm7_jit.h"
 
 #if HOST_OS == OS_WII
+
+// config.h poisons BIG_ENDIAN/LITTLE_ENDIAN; libogc defines them (as arm_aica.cpp).
+#ifdef BIG_ENDIAN
+#  undef BIG_ENDIAN
+#endif
+#ifdef LITTLE_ENDIAN
+#  undef LITTLE_ENDIAN
+#endif
+#include <ogc/lwp_watchdog.h>   // gettime(): census timers only
 
 extern "C" int get_arm7_jit_preset();   // wii/main.cpp
 
@@ -104,6 +114,7 @@ static void*  s_stub_link;
 static void*  s_stub_icmiss;
 static bool   s_link;               // arm7_jit >= 2: static exits patched into direct branches
 static bool   s_retcache;           // arm7_jit >= 3: emitted dispatch + per-site return cache
+static bool   s_inline_blk;         // arm7_jit >= 4: LDM/STM inline for ARAM addresses
 static u32    s_slices;             // arm_jit_run calls: the clock for return-cache demotion
 
 // Census (printed with the jit_ccalls probe, latched at reset so the emitted
@@ -111,15 +122,37 @@ static u32    s_slices;             // arm_jit_run calls: the clock for return-c
 // when off: emitted counters are simply not generated.
 enum
 {
-	ARMC_SLICE, ARMC_BLOCK, ARMC_DISPATCH, ARMC_DISPATCH_C, ARMC_FIQ,
+	ARMC_SLICE, ARMC_DISPATCH, ARMC_DISPATCH_C, ARMC_FIQ,
 	ARMC_COMPILE, ARMC_LINK_C, ARMC_DYN, ARMC_IC_SITE, ARMC_IC_MISS,
 	ARMC_IC_PATCH, ARMC_IC_DEMOTE, ARMC_RD_SLOW, ARMC_WR_SLOW, ARMC_LDM,
-	ARMC_STM, ARMC_OTHER, ARMC_COUNT
+	ARMC_STM, ARMC_BLK_INLINE, ARMC_OTHER,
+	// dynamic exits by shape (e_dyn_exit)
+	ARMC_DYN_MOV, ARMC_DYN_SUB, ARMC_DYN_DP_OTHER, ARMC_DYN_LDR_IMM,
+	ARMC_DYN_LDR_LIT, ARMC_DYN_LDR_REG, ARMC_DYN_LDM, ARMC_DYN_SWI,
+	ARMC_COUNT
 };
 extern "C" int g_jit_ccalls_preset;   // dc/sh4/rec_v2/shil.cpp
 static bool   s_census;
 static u32    s_cnt[ARMC_COUNT];
 #define ARMC(i) do { if (s_census) s_cnt[i]++; } while (0)
+
+// Census wall time inside the C side, to set against arm:% on the stats line.
+// Only the outermost timer on the stack counts (jit_link_c -> jit_dispatch_c).
+enum { ARMT_DISPATCH, ARMT_RD, ARMT_WR, ARMT_BLOCK, ARMT_OTHER, ARMT_COUNT };
+static u64    s_tcost[ARMT_COUNT];
+static bool   s_timing;
+struct CensusTimer
+{
+	u32 k; u64 t0; bool on;
+	explicit CensusTimer(u32 kind) : k(kind), t0(0), on(s_census && !s_timing)
+	{
+		if (on) { s_timing = true; t0 = gettime(); }
+	}
+	~CensusTimer()
+	{
+		if (on) { s_tcost[k] += gettime() - t0; s_timing = false; }
+	}
+};
 
 // Block-table entries written since the last flush. The table is 2 MB and the
 // self-test alone resets ~45 times, so a flush clears only this range, unless
@@ -270,24 +303,29 @@ static void e_ca_from_c()
 }
 
 // ── Slow-path memory helpers ─────────────────────────────────────────────────
-static u32  jit_rd32(u32 a)        { ARMC(ARMC_RD_SLOW); return arm_ReadMem32(a); }
-static u32  jit_rd8(u32 a)         { ARMC(ARMC_RD_SLOW); return arm_ReadMem8(a); }
-static void jit_wr32(u32 a, u32 v) { ARMC(ARMC_WR_SLOW); arm_WriteMem32(a, v); }
-static void jit_wr8(u32 a, u32 v)  { ARMC(ARMC_WR_SLOW); arm_WriteMem8(a, (u8)v); }
+static u32  jit_rd32(u32 a)        { ARMC(ARMC_RD_SLOW); CensusTimer t(ARMT_RD); return arm_ReadMem32(a); }
+static u32  jit_rd8(u32 a)         { ARMC(ARMC_RD_SLOW); CensusTimer t(ARMT_RD); return arm_ReadMem8(a); }
+static void jit_wr32(u32 a, u32 v) { ARMC(ARMC_WR_SLOW); CensusTimer t(ARMT_WR); arm_WriteMem32(a, v); }
+static void jit_wr8(u32 a, u32 v)  { ARMC(ARMC_WR_SLOW); CensusTimer t(ARMT_WR); arm_WriteMem8(a, (u8)v); }
+
+// LDM/STM helpers (defined below), also reached from the CK_BLOCK cold stub.
+static int jit_stm(u32 op);
+static int jit_ldm_nopc(u32 op);
+static int jit_ldm_pc(u32 op);
 
 // ── Cold stub queue ──────────────────────────────────────────────────────────
 // Out-of-line code (budget exits, failed conditions, slow memory paths) is
 // queued and emitted every COLD_FLUSH_INSNS instructions behind one `b over`,
 // so the hot path stays branch-free and every conditional branch stays short.
-enum ColdKind { CK_BUDGET, CK_FAIL, CK_FAIL_LAST, CK_RD, CK_WR };
+enum ColdKind { CK_BUDGET, CK_FAIL, CK_FAIL_LAST, CK_RD, CK_WR, CK_BLOCK };
 
 struct ColdStub
 {
 	u32  kind;
-	u32  size;     // CK_RD / CK_WR: 1 or 4
+	u32  size;     // CK_RD / CK_WR: 1 or 4. CK_BLOCK: 0 stm, 1 ldm, 2 ldm with pc
 	u32* site;     // conditional branch to patch
-	u32  pc;       // ARM pc handed to exit_now / dispatch
-	u32* back;     // where to resume (CK_FAIL: next instruction; CK_RD/WR: join)
+	u32  pc;       // ARM pc handed to exit_now / dispatch (CK_BLOCK: the opcode)
+	u32* back;     // where to resume (CK_FAIL: next instruction; CK_RD/WR/BLOCK: join)
 };
 
 static ColdStub s_cold[256];
@@ -343,9 +381,15 @@ static const u32 IC_DEMOTE_SLICES = 1024;         // re-patch due again this soo
 //     w6 .long s_slices at the last patch
 // A hit lands on the target's link entry (FIQ sample), then its instruction 0
 // (budget check): the same DISPATCH() the dispatcher would have done.
-static void e_dyn_exit(bool cacheable)
+// kind: ARMC_DYN_* shape. Cached: returns and calls through a register or a
+// literal (one target per site in practice); not: jump tables (register-offset
+// LDR, pc arithmetic) and exceptions.
+static void e_dyn_exit(u32 kind)
 {
+	bool cacheable = kind == ARMC_DYN_MOV || kind == ARMC_DYN_SUB || kind == ARMC_DYN_LDR_IMM ||
+	                 kind == ARMC_DYN_LDR_LIT || kind == ARMC_DYN_LDM;
 	e_count(ARMC_DYN);
+	e_count(kind);
 	if (!s_retcache || !cacheable)
 	{
 		ppc_jump(s_stub_dispatch);
@@ -420,6 +464,18 @@ static void flush_cold()
 			ppc_call(c.size == 1 ? (void*)&jit_wr8 : (void*)&jit_wr32);
 			ppc_jump(c.back);
 			break;
+
+		case CK_BLOCK:                     // LDM/STM outside ARAM: the C helper
+			ppc_li(3, c.pc);
+			ppc_call(c.size == 0 ? (void*)&jit_stm :
+			         c.size == 1 ? (void*)&jit_ldm_nopc : (void*)&jit_ldm_pc);
+			if (c.size == 2)
+			{
+				u32 lo = ppc_addr_high(3, &arm_ArmNextPC);
+				ppc_lwz(3, 3, lo);
+			}
+			ppc_jump(c.back);               // ticks are charged after the join
+			break;
 		}
 	}
 
@@ -428,13 +484,14 @@ static void flush_cold()
 }
 
 // ── Helpers mirroring the cached labels that stay in C ───────────────────────
-static int jit_stm(u32 op)      { ARMC(ARMC_STM); int t = 0; arm_cached_stm(op, t);        return t; }
-static int jit_ldm_nopc(u32 op) { ARMC(ARMC_LDM); int t = 0; arm_cached_ldm(op, t, false); return t; }
-static int jit_ldm_pc(u32 op)   { ARMC(ARMC_LDM); int t = 0; arm_cached_ldm(op, t, true);  return t; }
+static int jit_stm(u32 op)      { ARMC(ARMC_STM); CensusTimer c(ARMT_BLOCK); int t = 0; arm_cached_stm(op, t);        return t; }
+static int jit_ldm_nopc(u32 op) { ARMC(ARMC_LDM); CensusTimer c(ARMT_BLOCK); int t = 0; arm_cached_ldm(op, t, false); return t; }
+static int jit_ldm_pc(u32 op)   { ARMC(ARMC_LDM); CensusTimer c(ARMT_BLOCK); int t = 0; arm_cached_ldm(op, t, true);  return t; }
 
 static void jit_swp(u32 op)      // lbl_swp / lbl_swpb
 {
 	ARMC(ARMC_OTHER);
+	CensusTimer c(ARMT_OTHER);
 	u32 rd = (op >> 12) & 0xF, rn = (op >> 16) & 0xF, rm = op & 0xF;
 	u32 address = arm_Reg[rn].I;
 	if (op & 0x00400000)
@@ -454,6 +511,7 @@ static void jit_swp(u32 op)      // lbl_swp / lbl_swpb
 static void jit_msr_cpsr(u32 opcode)   // lbl_msr_cpsr
 {
 	ARMC(ARMC_OTHER);
+	CensusTimer c(ARMT_OTHER);
 	CPUUpdateCPSR();
 	u32 value;
 	if (opcode & 0x02000000)
@@ -481,6 +539,7 @@ static void jit_msr_cpsr(u32 opcode)   // lbl_msr_cpsr
 static void jit_msr_spsr(u32 opcode)   // lbl_msr_spsr
 {
 	ARMC(ARMC_OTHER);
+	CensusTimer c(ARMT_OTHER);
 	if (armMode > 0x10 && armMode < 0x1f)
 	{
 		u32 value;
@@ -502,12 +561,14 @@ static void jit_msr_spsr(u32 opcode)   // lbl_msr_spsr
 static void jit_swi(u32 op)             // lbl_swi (after its +3 and SET_PC_READ)
 {
 	ARMC(ARMC_OTHER);
+	CensusTimer c(ARMT_OTHER);
 	CPUSoftwareInterrupt(op & 0x00FFFFFF);
 }
 
 static void jit_undefined(u32 op, u32 pc)   // lbl_undefined (after SET_PC_READ)
 {
 	ARMC(ARMC_OTHER);
+	CensusTimer c(ARMT_OTHER);
 	printf("Undefined ARM instruction (jit) %08x at %08x\n", op, pc);
 	CPUUndefinedException();
 }
@@ -515,6 +576,7 @@ static void jit_undefined(u32 op, u32 pc)   // lbl_undefined (after SET_PC_READ)
 static void jit_dp_switchmode()        // data-processing S with Rd == r15
 {
 	ARMC(ARMC_OTHER);
+	CensusTimer c(ARMT_OTHER);
 	CPUSwitchMode(arm_Reg[17].I & 0x1f, false, true);
 }
 
@@ -524,6 +586,7 @@ static void jit_dp_switchmode()        // data-processing S with Rd == r15
 static u32 jit_shift_reg(u32 rm, u32 rs, u32 kind)
 {
 	ARMC(ARMC_OTHER);
+	CensusTimer c(ARMT_OTHER);
 	u32 v = arm_Reg[rm].I;
 	u32 s = arm_Reg[rs].I & 0xFF;
 	bool cw = (kind & 4) != 0;
@@ -584,7 +647,7 @@ static u32 jit_shift_reg(u32 rm, u32 rs, u32 kind)
 static void* compile_block(u32 block_pc);
 
 // Block layout (see compile_block): code[-1] = ARM pc, code[-2] = words from
-// the link entry to code.
+// the link entry to code, code[-3] = ARM instructions, code[-4] = census count.
 static void* jit_lookup(u32 pc)
 {
 	void* code = s_entries[(pc >> 2) & s_entry_mask];
@@ -597,6 +660,7 @@ static void* jit_lookup(u32 pc)
 static void* jit_dispatch_c(u32 pc, s32 budget)
 {
 	ARMC(ARMC_DISPATCH_C);
+	CensusTimer c(ARMT_DISPATCH);
 	if (armFiqEnable && e68k_out)
 	{
 		ARMC(ARMC_FIQ);
@@ -625,6 +689,7 @@ static void* jit_dispatch_c(u32 pc, s32 budget)
 static void* jit_link_c(u32 pc, s32 budget, u32* lr)
 {
 	ARMC(ARMC_LINK_C);
+	CensusTimer c(ARMT_DISPATCH);
 	if ((armFiqEnable && e68k_out) || budget <= 0)
 		return jit_dispatch_c(pc, budget);
 
@@ -649,6 +714,7 @@ static void* jit_link_c(u32 pc, s32 budget, u32* lr)
 // to two alternating callers), so it is turned into a plain `b dispatch`.
 static void* jit_icmiss_c(u32 pc, s32 budget, u32* lr)
 {
+	CensusTimer c(ARMT_DISPATCH);
 	if ((armFiqEnable && e68k_out) || budget <= 0)
 		return jit_dispatch_c(pc, budget);      // countdown stays 0: retry next miss
 
@@ -663,6 +729,13 @@ static void* jit_icmiss_c(u32 pc, s32 budget, u32* lr)
 		// Over the site's own census counter when there is one, so a demoted
 		// site stops counting as a cached one (s_census is per cache generation).
 		u32* at = s_census ? site - COUNT_WORDS : site;
+		if (s_census)
+		{
+			// The two targets it alternates between are return addresses:
+			// the instruction before each is the BL that called the helper.
+			u32 prev = ((0u - (site[0] & 0xFFFF)) & 0xFFFF) << 16 | (site[1] & 0xFFFF);
+			printf("[ARMJIT] return cache: site demoted, targets %08x / %08x\n", prev, pc);
+		}
 		s32 d = (s32)((u8*)s_stub_dispatch - (u8*)at);
 		*at = 0x48000000 | ((u32)d & 0x03FFFFFC);
 		make_address_range_executable(at, 4);
@@ -1080,8 +1153,8 @@ static void emit_dp(u32 pc, u32 op, bool& last)
 		// (exception returns) usually go back to one place per site; anything
 		// computed from pc or shifted is a jump table and would only thrash.
 		bool plain_rm = !(op & 0x02000000) && ((op >> 4) & 0xFF) == 0;
-		e_dyn_exit((op4 == 0xD && plain_rm) ||
-		           (op4 == 0x2 && (op & 0x02000000) && rn != 15));
+		e_dyn_exit((op4 == 0xD && plain_rm)                          ? ARMC_DYN_MOV :
+		           (op4 == 0x2 && (op & 0x02000000) && rn != 15)    ? ARMC_DYN_SUB : ARMC_DYN_DP_OTHER);
 		last = true;
 	}
 }
@@ -1224,7 +1297,8 @@ static void emit_mem(u32 pc, u32 op, bool& last)
 		{
 			e_ticks(2);
 			e_rlwinm(3, 3, 0, 0, 29);
-			e_dyn_exit(!I && rn != 15);            // LDR pc,[sp],#4 yes; tables no
+			e_dyn_exit(I ? ARMC_DYN_LDR_REG :      // LDR pc,[pc,rX,lsl #2]: jump table
+			           rn == 15 ? ARMC_DYN_LDR_LIT : ARMC_DYN_LDR_IMM);
 			last = true;
 		}
 	}
@@ -1240,6 +1314,112 @@ static void emit_mem(u32 pc, u32 op, bool& last)
 		if (!P)
 			e_store_reg(R_WB, rn);
 		e_ticks(3);
+	}
+}
+
+// ── LDM / STM (lbl_ldm / lbl_stm -> arm_cached_ldm / arm_cached_stm) ─────────
+// arm7_jit >= 4 inlines the common case: S clear, non-empty list, base not r15,
+// and every word inside one 2 MB ARAM mirror below the AICA registers (a stack
+// push/pop). Anything else leaves through a cold stub to the same C helper.
+// The helpers charge 2 + 2 per word (+1 for a loaded pc) whatever the address
+// (CPUUpdateTicksAccess32 is 1 on this core), so both paths share one constant
+// charge after the join.
+static void emit_block(u32 pc, u32 op, bool& last)
+{
+	bool load  = (op >> 20) & 1;
+	bool W     = (op >> 21) & 1;
+	bool S     = (op >> 22) & 1;
+	bool U     = (op >> 23) & 1;
+	bool P     = (op >> 24) & 1;
+	u32  base  = (op >> 16) & 0xF;
+	u32  list  = op & 0xFFFF;
+	bool hasPC = load && (list & 0x8000) != 0;
+	u32  n     = (u32)__builtin_popcount(list);
+
+	e_set_pc15(pc + 8);
+
+	if (!s_inline_blk || S || n == 0 || base == 15)
+	{
+		ppc_li(3, op);
+		e_call(!load ? (void*)&jit_stm : hasPC ? (void*)&jit_ldm_pc : (void*)&jit_ldm_nopc);
+		ppc_subfx(R_BUD, 3, R_BUD, 0, 0);
+		if (hasPC)
+		{
+			u32 lo = ppc_addr_high(3, &arm_ArmNextPC);
+			ppc_lwz(3, 3, lo);
+			e_dyn_exit(ARMC_DYN_LDM);
+			last = true;
+		}
+		return;
+	}
+
+	// arm_blockBase: rn & ~3, first word and writeback value from the count.
+	s32 words     = (s32)(4 * n);
+	s32 first_off = U ? (P ? 4 : 0) : (P ? 0 : 4) - words;
+	s32 wb_off    = U ? words : -words;
+
+	ppc_lwz(3, R_REG, base * 4);
+	e_rlwinm(3, 3, 0, 0, 29);
+	ppc_addi(R_WB, 3, (u32)wb_off);
+	ppc_addi(5, 3, (u32)first_off);
+	e_rlwinm(4, 5, 0, 11, 31);                 // ARAM index of the first word
+	ppc_addi(6, 4, (u32)(words - 1));          // ...of the last byte
+	e_rlwinm(0, 5, 0, 8, 8);                   // bit 23 set: AICA registers
+	ppc_orx(6, 6, 0, 0);
+	ppc_rlwinmx(0, 6, 0, 0, 10, 1);            // past the 2 MB mirror, or registers
+	u32* slow = e_bc_placeholder(BO_FALSE, BI_CR0_EQ);
+	ppc_addx(4, 4, R_RAM, 0, 0);
+	e_count(ARMC_BLK_INLINE);
+
+	u32 lowest = (u32)__builtin_ctz(list);
+	u32 k = 0;
+	if (!load)
+	{
+		for (u32 i = 0; i < 16; i++)
+		{
+			if (!(list & (1u << i)))
+				continue;
+			if (i == 15)
+				ppc_li(12, pc + 12);           // reg[15] + 4, reg[15] = pc + 8
+			else if (i == base && W && i != lowest)
+				ppc_mr(12, R_WB);              // written back after the first word
+			else
+				ppc_lwz(12, R_REG, i * 4);
+			ppc_stw(12, 4, 4 * k++);
+		}
+		if (W)
+			e_store_reg(R_WB, base);
+	}
+	else
+	{
+		for (u32 i = 0; i < 15; i++)
+		{
+			if (!(list & (1u << i)))
+				continue;
+			ppc_lwz(12, 4, 4 * k++);
+			e_store_reg(12, i);
+		}
+		if (W && !(list & (1u << base)))
+			e_store_reg(R_WB, base);
+		if (hasPC)
+		{
+			ppc_lwz(3, 4, 4 * k);
+			e_rlwinm(3, 3, 0, 0, 29);           // armNextPC = reg[15] & ~3
+			u32 lo = ppc_addr_high(12, &arm_ArmNextPC);
+			ppc_stw(3, 12, lo);
+			ppc_addi(12, 3, 4);                 // reg[15] = armNextPC + 4
+			e_store_reg(12, 15);
+		}
+	}
+
+	cold_push(CK_BLOCK, slow, op, emit_ptr, !load ? 0 : hasPC ? 2 : 1);
+	e_ticks(2 + 2 * n + (hasPC ? 1 : 0));
+	s_pc15_known = false;                       // the C path may have written it
+
+	if (hasPC)
+	{
+		e_dyn_exit(ARMC_DYN_LDM);               // r3 = target on both paths
+		last = true;
 	}
 }
 
@@ -1305,24 +1485,7 @@ static void emit_insn(u32 block_pc, u32 pc, u32 op, bool& last, bool& blockSafe)
 	{
 		if (!((op >> 25) & 1))
 		{
-			bool load  = (op >> 20) & 1;
-			bool hasPC = (op & 0x8000) != 0;
-			e_set_pc15(pc + 8);
-			ppc_li(3, op);
-			if (!load)
-				e_call((void*)&jit_stm);
-			else if (hasPC)
-				e_call((void*)&jit_ldm_pc);
-			else
-				e_call((void*)&jit_ldm_nopc);
-			ppc_subfx(R_BUD, 3, R_BUD, 0, 0);
-			if (load && hasPC)
-			{
-				u32 lo = ppc_addr_high(3, &arm_ArmNextPC);
-				ppc_lwz(3, 3, lo);
-				e_dyn_exit(true);                  // LDMFD sp!,{..,pc}: function return
-				last = true;
-			}
+			emit_block(pc, op, last);
 			blockSafe = false;
 		}
 		else
@@ -1366,7 +1529,7 @@ static void emit_insn(u32 block_pc, u32 pc, u32 op, bool& last, bool& blockSafe)
 		}
 		u32 lo = ppc_addr_high(3, &arm_ArmNextPC);
 		ppc_lwz(3, 3, lo);
-		e_dyn_exit(false);
+		e_dyn_exit(ARMC_DYN_SWI);
 		last = true;
 	}
 
@@ -1410,16 +1573,25 @@ static void* compile_block(u32 block_pc)
 	ppc_li(3, block_pc);
 	ppc_jump(s_stub_dispatch);
 	u32* len_word = emit_ptr;
+	ppc_emit(0);            // code[-4]: entries since the last census dump (census only)
+	ppc_emit(0);            // code[-3]: ARM instructions in the block
 	ppc_emit(0);            // code[-2]: words from the link entry to code
 	ppc_emit(block_pc);     // code[-1]: ARM pc, checked by jit_lookup
 	void* code = emit_ptr;
 	patch_bc(no_fiq, (u32*)code);
-	*len_word = (u32)((u32*)code - start);
+	len_word[2] = (u32)((u32*)code - start);
 
 	s_cold_n = 0;
 	s_pending_n = 0;
 	ARMC(ARMC_COMPILE);
-	e_count(ARMC_BLOCK);
+	if (s_census)
+	{
+		// Per-block entry count, for the [ARMHOT] list and the totals.
+		u32 lo = ppc_addr_high(12, len_word);
+		ppc_lwz(11, 12, lo);
+		ppc_addi(11, 11, 1);
+		ppc_stw(11, 12, lo);
+	}
 
 	bool last = false;
 	bool blockSafe = true;
@@ -1449,6 +1621,7 @@ static void* compile_block(u32 block_pc)
 
 	flush_cold();
 	verify(s_pending_n == 0);
+	len_word[1] = (pc - block_pc) >> 2;
 
 	u32* end = emit_ptr;
 	emit_ptr = saved_emit_ptr;
@@ -1504,6 +1677,7 @@ void arm_jit_on_reset()
 	}
 	s_link     = get_arm7_jit_preset() >= 2;
 	s_retcache = get_arm7_jit_preset() >= 3;
+	s_inline_blk = get_arm7_jit_preset() >= 4;
 	s_census   = g_jit_ccalls_preset != 0;
 
 	jit_flush(true);
@@ -1536,18 +1710,71 @@ void arm_jit_census_dump(double seconds)
 	u32 c[ARMC_COUNT];
 	memcpy(c, s_cnt, sizeof(c));
 	memset(s_cnt, 0, sizeof(s_cnt));
+	u64 t[ARMT_COUNT];
+	memcpy(t, s_tcost, sizeof(t));
+	memset(s_tcost, 0, sizeof(s_tcost));
 	#define PER_S(i) ((double)c[i] / seconds)
+	#define WALL(i)  ((double)ticks_to_microsecs(t[i]) / 1e6 / seconds * 100.0)
 
-	printf("[ARMJIT] level %d  slices %.0f/s  block entries %.0f/s  compiles %.0f/s  fiq %.0f/s\n",
-	       get_arm7_jit_preset(), PER_S(ARMC_SLICE), PER_S(ARMC_BLOCK), PER_S(ARMC_COMPILE), PER_S(ARMC_FIQ));
+	// Walk the compiled blocks (the table's dirty range) for entry counts and
+	// the hottest blocks, then clear the counts. Instructions = entries x block
+	// length, a slight overcount where a block is left early (budget, FIQ).
+	enum { HOT_N = 10 };
+	u32* hot[HOT_N] = { 0 };
+	u64  entries = 0, insns = 0;
+	for (u32 i = s_dirty_lo; i <= s_dirty_hi && s_dirty_lo <= s_dirty_hi; i++)
+	{
+		u32* code = (u32*)s_entries[i];
+		if (!code)
+			continue;
+		u32 n = code[-4];
+		if (!n)
+			continue;
+		entries += n;
+		insns   += (u64)n * code[-3];
+		for (u32 k = 0; k < HOT_N; k++)
+		{
+			if (!hot[k] || n > hot[k][-4])
+			{
+				for (u32 m = HOT_N - 1; m > k; m--)
+					hot[m] = hot[m - 1];
+				hot[k] = code;
+				break;
+			}
+		}
+	}
+
+	printf("[ARMJIT] level %d  slices %.0f/s  block entries %.0f/s  instructions ~%.0f/s (%.1f per entry)  compiles %.0f/s  fiq %.0f/s\n",
+	       get_arm7_jit_preset(), PER_S(ARMC_SLICE), (double)entries / seconds, (double)insns / seconds,
+	       entries ? (double)insns / (double)entries : 0.0, PER_S(ARMC_COMPILE), PER_S(ARMC_FIQ));
+	for (u32 k = 0; k < HOT_N && hot[k]; k++)
+	{
+		u32* code = hot[k];
+		u32 pc = code[-1], n = code[-3], shown = n < 12 ? n : 12;
+		printf("[ARMHOT] %2u pc %08x %7.0f/s x%-3u %4.1f%% of insns:", k + 1, pc,
+		       (double)code[-4] / seconds, n, insns ? 100.0 * (double)code[-4] * n / (double)insns : 0.0);
+		for (u32 j = 0; j < shown; j++)
+			printf(" %08x", arm_ReadMem32((pc + 4 * j) & ARAM_MASK));
+		printf(n > shown ? " ...\n" : "\n");
+	}
+	for (u32 i = s_dirty_lo; i <= s_dirty_hi && s_dirty_lo <= s_dirty_hi; i++)
+		if (s_entries[i])
+			((u32*)s_entries[i])[-4] = 0;
+	printf("[ARMJIT]   wall %% in C: dispatch %.2f  slow read %.2f  slow write %.2f  ldm/stm %.2f  other %.2f  (compare with arm:)\n",
+	       WALL(ARMT_DISPATCH), WALL(ARMT_RD), WALL(ARMT_WR), WALL(ARMT_BLOCK), WALL(ARMT_OTHER));
+	printf("[ARMJIT]   exits by shape/s: mov pc,Rm %.0f  sub pc,Rn,# %.0f  other dp %.0f  ldr pc,[Rn,#] %.0f  ldr pc,[pc,#] %.0f  ldr pc,[Rn,Rm] %.0f  ldm pc %.0f  swi/undef %.0f\n",
+	       PER_S(ARMC_DYN_MOV), PER_S(ARMC_DYN_SUB), PER_S(ARMC_DYN_DP_OTHER), PER_S(ARMC_DYN_LDR_IMM),
+	       PER_S(ARMC_DYN_LDR_LIT), PER_S(ARMC_DYN_LDR_REG), PER_S(ARMC_DYN_LDM), PER_S(ARMC_DYN_SWI));
+	#undef WALL
 	printf("[ARMJIT]   dispatch stub %.0f/s (into C %.0f/s)  static link C %.0f/s\n",
 	       PER_S(ARMC_DISPATCH), PER_S(ARMC_DISPATCH_C), PER_S(ARMC_LINK_C));
 	printf("[ARMJIT]   dynamic exits %.0f/s  cached sites %.0f/s  hits %.0f/s  misses %.0f/s  repatches %.0f/s  demoted %u\n",
 	       PER_S(ARMC_DYN), PER_S(ARMC_IC_SITE),
 	       c[ARMC_IC_SITE] >= c[ARMC_IC_MISS] ? (double)(c[ARMC_IC_SITE] - c[ARMC_IC_MISS]) / seconds : 0.0,
 	       PER_S(ARMC_IC_MISS), PER_S(ARMC_IC_PATCH), c[ARMC_IC_DEMOTE]);
-	printf("[ARMJIT]   C helpers/s: slow read %.0f  slow write %.0f  ldm %.0f  stm %.0f  other %.0f\n",
-	       PER_S(ARMC_RD_SLOW), PER_S(ARMC_WR_SLOW), PER_S(ARMC_LDM), PER_S(ARMC_STM), PER_S(ARMC_OTHER));
+	printf("[ARMJIT]   C helpers/s: slow read %.0f  slow write %.0f  ldm %.0f  stm %.0f  other %.0f  (ldm/stm inline %.0f/s)\n",
+	       PER_S(ARMC_RD_SLOW), PER_S(ARMC_WR_SLOW), PER_S(ARMC_LDM), PER_S(ARMC_STM), PER_S(ARMC_OTHER),
+	       PER_S(ARMC_BLK_INLINE));
 	#undef PER_S
 }
 
