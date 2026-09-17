@@ -498,10 +498,12 @@ extern "C" {
 // 4=3 + LDM/STM (push/pop) inline instead of a C loop; Wii-measured
 // 2026-09-15: arm: ~7.9% (ARM cost -7% vs level 2, speed unchanged within noise),
 // 5=4 + one-branch budget test per instruction and N/Z conditions read from
-// the previous instruction's result; awaiting Wii A/B vs 4.
+// the previous instruction's result (default since 2026-09-17: Wii-measured
+// 118.0% / arm 7.4% vs level 2's 117.5% / 8.49% in the same Castlevania scene,
+// sound unaffected; every level keeps the interpreter's exact timing).
 // Latched at every ARM reset. When on, the arm7di conformance tests run once
 // at ARM init and a failure falls back to the interpreter for the session.
-int g_arm7_jit_preset = 2;
+int g_arm7_jit_preset = 5;
 
 extern "C" {
   int get_arm7_jit_preset() { return g_arm7_jit_preset; }
@@ -510,8 +512,12 @@ extern "C" {
 // ARM7 slice batching (plugs/vbaARM/arm_aica.cpp): run the sound CPU once every
 // N AICA updates with the cycles of all N. Same ARM clock and same audio sample
 // stepping, fewer switches between SH4 and ARM code. 1 = every update (default),
-// 2 / 4 / 8. Built 2026-09-15, awaiting Wii A/B; check music and SFX timing.
-int g_arm7_batch_preset = 1;
+// 2 / 4 / 8 / 16. Wii-measured 2026-09-17 (Castlevania, arm7_jit=5): batch 4 gave
+// 119.5% / arm 6.2% vs 118.0% / 7.4% at batch 1, sound unaffected, and Sega
+// Tetris agreed -> default 4. UNLIKE the JIT levels this changes emulated
+// timing: batch 8 and 16 make Castlevania's music wobble loud/quiet (the same
+// symptom as arm7_speed=1), so a game that sounds off wants arm7_batch=1.
+int g_arm7_batch_preset = 4;
 
 extern "C" {
   int get_arm7_batch_preset() { return g_arm7_batch_preset; }
@@ -2977,6 +2983,7 @@ bool displayOptionsMenu()
       case 2:  printf("[< 2 (BATCHED)       >]"); break;
       case 4:  printf("[< 4 (BATCHED)       >]"); break;
       case 8:  printf("[< 8 (BATCHED)       >]"); break;
+      case 16: printf("[< 16 (BATCHED)      >]"); break;
       default: printf("[< 1 (DEFAULT)       >]"); break;
     }
     printf(" sound CPU runs per N updates");
@@ -3479,7 +3486,7 @@ bool displayOptionsMenu()
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
         case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 5) % 6; break;
-        case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset <= 1) ? 8 : g_arm7_batch_preset / 2; break;
+        case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset <= 1) ? 16 : g_arm7_batch_preset / 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
@@ -3590,7 +3597,7 @@ bool displayOptionsMenu()
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
         case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 1) % 6; break;
-        case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset >= 8) ? 1 : g_arm7_batch_preset * 2; break;
+        case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset >= 16) ? 1 : g_arm7_batch_preset * 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;

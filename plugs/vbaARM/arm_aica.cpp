@@ -69,36 +69,39 @@ void FASTCALL armUpdateARM(u32 Cycles)
 	static u32 arm_batch_acc = 0;     // SH4 cycles owed to the ARM (arm7_batch > 1)
 	static u32 arm_batch_calls = 0;
 
-	const u64 t_arm = ARM_PERF_TICKS();
-
 	// Run the ARM7 for this slice (cycle budget scaled by arm_sh4_bias,
-	// further divided by the per-game arm7_speed preset stage).
+	// further divided by the per-game arm7_speed preset stage). The clock reads
+	// bracket the run itself, so a call that only defers cycles (arm7_batch > 1)
+	// costs nothing to measure.
 	{
 		int stage = get_arm7_speed_preset();
 		if (stage < 0) stage = 0;
 		if (stage > 3) stage = 3;
 		int batch = get_arm7_batch_preset();
+		u32 ticks;
 		if (batch <= 1)
 		{
-			arm_Run((Cycles / arm_sh4_bias) >> stage);
+			ticks = (Cycles / arm_sh4_bias) >> stage;
 			arm_batch_acc = 0;
 			arm_batch_calls = 0;
 		}
 		else
 		{
-			if (batch > 8) batch = 8;
+			if (batch > 16) batch = 16;
 			arm_batch_acc += Cycles;
-			if (++arm_batch_calls >= (u32)batch)
-			{
-				arm_Run((arm_batch_acc / arm_sh4_bias) >> stage);
-				arm_batch_acc = 0;
-				arm_batch_calls = 0;
-			}
+			if (++arm_batch_calls < (u32)batch)
+				goto arm_deferred;                  // this call only banks cycles
+			ticks = (arm_batch_acc / arm_sh4_bias) >> stage;
+			arm_batch_acc = 0;
+			arm_batch_calls = 0;
+		}
+		{
+			const u64 t_arm = ARM_PERF_TICKS();
+			arm_Run(ticks);
+			ArmTicks += ARM_PERF_TICKS() - t_arm;
 		}
 	}
-
-	const u64 t_aica = ARM_PERF_TICKS();
-	ArmTicks += t_aica - t_arm;
+arm_deferred:
 
 	// Refresh the cached samples-per-cycle only when the underclock preset
 	// changed (never during gameplay — set at game load / in the menu).
@@ -116,6 +119,8 @@ void FASTCALL armUpdateARM(u32 Cycles)
 	aica_cycle_acc += Cycles;
 	if (aica_cycle_acc >= aica_sample_cycles)
 	{
+		// Clock reads skipped when no sample ran (about 1 call in 5 in ACCURATE).
+		const u64 t_aica = ARM_PERF_TICKS();
 		do
 		{
 			aica_cycle_acc -= aica_sample_cycles;
@@ -123,8 +128,6 @@ void FASTCALL armUpdateARM(u32 Cycles)
 		}
 		while (aica_cycle_acc >= aica_sample_cycles);
 
-		// Clock read skipped when no sample ran (about 1 call in 5 in
-		// ACCURATE); the span also covers the sh4_clock check above, a compare.
 		AicaTicks += ARM_PERF_TICKS() - t_aica;
 	}
 }
