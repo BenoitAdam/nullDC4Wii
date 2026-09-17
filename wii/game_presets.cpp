@@ -120,7 +120,15 @@
                                 (off/legacy); per-game, verify music/SFX
                                 timing by ear before keeping — stage 2 has
                                 been found to break audio timing.
-        arm7_jit=2          <- 0/1/2/3/4 (off/on = 0/1), ARM7 sound-CPU recompiler
+        arm7_batch=4        <- 1/2/4/8, ARM7 slice batching: the sound CPU runs
+                                once every N AICA updates with the cycles of
+                                all N (plugs/vbaARM/arm_aica.cpp). Same ARM
+                                clock and same audio sample stepping; only the
+                                SH4<->ARM interleave gets coarser (N x ~37 us),
+                                which cuts cache-switch cost. 1 (default) =
+                                every update. Awaiting Wii A/B; check music
+                                and SFX timing by ear.
+        arm7_jit=2          <- 0..5 (off/on = 0/1), ARM7 sound-CPU recompiler
                                 (see plugs/vbaARM/arm7_jit.cpp). 0 runs the
                                 cached interpreter; 1 translates ARM code to
                                 PPC with the same results and timing; 2
@@ -131,7 +139,11 @@
                                 caches each return's last target (MOV pc,lr /
                                 LDMFD ..pc); Wii-measured about 1.5% less
                                 ARM cost than 2. 4 also runs LDM/STM
-                                (push/pop) inline; awaiting Wii A/B vs 3.
+                                (push/pop) inline (Wii-measured: ARM cost
+                                -7% vs 2). 5 also uses one branch per
+                                instruction for the time-slice test and lets
+                                EQ/NE/MI/PL reuse the previous result;
+                                awaiting Wii A/B vs 4.
                                 With jit_ccalls=on it prints [ARMJIT] counters.
                                 The arm7di conformance tests run
                                 once at ARM init and a failure falls back to
@@ -941,6 +953,7 @@ extern int g_poly_offset_preset;
 extern int g_audio_buffers_preset;
 extern int g_arm7_speed_preset;
 extern int g_arm7_jit_preset;
+extern int g_arm7_batch_preset;
 extern int g_sh4_clock_preset;
 extern int g_jit_sbp_preset;
 extern int g_dma_fix_preset;
@@ -1065,6 +1078,7 @@ struct GamePreset
     int audio_buffers;
     int arm7_speed;
     int arm7_jit;
+    int arm7_batch;
     int sh4_clock;
     int jit_sbp;
     int dma_fix;
@@ -1517,6 +1531,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "audio_buffers"))  p->audio_buffers  = parse_audio_buffers(val);
     else if (key_eq(key, "arm7_speed"))     p->arm7_speed     = atoi(val);
     else if (key_eq(key, "arm7_jit"))       p->arm7_jit       = (val[0] >= '0' && val[0] <= '9') ? atoi(val) : parse_bool(val);
+    else if (key_eq(key, "arm7_batch"))     p->arm7_batch     = atoi(val);
     else if (key_eq(key, "sh4_clock"))      p->sh4_clock      = parse_sh4_clock(val);
     else if (key_eq(key, "jit_sbp"))        p->jit_sbp        = atoi(val);
     else if (key_eq(key, "dma_fix"))        p->dma_fix        = parse_bool(val);
@@ -1617,6 +1632,7 @@ static void preset_clear(GamePreset* cur)
     cur->audio_buffers = -2; // -2 = absent (leave live state alone); -1 is a real value here (see parse_audio_buffers)
     cur->arm7_speed = -1;
     cur->arm7_jit = -1;
+    cur->arm7_batch = -1;
     cur->sh4_clock = -1;
     cur->jit_sbp = -1;
     cur->dma_fix = -1;
@@ -1745,6 +1761,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->audio_buffers  != -2) { g_audio_buffers_preset = p->audio_buffers;  printf("  audio_buffers  -> %d\n", p->audio_buffers);  }
     if (p->arm7_speed     >= 0) { g_arm7_speed_preset     = p->arm7_speed;     printf("  arm7_speed     -> %d\n", p->arm7_speed);     }
     if (p->arm7_jit       >= 0) { g_arm7_jit_preset       = p->arm7_jit;       printf("  arm7_jit       -> %d\n", p->arm7_jit);       }
+    if (p->arm7_batch     >= 1) { g_arm7_batch_preset     = p->arm7_batch >= 8 ? 8 : p->arm7_batch >= 4 ? 4 : p->arm7_batch >= 2 ? 2 : 1;
+                                  printf("  arm7_batch     -> %d\n", g_arm7_batch_preset); }
     if (p->sh4_clock      >= 0) { g_sh4_clock_preset      = p->sh4_clock;      printf("  sh4_clock      -> %d\n", p->sh4_clock);      }
     if (p->jit_sbp        >= 0) { g_jit_sbp_preset        = p->jit_sbp;        printf("  jit_sbp        -> %d\n", p->jit_sbp);        }
     if (p->dma_fix        >= 0) { g_dma_fix_preset        = p->dma_fix;        printf("  dma_fix        -> %d\n", p->dma_fix);        }

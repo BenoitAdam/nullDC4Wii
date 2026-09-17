@@ -37,6 +37,14 @@ extern void libAICA_TimeStep();
 // stage 2 has been found to break audio timing on real hardware.
 extern "C" int get_arm7_speed_preset();
 
+// ARM7 slice batching (wii/main.cpp `arm7_batch`): run the ARM once every N
+// calls with the cycles of all N, instead of once per call. Same ARM clock and
+// same AICA sample stepping (still every call); only the SH4<->ARM interleave
+// gets coarser, which cuts the number of switches between the two JITs' code
+// and data (the Wii-measured arm7_speed=1 run showed most of arm:% does not
+// scale with ARM instructions run). 1 = every call (default, legacy).
+extern "C" int get_arm7_batch_preset();
+
 // SH4 cycles per AICA sample: 200 MHz / 44100 Hz ~= 4535 (fewer when the
 // sh4_clock underclock preset is active — 150 MHz => ~3401). A fractional
 // accumulator keeps the long-run rate exact. Derived from SH4_CLOCK_EFF so the
@@ -58,6 +66,8 @@ static int aica_clock_mhz     = 200;
 void FASTCALL armUpdateARM(u32 Cycles)
 {
 	static u32 aica_cycle_acc = 0;
+	static u32 arm_batch_acc = 0;     // SH4 cycles owed to the ARM (arm7_batch > 1)
+	static u32 arm_batch_calls = 0;
 
 	const u64 t_arm = ARM_PERF_TICKS();
 
@@ -67,7 +77,24 @@ void FASTCALL armUpdateARM(u32 Cycles)
 		int stage = get_arm7_speed_preset();
 		if (stage < 0) stage = 0;
 		if (stage > 3) stage = 3;
-		arm_Run((Cycles / arm_sh4_bias) >> stage);
+		int batch = get_arm7_batch_preset();
+		if (batch <= 1)
+		{
+			arm_Run((Cycles / arm_sh4_bias) >> stage);
+			arm_batch_acc = 0;
+			arm_batch_calls = 0;
+		}
+		else
+		{
+			if (batch > 8) batch = 8;
+			arm_batch_acc += Cycles;
+			if (++arm_batch_calls >= (u32)batch)
+			{
+				arm_Run((arm_batch_acc / arm_sh4_bias) >> stage);
+				arm_batch_acc = 0;
+				arm_batch_calls = 0;
+			}
+		}
 	}
 
 	const u64 t_aica = ARM_PERF_TICKS();

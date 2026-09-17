@@ -28,6 +28,9 @@
 //        per-site cache of their last target. All three keep DISPATCH()
 //        semantics: FIQ sample, budget check, then the block.
 //   4  + LDM/STM inline when every word is in ARAM (push/pop), C otherwise.
+//   5  + one `ble` per instruction for the budget test (ticks charged with
+//        `addic.` at the end of the previous one), and EQ/NE/MI/PL right after
+//        an N/Z-setting instruction compare its result instead of the flag byte.
 
 #include "arm7.h"
 #include "arm_mem.h"
@@ -182,9 +185,40 @@ static inline void e_rlwinm(u32 a, u32 s, u32 sh, u32 mb, u32 me)
 	ppc_rlwinmx(a, s, sh & 31, mb, me, 0);
 }
 
+// Level 5 ("lean"): an instruction's ticks are summed at compile time and
+// charged once, with `addic.`, at its end (or before its exit branch). The
+// resulting CR0 is the next instruction's budget test, so each instruction
+// after the first needs only `ble` instead of `cmpwi / ble / addi`. Same
+// budget at every exit point as the per-instruction form, so same timing.
+static bool s_fold;                 // arm7_jit >= 5
+static u32  s_ticks;                // ticks of the current instruction not yet charged
+static bool s_cr0_budget;           // CR0 holds the sign of the budget right now
+
+// N/Z forwarding (level 5): the previous instruction was an unconditional N/Z
+// producer whose result is still in this PPC register (0 = none), so an
+// EQ/NE/MI/PL test compares it instead of reloading the flag byte just stored.
+static u32  s_nz_fwd_next;
+static bool s_nz_in_r7;             // this instruction set N/Z from r7
+
 static inline void e_ticks(u32 n)
 {
-	ppc_addi(R_BUD, R_BUD, (u32)(-(s32)n));
+	if (s_fold)
+		s_ticks += n;
+	else
+		ppc_addi(R_BUD, R_BUD, (u32)(-(s32)n));
+}
+
+// Charge the pending ticks (level 5). set_cr0: leave CR0 = budget sign for the
+// next instruction's `ble`; exits don't need it (the next block tests itself).
+static void e_charge(bool set_cr0)
+{
+	if (!s_fold)
+		return;
+	if (s_ticks)
+		ppc_addic(R_BUD, R_BUD, (u32)(-(s32)s_ticks), set_cr0 ? 1 : 0);
+	else if (set_cr0)
+		ppc_cmpi(0, R_BUD, 0, 0);
+	s_ticks = 0;
 }
 
 static void e_load_byte(u32 dst, void* p)
@@ -285,6 +319,7 @@ static void e_flags_nz(u32 res)
 	ppc_cntlzwx(9, res, 0);
 	e_rlwinm(9, 9, 27, 31, 31);
 	e_store_byte(9, &Z_FLAG);
+	s_nz_in_r7 = (res == 7);
 }
 
 // C from XER[CA] (must run right after the flag-producing add/sub).
@@ -343,6 +378,7 @@ static void cold_push(u32 kind, u32* site, u32 pc, u32* back, u32 size)
 // Leave the block for a pc known at compile time (DISPATCH_PC semantics).
 static void e_link(u32 target)
 {
+	e_charge(false);
 	if (!s_link)
 	{
 		ppc_li(3, target);
@@ -388,6 +424,7 @@ static void e_dyn_exit(u32 kind)
 {
 	bool cacheable = kind == ARMC_DYN_MOV || kind == ARMC_DYN_SUB || kind == ARMC_DYN_LDR_IMM ||
 	                 kind == ARMC_DYN_LDR_LIT || kind == ARMC_DYN_LDM;
+	e_charge(false);                           // r3 untouched
 	e_count(ARMC_DYN);
 	e_count(kind);
 	if (!s_retcache || !cacheable)
@@ -429,10 +466,34 @@ static void flush_cold()
 			break;
 
 		case CK_FAIL_LAST:                 // COND_FAIL on a block-ending insn
+			if (s_fold)
+				ppc_addi(R_BUD, R_BUD, (u32)-6);   // the skipped body charged nothing
 			e_link(c.pc);
 			break;
 
 		case CK_FAIL:                      // COND_FAIL mid-block: DISPATCH() samples FIQ
+			if (s_fold)
+			{
+				// Charge the failed instruction, sample FIQ, and resume with CR0
+				// holding the budget sign for the next instruction's `ble`.
+				ppc_addi(R_BUD, R_BUD, (u32)-6);
+				e_load_byte(3, &armFiqEnable);
+				e_load_byte(4, &e68k_out);
+				ppc_andx(3, 3, 4, 1);
+				u32* fiq = e_bc_placeholder(BO_FALSE, BI_CR0_EQ);
+				ppc_cmpi(0, R_BUD, 0, 0);
+				if (c.back)
+					e_bc_to(BO_ALWAYS, BI_CR0_EQ, c.back);
+				else
+				{
+					verify(s_pending_n < sizeof(s_pending_back) / sizeof(s_pending_back[0]));
+					s_pending_back[s_pending_n++] = e_bc_placeholder(BO_ALWAYS, BI_CR0_EQ);
+				}
+				patch_bc(fiq, emit_ptr);
+				ppc_li(3, c.pc);
+				ppc_jump(s_stub_dispatch);
+				break;
+			}
 			e_load_byte(3, &armFiqEnable);
 			e_load_byte(4, &e68k_out);
 			ppc_andx(3, 3, 4, 1);
@@ -885,8 +946,21 @@ static void jit_flush(bool restub)
 
 // ── Condition guard (COND_UOP) ───────────────────────────────────────────────
 // Returns the branch taken when the condition FAILS.
-static u32* e_cond(u32 cond)
+static u32* e_cond(u32 cond, u32 nz_reg)
 {
+	if (nz_reg)
+	{
+		// N/Z still live as the producer's result: N = sign, Z = (result == 0).
+		switch (cond)
+		{
+		case 0x0: ppc_cmpi(0, nz_reg, 0, 0); return e_bc_placeholder(BO_FALSE, BI_CR0_EQ); // EQ
+		case 0x1: ppc_cmpi(0, nz_reg, 0, 0); return e_bc_placeholder(BO_TRUE,  BI_CR0_EQ); // NE
+		case 0x4: ppc_cmpi(0, nz_reg, 0, 0); return e_bc_placeholder(BO_FALSE, BI_CR0_LT); // MI
+		case 0x5: ppc_cmpi(0, nz_reg, 0, 0); return e_bc_placeholder(BO_TRUE,  BI_CR0_LT); // PL
+		default:  break;
+		}
+	}
+
 	switch (cond)
 	{
 	case 0x0: e_load_byte(3, &Z_FLAG); ppc_cmpi(0, 3, 0, 0); return e_bc_placeholder(BO_TRUE,  BI_CR0_EQ); // EQ
@@ -1427,14 +1501,29 @@ static void emit_block(u32 pc, u32 op, bool& last)
 static void emit_insn(u32 block_pc, u32 pc, u32 op, bool& last, bool& blockSafe)
 {
 	s_pc15_known = false;
+	u32 nz_fwd = s_nz_fwd_next;
+	s_nz_fwd_next = 0;
+	s_nz_in_r7 = false;
 
 	// ADVANCE()/DISPATCH(): budget check, then +6
-	ppc_cmpi(0, R_BUD, 0, 0);
-	cold_push(CK_BUDGET, e_bc_placeholder(BO_FALSE, BI_CR0_GT), pc, 0, 0);
-	e_ticks(6);
+	if (s_fold)
+	{
+		if (!s_cr0_budget)
+			ppc_cmpi(0, R_BUD, 0, 0);          // block start: no charge to test yet
+		s_cr0_budget = false;
+		cold_push(CK_BUDGET, e_bc_placeholder(BO_FALSE, BI_CR0_GT), pc, 0, 0);
+		verify(s_ticks == 0);
+		s_ticks = 6;
+	}
+	else
+	{
+		ppc_cmpi(0, R_BUD, 0, 0);
+		cold_push(CK_BUDGET, e_bc_placeholder(BO_FALSE, BI_CR0_GT), pc, 0, 0);
+		e_ticks(6);
+	}
 
 	u32 cond = op >> 28;
-	u32* fail_site = (cond != 0xE) ? e_cond(cond) : 0;
+	u32* fail_site = (cond != 0xE) ? e_cond(cond, nz_fwd) : 0;
 
 	u32 fam = (op >> 26) & 3;
 	if (fam == 1)
@@ -1535,6 +1624,23 @@ static void emit_insn(u32 block_pc, u32 pc, u32 op, bool& last, bool& blockSafe)
 
 	if (fail_site)
 		cold_push(last ? CK_FAIL_LAST : CK_FAIL, fail_site, pc + 4, 0, 0);
+
+	if (s_fold)
+	{
+		if (last)
+		{
+			verify(s_ticks == 0);              // charged before the exit branch
+		}
+		else
+		{
+			e_charge(true);
+			s_cr0_budget = true;
+			// Forward N/Z only from an unconditional producer: a failed
+			// condition would reach the next instruction with r7 unset.
+			if (s_nz_in_r7 && cond == 0xE)
+				s_nz_fwd_next = 7;
+		}
+	}
 }
 
 // The next instruction's code starts here: resolve fail-continue targets.
@@ -1583,6 +1689,9 @@ static void* compile_block(u32 block_pc)
 
 	s_cold_n = 0;
 	s_pending_n = 0;
+	s_ticks = 0;
+	s_cr0_budget = false;
+	s_nz_fwd_next = 0;
 	ARMC(ARMC_COMPILE);
 	if (s_census)
 	{
@@ -1678,6 +1787,7 @@ void arm_jit_on_reset()
 	s_link     = get_arm7_jit_preset() >= 2;
 	s_retcache = get_arm7_jit_preset() >= 3;
 	s_inline_blk = get_arm7_jit_preset() >= 4;
+	s_fold     = get_arm7_jit_preset() >= 5;
 	s_census   = g_jit_ccalls_preset != 0;
 
 	jit_flush(true);

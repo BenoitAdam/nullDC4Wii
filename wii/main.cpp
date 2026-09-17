@@ -495,13 +495,26 @@ extern "C" {
 // 3=2 + dispatch done in emitted code + per-site cache for return targets
 // (MOV pc,lr / LDMFD ..pc); Wii-measured 2026-09-15: arm: 8.49% -> 8.29%
 // in the same Castlevania scene (about 1.5% of the ARM cost),
-// 4=3 + LDM/STM (push/pop) inline instead of a C loop; awaiting Wii A/B vs 3.
+// 4=3 + LDM/STM (push/pop) inline instead of a C loop; Wii-measured
+// 2026-09-15: arm: ~7.9% (ARM cost -7% vs level 2, speed unchanged within noise),
+// 5=4 + one-branch budget test per instruction and N/Z conditions read from
+// the previous instruction's result; awaiting Wii A/B vs 4.
 // Latched at every ARM reset. When on, the arm7di conformance tests run once
 // at ARM init and a failure falls back to the interpreter for the session.
 int g_arm7_jit_preset = 2;
 
 extern "C" {
   int get_arm7_jit_preset() { return g_arm7_jit_preset; }
+}
+
+// ARM7 slice batching (plugs/vbaARM/arm_aica.cpp): run the sound CPU once every
+// N AICA updates with the cycles of all N. Same ARM clock and same audio sample
+// stepping, fewer switches between SH4 and ARM code. 1 = every update (default),
+// 2 / 4 / 8. Built 2026-09-15, awaiting Wii A/B; check music and SFX timing.
+int g_arm7_batch_preset = 1;
+
+extern "C" {
+  int get_arm7_batch_preset() { return g_arm7_batch_preset; }
 }
 
 // SH4 underclock — effective SH4 core clock in MHz (150..200, step 5 in the
@@ -2124,6 +2137,7 @@ void checkBiosFiles()
 #define OPT_TEX_CLAMP_FIX 97  // Page 6 (EXPERIMENTAL), under TEX WRAP GUARD
 #define OPT_AICA_FAST   98    // Page 4 (AUDIO), under MUTE 16BIT PCM
 #define OPT_ARM7_JIT    99    // now shown on Page 4 (AUDIO), under ARM7 SPEED, see OPT_PAGE3_ROWS
+#define OPT_ARM7_BATCH  100   // Page 4 (AUDIO), under ARM7 JIT
 #define OPT_DYNAREC     55
 #define OPT_SUBPASS_ZCLEAR 56 // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_POLY_OFFSET 57    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
@@ -2251,7 +2265,8 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_MUTE_PCM16,
   OPT_AICA_FAST,
   OPT_ARM7_SPEED,
-  OPT_ARM7_JIT
+  OPT_ARM7_JIT,
+  OPT_ARM7_BATCH
 };
 
 // Page 4 - CORE
@@ -2951,8 +2966,20 @@ bool displayOptionsMenu()
       case 2: printf("[< ON (LINKED)       >]"); break;
       case 3: printf("[< ON (RET CACHE)    >]"); break;
       case 4: printf("[< ON (FAST STACK)   >]"); break;
+      case 5: printf("[< ON (LEAN CODE)    >]"); break;
     }
     printf(" sound CPU recompiler");
+    printf("\n");
+
+    // --- Row: ARM7 slice batching (plugs/vbaARM/arm_aica.cpp) ---
+    printf("%s ARM7 BATCH     : ", (selectedRow == OPT_ARM7_BATCH) ? ">" : " ");
+    switch (g_arm7_batch_preset) {
+      case 2:  printf("[< 2 (BATCHED)       >]"); break;
+      case 4:  printf("[< 4 (BATCHED)       >]"); break;
+      case 8:  printf("[< 8 (BATCHED)       >]"); break;
+      default: printf("[< 1 (DEFAULT)       >]"); break;
+    }
+    printf(" sound CPU runs per N updates");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3451,7 +3478,8 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
-        case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 4) % 5; break;
+        case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 5) % 6; break;
+        case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset <= 1) ? 8 : g_arm7_batch_preset / 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
@@ -3561,7 +3589,8 @@ bool displayOptionsMenu()
         case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
-        case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 1) % 5; break;
+        case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 1) % 6; break;
+        case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset >= 8) ? 1 : g_arm7_batch_preset * 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
@@ -4433,10 +4462,12 @@ int main(int argc, wchar *argv[])
       case 1: printf("5MHZ (FASTER)\n");   break;
       case 2: printf("2.5MHZ (RISKY)\n");  break;
     }
-    printf("ARM7 JIT       : %s\n", g_arm7_jit_preset == 4 ? "ON (FAST STACK)" :
+    printf("ARM7 JIT       : %s\n", g_arm7_jit_preset == 5 ? "ON (LEAN CODE)" :
+                                    g_arm7_jit_preset == 4 ? "ON (FAST STACK)" :
                                     g_arm7_jit_preset == 3 ? "ON (RET CACHE)" :
                                     g_arm7_jit_preset == 2 ? "ON (LINKED)" :
                                     g_arm7_jit_preset == 1 ? "ON (BASIC)"  : "OFF (INTERPRETER)");
+    printf("ARM7 Batch     : %d%s\n", g_arm7_batch_preset, g_arm7_batch_preset <= 1 ? " (DEFAULT)" : " (BATCHED)");
     printf("SH4 Clock      : %dMHz%s\n", g_sh4_clock_preset,
            g_sh4_clock_preset >= 200 ? " (FULL)" : " (UNDERCLOCK)");
     printf("JIT SBP        : ");
