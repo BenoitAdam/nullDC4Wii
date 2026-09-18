@@ -22,8 +22,18 @@ extern u32 FrameCount;
 // alongside so its own overhead stays calculable rather than hidden.
 // ---------------------------------------------------------------------------
 extern u64 RenderTicks;
-extern u64 TaTicks;
-extern u32 TaCalls;
+
+// TA accumulators, deliberately PAIRED in one struct. libPvr_TaSQ bumps both on
+// every 32-byte TA block (~500 K/s), and as two separate globals that cost two
+// lis/@ha address bases per call and touched two cache lines; as one struct it
+// is one base plus offsets, in one line.
+//
+// `ticks` is u32, not u64: SPG.cpp zeroes it once a second and the Wii time base
+// runs at bus/4 = 60.75 MHz, so the accumulator has ~70 seconds of headroom
+// against a ~1-second window. That keeps the hot accumulate a single add instead
+// of an addc/addze pair with two loads and two stores.
+struct TaPerfCounters { u32 ticks; u32 calls; };
+extern TaPerfCounters TaPerf;
 
 // Sound split, same wall-time method. armUpdateARM (plugs/vbaARM/arm_aica.cpp)
 // runs BOTH the ARM7 core and the 44.1 kHz AICA synthesis, so one bracket
@@ -54,9 +64,23 @@ extern u32 AicaSampleCount;
 #include <ogc/lwp_watchdog.h>
 #define PERF_TICKS() gettime()
 #define PERF_TICKS_US(t) ((double)ticks_to_microsecs(t))
+
+// Cheap 32-bit variant, for brackets taken hundreds of thousands of times
+// a second. gettime() is NOT one instruction: it is the classic 64-bit
+// time-base consistency loop, mftbu/mftb/mftbu/cmpw/bne, so a bracket pays
+// SIX special-register reads plus a 64-bit subtract. PPCMftb() is a single
+// mftb of the low word.
+//
+// Safe because the only thing ever computed from it is a DELTA, and
+// unsigned 32-bit subtraction is exact modulo 2^32: a bracket that happens
+// to straddle a TBL wrap still yields the right interval. The time base
+// runs at bus/4 = 60.75 MHz on Wii, so TBL wraps every ~70 s — far longer
+// than any bracket, and the accumulators below are u64 anyway.
+#define PERF_TICKS32() ((u32)PPCMftb())
 #else
 #define PERF_TICKS() ((u64)0)
 #define PERF_TICKS_US(t) (0.0)
+#define PERF_TICKS32() ((u32)0)
 #endif
 
 // #include "gsRend.h" // PS2

@@ -6,8 +6,7 @@ u32 StripCount=0;
 u32 FrameCount=0;
 
 u64 RenderTicks=0;
-u64 TaTicks=0;
-u32 TaCalls=0;
+TaPerfCounters TaPerf={0,0};
 
 u64 ArmTicks=0;
 u64 AicaTicks=0;

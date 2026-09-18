@@ -411,37 +411,61 @@ void FASTCALL TAWrite(u32 address, u32* data, u32 count)
 }
 
 /**
+ * Store-queue writes that are NOT TA polygon data: the YUV converter and the
+ * direct 0x11xxxxxx VRAM/texture region.
+ *
+ * Split out of TAWriteSQ, and noinline on purpose. Both branches need
+ * callee-saved registers, so while they were inline GCC hoisted a prologue
+ * (stwu r1,-32(r1) / stw r31,28(r1)) ABOVE the TA test and tore it back down
+ * on the way out. The geometry path -- ~500 K calls/s, one per vertex -- was
+ * therefore paying a stack frame plus a `stw r31` followed six instructions
+ * later by `lwz r31` from the same slot. On the 750 that reload is a
+ * load-hit-store: the core does not forward from a pending store, it rejects
+ * the load and retries. With the cold half out of line the TA path is a
+ * compare and a tail call, no frame at all.
+ */
+static void __attribute__((noinline)) TAWriteSQ_slow(u32 address, u32* data)
+{
+    if ((address & 0x1FFFFFF) < 0x1000000) {
+        // YUV converter
+        YUV_data(data, 1);
+        return;
+    }
+
+    // Direct VRAM write (0x11xxxxxx texture region, via store queue).
+    //
+    // BUG FIX (Rez / WinCE texture-upload-via-SQ): the old code wrote the
+    // 32 bytes LINEARLY into vram.data. But the PVR VRAM 64-bit area is
+    // bank-interleaved: the renderer reads textures through
+    // fast_ConvOffset32toOffset64 (gxRend.cpp) and every other VRAM write
+    // path (pvr_write_area1_32, the ch2-DMA texture path) applies
+    // vramlock_ConvOffset32toOffset64. Writing linearly here put SQ-
+    // uploaded textures in a layout the renderer never reads back the same
+    // way — scrambled. PSP's TAWriteSQ writes via pvr_write_area1_32 (its
+    // pvr_map32), i.e. interleaved; match that. Shared by interpreter AND
+    // recompiler, so it explains a failure that reproduces on both cores.
+    //   OLD (linear, wrong): memcpy(&vram.data[address & VRAM_MASK], data, 32);
+    u32 off = address & VRAM_MASK;          // 32-bit VRAM offset
+    for (int i = 0; i < 8; i++, off += 4)   // 8 * 4 = 32 bytes
+        pvr_write_area1_32(off, data[i]);   // applies the 32->64 interleave
+}
+
+/**
  * Write single 32-byte block via Store Queue
  * Optimized path for SH4 store queue operations
+ *
+ * Called once per 32-byte TA block from do_sqw() (dc/sh4/sh4_cpu.cpp), i.e.
+ * about once per Dreamcast vertex. Keep it a bare test + tail call; anything
+ * needing registers belongs in TAWriteSQ_slow above.
  */
 void FASTCALL TAWriteSQ(u32 address, u32* data)
 {
-    u32 address_masked = address & 0x1FFFFFF;
-
-    if (address_masked < 0x800000) {
+    if ((address & 0x1FFFFFF) < 0x800000) {
         // TA polygon data
         libPvr_TaSQ(data);
-    } else if (address_masked < 0x1000000) {
-        // YUV converter
-        YUV_data(data, 1);
-    } else {
-        // Direct VRAM write (0x11xxxxxx texture region, via store queue).
-        //
-        // BUG FIX (Rez / WinCE texture-upload-via-SQ): the old code wrote the
-        // 32 bytes LINEARLY into vram.data. But the PVR VRAM 64-bit area is
-        // bank-interleaved: the renderer reads textures through
-        // fast_ConvOffset32toOffset64 (gxRend.cpp) and every other VRAM write
-        // path (pvr_write_area1_32, the ch2-DMA texture path) applies
-        // vramlock_ConvOffset32toOffset64. Writing linearly here put SQ-
-        // uploaded textures in a layout the renderer never reads back the same
-        // way — scrambled. PSP's TAWriteSQ writes via pvr_write_area1_32 (its
-        // pvr_map32), i.e. interleaved; match that. Shared by interpreter AND
-        // recompiler, so it explains a failure that reproduces on both cores.
-        //   OLD (linear, wrong): memcpy(&vram.data[address & VRAM_MASK], data, 32);
-        u32 off = address & VRAM_MASK;          // 32-bit VRAM offset
-        for (int i = 0; i < 8; i++, off += 4)   // 8 * 4 = 32 bytes
-            pvr_write_area1_32(off, data[i]);   // applies the 32->64 interleave
+        return;
     }
+    TAWriteSQ_slow(address, data);
 }
 
 //------------------------------------------------------------------------------

@@ -348,8 +348,8 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 // decoder. ta_kps is the TA call rate, so the per-call cost of
                 // the TA bracket itself stays visible instead of hidden.
                 double rnd_pct = PERF_TICKS_US(RenderTicks) / 1e6 / tdiff * 100.0;
-                double ta_pct  = PERF_TICKS_US(TaTicks)     / 1e6 / tdiff * 100.0;
-                double ta_kps  = TaCalls / tdiff / 1000.0;
+                double ta_pct  = PERF_TICKS_US(TaPerf.ticks) / 1e6 / tdiff * 100.0;
+                double ta_kps  = TaPerf.calls / tdiff / 1000.0;
 
                 // Sound split: ARM7 core vs AICA synthesis vs audio pacing
                 // sleep. The sleep happens inside the synthesis bracket, so it
@@ -367,8 +367,8 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 VertexCount     = 0;
                 StripCount      = 0;
                 RenderTicks     = 0;
-                TaTicks         = 0;
-                TaCalls         = 0;
+                TaPerf.ticks    = 0;
+                TaPerf.calls    = 0;
                 ArmTicks        = 0;
                 AicaTicks       = 0;
                 SndWaitTicks    = 0;

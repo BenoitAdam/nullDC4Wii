@@ -13,14 +13,22 @@ namespace TASplitter
 using namespace TASplitter;
 
 // Store Queue path: single 32-byte write (e.g. via SQ registers)
+//
+// This is THE geometry hot path: one call per 32-byte TA block, i.e. very
+// nearly one call per Dreamcast vertex, ~500 K/s in a heavy scene. Keep the
+// wrapper itself minimal -- it used to be 41 PowerPC instructions around an
+// indirect call whose real work is ~33, because the two gettime() reads are
+// 64-bit time-base consistency loops (6 mftbu/mftb between them) and the
+// 64-bit subtract needed two non-volatiles saved across the call. PERF_TICKS32
+// (Renderer_if.h) is one mftb and a wrap-exact 32-bit delta.
 void libPvr_TaSQ(u32* data)
 {
     verify(TaCmd != nullptr);
-    const u64 _t0 = PERF_TICKS();
+    const u32 _t0 = PERF_TICKS32();
     Ta_Dma* t = (Ta_Dma*)data;
     TaCmd(t, t);
-    TaTicks += PERF_TICKS() - _t0;
-    TaCalls++;
+    TaPerf.ticks += (u32)(PERF_TICKS32() - _t0);
+    TaPerf.calls++;
 }
 
 // DMA path: process a contiguous block of 32-byte TA entries
@@ -30,7 +38,7 @@ void libPvr_TaDMA(u32* data, u32 size)
     verify(TaCmd != nullptr);
     verify(size > 0);
 
-    const u64 _t0 = PERF_TICKS();
+    const u32 _t0 = PERF_TICKS32();
 
     Ta_Dma* ta_data     = (Ta_Dma*)data;
     Ta_Dma* ta_data_end = ta_data + size - 1;
@@ -41,8 +49,8 @@ void libPvr_TaDMA(u32* data, u32 size)
     }
     while (ta_data <= ta_data_end);
 
-    TaTicks += PERF_TICKS() - _t0;
-    TaCalls++;
+    TaPerf.ticks += (u32)(PERF_TICKS32() - _t0);
+    TaPerf.calls++;
 }
 
 namespace TASplitter
