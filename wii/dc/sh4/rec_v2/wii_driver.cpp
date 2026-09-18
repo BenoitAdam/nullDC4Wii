@@ -1955,15 +1955,9 @@ static u32 s_hb_overflow = 0;
 // dumped exactly once no matter which scene it turns hot in. Deliberately NOT
 // cleared by hotblocks_reset(): a cache clear recompiles the same pc, and
 // re-dumping identical code would just bury the new shapes.
-#define HOT_DUMP_MAX 16
+#define HOT_DUMP_MAX 64
 static u32 s_hb_dumped[HOT_DUMP_MAX];
 static u32 s_hb_dumped_n = 0;
-
-// Worst B/op dumped so far, and how many #1-by-hits dumps have been spent.
-// See the selection logic in hotblocks_dump() for why both exist.
-#define HOT_TOP_DUMPS 4
-static u32    s_hb_top_dumps = 0;
-static double s_hb_worst_bop = 0.0;
 
 // Called from recSh4_ClearCache (dc/sh4/rec_v2/driver.cpp): the compiled code
 // these entries describe no longer exists.
@@ -2051,7 +2045,20 @@ static void hotblocks_disasm(const HotBlock& h)
 static bool hotblocks_dump_once(const HotBlock& h)
 {
 	if (s_hb_dumped_n >= HOT_DUMP_MAX)
+	{
+		// Say so, once. A silent budget exhaustion looks identical to "the
+		// selector never picked anything", which is the failure this tool has
+		// already produced three times -- and the reader cannot tell the two
+		// apart from the log. If this ever prints, raise HOT_DUMP_MAX.
+		static bool said = false;
+		if (!said)
+		{
+			said = true;
+			printf("[HOT] dump budget exhausted (%u distinct blocks on file) --"
+			       " raise HOT_DUMP_MAX to disassemble any more\n", (u32)HOT_DUMP_MAX);
+		}
 		return false;
+	}
 	for (u32 i=0;i<s_hb_dumped_n;i++)
 		if (s_hb_dumped[i]==h.sh4_pc)
 			return false;
@@ -2104,66 +2111,56 @@ extern "C" void hotblocks_dump(double seconds)
 			break;
 		top[tn++] = best;
 	}
-
 	for (u32 a=0;a<tn;a++)
 	{
 		const HotBlock& h = s_hb[top[a]];
 		const u32 hits = s_hb_hits[top[a]];
-		printf("[HOT]   %u: pc=%08X %8u (%7.0f/s) %5.1f%%  sh4 %3u ops  hot %5u B  %5.1f B/op  cold %5u B\n",
+		// MB/s of PPC code actually executed = hits * block size. This, not
+		// B/op and not the hit count, is what a block COSTS: ChuChu's
+		// 8C1074EE is only #2 by hits but burns 3x the bytes of #1.
+		printf("[HOT]   %u: pc=%08X %8u (%7.0f/s) %5.1f%%  sh4 %3u ops  hot %5u B  %5.1f B/op  %6.1f MB/s  cold %5u B\n",
 			a+1, h.sh4_pc, hits, hits/seconds,
 			hits*100.0/all_hits,
 			h.sh4_ops, h.ppc_size,
 			h.sh4_ops?((double)h.ppc_size/h.sh4_ops):0.0,
+			(double)hits * h.ppc_size / seconds / 1e6,
 			h.ppc_cold);
 	}
 
 	if (s_hb_overflow)
 		printf("[HOT]   (%u blocks did not fit the %u-entry table)\n", s_hb_overflow, (u32)HOT_MAX);
 
-	// Full disassembly of the #1 block and of the worst codegen density among
-	// the hot ones — usually different blocks, since #1 tends to be a tight
-	// well-compiled loop while whatever burns the most PPC per SH4 op hides
-	// further down (ChuChu's 8C1074E6: 4 ops -> 288 B, 72 B/op, at 8.7% of
-	// entries in the HEAVY scene only).
+	// Disassemble the costliest block not yet on file, one per second, ranked
+	// by PPC BYTES EXECUTED (hits * ppc_size).
 	//
-	// Dump each distinct pc once, rather than spending a fixed budget. A
-	// "2 dumps per session" budget was wrong: it spent itself on the first two
-	// [HOT] lines after boot — menus — so a block that only turns hot later in
-	// gameplay could never be dumped at all, which is exactly why 8C1074E6 kept
-	// being missed despite the preset being on the whole time.
-	if (tn)
+	// NO GATE. Three different gates were tried here and all three locked the
+	// hunt out before it reached the scene worth reading:
+	//   * "#1 by hits, budget 4" -- spent during boot.
+	//   * "worst B/op, must beat the record" -- B/op is a RATE, so a cold 1-op
+	//     block with a fat prologue outranked a routine burning 250 MB/s.
+	//   * "top by bytes, must beat the record by 25%" -- ChuChu's own light
+	//     scene set the record at 212 MB/s and mania peaks at 252, which is
+	//     only 19% clear, so the record was never beaten again.
+	// The premise all three shared -- that the budget is precious and must be
+	// spent on the right second -- was the actual mistake. The top-8 set is
+	// SMALL and STABLE (the same 8 blocks in every row of a mania log, light
+	// and heavy alike), so simply working through it one per second reaches
+	// every block that matters within a few seconds and needs no cleverness.
+	// HOT_DUMP_MAX is sized so boot and the menus cannot exhaust it first.
+	u32 idx[8], left = tn;
+	for (u32 i=0;i<tn;i++) idx[i] = top[i];
+	while (left)
 	{
-		// #1 by hits is contextual only, so it gets a small fixed budget and
-		// cannot starve the outlier hunt below.
-		if (s_hb_top_dumps < HOT_TOP_DUMPS && hotblocks_dump_once(s_hb[top[0]]))
-			s_hb_top_dumps++;
-
-		u32 worst = top[0];
-		double worst_bop = 0.0;
-		for (u32 a=0;a<tn;a++)
+		u32 best = 0; double best_bytes = -1.0;
+		for (u32 i=0;i<left;i++)
 		{
-			const HotBlock& h = s_hb[top[a]];
-			const double d = h.sh4_ops ? (double)h.ppc_size/h.sh4_ops : 0.0;
-			if (d > worst_bop)
-			{
-				worst_bop = d;
-				worst = top[a];
-			}
+			const double b = (double)s_hb_hits[idx[i]] * s_hb[idx[i]].ppc_size;
+			if (b > best_bytes) { best_bytes = b; best = i; }
 		}
-
-		// Only ever dump a NEW worst. Dumping every distinct worst-of-the-second
-		// spent the whole budget on ordinary blocks from the boot/menu scenes,
-		// so the actual outlier — 8C1074E6 at 72 B/op, which only turns hot in
-		// the heavy scene — was never reached. Requiring each dump to beat the
-		// previous worst converges on the outlier instead, and is self-limiting
-		// because B/op has to strictly increase each time.
-		if (worst_bop > s_hb_worst_bop)
-		{
-			s_hb_worst_bop = worst_bop;
-			hotblocks_dump_once(s_hb[worst]);
-		}
+		if (hotblocks_dump_once(s_hb[idx[best]]))
+			break;               // dumped one; that is this second's share
+		idx[best] = idx[--left]; // already on file, try the next costliest
 	}
-
 	for (u32 i=0;i<s_hb_n;i++)
 		s_hb_hits[i] = 0;
 
@@ -4319,8 +4316,8 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			}
 			break;
 
-		// fsqrt / fsrra are handled below. fsrra is always the libm call;
-		// fsqrt is too unless JIT_FSQRT is on, which inlines it (see above).
+		// fsqrt / fsrra are handled below. Both are the libm call unless
+		// JIT_FSQRT is on, which inlines both (frsqrte + Newton).
 
 		// --- FSCA: rd[0]=sin_table[idx], rd[1]=sin_table[idx+0x4000] ----------
 		// idx = rs1 & 0xFFFF. Table entries are f32 (4 bytes).
@@ -4489,10 +4486,78 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				ppc_sh_store_f32(ppc_frv0,op->rd);
 			}
 			break;
+		// FSRRA(x) = 1/sqrt(x), which is exactly what shop_fsqrt computes on
+		// its way to sqrt -- the Newton refinement below IS that code, stopping
+		// one step earlier. It sits in ChuChu's per-vertex T&L block
+		// (8C107502, inside the 250 MB/s 8C1074EE run), so it ran ~600k times a
+		// second as a libm call until this existed.
 		case shop_fsrra:
-			ppc_sh_load_f32(ppc_farg0,op->rs1);
-			ppc_call(&rec_fsrra);
-			ppc_sh_store_f32(ppc_frv0,op->rd);
+			if (get_jit_fsqrt_preset())
+			{
+				// Announced separately from fsqrt's line: the two are gated on
+				// the same preset but are different emitters, and a log that
+				// only proves fsqrt was inlined says nothing about this one --
+				// which is exactly how fsrra stayed a call-out unnoticed.
+				static bool announced=false;
+				if (!announced)
+				{
+					announced=true;
+					printf("[fsqrt] JIT_FSQRT also inlining fsrra (frsqrte+Newton, no libm call)\n");
+					fflush(stdout);
+				}
+
+				u32 a=fsrc_or_load(op->rs1,ppc_f0);
+				u32 d=fdst_reg(op->rd,ppc_f0);
+				const u32 fC=ppc_f2,fY=ppc_f3,fH=ppc_f4,fT=ppc_f5,fE=ppc_f6;
+
+				u32 lo=ppc_addr_high(ppc_rarg0,(void*)&s_fsqrt_half);
+				ppc_lfs(fC,ppc_rarg0,lo);		// 0.5
+
+				// Same one-compare guard as fsqrt: fsubs(x,x) is +0.0 for any
+				// finite x and NaN for +-Inf, so this rejects 0, -0, negatives,
+				// Inf and NaN together (NaN/Inf compare unordered, not GT).
+				// Every one of those has a defined fsrra result (+Inf, NaN, 0)
+				// that the cold call reproduces exactly.
+				ppc_fsubs(fT,a,a);
+				ppc_fcmpu(ppc_cr0,a,fT);
+				ppc_label* to_cold=ppc_CreateLabel();
+				ppc_bcx(BO_FALSE,BI_CR0_GT,0,0,0);	// bng -> cold
+
+				ppc_fmul(fH,a,fC);			// h = 0.5*x
+				ppc_frsqrte(fY,a);			// y ~ 1/sqrt(x), >=5 bits
+				// Each step roughly doubles the accurate bits: 5 -> 10 -> 20 ->
+				// 40, comfortably past single precision's 24. Done in DOUBLE
+				// (ppc_fmul/fnmsub/fmadd are the double forms) so the rounding
+				// error of the iteration itself stays below the final frsp.
+				for (u32 i=0;i<3;i++)
+				{
+					ppc_fmul(fT,fY,fY);		// t = y*y
+					ppc_fnmsub(fE,fH,fT,fC);	// e = 0.5 - h*t
+					ppc_fmadd(fY,fY,fE,fY);		// y = y*e + y
+				}
+				// y IS the result. fsqrt continues with s = x*y and a residual
+				// correction to land sqrt correctly rounded; neither applies
+				// here, which is why this path is shorter than that one.
+				ppc_frsp(d,fY);				// -> single
+
+				ppc_label* to_done=ppc_CreateLabel();
+				ppc_bx(0,0,0);				// b done (patched below)
+				to_cold->MarkLabel();
+				if (a!=ppc_farg0)
+					ppc_fmr(ppc_farg0,a);
+				ppc_call(&rec_fsrra);
+				if (d!=ppc_frv0)
+					ppc_fmr(d,ppc_frv0);
+				to_done->MarkLabelLong();
+
+				fdst_store(op->rd,d,ppc_f0);
+			}
+			else
+			{
+				ppc_sh_load_f32(ppc_farg0,op->rs1);
+				ppc_call(&rec_fsrra);
+				ppc_sh_store_f32(ppc_frv0,op->rd);
+			}
 			break;
 
 		default:
