@@ -974,6 +974,22 @@ extern "C" {
 // 0=off (default), 1=on.
 extern "C" int g_jit_ccalls_preset;
 
+// TA_PROFILE - whether the `ta:` figure on the stats line is measured at all.
+//
+// The bracket is per 32-byte TA block, i.e. about once per Dreamcast vertex and
+// ~500 K/s in a heavy scene, which is far too hot to instrument for free. With
+// it compiled in unconditionally, libPvr_TaSQ (plugs/drkPvr/ta.cpp) was 41
+// PowerPC instructions with a stack frame -- six of them mftbu/mftb, because
+// gettime() is a 64-bit time-base consistency loop -- wrapped around ~36
+// instructions of actual vertex decoding. A cheaper 32-bit read got that to
+// 24; gating it here gets the whole function to NINE instructions ending in a
+// tail call, with no frame at all.
+//
+// Default OFF. Turn it on when working on the TA; ta: reads --.- when off.
+// Lives in plugs/drkPvr/Renderer_if.cpp so plugs/ links without wii/.
+// 0=off (default), 1=on.
+extern "C" int g_ta_profile_preset;
+
 // BLOCKCOPY - store-queue and DMA block transfers used to run the memory
 // dispatcher once per 32-bit word. do_sqw() alone did EIGHT dispatcher calls
 // per non-TA store-queue flush. The [CC] caller split measured 1,104,636
@@ -2144,6 +2160,7 @@ void checkBiosFiles()
 #define OPT_AICA_FAST   98    // Page 4 (AUDIO), under MUTE 16BIT PCM
 #define OPT_ARM7_JIT    99    // now shown on Page 4 (AUDIO), under ARM7 SPEED, see OPT_PAGE3_ROWS
 #define OPT_ARM7_BATCH  100   // Page 4 (AUDIO), under ARM7 JIT
+#define OPT_TA_PROFILE  101   // Page 8 (LOGS), under JIT CCALL
 #define OPT_DYNAREC     55
 #define OPT_SUBPASS_ZCLEAR 56 // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_POLY_OFFSET 57    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
@@ -2332,7 +2349,8 @@ static const int OPT_PAGE7_ROWS[] = {
   OPT_DEBUG_GDROM,
   OPT_IFB_PROBE,
   OPT_JIT_HOTBLOCKS,
-  OPT_JIT_CCALLS
+  OPT_JIT_CCALLS,
+  OPT_TA_PROFILE
 };
 
 static const int *opt_page_rows(int page, int *count)
@@ -3387,6 +3405,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (LOGS [CC])    >]"); break;
     }
     printf(" C call-outs/second and /frame");
+    printf("\n");
+
+    // --- Row: TA_PROFILE - measure the TA decoder's share of wall time ---
+    printf("%s TA PROFILE     : ", (selectedRow == OPT_TA_PROFILE) ? ">" : " ");
+    switch (g_ta_profile_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (STATS ta:)    >]"); break;
+    }
+    printf(" measures ta:%% - costs ~1%%");
     printf("\n\n");
     printf("                  (logs are written to /ndclog.txt on the card)");
     printf("\n\n");
@@ -3496,6 +3523,7 @@ bool displayOptionsMenu()
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
         case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 5) % 6; break;
         case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset <= 1) ? 16 : g_arm7_batch_preset / 2; break;
+        case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
@@ -3607,6 +3635,7 @@ bool displayOptionsMenu()
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
         case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 1) % 6; break;
         case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset >= 16) ? 1 : g_arm7_batch_preset * 2; break;
+        case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;

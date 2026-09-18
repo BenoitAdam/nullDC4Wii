@@ -35,6 +35,14 @@ extern u64 RenderTicks;
 struct TaPerfCounters { u32 ticks; u32 calls; };
 extern TaPerfCounters TaPerf;
 
+// TA_PROFILE: gates the per-block bracket in libPvr_TaSQ/libPvr_TaDMA, i.e.
+// whether `ta:` on the stats line is measured at all. Default OFF, because the
+// bracket is not free at ~500 K calls/s: with it compiled in unconditionally
+// libPvr_TaSQ was 24 PowerPC instructions with a stack frame around ~36
+// instructions of real vertex work; with it off the function collapses to a
+// frameless tail call to TaCmd. Turn it on when you are working on the TA.
+extern "C" int g_ta_profile_preset;
+
 // Sound split, same wall-time method. armUpdateARM (plugs/vbaARM/arm_aica.cpp)
 // runs BOTH the ARM7 core and the 44.1 kHz AICA synthesis, so one bracket
 // cannot say which of them to optimise (ARM7 JIT vs synthesis work):

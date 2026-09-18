@@ -348,8 +348,18 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 // decoder. ta_kps is the TA call rate, so the per-call cost of
                 // the TA bracket itself stays visible instead of hidden.
                 double rnd_pct = PERF_TICKS_US(RenderTicks) / 1e6 / tdiff * 100.0;
-                double ta_pct  = PERF_TICKS_US(TaPerf.ticks) / 1e6 / tdiff * 100.0;
-                double ta_kps  = TaPerf.calls / tdiff / 1000.0;
+                // ta: is only measured when the TA_PROFILE preset is on -- the
+                // bracket is per 32-byte TA block, so it is not free (see
+                // g_ta_profile_preset in wii/main.cpp). Print --.- rather than a
+                // misleading 0.0% when nobody measured it. vt:/v/st stay live
+                // either way; those are pointer arithmetic once per render.
+                char ta_str[48];
+                if (g_ta_profile_preset)
+                    sprintf(ta_str, "%.1f%%(%.0fk/s)",
+                            PERF_TICKS_US(TaPerf.ticks) / 1e6 / tdiff * 100.0,
+                            TaPerf.calls / tdiff / 1000.0);
+                else
+                    sprintf(ta_str, "--.-");
 
                 // Sound split: ARM7 core vs AICA synthesis vs audio pacing
                 // sleep. The sleep happens inside the synthesis bracket, so it
@@ -410,13 +420,13 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
 
 #ifndef TARGET_PSP
                 printf(
-                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK v/st:%.1f rnd:%.1f%% ta:%.1f%%(%.0fk/s) arm:%.1f%% aica:%.1f%% vox:%.1f%%(%.1f) snd:%.1f%%\n",
+                    "%3.2f%% VPS:%3.2f(%s%s%3.2f)RPS:%3.2f vt:%4.2fK %4.2fK v/st:%.1f rnd:%.1f%% ta:%s arm:%.1f%% aica:%.1f%% vox:%.1f%%(%.1f) snd:%.1f%%\n",
                     spd_cpu * 100.0 / 200.0, spd_vbs,
                     mode, res, fullvbs,
                     spd_fps,
                     (spd_fps > 0.0 ? mv / spd_fps / tdiff : 0.0),
                     mv / tdiff,
-                    vps, rnd_pct, ta_pct, ta_kps,
+                    vps, rnd_pct, ta_str,
                     arm_pct, aica_pct, vox_pct, voices, snd_pct);
                 fflush(stdout); // once per 1s: keep the log tail intact if the Wii is powered off
 

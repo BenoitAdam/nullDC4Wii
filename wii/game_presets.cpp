@@ -409,6 +409,17 @@
                                 ChuChu. Perf preset, changes SH4 codegen —
                                 default ON.
 
+        ta_profile=on       <- on/off, DEBUG. Measures the TA decoder's share of
+                                wall time and prints it as ta: on the stats
+                                line. Default OFF because the bracket is per
+                                32-byte TA block -- about once per Dreamcast
+                                vertex, ~500 K/s -- and costs roughly 1%% of the
+                                machine: libPvr_TaSQ is 9 PowerPC instructions
+                                with it off and 24 with it on. With it off,
+                                ta: prints --.- and vt:/v/st still work (those
+                                are free). Turn it on only while working on the
+                                tile accelerator.
+
         jit_ccalls=on       <- on/off, DEBUG probe. Counts every C function the
                                 dynarec still calls out to and prints a [CC]
                                 block once a second with per-second AND
@@ -980,6 +991,7 @@ extern int g_jit_mac_preset;
 extern int g_jit_fschg_preset;
 extern int g_jit_cr0_preset;
 extern "C" int g_jit_ccalls_preset;
+extern "C" int g_ta_profile_preset;
 extern "C" int g_blockcopy_preset;
 extern int g_jit_fsqrt_preset;
 extern int g_sched_preset;
@@ -1105,6 +1117,7 @@ struct GamePreset
     int jit_fschg;
     int jit_cr0;
     int jit_ccalls;
+    int ta_profile;
     int blockcopy;
     int jit_fsqrt;
     int sched;
@@ -1558,6 +1571,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_fschg"))      p->jit_fschg      = parse_bool(val);
     else if (key_eq(key, "jit_cr0"))        p->jit_cr0        = parse_bool(val);
     else if (key_eq(key, "jit_ccalls"))     p->jit_ccalls     = parse_bool(val);
+    else if (key_eq(key, "ta_profile"))     p->ta_profile     = parse_bool(val);
     else if (key_eq(key, "blockcopy"))      p->blockcopy      = parse_bool(val);
     else if (key_eq(key, "jit_fsqrt"))      p->jit_fsqrt      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
@@ -1659,6 +1673,7 @@ static void preset_clear(GamePreset* cur)
     cur->jit_fschg = -1;
     cur->jit_cr0 = -1;
     cur->jit_ccalls = -1;
+    cur->ta_profile = -1;
     cur->blockcopy    = -1;
     cur->jit_fsqrt    = -1;
     cur->sched = -1;
@@ -1789,6 +1804,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->jit_fschg      >= 0) { g_jit_fschg_preset      = p->jit_fschg;      printf("  jit_fschg      -> %d\n", p->jit_fschg);      }
     if (p->jit_cr0        >= 0) { g_jit_cr0_preset        = p->jit_cr0;        printf("  jit_cr0        -> %d\n", p->jit_cr0);        }
     if (p->jit_ccalls     >= 0) { g_jit_ccalls_preset     = p->jit_ccalls;     printf("  jit_ccalls     -> %d\n", p->jit_ccalls);     }
+    if (p->ta_profile     >= 0) { g_ta_profile_preset     = p->ta_profile;     printf("  ta_profile     -> %d\n", p->ta_profile);     }
     if (p->blockcopy      >= 0) { g_blockcopy_preset      = p->blockcopy;      printf("  blockcopy      -> %d\n", p->blockcopy);      }
     if (p->jit_fsqrt      >= 0) { g_jit_fsqrt_preset      = p->jit_fsqrt;      printf("  jit_fsqrt      -> %d\n", p->jit_fsqrt);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
