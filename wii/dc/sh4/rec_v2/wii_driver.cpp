@@ -301,11 +301,34 @@ void ngen_Begin(DecodedBlock* block,bool force_checks)
 	// Block-check guard (self-modifying code protection)
 	//
 	// force_checks comes from DoCheck() in driver.cpp, which is gated on the
-	// JIT_SBP preset. When set, re-read the first byte of this block's SH4
-	// source at entry and compare it against the value present at compile time.
-	// A mismatch means the game overwrote its own code, so the translation is
-	// stale — bail to rdv_BlockCheckFail, which clears the cache (dropping the
-	// statically-patched links along with it) and recompiles from live memory.
+	// JIT_SBP preset. When set, re-read this block's SH4 source at entry and
+	// compare it against what was there at compile time. A mismatch means the
+	// game overwrote its own code, so the translation is stale — bail to
+	// rdv_BlockCheckFail, which clears the cache (dropping the statically
+	// patched links along with it) and recompiles from live memory.
+	//
+	// WHAT IS COMPARED, AND WHY IT IS NO LONGER ONE BYTE
+	//
+	// This used to load a single BYTE. That is far too weak for the case the
+	// guard exists to catch. Marvel vs Capcom 2 loads code overlays into a
+	// six-slot module cache at 0CE30000..0CE58000 and jumps into them; the next
+	// stage reloads DIFFERENT modules to the SAME six addresses. Every block
+	// compiled from stage 1's module is then stale, and this compare is the
+	// only thing between the game and executing stage 1's translation of stage
+	// 2's code.
+	//
+	// A block starts at a function entry far more often than not, and SH4
+	// prologues are stereotyped — 2FE6 / 2FD6 / 2F32 (mov.l Rm,@-R15) and 4F22
+	// (sts.l pr,@-R15) dominate. Two unrelated modules agree on the first BYTE
+	// of a block entry very often, so the guard passed and the stale block ran.
+	// The byte compare was close to useless exactly where it mattered.
+	//
+	// Now: the whole first INSTRUCTION (16 bits, 256x stronger) and the whole
+	// LAST instruction of the block. Both are halfword loads against a 16-bit
+	// immediate, so the cost over the old version is one lhz + cmpli + branch —
+	// no 32-bit constant to materialise. Checking the tail as well as the head
+	// is what catches a replacement sharing a prologue but diverging later,
+	// which is the normal case for two modules of the same engine.
 	//
 	// Emitted BEFORE the cycle decrement so a stale block never bills cycles.
 	// rarg0/rarg1 are scratch at block entry (rarg0 is next_pc, which the
@@ -313,19 +336,44 @@ void ngen_Begin(DecodedBlock* block,bool force_checks)
 	// ---------------------------------------------------------------------
 	if (force_checks && ngen_BlockCheckFail_stub)
 	{
-		u8* ptr = GetMemPtr(block->start, block->sh4_code_size ? block->sh4_code_size : 4);
+		const u32 code_sz = block->sh4_code_size ? block->sh4_code_size : 2;
+		u8* ptr = GetMemPtr(block->start, code_sz);
 
 		// DoCheck already probed this, but the mapping is the thing that makes
 		// the compare safe — never emit a load we cannot justify.
 		if (ptr)
 		{
-			u32 lo = ppc_addr_high(ppc_rarg1,(void*)ptr);
-			ppc_lbz(ppc_rarg1,ppc_rarg1,lo);		// rarg1 = current source byte
-			ppc_cmpli(ppc_cr0,ppc_rarg1,*ptr,0);	// vs the byte we compiled from
+			// Only worth a second compare when the block is longer than one
+			// instruction; otherwise the tail IS the head.
+			const bool check_tail = (code_sz >= 4);
+			ppc_label* fail = 0;
+
+			// --- first instruction --------------------------------------------
+			{
+				const u16 first = *(u16*)ptr;
+				u32 lo = ppc_addr_high(ppc_rarg1,(void*)ptr);
+				ppc_lhz(ppc_rarg1,ppc_rarg1,lo);
+				ppc_cmpli(ppc_cr0,ppc_rarg1,first,0);
+			}
+
+			if (check_tail)
+			{
+				fail = ppc_CreateLabel();
+				ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);	// bne -> fail
+
+				// --- last instruction ------------------------------------------
+				u8* tail = ptr + code_sz - 2;
+				const u16 last = *(u16*)tail;
+				u32 lo = ppc_addr_high(ppc_rarg1,(void*)tail);
+				ppc_lhz(ppc_rarg1,ppc_rarg1,lo);
+				ppc_cmpli(ppc_cr0,ppc_rarg1,last,0);
+			}
 
 			ppc_label* check_ok=ppc_CreateLabel();
 			ppc_bcx(BO_TRUE,BI_CR0_EQ,0,0,0);		// beq -> check_ok
 
+			if (fail)
+				fail->MarkLabel();					// the bne above lands here
 			ppc_li(ppc_rarg0,block->start);			// rdv_BlockCheckFail(pc)
 			ppc_jump(ngen_BlockCheckFail_stub);
 
