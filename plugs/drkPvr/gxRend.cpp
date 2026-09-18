@@ -1788,7 +1788,10 @@ static TextureCacheDesc* bump_alloc(u32 pixel_bytes, u32 **pixel_out)
 // whatever this map returns before trusting it.
 // Texture-cache instrumentation counters. Declared up here because
 // fast_bump_alloc() below bumps the wrap counter; they are read and printed
-// once a second by tex_frame_reset(). Temporary — see the report line there.
+// once a second by tex_frame_reset(). Every increment site is gated behind
+// DEBUG_MESSAGE() (not just the final printf), so none of this runs unless
+// DEBUG MESSAGE is on — the sole exception is g_texc_wraps_frame, which also
+// drives the always-on s_plus_arena_ok give-up valve below.
 static u32 g_texc_binds   = 0;
 static u32 g_texc_decodes = 0;
 static u32 g_texc_frames  = 0;
@@ -1804,7 +1807,8 @@ static u32 g_texc_arena    = 0; // PLUS binds that did not fit their skimp slot
 static u32 g_texc_a_vq     = 0; // VQ: 2 bits/texel source -> 16 bits decoded
 static u32 g_texc_a_pal    = 0; // CI4/CI8 decoded to 16bpp (the OPTIMIZED presets)
 static u32 g_texc_a_oth    = 0; // anything else
-static u32 g_texc_wraps_frame = 0; // arena wraps inside the current frame
+static u32 g_texc_wraps_frame = 0; // arena wraps inside the current frame — NOT
+                                   // DEBUG_MESSAGE()-gated, see comment above
 static u32 g_texc_allocs   = 0; // arena allocations, i.e. distinct slots handed out
 static u32 g_texc_alloc_kb = 0; // KB handed out — tells us how big the arena must be
 static u32 s_plus_wrap_frames = 0; // consecutive frames in which the arena wrapped
@@ -1878,7 +1882,7 @@ static INLINE u32 fast_map_locate(u32 tex_addr, bool *found)
     probe++;
   }
   *found = false;
-  g_texc_mapfull++;
+  if (DEBUG_MESSAGE()) g_texc_mapfull++;
   return FASTMAP_SIZE; // table completely full (shouldn't happen at 2048 slots)
 }
 
@@ -1926,7 +1930,7 @@ static TextureCacheDesc* fast_bump_alloc(u32 pixel_bytes, u32 **pixel_out,
       {
         GX_DrawDone(); // GP is finished with every texture bound so far
         s_fast_drained_frame = true;
-        g_texc_drains++;
+        if (DEBUG_MESSAGE()) g_texc_drains++;
       }
       else
       {
@@ -1935,7 +1939,7 @@ static TextureCacheDesc* fast_bump_alloc(u32 pixel_bytes, u32 **pixel_out,
         // every decode. Hand back the address-derived skimp slot instead -
         // CACHE_VERY_FAST's behaviour - and let s_plus_arena_ok retire the arena
         // if the scene keeps this up.
-        g_texc_wrapskip++;
+        if (DEBUG_MESSAGE()) g_texc_wrapskip++;
         TextureCacheDesc *d = skimp_slot(tex_addr);
         *pixel_out     = (u32*)&d[1];
         *alloc_off_out = FAST_ALLOC_SKIMP;
@@ -1947,11 +1951,14 @@ static TextureCacheDesc* fast_bump_alloc(u32 pixel_bytes, u32 **pixel_out,
     }
     s_fast_bump_offset = 0;
     memset(s_fastmap, 0xFF, sizeof(s_fastmap));
-    g_texc_wraps++;
-    g_texc_wraps_frame++;
+    if (DEBUG_MESSAGE()) g_texc_wraps++;
+    g_texc_wraps_frame++; // feeds s_plus_arena_ok — always on, see declaration
   }
-  g_texc_allocs++;
-  g_texc_alloc_kb += total >> 10;
+  if (DEBUG_MESSAGE())
+  {
+    g_texc_allocs++;
+    g_texc_alloc_kb += total >> 10;
+  }
   u32 alloc_off       = s_fast_bump_offset;
   TextureCacheDesc *d = (TextureCacheDesc*)&abase[alloc_off];
   *pixel_out          = (u32*)&abase[alloc_off + desc_sz];
@@ -2141,26 +2148,25 @@ static void tex_frame_reset()
   hash_map_reset();   // clear hash map — O(4 KB memset), fast on PPC
   // params.vram sentinels survive across frames.
 
-  // Texture-cache report, once a second, for whichever preset is active. The
-  // counters themselves are two increments on the bind path and are always on
-  // (the arena give-up valve above reads them); only the printf is gated, so
-  // turning DEBUG MESSAGES on is enough to get the numbers back. This is how
-  // the whole very_fast/very_fast_plus investigation was settled - keep it.
-  if (++g_texc_frames >= 60)
+  // Texture-cache report, once a second, for whichever preset is active.
+  // Every counter feeding it is itself DEBUG_MESSAGE()-gated at its increment
+  // site (see the declaration comment above), so with DEBUG MESSAGE off this
+  // whole block — cadence counter included — costs one function call and a
+  // branch per frame, nothing accumulates, and nothing prints. Turning DEBUG
+  // MESSAGE on is enough to get the numbers back. This is how the whole
+  // very_fast/very_fast_plus investigation was settled - keep it.
+  if (DEBUG_MESSAGE() && ++g_texc_frames >= 60)
   {
-    if (1)
-    {
-      u32 cached_pct = g_texc_binds ? (100u * (g_texc_binds - g_texc_decodes)) / g_texc_binds : 0u;
-      printf("[TEXC] p%d %uf binds=%u dec=%u (%u%% cached, %u/frame) miss: stride=%u new=%u sent=%u shape=%u | wraps=%u mapfull=%u arena=%u(vq=%u pal=%u oth=%u) allocs=%u allocKB=%u plusarena=%u wrapskip=%u drains=%u\n",
-             get_texture_cache_preset(), g_texc_frames, g_texc_binds, g_texc_decodes,
-             cached_pct, g_texc_decodes / g_texc_frames,
-             g_texc_m_stride, g_texc_m_new, g_texc_m_sent, g_texc_m_shape,
-             g_texc_wraps, g_texc_mapfull, g_texc_arena,
-             g_texc_a_vq, g_texc_a_pal, g_texc_a_oth,
-             g_texc_allocs, g_texc_alloc_kb, s_plus_arena_ok ? 1u : 0u, g_texc_wrapskip,
-             g_texc_drains);
-      fflush(stdout); // log is freopen'd to SD; without this the tail is lost
-    }
+    u32 cached_pct = g_texc_binds ? (100u * (g_texc_binds - g_texc_decodes)) / g_texc_binds : 0u;
+    printf("[TEXC] p%d %uf binds=%u dec=%u (%u%% cached, %u/frame) miss: stride=%u new=%u sent=%u shape=%u | wraps=%u mapfull=%u arena=%u(vq=%u pal=%u oth=%u) allocs=%u allocKB=%u plusarena=%u wrapskip=%u drains=%u\n",
+           get_texture_cache_preset(), g_texc_frames, g_texc_binds, g_texc_decodes,
+           cached_pct, g_texc_decodes / g_texc_frames,
+           g_texc_m_stride, g_texc_m_new, g_texc_m_sent, g_texc_m_shape,
+           g_texc_wraps, g_texc_mapfull, g_texc_arena,
+           g_texc_a_vq, g_texc_a_pal, g_texc_a_oth,
+           g_texc_allocs, g_texc_alloc_kb, s_plus_arena_ok ? 1u : 0u, g_texc_wrapskip,
+           g_texc_drains);
+    fflush(stdout); // log is freopen'd to SD; without this the tail is lost
     g_texc_frames = g_texc_binds = g_texc_decodes = 0;
     g_texc_m_stride = g_texc_m_new = g_texc_m_sent = g_texc_m_shape = 0;
     g_texc_wraps = g_texc_mapfull = g_texc_arena = g_texc_wrapskip = g_texc_drains = 0;
@@ -4268,7 +4274,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   u32 tex_addr = (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
   const u32 orig_tex_addr = tex_addr;
   u32 *ptex_skmp = (u32 *)&params.vram[tex_addr];
-  g_texc_binds++; // see tex_frame_reset()
+  if (DEBUG_MESSAGE()) g_texc_binds++; // see tex_frame_reset()
 
   // Declare all variables needed by section 1 upfront.
   bool is_vq = mod->tcw.NO_PAL.VQ_Comp;
@@ -4399,7 +4405,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     // everything, every frame, which is the slower and more visible failure.
     plus_skimp = (need <= src_bytes * 2u)
               || !plus_tex_arena || !s_plus_arena_ok;
-    if (!plus_skimp)
+    if (!plus_skimp && DEBUG_MESSAGE())
     {
       g_texc_arena++;
       if      (is_vq)                  g_texc_a_vq++;
@@ -4805,13 +4811,16 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
   if (!cache_valid)
   {
-    g_texc_decodes++; // see tex_frame_reset()
-    // Attribute the miss. Only runs on misses, so the cost is irrelevant.
-    if (stride_dyn)                                  g_texc_m_stride++;
-    else if (pbuff->addr != tex_addr && pbuff->addr != orig_tex_addr)
-                                                     g_texc_m_new++;
-    else if (!is_vq && *ptex_skmp != 0xDEADBEEF)     g_texc_m_sent++;
-    else                                             g_texc_m_shape++;
+    if (DEBUG_MESSAGE())
+    {
+      g_texc_decodes++; // see tex_frame_reset()
+      // Attribute the miss. Only runs on misses, so the cost is irrelevant.
+      if (stride_dyn)                                  g_texc_m_stride++;
+      else if (pbuff->addr != tex_addr && pbuff->addr != orig_tex_addr)
+                                                       g_texc_m_new++;
+      else if (!is_vq && *ptex_skmp != 0xDEADBEEF)     g_texc_m_sent++;
+      else                                             g_texc_m_shape++;
+    }
     u32 *dst = dst_base;
     VramWork  = (u8*)dst;
     pbuff->has_pal = false;
