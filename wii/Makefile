@@ -77,6 +77,40 @@ CFLAGS  += -fsingle-precision-constant
 CFLAGS  += -fomit-frame-pointer
 CFLAGS  += -ffast-math
 
+# Small-data addressing through r13/r2 (PowerPC EABI).
+#
+# devkitPPC defaults to -msdata=data, which still PLACES small globals in
+# .sdata/.sbss but addresses them with a full 32-bit `lis sym@ha` + `lwz
+# sym@l(rX)` pair. -msdata=eabi keeps the same placement and reaches them in
+# ONE instruction, r13-relative (and small read-only data r2-relative through
+# .sdata2). Measured instruction counts, same flags otherwise:
+#
+#   gxRend.cpp        40866 -> 39171  (-4.1%), 2094 `lis` -> 943
+#   sh4_interpreter   -12.7%   pvr_if -7.1%   _vmem -5.2%   sgc_if -1.1%
+#   TA vertex entry path (once per store-queue block): 35 -> 27 instructions
+#
+# This does NOT touch code the SH4/ARM7 recompilers emit, only compiled C.
+#
+# Safe here, verified rather than assumed:
+#   * libogc is ALREADY built this way -- common_crt0.o loads r2=_SDA2_BASE_
+#     and r13=_SDA_BASE_ at startup, and libogc's objects carry
+#     R_PPC_EMB_SDA21 relocations in this very binary.
+#   * The linker defines both bases (boot.map: _SDA_BASE_ = .sdata + 0x8000,
+#     _SDA2_BASE_ = .sdata2 + 0x8000).
+#   * Neither recompiler ever writes r2 or r13. The SH4 JIT pins SH4 r0-r15 to
+#     r14..r28 with the context in r30; the ARM7 JIT uses r25..r31. ngen_mainloop
+#     only saves and restores r13 as part of the 19 preserved GPRs. The fastmem
+#     DSI glue in wii/wii_fastmem.cpp already relies on this and says so.
+#   * No inline asm in the tree touches either register.
+#
+# The one failure mode is LOUD and happens at LINK time, never at runtime:
+# r13 reaches +/-32 KB, so .sdata + .sbss must stay under 64 KB or ld reports
+# "relocation truncated to fit: R_PPC_EMB_SDA21". Current usage is 3.3 KB
+# (704 B .sdata + 2624 B .sbss), so there is ~20x headroom. If it ever does
+# overflow, lower the threshold (-G 4, or -G 0 to opt out per build) rather
+# than removing this line.
+CFLAGS  += -msdata=eabi -G 8
+
 # C++ Specific Flags
 CXXFLAGS := $(CFLAGS)
 CXXFLAGS += -fno-exceptions
