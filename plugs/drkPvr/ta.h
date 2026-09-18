@@ -307,7 +307,11 @@ strip_end:
 
 public:
 #define GROUP_EN() if (data->pcw.Group_En){ TA_decoder::TileClipMode(data->pcw.User_Clip);}
-		static Ta_Dma*  ta_main(Ta_Dma* data,Ta_Dma* data_end)
+		// The full parameter state machine. Renamed out of ta_main and marked
+		// noinline so that ta_main below can stay cheap -- see the note there.
+		// The body is unchanged. (Spelled out rather than using types.h's
+		// NOINLINE, which expands to NOTHING and would silently do nothing.)
+		static __attribute__((noinline)) Ta_Dma*  ta_main_ctrl(Ta_Dma* data,Ta_Dma* data_end)
 		{
 			do
 			{
@@ -449,6 +453,37 @@ public:
 			}
 			while(data<=data_end);
 			return data;
+		}
+
+		// Vertex fast path.
+		//
+		// TaCmd points here, so this runs once per 32-byte TA block -- ~417 K/s
+		// in Castlevania, of which ~322 K are vertex records and only ~96 K are
+		// parameter headers. ta_main_ctrl above is a 347-instruction function
+		// whose cases need callee-saved registers, so gcc opens it with an
+		// 11-instruction prologue (a 24-byte frame, four `stw` of non-volatiles
+		// and the link register) and closes it with eight more, then spends
+		// seven reaching a jump table -- all of that before the ten
+		// instructions that actually dispatch a vertex. Same shape as the
+		// prologue TAWriteSQ used to hoist over its TA test.
+		//
+		// This wrapper handles the vertex case and falls through to the real
+		// machine for everything else. It is EXACTLY equivalent: the loop in
+		// ta_main_ctrl tests its condition at the bottom, so entering it with
+		// data still <= data_end resumes precisely where this left off. For a
+		// store-queue block (data == data_end) VerxexDataFP consumes the block
+		// and the compare returns immediately, so ta_main_ctrl is never even
+		// called. The null VerxexDataFP guard matters -- see the comment on the
+		// vertex case in ta_main_ctrl (Rez CDI boot).
+		static Ta_Dma*  ta_main(Ta_Dma* data,Ta_Dma* data_end)
+		{
+			if (data->pcw.ParaType==ParamType_Vertex_Parameter && VerxexDataFP)
+			{
+				data=VerxexDataFP(data,data_end);
+				if (data>data_end)
+					return data;
+			}
+			return ta_main_ctrl(data,data_end);
 		}
 		//Rest shit
 		FifoSplitter()
