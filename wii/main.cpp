@@ -2160,34 +2160,34 @@ void checkBiosFiles()
 #define OPT_VTX_ALPHA    70    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_YUV_STRIDE   71    // shown on Page 2 (GRAPHICS), see OPT_PAGE1_ROWS
 #define OPT_LAYER_SORT  73    // shown on Page 3 (DEPTH & WIDTH), above HOKUTO HACK
-#define OPT_DEBUG_FB2D   74   // shown on Page 6 (EXPERIMENTAL), under SH4 CORE
-#define OPT_DEBUG_MESSAGE 75  // shown on Page 6 (EXPERIMENTAL), debug block at the end
-#define OPT_DEBUG_LOOP   76   // shown on Page 6 (EXPERIMENTAL), debug block at the end
-#define OPT_DEBUG_GDROM  77   // shown on Page 6 (EXPERIMENTAL), debug block at the end
+#define OPT_DEBUG_FB2D   74   // shown on Page 8 (LOGS), see OPT_PAGE7_ROWS
+#define OPT_DEBUG_MESSAGE 75  // shown on Page 8 (LOGS), see OPT_PAGE7_ROWS
+#define OPT_DEBUG_LOOP   76   // shown on Page 8 (LOGS), see OPT_PAGE7_ROWS
+#define OPT_DEBUG_GDROM  77   // shown on Page 8 (LOGS), see OPT_PAGE7_ROWS
 #define OPT_LIST_ORDER   78   // shown on Page 3 (DEPTH & WIDTH), under LAYER SORT
 #define OPT_DEBUG_SKIP_TEX 79 // shown on Page 6 (EXPERIMENTAL), debug block at the end
 #define OPT_PUYO_HACK    80   // shown on Page 6 (EXPERIMENTAL), with the other per-game hacks
 #define OPT_DINO_CRISIS_INVENTORY_HACK 72 // shown on Page 5 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_DYN_IC      81   // shown on Page 6 (JIT/DYNAREC), under JIT BCACHE
 #define OPT_IFB_FLUSH   82   // shown on Page 6 (JIT/DYNAREC), under JIT ALIGN
-#define OPT_IFB_PROBE   83   // shown on Page 6 (JIT/DYNAREC), under JIT IFB FLUSH
-#define OPT_JIT_NEWOPS  84   // shown on Page 6 (JIT/DYNAREC), under JIT IFB PROBE
-#define OPT_JIT_HOTBLOCKS 85 // shown on Page 6 (JIT/DYNAREC), under JIT NEW OPS
-#define OPT_JIT_TFWD    86   // shown on Page 6 (JIT/DYNAREC), under JIT HOTBLOCKS
+#define OPT_IFB_PROBE   83   // shown on Page 8 (LOGS), see OPT_PAGE7_ROWS
+#define OPT_JIT_NEWOPS  84   // shown on Page 6 (JIT/DYNAREC), under JIT IFB FLUSH
+#define OPT_JIT_HOTBLOCKS 85 // shown on Page 8 (LOGS), see OPT_PAGE7_ROWS
+#define OPT_JIT_TFWD    86   // shown on Page 6 (JIT/DYNAREC), under JIT NEW OPS
 #define OPT_JIT_FMOV    87   // shown on Page 6 (JIT/DYNAREC), under JIT T-FORWARD
 #define OPT_JIT_CARRY   88   // shown on Page 6 (JIT/DYNAREC), under JIT FMOV DIRECT
 #define OPT_JIT_MAC     89   // shown on Page 6 (JIT/DYNAREC), under JIT CARRY OPS
 #define OPT_JIT_FSCHG   91   // shown on Page 6 (JIT/DYNAREC), under JIT MAC OPS
 #define OPT_JIT_CR0     92   // shown on Page 6 (JIT/DYNAREC), under JIT FSCHG FAST
-#define OPT_JIT_CCALLS  93   // shown on Page 6 (JIT/DYNAREC), under JIT CR0 BRANCH
-#define OPT_BLOCKCOPY   94   // shown on Page 6 (JIT/DYNAREC), under JIT CCALL CENSUS
-#define OPT_JIT_FSQRT   95   // shown on Page 6 (JIT/DYNAREC), under JIT RAM TRAMP
+#define OPT_JIT_CCALLS  93   // shown on Page 8 (LOGS), see OPT_PAGE7_ROWS
+#define OPT_BLOCKCOPY   94   // shown on Page 6 (JIT/DYNAREC), under JIT CR0 BRANCH
+#define OPT_JIT_FSQRT   95   // shown on Page 6 (JIT/DYNAREC), under BLOCK COPY
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
-// Options are split across seven themed pages so no single page scrolls off
+// Options are split across eight themed pages so no single page scrolls off
 // screen and related settings are grouped together.
-#define OPT_PAGE_COUNT 7
+#define OPT_PAGE_COUNT 8
 
 // Explicit, ordered list of selectable rows for each page — in the SAME
 // order they are printf'd below. Cursor navigation (UP/DOWN) walks these
@@ -2299,11 +2299,6 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_PUYO_HACK,
   OPT_DINO_CRISIS_INVENTORY_HACK,
   OPT_DYNAREC,
-  OPT_DEBUG_FB2D,
-  // --- debug log block, always last on this page ---
-  OPT_DEBUG_MESSAGE,
-  OPT_DEBUG_LOOP,
-  OPT_DEBUG_GDROM,
   OPT_DEBUG_SKIP_TEX
 };
 
@@ -2317,18 +2312,27 @@ static const int OPT_PAGE6_ROWS[] = {
   OPT_FPU_PIN,
   OPT_JIT_ALIGN,
   OPT_IFB_FLUSH,
-  OPT_IFB_PROBE,
   OPT_JIT_NEWOPS,
-  OPT_JIT_HOTBLOCKS,
   OPT_JIT_TFWD,
   OPT_JIT_FMOV,
   OPT_JIT_CARRY,
   OPT_JIT_MAC,
   OPT_JIT_FSCHG,
   OPT_JIT_CR0,
-  OPT_JIT_CCALLS,
   OPT_BLOCKCOPY,
   OPT_JIT_FSQRT
+};
+
+// Page 7 - LOGS (everything that writes to /ndclog.txt, incl. the JIT census tools)
+static const int OPT_PAGE7_ROWS[] = {
+  OPT_LAUNCH,
+  OPT_DEBUG_FB2D,
+  OPT_DEBUG_MESSAGE,
+  OPT_DEBUG_LOOP,
+  OPT_DEBUG_GDROM,
+  OPT_IFB_PROBE,
+  OPT_JIT_HOTBLOCKS,
+  OPT_JIT_CCALLS
 };
 
 static const int *opt_page_rows(int page, int *count)
@@ -2341,6 +2345,7 @@ static const int *opt_page_rows(int page, int *count)
     case 4: *count = sizeof(OPT_PAGE4_ROWS) / sizeof(int); return OPT_PAGE4_ROWS;
     case 5: *count = sizeof(OPT_PAGE5_ROWS) / sizeof(int); return OPT_PAGE5_ROWS;
     case 6: *count = sizeof(OPT_PAGE6_ROWS) / sizeof(int); return OPT_PAGE6_ROWS;
+    case 7: *count = sizeof(OPT_PAGE7_ROWS) / sizeof(int); return OPT_PAGE7_ROWS;
     default: *count = 1; return OPT_PAGE0_ROWS; // OPT_LAUNCH only, defensive fallback
   }
 }
@@ -2370,6 +2375,7 @@ static const char *opt_page_title(int page)
     case 4: return "CORE";
     case 5: return "EXPERIMENTAL STUFF & DEBUG";
     case 6: return "JIT/DYNAREC";
+    case 7: return "LOGS";
     default: return "";
   }
 }
@@ -3155,43 +3161,6 @@ bool displayOptionsMenu()
     printf(" INTERPRETER is slow, for debugging");
     printf("\n");
 
-    // --- Row: 2D framebuffer path logger (gxRend.cpp DEBUG_FB2D) ---
-    // Answers "is 2D FRAMEBUFFER (page 1) worth turning on for this game?" —
-    // it logs the bit-24 render passes that preset would act on, WITHOUT
-    // needing the preset itself to be on. Nothing in the log = it can't help.
-    printf("%s DBG FB2D LOG   : ", (selectedRow == OPT_DEBUG_FB2D) ? ">" : " ");
-    switch (g_debug_fb2d) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (LOG PASSES)   >]"); break;
-    }
-    printf(" 2D FRAMEBUFFER candidate -> log");
-    printf("\n\n");
-
-    // --- Debug log block (all default OFF; output goes to /ndclog.txt) ---
-    printf("%s DEBUG MESSAGE  : ", (selectedRow == OPT_DEBUG_MESSAGE) ? ">" : " ");
-    switch (g_debug_message) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (VERBOSE)      >]"); break;
-    }
-    printf(" renderer trace ([PATH], [FB]...)");
-    printf("\n");
-
-    printf("%s DEBUG LOOP     : ", (selectedRow == OPT_DEBUG_LOOP) ? ">" : " ");
-    switch (g_debug_loop) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (VERY SLOW)    >]"); break;
-    }
-    printf(" per-loop CPU/GDROM/IO trace");
-    printf("\n");
-
-    printf("%s DEBUG GDROM    : ", (selectedRow == OPT_DEBUG_GDROM) ? ">" : " ");
-    switch (g_debug_gdrom) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (SPI CMDS)     >]"); break;
-    }
-    printf(" GD-ROM / CDDA command trace");
-    printf("\n");
-
     // --- Row: skip one texture's strips (bisection aid, address from the cfg) ---
     printf("%s SKIP TEXTURE   : ", (selectedRow == OPT_DEBUG_SKIP_TEX) ? ">" : " ");
     if (g_debug_skip_tex)
@@ -3201,8 +3170,6 @@ bool displayOptionsMenu()
     else
       printf("[< OFF (SET IN CFG)  >]");
     printf(" hide one texture (debug)");
-    printf("\n");
-    printf("                  (logs are written to /ndclog.txt on the card)");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3274,15 +3241,6 @@ bool displayOptionsMenu()
     printf(" spill only regs the opcode touches");
     printf("\n");
 
-    // --- Row: IFB_PROBE - count interpreter fallbacks per opcode ---
-    printf("%s JIT IFB PROBE  : ", (selectedRow == OPT_IFB_PROBE) ? ">" : " ");
-    switch (g_ifb_probe_preset) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (LOGS [IFB])   >]"); break;
-    }
-    printf(" count ifb per opcode to ndclog");
-    printf("\n");
-
     // --- Row: JIT_NEWOPS - dynarec 8 opcodes that always fell back ---
     printf("%s JIT NEW OPS    : ", (selectedRow == OPT_JIT_NEWOPS) ? ">" : " ");
     switch (g_jit_newops_preset) {
@@ -3290,15 +3248,6 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (9 OPS JITTED) >]"); break;
     }
     printf(" jit rotcl/rotcr/tas.b/sr/fpscr");
-    printf("\n");
-
-    // --- Row: JIT_HOTBLOCKS - per-block execution counts + codegen dump ---
-    printf("%s JIT HOTBLOCKS  : ", (selectedRow == OPT_JIT_HOTBLOCKS) ? ">" : " ");
-    switch (g_hotblocks_preset) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (LOGS [HOT])   >]"); break;
-    }
-    printf(" hot blocks + ppc bytes per op");
     printf("\n");
 
     // --- Row: JIT_TFWD - forward T to its branch instead of reloading it ---
@@ -3355,15 +3304,6 @@ bool displayOptionsMenu()
     printf(" cmp+bt: branch on CR0, skip mfcr");
     printf("\n");
 
-    // --- Row: JIT_CCALLS - census of remaining C call-outs ---
-    printf("%s JIT CCALL      : ", (selectedRow == OPT_JIT_CCALLS) ? ">" : " ");
-    switch (g_jit_ccalls_preset) {
-      case 0: printf("[< OFF               >]"); break;
-      case 1: printf("[< ON (LOGS [CC])    >]"); break;
-    }
-    printf(" C call-outs/second and /frame");
-    printf("\n");
-
     // --- Row: BLOCKCOPY - bulk block transfers instead of per-word ---
     printf("%s BLOCK COPY     : ", (selectedRow == OPT_BLOCKCOPY) ? ">" : " ");
     switch (g_blockcopy_preset) {
@@ -3384,6 +3324,75 @@ bool displayOptionsMenu()
 
     printOptionsFooter();
     } // end page 6
+
+    if (optionsPage == 7) {
+    // --- Row: 2D framebuffer path logger (gxRend.cpp DEBUG_FB2D) ---
+    // Answers "is 2D FRAMEBUFFER (page 1) worth turning on for this game?" —
+    // it logs the bit-24 render passes that preset would act on, WITHOUT
+    // needing the preset itself to be on. Nothing in the log = it can't help.
+    printf("%s DBG FB2D LOG   : ", (selectedRow == OPT_DEBUG_FB2D) ? ">" : " ");
+    switch (g_debug_fb2d) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOG PASSES)   >]"); break;
+    }
+    printf(" 2D FRAMEBUFFER candidate -> log");
+    printf("\n");
+
+    printf("%s DEBUG MESSAGE  : ", (selectedRow == OPT_DEBUG_MESSAGE) ? ">" : " ");
+    switch (g_debug_message) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (VERBOSE)      >]"); break;
+    }
+    printf(" renderer trace ([PATH], [FB]...)");
+    printf("\n");
+
+    printf("%s DEBUG LOOP     : ", (selectedRow == OPT_DEBUG_LOOP) ? ">" : " ");
+    switch (g_debug_loop) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (VERY SLOW)    >]"); break;
+    }
+    printf(" per-loop CPU/GDROM/IO trace");
+    printf("\n");
+
+    printf("%s DEBUG GDROM    : ", (selectedRow == OPT_DEBUG_GDROM) ? ">" : " ");
+    switch (g_debug_gdrom) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (SPI CMDS)     >]"); break;
+    }
+    printf(" GD-ROM / CDDA command trace");
+    printf("\n\n");
+
+    // --- Row: IFB_PROBE - count interpreter fallbacks per opcode ---
+    printf("%s JIT IFB PROBE  : ", (selectedRow == OPT_IFB_PROBE) ? ">" : " ");
+    switch (g_ifb_probe_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOGS [IFB])   >]"); break;
+    }
+    printf(" count ifb per opcode to ndclog");
+    printf("\n");
+
+    // --- Row: JIT_HOTBLOCKS - per-block execution counts + codegen dump ---
+    printf("%s JIT HOTBLOCKS  : ", (selectedRow == OPT_JIT_HOTBLOCKS) ? ">" : " ");
+    switch (g_hotblocks_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOGS [HOT])   >]"); break;
+    }
+    printf(" hot blocks + ppc bytes per op");
+    printf("\n");
+
+    // --- Row: JIT_CCALLS - census of remaining C call-outs ---
+    printf("%s JIT CCALL      : ", (selectedRow == OPT_JIT_CCALLS) ? ">" : " ");
+    switch (g_jit_ccalls_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOGS [CC])    >]"); break;
+    }
+    printf(" C call-outs/second and /frame");
+    printf("\n\n");
+    printf("                  (logs are written to /ndclog.txt on the card)");
+    printf("\n\n");
+
+    printOptionsFooter();
+    } // end page 7
 
 
 
