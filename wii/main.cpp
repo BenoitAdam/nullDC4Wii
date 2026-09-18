@@ -592,9 +592,23 @@ int g_tex_wrap_guard_preset = 0;
 // wrap mode. See SetTextureParams() in gxRend.cpp.
 int g_tex_clamp_fix_preset = 0;
 
+// STRIP_DEDUP: skip the texture bind a strip repeats from the strip before it.
+// Built for ChuChu Rocket's mouse mania -- hundreds of copies of one mouse
+// model, each submitting its own polygon header, all of them carrying the same
+// TSP/TCW -- but it is a general property of any scene that draws one object
+// many times in a row, so nothing about it is game-specific.
+//   0 = off (legacy: every textured strip re-runs the full bind)
+//   1 = census only, nothing skipped; dumps the redundancy to /ndclog.txt once
+//       a second so mode 2's ceiling is known before mode 2 is trusted
+//   2 = skip a bind whose TSP+TCW equal the last one
+// Default 0: mode 2 assumes the VRAM texels behind a repeated TCW did not
+// change between the two strips. See the STRIP_DEDUP block in gxRend.cpp.
+int g_strip_dedup_preset = 0;
+
 extern "C" {
   int get_sched_preset() { return g_sched_preset; }
   int get_tex_wrap_guard_preset() { return g_tex_wrap_guard_preset; }
+  int get_strip_dedup_preset() { return g_strip_dedup_preset; }
   int get_tex_clamp_fix_preset() { return g_tex_clamp_fix_preset; }
 }
 
@@ -2161,6 +2175,8 @@ void checkBiosFiles()
 #define OPT_ARM7_JIT    99    // now shown on Page 4 (AUDIO), under ARM7 SPEED, see OPT_PAGE3_ROWS
 #define OPT_ARM7_BATCH  100   // Page 4 (AUDIO), under ARM7 JIT
 #define OPT_TA_PROFILE  101   // Page 8 (LOGS), under JIT CCALL
+#define OPT_STRIP_DEDUP 102   // Page 8 (LOGS), under TA PROFILE -- its useful
+                              // mode is the census; see OPT_PAGE7_ROWS
 #define OPT_DYNAREC     55
 #define OPT_SUBPASS_ZCLEAR 56 // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
 #define OPT_POLY_OFFSET 57    // shown on Page 3 (DEPTH & WIDTH), see OPT_PAGE2_ROWS
@@ -2350,7 +2366,8 @@ static const int OPT_PAGE7_ROWS[] = {
   OPT_IFB_PROBE,
   OPT_JIT_HOTBLOCKS,
   OPT_JIT_CCALLS,
-  OPT_TA_PROFILE
+  OPT_TA_PROFILE,
+  OPT_STRIP_DEDUP
 };
 
 static const int *opt_page_rows(int page, int *count)
@@ -3095,6 +3112,7 @@ bool displayOptionsMenu()
     printf(" fix streaked/stretched textures");
     printf("\n");
 
+
     // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
     printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? ">" : " ");
     switch (g_dma_fix_preset) {
@@ -3414,7 +3432,18 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (STATS ta:)    >]"); break;
     }
     printf(" measures ta:%% - costs ~1%%");
-    printf("\n\n");
+    printf("\n");
+
+    // --- Row: STRIP DEDUP - per-strip render census (+ a dead skip mode) ---
+    printf("%s STRIP DEDUP    : ", (selectedRow == OPT_STRIP_DEDUP) ? ">" : " ");
+    switch (g_strip_dedup_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< CENSUS (LOG ONLY) >]"); break;
+      case 2: printf("[< SKIP REPEATED     >]"); break;
+    }
+    printf(" strips+textures per frame");
+    printf("\n");
+    printf("\n");
     printf("                  (logs are written to /ndclog.txt on the card)");
     printf("\n\n");
 
@@ -3553,6 +3582,7 @@ bool displayOptionsMenu()
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
         case OPT_TEX_CLAMP_FIX:  g_tex_clamp_fix_preset   = (g_tex_clamp_fix_preset   + 1) % 2; break;
+        case OPT_STRIP_DEDUP:    g_strip_dedup_preset     = (g_strip_dedup_preset     + 2) % 3; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_DEBUG_FB2D:     g_debug_fb2d             = (g_debug_fb2d             + 1) % 2; break;
@@ -3665,6 +3695,7 @@ bool displayOptionsMenu()
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
         case OPT_TEX_CLAMP_FIX:  g_tex_clamp_fix_preset   = (g_tex_clamp_fix_preset   + 1) % 2; break;
+        case OPT_STRIP_DEDUP:    g_strip_dedup_preset     = (g_strip_dedup_preset     + 1) % 3; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
         case OPT_DYNAREC:        g_dynarec_preset         = (g_dynarec_preset         + 1) % 2; break;
         case OPT_DEBUG_FB2D:     g_debug_fb2d             = (g_debug_fb2d             + 1) % 2; break;
@@ -4540,6 +4571,8 @@ int main(int argc, wchar *argv[])
     printf("JIT Mac Ops    : %s\n", g_jit_mac_preset ? "ON (FASTMEM READS)" : "OFF (LEGACY)");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Tex wrap guard : %s\n", g_tex_wrap_guard_preset ? "ON (SAFE WRAP)" : "OFF (LEGACY)");
+    printf("Strip dedup    : %s\n", g_strip_dedup_preset == 2 ? "SKIP REPEATED" :
+                                    g_strip_dedup_preset == 1 ? "CENSUS (LOG ONLY)" : "OFF (LEGACY)");
     printf("Tex clamp fix  : %s\n", g_tex_clamp_fix_preset ? "ON (PER POLYGON)" : "OFF (LEGACY)");
     printf("Dino Crisis Fix: %s\n", g_dino_crisis_inventory_hack_preset ? "ON (REDECODE)" : "OFF (LEGACY)");
     printf("Audio Buffers  : ");

@@ -97,3 +97,8 @@ extern u32 AicaSampleCount;
 // #include "glesRend.h" // DirectX 11 ? OpenGL ? PS3 ?
 // #include "softRend.h" // Sofware Render
 
+
+// STRIP_DEDUP census dump (plugs/drkPvr/gxRend.cpp). Called once a second from
+// SPG.cpp's stats line alongside the other census dumps; a no-op unless the
+// strip_dedup preset is on. See the STRIP_DEDUP macro block in gxRend.cpp.
+void strip_dedup_dump(double tdiff);

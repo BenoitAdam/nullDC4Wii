@@ -792,6 +792,32 @@ extern "C" int get_tex_wrap_guard_preset();
 extern "C" int get_tex_clamp_fix_preset();
 #define TEX_CLAMP_FIX() (get_tex_clamp_fix_preset())
 
+// ── STRIP_DEDUP: skip the work a strip repeats from the strip before it ─────
+// A game that draws many copies of ONE model -- ChuChu Rocket's mouse mania is
+// the case this was built for, hundreds of identical mice -- submits one
+// polygon parameter header per copy, and every one of those headers carries the
+// same TSP/TCW. The renderer never learns that they are the same object: it
+// only ever sees a stream of vertices the game already transformed. But it can
+// see that a header is bit-identical to the one it last acted on, and
+// everything SetTextureParams() does is a pure function of that header. So the
+// repeat has nothing left to compute -- the texture is already in TEXMAP0, the
+// palette already in TLUT0, stage 0 already holds the right op.
+//   0 = off (legacy: every textured strip re-runs the full bind).
+//   1 = census only. State is applied exactly as in legacy, NOTHING is skipped,
+//       but the redundancy is counted and dumped once a second so mode 2's
+//       ceiling is known before mode 2 is trusted. Read that dump first: a
+//       scene whose params never repeat back-to-back has nothing to win here,
+//       and the dump says so in one line.
+//   2 = skip. A textured strip whose TSP+TCW equal the last bind's returns from
+//       SetTextureParams() immediately.
+// Mode 2 is a real behaviour change, hence off by default: it assumes the VRAM
+// texels at that address did not change since the last bind. Inside one render
+// that is what every texture cache preset here already assumes, but a game that
+// rewrites a texture between two strips sharing a TCW would keep the stale one.
+// See texbind_cache_invalidate() below for everything that drops the key.
+extern "C" int get_strip_dedup_preset();
+#define STRIP_DEDUP() (get_strip_dedup_preset())
+
 // ── list_order: honour PVR list-type render order, not TA submission order ──
 // Real PVR2 sorts every polygon into a per-tile OPAQUE / PUNCH-THROUGH /
 // TRANSLUCENT list and renders them OP -> PT -> TR, no matter which order the
@@ -2297,6 +2323,217 @@ bool g_split_screen_cached     = false; // same idea, for SPLIT_SCREEN(): gates
 bool g_fixed_depth_cached      = false; // same idea, for FIXED_DEPTH_*(): skips
                                         // the per-vertex min/max W tracking
 bool  g_legacy_depth_cached    = false; // same idea, for LEGACY_DEPTH()
+int   g_strip_dedup_cached     = 0;     // same idea, for STRIP_DEDUP()
+
+// ── STRIP_DEDUP state (see the macro block at the top of this file) ──────────
+// The TSP+TCW pair currently programmed into TEXMAP0 / TLUT0 / TEV stage 0,
+// plus a validity flag. The flag, rather than a reserved sentinel key, is what
+// makes this safe: anything that reprograms those units out from under the
+// cache clears it, and a cleared cache costs one predictable branch.
+//
+// The key is maintained in EVERY mode, including 0. Two stores per textured
+// strip (~100k/s in the heaviest scene measured here) is not worth gating, and
+// not gating it means the census in mode 1 reports mode 2's hit rate exactly
+// instead of an estimate of it -- the whole point of having a census mode.
+static u32  s_texbind_tsp   = 0;
+static u32  s_texbind_tcw   = 0;
+static bool s_texbind_valid = false;
+
+// Called by everything that touches TEXMAP0, TLUT0 or TEV stage 0 outside
+// SetTextureParams(). Deliberately placed next to the existing
+// `last_textured = -1` / `last_shad_instr = -1` resets in DoRender(): those
+// mark the same event -- the stage-0 pipeline is no longer what the last strip
+// left behind -- so keeping the two together is what stops this list silently
+// going out of date when a new pass is added.
+static INLINE void texbind_cache_invalidate() { s_texbind_valid = false; }
+
+// ── STRIP_DEDUP census (mode 1) ─────────────────────────────────────────────
+// Accumulated over one second and dumped by strip_dedup_dump(), NOT reset per
+// frame: a per-frame view would be dominated by whichever frame the second
+// happened to end on, and in this game the load is player-driven (how many mice
+// are still loose), so single frames are not comparable to each other.
+//
+// `run` is the only redundancy mode 2 can exploit -- a param equal to the one
+// immediately before it. The table counts how often each DISTINCT param comes
+// back at all, which is the number that answers the actual question: is this
+// scene one model drawn N times, or genuinely N different things?
+struct StripDedupEntry { u32 tsp, tcw, strips, verts, verts_inh; };
+#define STRIP_DEDUP_TABLE 24
+static StripDedupEntry s_sd_tab[STRIP_DEDUP_TABLE];
+static u32 s_sd_tab_n   = 0;
+static u32 s_sd_frames  = 0;   // renders covered by the tallies below
+static u32 s_sd_hdr     = 0;   // strips carrying a parameter header
+static u32 s_sd_nohdr   = 0;   // strips continuing the previous param (already free)
+static u32 s_sd_tex     = 0;   // headers that are textured (mode 2's population)
+static u32 s_sd_run_tex = 0;   // of those, TSP+TCW equal to the last bind
+static u32 s_sd_verts   = 0;   // vertices on header-carrying strips
+static u32 s_sd_verts_d = 0;   // of those, on a run-duplicate strip
+static u32 s_sd_ovf     = 0;   // distinct params that did not fit the table
+static u32 s_sd_verts_all = 0;  // vertices on ALL strips, header-carrying or not
+// Table index of the last header seen, so the 87% of strips that carry NO header
+// can be attributed to the param they inherit. Without this the table only ever
+// showed a texture's header-carrying geometry -- 6% of the frame for the mice --
+// which says nothing about how much of the frame that model really is.
+// 0xFFFFFFFF = no header yet this render, or the last one overflowed the table.
+static u32 s_sd_last_entry = 0xFFFFFFFFu;
+
+
+// ── StartRender() dispatch census ────────────────────────────────────────────
+// StripCount is accumulated once per StartRender(), but the strip census above
+// only counts strips DoRender() actually walks -- and in ChuChu's mouse mania
+// the two disagree by ~3.9x, exactly VPS/RPS, with frameskip OFF. So render
+// requests die somewhere between the two, and the TA has already decoded every
+// vertex of the ones that die. One counter per exit path says which.
+//
+// NOT gated on any preset: this is one increment per StartRender (~35/s), which
+// is far below the noise floor, and leaving it ungated means the numbers are
+// always true rather than true-only-when-someone-remembered-to-turn-it-on.
+enum {
+  SR_RTT_RENDER = 0, // bit24 + render_to_texture: rendered into a texture
+  SR_RTT_CARRY,      // bit24 + rtt_carry_overlay: geometry held for next frame
+  SR_2D_AFTER_3D,    // bit24 + framebuffer_2d: present the 3D frame just drawn
+  SR_2D_SKIPPED,     // bit24 + framebuffer_2d: ShouldSkipFrame ate the present
+  SR_2D_BLIT,        // bit24 + framebuffer_2d: VRAM framebuffer blit
+  SR_BIT24_DROPPED,  // bit24, framebuffer_2d OFF: nothing claimed it -> DROPPED
+  SR_SPLIT_PARTIAL,  // split_compose: band accumulated, not presented
+  SR_SPLIT_DRAW,     // split_compose: drawn into its band
+  SR_SKIPPED,        // ShouldSkipFrame() on the ordinary 3D path
+  SR_RENDER,         // the ordinary 3D path: DoRender + present
+  SR_PATHS
+};
+static u32 s_sr_path[SR_PATHS];
+static u32 s_sr_calls = 0;  // StartRender() entries
+static u32 s_sr_vtx0  = 0;  // of those, with VtxCnt == 0 (nothing submitted)
+static u32 s_sr_strips = 0; // strips submitted, to compare against the census
+static const char *const s_sr_name[SR_PATHS] = {
+  "rtt_render", "rtt_carry", "2d_after_3d", "2d_skipped", "2d_blit",
+  "bit24_DROPPED", "split_partial", "split_draw", "skipped", "RENDER"
+};
+
+// Every path that leaves StartRender() without reaching DoRender() has thrown
+// away geometry the TA already paid to decode. Printed by strip_dedup_dump().
+static void render_path_dump(double f)
+{
+  printf("[RENDER_PATH] StartRender/f:%.2f  vtx0/f:%.2f  strips/f:%.0f  |",
+         s_sr_calls / f, s_sr_vtx0 / f, s_sr_strips / f);
+  for (u32 i = 0; i < SR_PATHS; i++)
+    if (s_sr_path[i] || i == SR_RENDER)
+      printf("  %s:%.2f", s_sr_name[i], s_sr_path[i] / f);
+  printf("\n");
+  for (u32 i = 0; i < SR_PATHS; i++) s_sr_path[i] = 0;
+  s_sr_calls = 0; s_sr_vtx0 = 0; s_sr_strips = 0;
+}
+// Runs before the per-strip state block, which is why it can still see the
+// PREVIOUS bind in s_texbind_* -- that is what makes its `run` figure identical
+// to the hit rate mode 2 would get, rather than a separate re-derivation of it.
+static void strip_dedup_census(const PolyParam *mod, s32 count)
+{
+  const u32 tsp = mod->tsp.full, tcw = mod->tcw.full;
+  const u32 v   = count > 0 ? (u32)count : 0;
+  s_sd_hdr++;
+  s_sd_verts     += v;
+  s_sd_verts_all += v;
+  if (mod->pcw.Texture)
+  {
+    s_sd_tex++;
+    if (s_texbind_valid && tsp == s_texbind_tsp && tcw == s_texbind_tcw)
+    {
+      s_sd_run_tex++;
+      s_sd_verts_d += v;
+    }
+  }
+  u32 i = 0;
+  for (; i < s_sd_tab_n; i++)
+    if (s_sd_tab[i].tsp == tsp && s_sd_tab[i].tcw == tcw) break;
+  if (i == s_sd_tab_n)
+  {
+    if (s_sd_tab_n == STRIP_DEDUP_TABLE)
+    {
+      // No entry to hang the following header-less strips on, so drop them
+      // rather than charging them to whatever was last in the table.
+      s_sd_ovf++;
+      s_sd_last_entry = 0xFFFFFFFFu;
+      return;
+    }
+    s_sd_tab_n++;
+    s_sd_tab[i].tsp = tsp; s_sd_tab[i].tcw = tcw;
+    s_sd_tab[i].strips = 0; s_sd_tab[i].verts = 0; s_sd_tab[i].verts_inh = 0;
+  }
+  s_sd_tab[i].strips++;
+  s_sd_tab[i].verts += v;
+  s_sd_last_entry = i;
+}
+
+// A strip that carries no parameter header inherits the previous one, so its
+// geometry belongs to that texture just as much as the header strip's does.
+// 87% of ChuChu's strips are these, which is what turns the table from "share
+// of the headers" into "share of the frame" -- the difference between the mice
+// looking like 6% of mania and whatever they actually are.
+static INLINE void strip_dedup_census_inherit(s32 count)
+{
+  const u32 v = count > 0 ? (u32)count : 0;
+  s_sd_verts_all += v;
+  if (s_sd_last_entry != 0xFFFFFFFFu)
+    s_sd_tab[s_sd_last_entry].verts_inh += v;
+}
+
+// Called once a second from SPG.cpp's stats line, next to the other census
+// dumps. No-op unless STRIP_DEDUP() is on, like all of them.
+void strip_dedup_dump(double tdiff)
+{
+  if (!g_strip_dedup_cached || tdiff <= 0.0) { return; }
+  // Dispatch census first, on its own guard: "DoRender never ran this second"
+  // is precisely the case worth seeing, and the strip census below cannot
+  // report it because it has no frames to divide by. Its figures are per
+  // DoRender call, so StartRender/f reads 1.00 when nothing is being dropped
+  // and 3.90 when three of every four render requests die before DoRender.
+  if (s_sr_calls) render_path_dump(s_sd_frames ? (double)s_sd_frames : 1.0);
+  if (!s_sd_frames) { return; }
+  const double f = (double)s_sd_frames;
+  const double run_pct = s_sd_tex ? 100.0 * s_sd_run_tex / s_sd_tex : 0.0;
+  if (g_strip_dedup_cached == 2)
+  {
+    // Mode 2: only the skip itself is counted, so report only that.
+    printf("[STRIP_DEDUP] mode:2 frames:%u  binds/f:%.0f  SKIPPED:%.0f/f (%.1f%%)\n",
+           s_sd_frames, s_sd_tex / f, s_sd_run_tex / f, run_pct);
+  }
+  else
+  {
+    printf("[STRIP_DEDUP] mode:1 frames:%u  hdr/f:%.0f (nohdr/f:%.0f)  tex/f:%.0f"
+           "  vt/f:%.0f  run-dup:%.1f%%  geom-dup:%.1f%%  distinct:%u%s\n",
+           s_sd_frames, s_sd_hdr / f, s_sd_nohdr / f, s_sd_tex / f,
+           s_sd_verts_all / f, run_pct,
+           s_sd_verts ? 100.0 * s_sd_verts_d / s_sd_verts : 0.0,
+           s_sd_tab_n, s_sd_ovf ? " (TABLE FULL)" : "");
+    // Top params by TOTAL geometry -- the header strips plus the header-less
+    // ones that inherit them, which is 87% of the frame and the only way the
+    // share means anything. Selection-sorted in place: at most 24 entries, once
+    // a second, and only while the census is on. If one model really does
+    // dominate the frame it is the first line, and strips/f is how many copies
+    // of it the game drew.
+    for (u32 shown = 0; shown < 6 && shown < s_sd_tab_n; shown++)
+    {
+      u32 best = shown;
+      for (u32 j = shown + 1; j < s_sd_tab_n; j++)
+        if (s_sd_tab[j].verts + s_sd_tab[j].verts_inh >
+            s_sd_tab[best].verts + s_sd_tab[best].verts_inh) best = j;
+      if (best != shown)
+      { StripDedupEntry t = s_sd_tab[shown]; s_sd_tab[shown] = s_sd_tab[best]; s_sd_tab[best] = t; }
+      const StripDedupEntry &e = s_sd_tab[shown];
+      const u32 tot = e.verts + e.verts_inh;
+      TCW c; c.full = e.tcw;
+      printf("[STRIP_DEDUP]   tex=%06X fmt=%u tcw=%08X tsp=%08X  hdr/f:%.0f"
+             "  vt/f:%.0f (own:%.0f inh:%.0f)  %.1f%% of frame\n",
+             (u32)((c.NO_PAL.TexAddr << 3) & VRAM_MASK), (u32)c.NO_PAL.PixelFmt,
+             e.tcw, e.tsp, e.strips / f, tot / f, e.verts / f, e.verts_inh / f,
+             s_sd_verts_all ? 100.0 * tot / s_sd_verts_all : 0.0);
+    }
+  }
+  s_sd_tab_n = 0; s_sd_frames = 0; s_sd_hdr = 0; s_sd_nohdr = 0; s_sd_tex = 0;
+  s_sd_run_tex = 0; s_sd_verts = 0; s_sd_verts_d = 0; s_sd_ovf = 0;
+  s_sd_verts_all = 0; s_sd_last_entry = 0xFFFFFFFFu;
+}
+
 bool  g_tex_clamp_fix_cached   = false; // same idea, for TEX_CLAMP_FIX(): read per texture bind
 float g_vert_z_clamp           = 0.0001f; // vert_base 1/W floor: 0.0001 normally,
                                         // 0.001 under LEGACY_DEPTH (1bb8c27).
@@ -2672,6 +2909,11 @@ void reset_vtx_state()
   g_split_screen_cached     = SPLIT_SCREEN();
   g_legacy_depth_cached     = LEGACY_DEPTH();
   g_tex_clamp_fix_cached    = TEX_CLAMP_FIX();
+  g_strip_dedup_cached      = STRIP_DEDUP();
+  // tex_frame_reset() above just dropped every slot this key described, and the
+  // frame's opening GX state is not what the last frame's final strip left
+  // behind either. Start each render with the bind cache cold.
+  s_texbind_valid = false;
   // 1bb8c27 tracked nothing per vertex, so legacy takes the "skip tracking" path
   // that FIXED_DEPTH_*() uses; DoRender() supplies the planes for both.
   g_fixed_depth_cached      = !FIXED_DEPTH_OFF() || g_legacy_depth_cached;
@@ -4265,6 +4507,33 @@ static void yuv_tev_bind_uv(const GXTexObj *luma)
 
 static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 {
+  // STRIP_DEDUP() mode 2: this strip asks for exactly what is already loaded.
+  // Everything below derives from tsp/tcw alone, so a match means there is
+  // nothing left to compute -- TEXMAP0, TLUT0, stage 0's op and s_tex_is_yuv_tev
+  // all still hold the values this same pair produced on the previous bind. Two
+  // loads and two compares in place of a ~1600-line function.
+  //
+  // Mode 2 keeps its own tally rather than borrowing mode 1's, so the run-dup%
+  // on the census line reports what the skip ACTUALLY achieved instead of what
+  // mode 1 predicted it would. The rest of the census needs the strip's vertex
+  // count, which this function never sees, so that stays in mode 1 only.
+  if (g_strip_dedup_cached == 2)
+  {
+    s_sd_tex++;
+    if (s_texbind_valid && mod->tsp.full == s_texbind_tsp
+                        && mod->tcw.full == s_texbind_tcw)
+    {
+      s_sd_run_tex++;
+      return;
+    }
+  }
+  // Set before the work, not after: both exits below (the decoded-this-frame
+  // shortcut and the full decode) finish by binding this pair, and there is no
+  // path out of here that does not.
+  s_texbind_tsp   = mod->tsp.full;
+  s_texbind_tcw   = mod->tcw.full;
+  s_texbind_valid = true;
+
   // decal_alpha_fix off: keep the original unconditional GX_MODULATE here so this
   // path costs exactly what it did before the fix existed. On: the caller sets
   // TEVSTAGE0's op itself based on TSP.ShadInstr right after this returns.
@@ -7558,6 +7827,12 @@ static void rtt_copy_efb_to_vram()
 
 void DoRender()
 {
+  // STRIP_DEDUP: count RENDERS, not TA rewinds. reset_vtx_state() (which drops
+  // the texture arena, and with it the bind cache) is the other frame boundary,
+  // but it does not run 1:1 with DoRender -- a dropped frame skips the render
+  // and RTT_KEEP_LIST renders one list twice -- so the "/f" figures in the
+  // census have to be divided by the number of times this loop actually ran.
+  if (g_strip_dedup_cached) { s_sd_frames++; s_sd_last_entry = 0xFFFFFFFFu; }
   // ASYNC_RENDER(): wait for the previous queued frame and apply its deferred
   // VIDEO flip before anything else — texture decode below re-writes bump
   // slots the GPU may still be sampling. No-op when nothing is pending.
@@ -8914,6 +9189,11 @@ void DoRender()
       // these strips in the translucent blend state.
     }
 
+    // STRIP_DEDUP: every per-segment preamble above can have reprogrammed stage
+    // 0 and the TEV stage count (the AUTOSORT select/draw setups, the as_tail
+    // Z quad, the FMV unwind), which is exactly why each of them already resets
+    // last_textured/last_shad_instr. One invalidate here covers all of them.
+    texbind_cache_invalidate();
     for (; drawLST != seg_end; drawLST++)
     {
       if (ts_active && ts_idx == ts_count)
@@ -9282,7 +9562,18 @@ void DoRender()
           last_alpha_fmt  = -1;
           last_tev_stages = 1;
           last_fog_mode   = -1;
+          texbind_cache_invalidate(); // ClearDepthOnlyPass reprogrammed stage 0
         }
+      }
+
+      // STRIP_DEDUP census (mode 1). Here rather than inside SetTextureParams()
+      // for two reasons: only this loop knows the strip's vertex count, and
+      // running before the state block means s_texbind_* still holds the
+      // PREVIOUS bind, so the hit rate it reports is mode 2's, not a model of it.
+      if (g_strip_dedup_cached == 1)
+      {
+        if (stripMod) strip_dedup_census(stripMod, count);
+        else          { s_sd_nohdr++; strip_dedup_census_inherit(count); }
       }
 
       if (stripMod)
@@ -9316,6 +9607,7 @@ void DoRender()
             GX_SetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
           }
           last_shad_instr = -1;
+          texbind_cache_invalidate(); // stage 0's order/op just changed
           last_textured = is_textured;
         }
         bool as_kill = false;
@@ -9378,6 +9670,7 @@ void DoRender()
             last_shad_instr = -1; // force TEVSTAGE0 op to be reapplied on the next textured poly
           }
           last_textured = is_textured;
+          texbind_cache_invalidate(); // stage 0's order/op just changed
         }
 
         // FOG(): pick up this polygon's TSP.FogCtrl and point the fog TEV
@@ -9512,6 +9805,10 @@ void DoRender()
         if (fmv_tev)
         {
           const bool want_yuv = is_textured && s_tex_is_yuv_tev;
+          // Both arms below reprogram TEV stage 0 (the YUV program claims it,
+          // the unwind hands it back), so neither may be followed by a skipped
+          // bind that assumes stage 0 is still a plain texture op.
+          if (want_yuv || last_yuv_tev) texbind_cache_invalidate();
           if (want_yuv)
           {
             if (!last_yuv_tev)
@@ -11134,6 +11431,11 @@ void StartRender()
   // timing run. vertices-per-strip is what decides whether the render loop's
   // per-STRIP work or its per-VERTEX work is worth attacking.
   StripCount += (u32)(curLST - lists);
+  // Dispatch census (see render_path_dump): what StartRender was ASKED to do,
+  // before any of the branches below decide whether it happens.
+  s_sr_calls++;
+  s_sr_strips += (u32)(curLST - lists);
+  if (VtxCnt == 0) s_sr_vtx0++;
 
 #if SCOPE_DEBUG_LOG
   ss_dump_pass();   // must run BEFORE any path below returns
@@ -11220,6 +11522,7 @@ void StartRender()
       s_rtt_pass = true;
       { const u64 _rt0 = PERF_TICKS(); DoRender(); RenderTicks += PERF_TICKS() - _rt0; }
       s_rtt_pass = false;
+      s_sr_path[SR_RTT_RENDER]++;
       return; // not a presented frame: no FrameCount++, display untouched
     }
 
@@ -11264,6 +11567,7 @@ void StartRender()
       global_regd = false;
       vtx_min_Z = 131072;
       vtx_max_Z = 0;
+      s_sr_path[SR_RTT_CARRY]++;
       return; // no present, no FrameCount++ — this pass was never a frame
     }
 
@@ -11289,19 +11593,25 @@ void StartRender()
         wii_audio_frame();
         // VIDEO_WaitVSync() // Not necessary here (don't block the SH4 thread)
         FrameCount++;
+        s_sr_path[SR_2D_AFTER_3D]++;
         return;
       }
 
       if (ShouldSkipFrame())
+      {
+        s_sr_path[SR_2D_SKIPPED]++;
         return;   // skip the 2D present, same as the VBlank() path
+      }
 
       if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[PATH] 2D-blit: FB_W_SOF1=%08X FB_R_SOF1=%08X fb_depth=%d VtxCnt=%d\n",
         FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
 
       PresentFramebuffer();
       FrameCount++;
+      s_sr_path[SR_2D_BLIT]++;
       return;
     } else {
+      s_sr_path[SR_BIT24_DROPPED]++;
       return; // just return
     }
   }
@@ -11384,6 +11694,7 @@ void StartRender()
       if (s_cmp_skip)
       {
         reset_vtx_state();  // whole composed frame is being dropped
+        s_sr_path[SR_SPLIT_PARTIAL]++;
         return;
       }
 
@@ -11400,6 +11711,7 @@ void StartRender()
       // divider between the viewports still counts as complete.
       if (s_cmp_cov_area * 8 >= (u32)(s_cmp_canvas_w * s_cmp_canvas_h) * 7)
         split_compose_present();
+      s_sr_path[SR_SPLIT_DRAW]++;
       return;
     }
 
@@ -11416,6 +11728,7 @@ void StartRender()
   if (ShouldSkipFrame())
   {
     reset_vtx_state();   // discard this frame's geometry; free the buffers
+    s_sr_path[SR_SKIPPED]++;
     return;              // no GX calls — saves ~10-15 ms on a heavy frame
   }
 
@@ -11425,6 +11738,7 @@ void StartRender()
   { const u64 _rt0 = PERF_TICKS(); DoRender(); RenderTicks += PERF_TICKS() - _rt0; }
 
   FrameCount++;
+  s_sr_path[SR_RENDER]++;
 }
 
 void EndRender() {}

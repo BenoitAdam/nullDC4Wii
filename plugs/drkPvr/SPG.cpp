@@ -433,6 +433,7 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 ifb_probe_dump(tdiff);   // no-op unless the IFB PROBE preset is on
                 hotblocks_dump(tdiff);   // no-op unless the JIT HOTBLOCKS preset is on
                 ccall_census_dump(tdiff, spd_vbs); // no-op unless JIT CCALLS is on
+                strip_dedup_dump(tdiff);           // same, for the STRIP DEDUP census
                 arm_jit_census_dump(tdiff);        // same, and only while the ARM7 JIT runs
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
