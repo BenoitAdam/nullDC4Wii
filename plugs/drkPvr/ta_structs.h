@@ -2,11 +2,42 @@
 // ta_structs.h - Dreamcast PowerVR2 Tile Accelerator parameter structs
 //
 // All structs here mirror the hardware's binary DMA layout exactly.
-// #pragma pack(1) + endian-aware bitfields are required for correctness.
+// Explicit packing + endian-aware bitfields are required for correctness.
 // DO NOT reorder fields or remove padding members.
 //
+// PACKING IS 4, NOT 1 -- and that is a measured performance fix, not a
+// cosmetic one. Every member below is a 4-byte f32/u32 (or a 2-byte UV
+// pair) sitting at a naturally aligned offset, so pack(1) removed no
+// padding whatsoever; all it did was tell GCC that each f32 has ALIGNMENT
+// 1. PowerPC has no GPR<->FPR move, and gcc will not emit an lfs from an
+// address it believes is unaligned, so every float read of a TA parameter
+// came out as:
+//     lwz  r8,12(r3)   ; integer load of the float word
+//     stw  r8,8(r1)    ; bounce through the stack
+//     lfs  f0,8(r1)    ; ... and back out as a float   <- load-hit-store
+// On the 750/Broadway a load that hits a still-pending store does not
+// forward; it is rejected and retried, which is the single most expensive
+// stall shape on this core. ta_poly_data<3,SZ32> (textured/packed colour,
+// the commonest vertex) paid FOUR of them per vertex, and gxRend.cpp as a
+// whole had 764 such bounces.
+//
+// pack(4) caps member alignment at 4 -- enough for gcc to emit a direct
+// lfs -- while still forbidding any alignment the hardware layout does not
+// have. Verified with powerpc-eabi-g++ on the real preprocessed TU before
+// changing this, on three axes:
+//   * sizeof + offsetof of all 42 structs here: IDENTICAL to pack(1)
+//   * all 42 bitfield masks (PCW.ParaType still 0xE0000000, ...): IDENTICAL
+//   * codegen: 32 stack bounces -> 0 in ta_poly_data<3,SZ32>,
+//              764 -> 221 across gxRend.cpp
+// If you ever need to re-verify, the check is: compile wii/build/gxRend.ii
+// twice and grep the assembly for `lfs rN,D(1)` (a float load off r1).
+//
+// DO NOT change this back to 1. Anything wider than 4 bytes added below
+// (a u64 or a double) WOULD change the layout, which is why this is 4 and
+// not simply removed.
+//
 #pragma once
-#pragma pack(push, 1)
+#pragma pack(push, 4)
 
 // ─── PCW (Parameter Control Word) ────────────────────────────────────────────
 // 4 bytes. First word of every TA parameter. Determines what follows.
@@ -485,3 +516,29 @@ struct TA_VertexParam
 };
 
 #pragma pack(pop)
+
+// ─── Layout guard ────────────────────────────────────────────────────────────
+// These sizes ARE the hardware's 32-byte TA block format, and the pack(4) note
+// at the top of this file rests on them being unchanged. Anything that adds
+// padding -- a reordered field, a u64, a double, a different pack value -- will
+// fail the build here instead of silently mis-decoding geometry at runtime.
+static_assert(sizeof(PCW)            ==  4, "PCW must stay one 32-bit word");
+static_assert(sizeof(ISP_TSP)        ==  4, "ISP_TSP must stay one 32-bit word");
+static_assert(sizeof(TSP)            ==  4, "TSP must stay one 32-bit word");
+static_assert(sizeof(TCW)            ==  4, "TCW must stay one 32-bit word");
+static_assert(sizeof(Ta_Dma)         == 32, "one TA block is 32 bytes");
+static_assert(sizeof(TA_VertexParam) == 64, "vertex param spans two TA blocks");
+static_assert(sizeof(TA_Vertex0)     == 28, "TA vertex body is 32B minus the PCW");
+static_assert(sizeof(TA_Vertex3)     == 28, "TA vertex body is 32B minus the PCW");
+static_assert(sizeof(TA_Vertex4)     == 28, "TA vertex body is 32B minus the PCW");
+static_assert(sizeof(TA_Vertex7)     == 28, "TA vertex body is 32B minus the PCW");
+static_assert(sizeof(TA_Vertex5A)    == 28, "TA vertex body is 32B minus the PCW");
+static_assert(sizeof(TA_Vertex5B)    == 32, "second half of a 64B vertex");
+static_assert(sizeof(TA_Sprite1A)    == 28, "sprite body is 32B minus the PCW");
+static_assert(sizeof(TA_ModVolA)     == 32, "modvol A is a full TA block");
+static_assert(sizeof(TA_ModVolB)     == 32, "modvol B is a full TA block");
+static_assert(__builtin_offsetof(TA_Vertex3, xyz)     ==  0, "TA_Vertex3 layout");
+static_assert(__builtin_offsetof(TA_Vertex3, u)       == 12, "TA_Vertex3 layout");
+static_assert(__builtin_offsetof(TA_Vertex3, v)       == 16, "TA_Vertex3 layout");
+static_assert(__builtin_offsetof(TA_Vertex3, BaseCol) == 20, "TA_Vertex3 layout");
+static_assert(__builtin_offsetof(TA_Vertex3, OffsCol) == 24, "TA_Vertex3 layout");
