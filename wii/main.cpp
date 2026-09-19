@@ -2170,7 +2170,7 @@ void checkBiosFiles()
 #define OPT_HUD_PASS    53
 #define OPT_SCHED       54
 #define OPT_TEX_WRAP_GUARD 96 // Page 6 (EXPERIMENTAL), see OPT_PAGE5_ROWS
-#define OPT_TEX_CLAMP_FIX 97  // Page 6 (EXPERIMENTAL), under TEX WRAP GUARD
+#define OPT_TEX_CLAMP_FIX 97  // Page 1 (GENERAL), under VQ AS CMPR, see OPT_PAGE0_ROWS
 #define OPT_AICA_FAST   98    // Page 4 (AUDIO), under MUTE 16BIT PCM
 #define OPT_ARM7_JIT    99    // now shown on Page 4 (AUDIO), under ARM7 SPEED, see OPT_PAGE3_ROWS
 #define OPT_ARM7_BATCH  100   // Page 4 (AUDIO), under ARM7 JIT
@@ -2244,6 +2244,7 @@ static const int OPT_PAGE0_ROWS[] = {
   OPT_ANISO,
   OPT_TEX_CACHE,
   OPT_VQ_CMPR,
+  OPT_TEX_CLAMP_FIX,
   OPT_FRAMESKIP,
   OPT_FRAMEBUFFER_2D,
   OPT_ADV_ALPHA,
@@ -2323,7 +2324,6 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_LAUNCH,
   OPT_MIPMAP,
   OPT_TEX_WRAP_GUARD,
-  OPT_TEX_CLAMP_FIX,
   OPT_DMA_FIX,
   OPT_SCHED,
   OPT_EXIT_FIX,
@@ -2563,6 +2563,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON                >]"); break;
     }
     printf(" fixes VQ glitches on VERY FAST/+");
+    printf("\n");
+
+    // --- Row: TEX CLAMP FIX - per-polygon wrap mode on cached textures ---
+    printf("%s TEX CLAMP FIX  : ", (selectedRow == OPT_TEX_CLAMP_FIX) ? ">" : " ");
+    switch (g_tex_clamp_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (PER POLYGON)  >]"); break;
+    }
+    printf(" fix streaked/stretched textures");
     printf("\n");
 
     // --- Row: Frameskipping ---
@@ -3102,16 +3111,6 @@ bool displayOptionsMenu()
     }
     printf(" stop tex corruption in full cache");
     printf("\n");
-
-    // --- Row: TEX CLAMP FIX - per-polygon wrap mode on cached textures ---
-    printf("%s TEX CLAMP FIX  : ", (selectedRow == OPT_TEX_CLAMP_FIX) ? ">" : " ");
-    switch (g_tex_clamp_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (PER POLYGON)  >]"); break;
-    }
-    printf(" fix streaked/stretched textures");
-    printf("\n");
-
 
     // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
     printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? ">" : " ");
