@@ -85,11 +85,14 @@ static void CCN_CCR_write(u32 value)
     temp.reg_data = value;
 
     // Instruction cache invalidate (ICI is self-clearing)
-    // Magic address suppresses a noisy but harmless BIOS invalidation.
     if (temp.ICI)
     {
-        if (curr_pc != 0xAC13DBF8)
-            printf("CCN: I-cache invalidation requested (pc=%08X)\n", curr_pc);
+        // Games invalidate the I-cache several times a second, so this line
+        // floods the log for no benefit once the JIT is known to be resetting.
+        // Uncomment (with the magic-address guard, which suppresses a noisy but
+        // harmless BIOS invalidation) when chasing a stale-block bug.
+        //if (curr_pc != 0xAC13DBF8)
+        //    printf("CCN: I-cache invalidation requested (pc=%08X)\n", curr_pc);
         sh4_cpu.ResetCache();
         temp.ICI = 0;
     }

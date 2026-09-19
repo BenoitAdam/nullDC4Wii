@@ -2459,8 +2459,12 @@ static u32 s_fm_float_sites = 0;
 static void fm_note_float_site()
 {
 	// Compile time, normal context: printf is OK here (never in the DSI path).
-	if (s_fm_float_sites++ == 0)
-		printf("[fmov] JIT_FMOV active: emitting lfs/stfs fastmem shapes\n");
+	// Muted: the counter dies with the pool on every cache clear, so the "first"
+	// site announces itself again a few times a second. Uncomment to confirm on
+	// hardware that a JIT_FMOV build really emitted float shapes.
+	s_fm_float_sites++;
+	//if (s_fm_float_sites == 1)
+	//	printf("[fmov] JIT_FMOV active: emitting lfs/stfs fastmem shapes\n");
 }
 
 // Float sites that actually FAULTED and got a trampoline built. Emitted-vs-
@@ -2475,11 +2479,14 @@ static u32 s_fm_float_patches = 0;
 static void rec_fastmem_reset_pool()
 {
 	// Runs in normal context (bm_Reset / recSh4_ClearCache) — printf is OK.
-	if (s_fm_patch_count)
-		printf("[fastmem] cache clear: %u sites were patched (%u/%u B pool),"
-		       " %u float shapes emitted / %u float sites patched\n",
-		       s_fm_patch_count, s_fm_pool_used, FM_POOL_SIZE,
-		       s_fm_float_sites, s_fm_float_patches);
+	// Muted: one line per cache clear is a log flood. Uncomment when validating
+	// fastmem — "float shapes emitted / float sites patched" is the line that
+	// says whether the DSI float path has been exercised at all.
+	//if (s_fm_patch_count)
+	//	printf("[fastmem] cache clear: %u sites were patched (%u/%u B pool),"
+	//	       " %u float shapes emitted / %u float sites patched\n",
+	//	       s_fm_patch_count, s_fm_pool_used, FM_POOL_SIZE,
+	//	       s_fm_float_sites, s_fm_float_patches);
 	// Tell the [CC] census where a call-out's return address has to land to
 	// count as "came from a back-patched trampoline".
 	g_ccall_tramp_lo = s_fm_pool;

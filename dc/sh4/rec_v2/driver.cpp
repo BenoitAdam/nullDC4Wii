@@ -231,13 +231,16 @@ void emit_WriteCodeCache()
 // ============================================================================
 void recSh4_ClearCache()
 {
+	// One line per cache clear, and games clear several times a second: pure
+	// log flood in a normal run. Uncomment when investigating cache thrashing
+	// (the "used N / CODE_SIZE" figure is what says whether clears are premature).
 #ifdef ENABLE_PERF_MONITORING
 	perf_cache_clears++;
-	printf("recSh4: cache clear #%u at pc=%08X (used %u / %u bytes)\n",
-	       perf_cache_clears, curr_pc, LastAddr, CODE_SIZE);
+	//printf("recSh4: cache clear #%u at pc=%08X (used %u / %u bytes)\n",
+	//       perf_cache_clears, curr_pc, LastAddr, CODE_SIZE);
 #else
-	printf("recSh4: cache clear at pc=%08X (used %u / %u bytes)\n",
-	       curr_pc, LastAddr, CODE_SIZE);
+	//printf("recSh4: cache clear at pc=%08X (used %u / %u bytes)\n",
+	//       curr_pc, LastAddr, CODE_SIZE);
 #endif
 
 	LastAddr = LastAddr_min;
