@@ -1058,10 +1058,37 @@ extern "C" {
   int get_bg_poly_preset() { return g_bg_poly_preset; }
 }
 
-int g_audio_buffers_preset = -1; // -1=off (leave settings.emulator.AudioBuffers at its cfg/UI value), 0..3=force the audio queue depth (see nullDC.cpp LoadSettings(): 0=never block/drop on overrun, 1..3=block until below N queued buffers)
+int g_audio_buffers_preset = -1; // -1=off (leave settings.emulator.AudioBuffers at its cfg/UI value), 0..8=force the audio ring depth (see nullDC.cpp LoadSettings(): 0=free-run/drop on overrun, 1..8=block once N blocks are queued)
 
 extern "C" {
   int get_audio_buffers_preset() { return g_audio_buffers_preset; }
+}
+
+// Audio block size handed to ASND per DMA tick (wii/wii_audio.cpp).
+// ASND can accept at most ONE buffer per 21.333 ms tick, so the block size is
+// also the ceiling on how much audio can be delivered per second: a block of N
+// samples delivers N/0.021333 Hz into a 44100 Hz voice, i.e. N/940.8 of real
+// speed. Anything at or below 940 samples starves the voice permanently - that
+// is why the 735-sample experiment crackled at every pacing setting.
+// 0=1024 (23.2 ms/block, 108.8% ceiling, lowest latency)
+// 1=1536 (34.8 ms/block, 163.2% ceiling)
+// 2=2048 (46.4 ms/block, 217.7% ceiling, most slack, highest latency)
+int g_audio_block_preset = 0;
+
+// Dynamic rate control (wii/wii_audio.cpp): trims the ASND playback pitch to
+// hold the ring near half full, so a game that runs slightly off real speed
+// plays without underrunning instead of crackling. 0=off, 1=+-1% (inaudible),
+// 2=+-3%, 3=+-15% (follows a game well off 100%, audibly detuned).
+int g_audio_drc_preset = 0;
+
+// One [WiiAudio] line per second to /ndclog.txt: blocks, underruns, drops,
+// pacing waits, ring level, live pitch. 0=off, 1=on.
+int g_audio_stats_preset = 0;
+
+extern "C" {
+  int get_audio_block_preset() { return g_audio_block_preset; }
+  int get_audio_drc_preset()   { return g_audio_drc_preset; }
+  int get_audio_stats_preset() { return g_audio_stats_preset; }
 }
 
 int g_player_count = 4;
@@ -2234,6 +2261,9 @@ void checkBiosFiles()
 #define OPT_JIT_FSQRT   95   // shown on Page 6 (JIT/DYNAREC), under BLOCK COPY
 #define OPT_TEX_ALPHA   103  // shown on Page 2 (GRAPHICS), under VTX ALPHA
 #define OPT_PCW_LIST    104  // shown on Page 2 (GRAPHICS), under TEX ALPHA
+#define OPT_AUDIO_BLOCK 105  // Page 4 (AUDIO), under AUDIO BUFFERS
+#define OPT_AUDIO_DRC   106  // Page 4 (AUDIO), under AUDIO BLOCK
+#define OPT_AUDIO_STATS 107  // Page 8 (LOGS), under STRIP DEDUP
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2322,6 +2352,8 @@ static const int OPT_PAGE2_ROWS[] = {
 static const int OPT_PAGE3_ROWS[] = {
   OPT_LAUNCH,
   OPT_AUDIO_BUFFERS,
+  OPT_AUDIO_BLOCK,
+  OPT_AUDIO_DRC,
   OPT_CDDA,
   OPT_MUTE_PCM16,
   OPT_AICA_FAST,
@@ -2388,7 +2420,8 @@ static const int OPT_PAGE7_ROWS[] = {
   OPT_JIT_HOTBLOCKS,
   OPT_JIT_CCALLS,
   OPT_TA_PROFILE,
-  OPT_STRIP_DEDUP
+  OPT_STRIP_DEDUP,
+  OPT_AUDIO_STATS
 };
 
 static const int *opt_page_rows(int page, int *count)
@@ -3009,12 +3042,34 @@ bool displayOptionsMenu()
     printf("%s AUDIO BUFFERS  : ", (selectedRow == OPT_AUDIO_BUFFERS) ? ">" : " ");
     switch (g_audio_buffers_preset) {
       case -1: printf("[< DEFAULT (SAVED)   >]"); break;
-      case  0: printf("[< 0 (NEVER BLOCK)   >]"); break;
-      case  1: printf("[< 1                 >]"); break;
-      case  2: printf("[< 2                 >]"); break;
-      case  3: printf("[< 3 (MOST PACED)    >]"); break;
+      case  0: printf("[< 0 (FREE RUN)      >]"); break;
+      case  1: printf("[< 1 (LEGACY, TIGHT) >]"); break;
+      case  4: printf("[< 4 (RECOMMENDED)   >]"); break;
+      case  8: printf("[< 8 (MOST SLACK)    >]"); break;
+      default: printf("[< %d                 >]", g_audio_buffers_preset); break;
     }
-    printf(" 1 fix most audio 1 but slower fps");
+    printf(" ring depth - 0 never paces emu");
+    printf("\n");
+
+    // --- Row: Audio block size (wii/wii_audio.cpp, samples per ASND buffer) ---
+    printf("%s AUDIO BLOCK    : ", (selectedRow == OPT_AUDIO_BLOCK) ? ">" : " ");
+    switch (g_audio_block_preset) {
+      case 0: printf("[< 1024 (23MS, 109%%) >]"); break;
+      case 1: printf("[< 1536 (35MS, 163%%) >]"); break;
+      case 2: printf("[< 2048 (46MS, 218%%) >]"); break;
+    }
+    printf(" bigger = more slack, more delay");
+    printf("\n");
+
+    // --- Row: Dynamic rate control (wii/wii_audio.cpp pitch trim) ---
+    printf("%s AUDIO DRC      : ", (selectedRow == OPT_AUDIO_DRC) ? ">" : " ");
+    switch (g_audio_drc_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< GENTLE (+-1%%)     >]"); break;
+      case 2: printf("[< NORMAL (+-3%%)     >]"); break;
+      case 3: printf("[< WIDE (+-15%%)      >]"); break;
+    }
+    printf(" retunes output to kill crackle");
     printf("\n");
 
     // --- Row: CDDA music (GD-ROM CD audio tracks) ---
@@ -3482,6 +3537,15 @@ bool displayOptionsMenu()
     }
     printf(" strips+textures per frame");
     printf("\n");
+
+    // --- Row: Audio sink counters (wii/wii_audio.cpp) ---
+    printf("%s AUDIO STATS    : ", (selectedRow == OPT_AUDIO_STATS) ? ">" : " ");
+    switch (g_audio_stats_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (1 LINE/SEC)   >]"); break;
+    }
+    printf(" underruns, drops, ring, pitch");
+    printf("\n");
     printf("\n");
     printf("                  (logs are written to /ndclog.txt on the card)");
     printf("\n\n");
@@ -3636,7 +3700,10 @@ bool displayOptionsMenu()
           if (g_debug_skip_tex) { g_debug_skip_tex_saved = g_debug_skip_tex; g_debug_skip_tex = 0; }
           else                  { g_debug_skip_tex = g_debug_skip_tex_saved; }
           break;
-        case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 4) % 5) - 1; break;
+        case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 9) % 10) - 1; break;
+        case OPT_AUDIO_BLOCK:    g_audio_block_preset    = (g_audio_block_preset    + 2) % 3; break;
+        case OPT_AUDIO_DRC:      g_audio_drc_preset      = (g_audio_drc_preset      + 3) % 4; break;
+        case OPT_AUDIO_STATS:    g_audio_stats_preset    = (g_audio_stats_preset    + 1) % 2; break;
         default: break;
       }
     }
@@ -3751,7 +3818,10 @@ bool displayOptionsMenu()
           if (g_debug_skip_tex) { g_debug_skip_tex_saved = g_debug_skip_tex; g_debug_skip_tex = 0; }
           else                  { g_debug_skip_tex = g_debug_skip_tex_saved; }
           break;
-        case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 5) - 1; break;
+        case OPT_AUDIO_BUFFERS:  g_audio_buffers_preset  = ((g_audio_buffers_preset + 1 + 1) % 10) - 1; break;
+        case OPT_AUDIO_BLOCK:    g_audio_block_preset    = (g_audio_block_preset    + 1) % 3; break;
+        case OPT_AUDIO_DRC:      g_audio_drc_preset      = (g_audio_drc_preset      + 1) % 4; break;
+        case OPT_AUDIO_STATS:    g_audio_stats_preset    = (g_audio_stats_preset    + 1) % 2; break;
         default: break;
       }
     }
@@ -4626,6 +4696,12 @@ int main(int argc, wchar *argv[])
       case -1: printf("DEFAULT (SAVED)\n"); break;
       default: printf("%d\n", g_audio_buffers_preset); break;
     }
+    printf("Audio Block    : %d samples\n", g_audio_block_preset == 2 ? 2048 :
+                                              g_audio_block_preset == 1 ? 1536 : 1024);
+    printf("Audio DRC      : %s\n", g_audio_drc_preset == 3 ? "WIDE (+-15%)" :
+                                     g_audio_drc_preset == 2 ? "NORMAL (+-3%)" :
+                                     g_audio_drc_preset == 1 ? "GENTLE (+-1%)" : "OFF (LEGACY)");
+    printf("Audio Stats    : %s\n", g_audio_stats_preset ? "ON (LOG)" : "OFF");
     printf("Vertex Color Fix: %s\n", g_vertex_color_preset ? "ON" : "OFF");
     printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("RGB565 Opq Alpha: %s\n", g_rgb565_opaque_alpha_preset ? "ON (FMT0+FMT1)" : "OFF (FMT0 ONLY)");

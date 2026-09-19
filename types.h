@@ -242,7 +242,7 @@ struct __settings
 	{
 		bool AutoStart;
 		bool NoConsole;
-		u32 AudioBuffers;	//audio queue depth: 0=never block (drop on overrun), 1..3=block until below N queued buffers
+		u32 AudioBuffers;	//audio ring depth (wii/wii_audio.cpp): 0=free-run, never pace emulation (drop on overrun), 1..8=block once N blocks are queued
 	} emulator;
 };
 extern __settings settings;

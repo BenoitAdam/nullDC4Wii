@@ -862,15 +862,46 @@
                                 dancer/arrow skin/sequence type, and enter
                                 the Left/Right/Shuffle arrow option codes).
                                 off (default) leaves the analog stick alone.
-        audio_buffers=1     <- 0..3 or default/auto/saved, forces
-                                settings.emulator.AudioBuffers (see
-                                nullDC.cpp LoadSettings() and
-                                wii/wii_audio.cpp). 0 never blocks the
-                                emulation thread — samples are dropped on
-                                overrun; 1..3 blocks the caller each push
-                                until fewer than N buffers are queued, trading
-                                emulation speed for smoother audio pacing on
-                                games that produce audio in bursts.
+        audio_buffers=4     <- 0..8 or default/auto/saved, forces
+                                settings.emulator.AudioBuffers, the depth of
+                                the audio ring (see nullDC.cpp LoadSettings()
+                                and wii/wii_audio.cpp). 0 = free-run: audio
+                                never paces emulation and blocks are dropped
+                                when the ring is full — for a game that
+                                cannot reach 100%, pair 0 with audio_drc=3 and
+                                the output is retuned to the rate the game
+                                really produces instead of crackling, with no
+                                frames given up. 1..8 = the emulation
+                                thread blocks only once N blocks are already
+                                queued, so it can work ahead into the free
+                                slots instead of stopping at every block
+                                boundary. 1 reproduces the old single-buffer
+                                behaviour (no slack at all); 4 is the
+                                recommended starting point. Pacing is a speed
+                                limiter by construction — ASND accepts one
+                                block per 21.333 ms tick, so sustained speed
+                                is capped at audio_block/940.8 of real time.
+        audio_block=0       <- 0..2, samples per ASND buffer: 0=1024 (23 ms,
+                                caps emulation at 109% of real speed),
+                                1=1536 (35 ms, 163%), 2=2048 (46 ms, 218%).
+                                Bigger blocks give the ring more slack and
+                                raise the pacing ceiling, at the cost of
+                                output latency. Never goes below 944 samples:
+                                anything shorter cannot keep the ASND voice
+                                fed at 44.1 kHz whatever else is set.
+        audio_drc=1         <- 0..3, dynamic rate control. Trims the playback
+                                pitch to hold the ring near half full, so a
+                                game sitting slightly off real speed plays
+                                clean instead of crackling. 0=off,
+                                1=+-1% (inaudible), 2=+-3%,
+                                3=+-15% (follows a game well off 100%,
+                                audibly detuned).
+        audio_stats=on      <- on/off, one [WiiAudio] line per second to
+                                /ndclog.txt: blocks, underruns, drops, pacing
+                                waits, ring level and live pitch. Use it to
+                                tell an underrun (ring empty, emulation too
+                                slow) from a drop (ring full, emulation too
+                                fast) before changing anything else.
                                 default/auto/saved explicitly resets it to
                                 the saved/cfg value (undoing a [default]
                                 section override, or a previous game's
@@ -996,6 +1027,9 @@ extern int g_isp_cull_preset;
 extern int g_subpass_zclear_preset;
 extern int g_poly_offset_preset;
 extern int g_audio_buffers_preset;
+extern int g_audio_block_preset;
+extern int g_audio_drc_preset;
+extern int g_audio_stats_preset;
 extern int g_arm7_speed_preset;
 extern int g_arm7_jit_preset;
 extern int g_arm7_batch_preset;
@@ -1125,6 +1159,9 @@ struct GamePreset
     int subpass_zclear;
     int poly_offset;
     int audio_buffers;
+    int audio_block;
+    int audio_drc;
+    int audio_stats;
     int arm7_speed;
     int arm7_jit;
     int arm7_batch;
@@ -1242,6 +1279,28 @@ static int parse_bool(const char* v)
     if (key_eq(v, "off") || key_eq(v, "false") || key_eq(v, "no")  || strcmp(v, "0") == 0) return 0;
     printf("[game_presets] Unknown on/off value: '%s'\n", v);
     return -1;
+}
+
+// Plain numeric key with an inclusive range. Unlike a bare atoi(), a value
+// that is not a number at all is REJECTED rather than silently read as 0 -
+// "audio_drc=on" meaning "audio_drc=off" is exactly the trap the older
+// atoi() keys fell into.
+static int parse_range(const char* v, const char* key, int lo, int hi)
+{
+    const char* p = v;
+    if (*p == '+' || *p == '-') p++;
+    if (*p < '0' || *p > '9')
+    {
+        printf("[game_presets] %s needs a number %d..%d, got '%s'\n", key, lo, hi, v);
+        return -1;
+    }
+    int n = atoi(v);
+    if (n < lo || n > hi)
+    {
+        printf("[game_presets] %s out of range (%d..%d): '%s'\n", key, lo, hi, v);
+        return -1;
+    }
+    return n;
 }
 
 // pcw_list is on/off plus a third "no z write" state. Spelled out rather than
@@ -1469,7 +1528,7 @@ static int parse_audio_buffers(const char* v)
 {
     if (key_eq(v, "default") || key_eq(v, "auto") || key_eq(v, "saved")) return -1;
     int n = atoi(v);
-    if (n >= 0 && n <= 3) return n;
+    if (n >= 0 && n <= 8) return n;
     printf("[game_presets] Unknown audio_buffers value: '%s'\n", v);
     return -2;
 }
@@ -1592,6 +1651,9 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "subpass_zclear")) p->subpass_zclear = parse_bool(val);
     else if (key_eq(key, "poly_offset"))    p->poly_offset    = atoi(val);
     else if (key_eq(key, "audio_buffers"))  p->audio_buffers  = parse_audio_buffers(val);
+    else if (key_eq(key, "audio_block"))    p->audio_block    = parse_range(val, "audio_block", 0, 2);
+    else if (key_eq(key, "audio_drc"))      p->audio_drc      = parse_range(val, "audio_drc", 0, 3);
+    else if (key_eq(key, "audio_stats"))    p->audio_stats    = parse_bool(val);
     else if (key_eq(key, "arm7_speed"))     p->arm7_speed     = atoi(val);
     else if (key_eq(key, "arm7_jit"))       p->arm7_jit       = (val[0] >= '0' && val[0] <= '9') ? atoi(val) : parse_bool(val);
     else if (key_eq(key, "arm7_batch"))     p->arm7_batch     = atoi(val);
@@ -1697,6 +1759,9 @@ static void preset_clear(GamePreset* cur)
     cur->subpass_zclear = -1;
     cur->poly_offset = -1;
     cur->audio_buffers = -2; // -2 = absent (leave live state alone); -1 is a real value here (see parse_audio_buffers)
+    cur->audio_block = -1;
+    cur->audio_drc = -1;
+    cur->audio_stats = -1;
     cur->arm7_speed = -1;
     cur->arm7_jit = -1;
     cur->arm7_batch = -1;
@@ -1830,6 +1895,9 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->subpass_zclear >= 0) { g_subpass_zclear_preset = p->subpass_zclear; printf("  subpass_zclear -> %d\n", p->subpass_zclear); }
     if (p->poly_offset    >= 0) { g_poly_offset_preset   = p->poly_offset;     printf("  poly_offset    -> %d\n", p->poly_offset);    }
     if (p->audio_buffers  != -2) { g_audio_buffers_preset = p->audio_buffers;  printf("  audio_buffers  -> %d\n", p->audio_buffers);  }
+    if (p->audio_block    >= 0) { g_audio_block_preset   = p->audio_block;    printf("  audio_block    -> %d\n", p->audio_block);    }
+    if (p->audio_drc      >= 0) { g_audio_drc_preset     = p->audio_drc;      printf("  audio_drc      -> %d\n", p->audio_drc);      }
+    if (p->audio_stats    >= 0) { g_audio_stats_preset   = p->audio_stats;    printf("  audio_stats    -> %d\n", p->audio_stats);    }
     if (p->arm7_speed     >= 0) { g_arm7_speed_preset     = p->arm7_speed;     printf("  arm7_speed     -> %d\n", p->arm7_speed);     }
     if (p->arm7_jit       >= 0) { g_arm7_jit_preset       = p->arm7_jit;       printf("  arm7_jit       -> %d\n", p->arm7_jit);       }
     if (p->arm7_batch     >= 1) { g_arm7_batch_preset     = p->arm7_batch >= 16 ? 16 : p->arm7_batch >= 8 ? 8 : p->arm7_batch >= 4 ? 4 : p->arm7_batch >= 2 ? 2 : 1;

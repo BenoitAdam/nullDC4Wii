@@ -271,15 +271,19 @@ void LoadSettings()
 
 	settings.emulator.AutoStart=cfgLoadInt("nullDC","Emulator.AutoStart",0)!=0;
 	settings.emulator.NoConsole=cfgLoadInt("nullDC","Emulator.NoConsole",0)!=0;
+	// Audio ring depth (wii/wii_audio.cpp): 0 = free-run, never pace emulation
+	// (overruns are dropped); 1..8 = block once N blocks are already queued.
+	// 1 is the old single-buffer behaviour and leaves the producer no room to
+	// work ahead; 4 is the recommended starting point.
 	settings.emulator.AudioBuffers=cfgLoadInt("nullDC","Emulator.AudioBuffers",0);
-	if (settings.emulator.AudioBuffers>3)
-		settings.emulator.AudioBuffers=3;
+	if (settings.emulator.AudioBuffers>8)
+		settings.emulator.AudioBuffers=8;
 
 	// Per-game preset override (see wii/game_presets.cpp "audio_buffers=N")
 	// and/or the options menu (wii/main.cpp), applied after the cfg value
 	// so a matched preset or manual menu choice always wins.
 	int audio_buffers_preset = get_audio_buffers_preset();
-	if (audio_buffers_preset >= 0 && audio_buffers_preset <= 3)
+	if (audio_buffers_preset >= 0 && audio_buffers_preset <= 8)
 		settings.emulator.AudioBuffers = audio_buffers_preset;
 
 	printf("[nullDC.cpp] Loaded settings\n");
