@@ -220,12 +220,20 @@ int g_sprite_color_preset = 1; // 0 = off  - legacy, appears white // 1 = on   -
 // font needs it); 1 = honour TSP.UseAlpha, so vertex-alpha fades work.
 int g_vtx_alpha_preset = 0;
 
+// TSP.IgnoreTexAlpha (see IGNORE_TEX_ALPHA in gxRend.cpp).
+// 0 = legacy, the texture alpha is always used; 1 = honour the bit, i.e. read
+// the texture alpha as 1.0 on the polygons that set it. Headhunter's ARGB1555
+// VQ panels need it - with the bit ignored their texel alpha of 0 kills a
+// SrcAlpha/One blend and the panel renders black.
+int g_tex_alpha_preset = 0;
+
 // PVR list-type render order (see LIST_ORDER in gxRend.cpp).
 int g_list_order_preset = 0; // 1 for Puyo 4 Only
 
 extern "C" {
   int get_sprite_color_preset() { return g_sprite_color_preset; }
   int get_vtx_alpha_preset()    { return g_vtx_alpha_preset; }
+  int get_tex_alpha_preset()    { return g_tex_alpha_preset; }
   int get_list_order_preset()   { return g_list_order_preset; }
 }
 
@@ -2215,6 +2223,7 @@ void checkBiosFiles()
 #define OPT_JIT_CCALLS  93   // shown on Page 8 (LOGS), see OPT_PAGE7_ROWS
 #define OPT_BLOCKCOPY   94   // shown on Page 6 (JIT/DYNAREC), under JIT CR0 BRANCH
 #define OPT_JIT_FSQRT   95   // shown on Page 6 (JIT/DYNAREC), under BLOCK COPY
+#define OPT_TEX_ALPHA   103  // shown on Page 2 (GRAPHICS), under VTX ALPHA
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2265,6 +2274,7 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_VERTEX_COLOR,
   OPT_SPRITE_COLOR,
   OPT_VTX_ALPHA,
+  OPT_TEX_ALPHA,
   OPT_DECAL_ALPHA,
   OPT_SEAM_FIX,
   OPT_FOG,
@@ -2720,6 +2730,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (USE TSP.UseA) >]"); break;
     }
     printf(" ON fixes some transparency");
+    printf("\n");
+
+    // --- Row: TSP.IgnoreTexAlpha ---
+    printf("%s TEX ALPHA      : ", (selectedRow == OPT_TEX_ALPHA) ? ">" : " ");
+    switch (g_tex_alpha_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (IgnoreTexA)   >]"); break;
+    }
+    printf(" ON fixes black panels (Headhunter)");
     printf("\n");
 
     // --- Row: Decal Alpha Fix ---
@@ -3498,6 +3517,7 @@ bool displayOptionsMenu()
         case OPT_TRANS_ZWRITE: g_trans_zwrite_preset = (g_trans_zwrite_preset  + 1) % 2; break;
         case OPT_SPRITE_COLOR: g_sprite_color_preset = (g_sprite_color_preset  + 1) % 2; break;
         case OPT_VTX_ALPHA:    g_vtx_alpha_preset    = (g_vtx_alpha_preset     + 1) % 2; break;
+        case OPT_TEX_ALPHA:    g_tex_alpha_preset    = (g_tex_alpha_preset     + 1) % 2; break;
         case OPT_POLY_OFFSET: g_poly_offset_preset  = (g_poly_offset_preset    + 3) % 4; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
@@ -3611,6 +3631,7 @@ bool displayOptionsMenu()
         case OPT_TRANS_ZWRITE: g_trans_zwrite_preset = (g_trans_zwrite_preset  + 1) % 2; break;
         case OPT_SPRITE_COLOR: g_sprite_color_preset = (g_sprite_color_preset  + 1) % 2; break;
         case OPT_VTX_ALPHA:    g_vtx_alpha_preset    = (g_vtx_alpha_preset     + 1) % 2; break;
+        case OPT_TEX_ALPHA:    g_tex_alpha_preset    = (g_tex_alpha_preset     + 1) % 2; break;
         case OPT_POLY_OFFSET: g_poly_offset_preset  = (g_poly_offset_preset    + 1) % 4; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
@@ -4473,6 +4494,7 @@ int main(int argc, wchar *argv[])
     printf("PPZ_WRITE      : %s\n", g_ppz_write_preset ? "YES" : "NO");
     printf("Sprite Color   : %s\n", g_sprite_color_preset ? "YES (BaseCol)" : "NO (white)");
     printf("Vtx Alpha      : %s\n", g_vtx_alpha_preset ? "YES (TSP.UseAlpha)" : "NO (force opaque)");
+    printf("Tex Alpha      : %s\n", g_tex_alpha_preset ? "IgnoreTexA HONORED" : "OFF (legacy)");
     printf("List Order     : %s\n", g_list_order_preset ? "ON (opaque list first)" : "OFF (TA order)");
     printf("TRANS ZWRITE   : %s\n", g_trans_zwrite_preset ? "ON (default)" : "OFF (debug)");
     printf("Poly Offset    : ");

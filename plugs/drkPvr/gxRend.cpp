@@ -443,6 +443,39 @@ extern "C" const char* get_matched_preset_name(); // [LOGO] probe only
 extern "C" int get_vtx_alpha_preset();
 #define VTX_ALPHA_HONOR() (get_vtx_alpha_preset() == 1)
 
+// TSP.IgnoreTexAlpha (ignore_tex_alpha)
+//
+// Hardware rule, TSP Instruction Word bit 19: when IgnoreTexAlpha is set the
+// texture's alpha channel is REPLACED BY 1.0 before shading. The texel alpha
+// bits become don't-care on that surface, which is exactly why an artist
+// leaves them cleared there - nothing is meant to read them.
+//
+// This renderer never implemented it. TEV stage 0 is GX_MODULATE, whose alpha
+// half is always texA * rasA, so an ARGB1555 texel with its alpha bit at 0
+// reaches the blender with alpha 0. Under the translucent list's usual
+// SrcAlpha/One blend that adds nothing at all and the surface renders as
+// whatever sits behind it - black, on a black background. Headhunter's
+// ARGB1555 VQ panels (isp=FA800008 tsp=849804ED / 849824ED, ShadInstr =
+// ModulateAlpha, IgnoreTexA = 1, blend SrcAlpha/One) are exactly that case.
+//
+// ON rewires stage 0's alpha input per strip to what the hardware produces
+// once texA is pinned to 1:
+//   ShadInstr 0/1 (Decal, Modulate)      alpha = texA          -> constant 1.0
+//   ShadInstr 2/3 (DecalAlpha, ModAlpha) alpha = baseA * texA  -> rasA
+// and the ARGB1555 "force vertex alpha opaque" hack is skipped for those
+// strips: with the texture alpha gone the vertex alpha is the ONLY alpha the
+// polygon has, so overriding it would throw the game's own fade away.
+//
+// Not covered: under DECAL_ALPHA_FIX() a ShadInstr==2 strip still mixes with
+// the real texA in its COLOUR (GX_DECAL), where the hardware would use 1.0 and
+// so show the texture flat. That is a separate change in the colour half and
+// is deliberately left out until a game is seen to need it.
+//
+// Default OFF: this changes the alpha of every IgnoreTexA polygon in every
+// game, and plenty of them look right today by accident.
+extern "C" int get_tex_alpha_preset();
+#define IGNORE_TEX_ALPHA() (get_tex_alpha_preset() == 1)
+
 // Sprite base colour. A Sprite (PCW.ParaType 5) carries ONE packed Base
 // Colour in its header that applies to all four corners -- sprites have no
 // per-vertex colour. AppendSpriteVertexA hardcoded 0xFFFFFFFF and
@@ -592,7 +625,16 @@ extern "C" int get_hokuto_hack_preset();
 // 0x036500 is the SEGA logo in Fighting Vipers 2 (512x512 ARGB1555, the
 // polygon a PVR viewer reports as isp=82400000 tsp=949004F6). Change it to
 // whatever the viewer reports for the next screen under investigation.
-#define LOGO_TRIGGER_TEX 0x036500
+// Two slots, because a bug report usually names more than one surface and a
+// second run just to move the address wastes a whole test cycle. Either may be
+// 0 (= unused); both readings of each are accepted (see logo_is_hunted_tex).
+//
+// Currently armed for Headhunter's two ARGB1555 VQ panels, as a PVR viewer
+// reports them: tsp=849804ED tcw addr 0008E548, tsp=849824ED tcw addr
+// 0008D048. LOGO_DEBUG_LOG above is still 0 - flip it to 1 to take the
+// capture, and back to 0 afterwards.
+#define LOGO_TRIGGER_TEX  0x0008E548
+#define LOGO_TRIGGER_TEX2 0x0008D048
 
 #if LOGO_DEBUG_LOG
 // Set by logo_dump_pass() at the top of StartRender and read by the probes
@@ -4503,6 +4545,35 @@ static void yuv_tev_bind_uv(const GXTexObj *luma)
                 GX_FALSE);
   GX_InitTexObjFilterMode(&s_yuv_uv_tex, minfilt, magfilt);
   GX_LoadTexObj(&s_yuv_uv_tex, GX_TEXMAP1);
+}
+
+// IGNORE_TEX_ALPHA(): rewire TEVSTAGE0's alpha half so the texture alpha reads
+// as 1.0 (see the macro at the top of the file).
+//   mode 0 = restore the GX default for tev_op (what GX_SetTevOp leaves),
+//        1 = rasA alone          (ShadInstr 2/3: alpha = baseA * 1.0),
+//        2 = constant 1.0        (ShadInstr 0/1: alpha = texA  -> 1.0).
+// The alpha OP (ADD / TB_ZERO / SCALE_1 / clamp / TEVPREV) is already what
+// GX_SetTevOp set for this stage, so only the input selectors move.
+static void tev_stage0_alpha_mode(int mode, int tev_op)
+{
+  switch (mode)
+  {
+  case 1:
+    GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+    break;
+  case 2:
+    GX_SetTevKAlphaSel(GX_TEVSTAGE0, GX_TEV_KASEL_1);
+    GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_KONST);
+    break;
+  default:
+    // GX_SetTevOp(GX_DECAL) leaves (ZERO,ZERO,ZERO,RASA); every other op this
+    // renderer puts on stage 0 leaves MODULATE's (ZERO,TEXA,RASA,ZERO).
+    if (tev_op == GX_DECAL)
+      GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+    else
+      GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO);
+    break;
+  }
 }
 
 static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
@@ -8540,6 +8611,10 @@ void DoRender()
   int strip_fog_mode = 2;
   int last_alpha_fmt = -1; // -1 = unset
   int last_shad_instr = -1; // -1 = unset; tracks the GX op currently set on TEVSTAGE0 for textured polys
+  // IGNORE_TEX_ALPHA(): stage-0 alpha override currently programmed (0 = none,
+  // i.e. whatever GX_SetTevOp last left there). Only ever set to non-zero by
+  // the per-strip block below, so a stale 0 can never hide a live override.
+  int last_tev_amode = 0;
   const bool decal_alpha_fix = DECAL_ALPHA_FIX(); // read once per frame, not per polygon
   // fmv_format=tev: true while the 8-stage YUV program owns the TEV.
   const bool fmv_tev  = FMV_FORMAT_TEV(); // read once per frame like the rest
@@ -8581,6 +8656,7 @@ void DoRender()
   const bool ppz_write      = PER_POLYGON_Z_WRITE();
   const bool trans_no_zwrite = TRANS_NO_ZWRITE();
   const bool vtx_alpha_honor = VTX_ALPHA_HONOR();
+  const bool ignore_tex_alpha = IGNORE_TEX_ALPHA(); // TSP.IgnoreTexAlpha, read once per frame
   const int  isp_depth_func = ISP_DEPTH_FUNC(); // 0=off 1=OP/PT lists 2=all lists
   const int  isp_cull       = ISP_CULL();       // 0=off 1=on 2=on, swapped winding
 
@@ -9621,10 +9697,23 @@ void DoRender()
             GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
             last_shad_instr = GX_MODULATE;
           }
+          // Same texture-alpha override as the draw pass: the kill test reads
+          // stage 0's alpha, so it has to see the alpha the fragment will
+          // actually blend with and not the texel's ignored one.
+          int tev_amode = 0;
+          if (ignore_tex_alpha && stripMod->tsp.IgnoreTexA)
+            tev_amode = (stripMod->tsp.ShadInstr >= 2) ? 1 : 2;
+          if (tev_amode || last_tev_amode)
+          {
+            tev_stage0_alpha_mode(tev_amode, GX_MODULATE);
+            last_tev_amode = tev_amode;
+          }
           // Same vertex-alpha forcing as the draw pass, so the kill sees the
           // alpha the fragment will actually blend with.
           u32 fmt = stripMod->tcw.NO_PAL.PixelFmt;
-          if (vtx_alpha_honor)
+          if (tev_amode)
+            force_vtx_alpha_opaque = !stripMod->tsp.UseAlpha;
+          else if (vtx_alpha_honor)
             // Hardware rule only: UseAlpha==0 is the DC's own "ignore vertex
             // alpha". No format-based override, so a game that fades via vertex
             // alpha on an ARGB1555 surface actually fades.
@@ -9737,8 +9826,26 @@ void DoRender()
           // menu/HUD text, an ARGB1555 cutout font): the game relies on the texture's
           // own alpha, not the vertex alpha, to gate visibility. Always force opaque for
           // these two formats; defer to TSP.UseAlpha for everything else (e.g. ARGB4444).
+          //
+          // IGNORE_TEX_ALPHA() takes precedence over all three: TSP.IgnoreTexA
+          // pins texA to 1.0 (block just below), which leaves the vertex alpha
+          // as the polygon's ONLY alpha. Forcing it opaque there would throw
+          // away the fade the game is asking for, and the ARGB1555 hack's whole
+          // premise - "the game leans on the TEXTURE alpha" - is the one thing
+          // IgnoreTexA says is false.
+          int tev_amode = 0;
+          if (ignore_tex_alpha && stripMod->tsp.IgnoreTexA)
+            tev_amode = (stripMod->tsp.ShadInstr >= 2) ? 1 : 2;
+          if (tev_amode || last_tev_amode)
+          {
+            tev_stage0_alpha_mode(tev_amode,
+                                  decal_alpha_fix ? last_shad_instr : GX_MODULATE);
+            last_tev_amode = tev_amode;
+          }
           u32 fmt = stripMod->tcw.NO_PAL.PixelFmt;
-          if (vtx_alpha_honor)
+          if (tev_amode)
+            force_vtx_alpha_opaque = !stripMod->tsp.UseAlpha;
+          else if (vtx_alpha_honor)
             // Hardware rule only: UseAlpha==0 is the DC's own "ignore vertex
             // alpha". No format-based override, so a game that fades via vertex
             // alpha on an ARGB1555 surface actually fades.
@@ -10069,12 +10176,12 @@ void DoRender()
         }
         printf("[LOGO] draw#%03u n=%d skip=%d tex=%d trans=%d pt=%d as=%d hud=%d "
                "zfunc=%d zwrite=%d blend=%d/%d tev_stages=%d alpha_fmt=%d "
-               "vtxA_forced=%d cull=%d clr1=%d W=%.5f..%.5f ndcZ=%.4f..%.4f\n",
+               "vtxA_forced=%d amode=%d cull=%d clr1=%d W=%.5f..%.5f ndcZ=%.4f..%.4f\n",
                s_logo_draw_n, count, (int)strip_skip, last_textured,
                (int)in_trans_list, (int)seg_is_pt, (int)seg_as, (int)hud_strip,
                last_z_func, (int)last_z_write, last_src_blend, last_dst_blend,
                last_tev_stages, last_alpha_fmt, (int)force_vtx_alpha_opaque,
-               last_cull, (int)emit_clr1,
+               last_tev_amode, last_cull, (int)emit_clr1,
                count ? drawVTX[0].z : 0.0f, count ? drawVTX[count - 1].z : 0.0f,
                zn0, zn1);
         s_logo_draw_n++;
@@ -10787,10 +10894,21 @@ static u32 s_logo_tex_n = 0;
 // readings rather than make the capture depend on that guess.
 static INLINE bool logo_is_hunted_tex(const PolyParam *pp)
 {
-#if LOGO_TRIGGER_TEX
+#if LOGO_TRIGGER_TEX || LOGO_TRIGGER_TEX2
   const u32 byte_addr = (u32)((pp->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
-  return byte_addr == ((u32)LOGO_TRIGGER_TEX & VRAM_MASK)
-      || byte_addr == (((u32)LOGO_TRIGGER_TEX << 3) & VRAM_MASK);
+  // Both slots folded at compile time: an unused one is literally 0 == 0, so
+  // guard each on its own constant rather than on the pair.
+#if LOGO_TRIGGER_TEX
+  if (byte_addr == ((u32)LOGO_TRIGGER_TEX & VRAM_MASK)
+   || byte_addr == (((u32)LOGO_TRIGGER_TEX << 3) & VRAM_MASK))
+    return true;
+#endif
+#if LOGO_TRIGGER_TEX2
+  if (byte_addr == ((u32)LOGO_TRIGGER_TEX2 & VRAM_MASK)
+   || byte_addr == (((u32)LOGO_TRIGGER_TEX2 << 3) & VRAM_MASK))
+    return true;
+#endif
+  return false;
 #else
   (void)pp;
   return false;
@@ -11045,7 +11163,7 @@ static void logo_dump_pass()
   // walk over the pass's parameter headers (a few dozen, not the vertices), so
   // it is cheap enough to run on every pass including the quiet ones.
   bool want_sig = false;
-#if LOGO_TRIGGER_TEX
+#if LOGO_TRIGGER_TEX || LOGO_TRIGGER_TEX2
   // '<' not '!=': a walk that starts past its end would run through the whole
   // 8K param array.
   for (const PolyParam *m = s_logo_prev_mod; m < curMod; m++)
