@@ -476,6 +476,41 @@ extern "C" int get_vtx_alpha_preset();
 extern "C" int get_tex_alpha_preset();
 #define IGNORE_TEX_ALPHA() (get_tex_alpha_preset() == 1)
 
+// PCW.ListType blending (pcw_list)
+//
+// Our TA files a polygon into the list that was open when it arrived: a list
+// opens only when CurrentList is None, i.e. after an End Of List parameter
+// (ta.h, ParamType_Polygon_or_Modifier_Volume). A game that changes
+// PCW.ListType WITHOUT ending the previous list therefore has its translucent
+// polygons appended to the opaque list, and nothing in DoRender ever calls
+// GX_SetBlendMode for them - the opaque segment runs GX_BM_NONE.
+//
+// Headhunter's menu does exactly that. A [LOGO] capture of the broken screen:
+//
+//   census  range OP=18 TR=0 PT=1 | pcw.lt 0=3 1=0 2=16 3=0 4=0
+//   draw#003 ... trans=0 ... blend=-1/-1 ... (tsp=849824ED src=4 dst=1)
+//
+// Sixteen polygons declare ListType=Translucent, the translucent RANGE is
+// empty, and blend=-1/-1 means no blend factor was ever issued. Those polys
+// are additive overlays (SrcAlpha/One) on ARGB1555 VQ art that is 55-70%
+// opaque BLACK - so they paint black rectangles instead of adding light.
+// That is the "panel renders black" bug, exactly.
+//
+//   1 = honour PCW.ListType for the BLEND state: a polygon that says
+//       Translucent gets its TSP SrcInstr/DstInstr even when it was filed
+//       outside the translucent range, and one that does not gets GX_BM_NONE.
+//   2 = also drop its depth WRITE, the way the translucent list does.
+//       Needs ppz_write or isp_depth_func on (that is the block it rides).
+//
+// Requires blend_mode=on (default). Default OFF: it changes the blend state
+// of every mis-filed polygon in every game, and plenty of them are opaque by
+// accident today.
+//
+// This treats the symptom in the renderer. Whether the TA should have opened
+// the list at all is a separate question - see the [TALIST] probe below.
+extern "C" int get_pcw_list_preset();
+#define PCW_LIST() (get_pcw_list_preset())
+
 // Sprite base colour. A Sprite (PCW.ParaType 5) carries ONE packed Base
 // Colour in its header that applies to all four corners -- sprites have no
 // per-vertex colour. AppendSpriteVertexA hardcoded 0xFFFFFFFF and
@@ -599,17 +634,46 @@ extern "C" int get_hokuto_hack_preset();
 // Output lands in /ndclog.txt on the SD card (InitRenderer freopens stdout
 // there) -- nothing appears on screen. Every dump ends in fflush, so powering
 // the console off on the stuck screen still leaves a readable tail.
+// Capture taken and read (Headhunter, 2026-09-19): the panels are filed in the
+// OPAQUE range with blend=-1/-1, see the PCW_LIST() doc. Back to 0; the
+// triggers below stay armed so re-flipping this is a one-line job.
 #define LOGO_DEBUG_LOG 0
 
 // Schedule, counted in RENDER PASSES rather than frames: a scene that stalls
 // or frame-skips stops advancing FrameCount, and a frame-clocked probe would
 // go quiet exactly where it is needed. Passes always tick.
-#define LOGO_HEAD_PASSES 24   // dump every one of the first N passes (boot)
+#define LOGO_HEAD_PASSES 2    // dump every one of the first N passes (boot)
 #define LOGO_EVERY       30   // then one pass in every N ...
-#define LOGO_LAST_PASS   1500 // ... up to here (~25 s at 60 Hz), which brackets
-                              //     the SEGA screen of any game
-#define LOGO_HEARTBEAT   300  // proof-of-life line, always, even while quiet
+#define LOGO_LAST_PASS   0    // ... up to here. 0 closes the periodic window
+                              //     entirely, leaving ONLY the boot head and
+                              //     the signature trigger. That is what keeps
+                              //     a hunt for a mid-game surface down to a
+                              //     readable log instead of an SD card full
+                              //     of gameplay frames.
+#define LOGO_HEARTBEAT   600  // proof-of-life line, always, even while quiet
 #define LOGO_MAX_STRIPS  48   // per-strip lines per dumped pass
+#define LOGO_MAX_DECODED 2    // decoded-texture grids per dumped pass (the
+                              // second expensive sampler, see logo_dump_decoded)
+#define LOGO_SIG_FIRST_PASS 0 // ignore signature matches before this pass. The
+                              // knob to reach for when the budget below burns
+                              // itself on the intro: a TSP word is a MATERIAL,
+                              // and plenty of games use the same one in a menu
+                              // and in the scene you actually care about. Set
+                              // it to roughly 60 * (seconds until the broken
+                              // screen) and the capture lands there instead.
+#define LOGO_CENSUS_EVERY 180 // inventory of the materials on screen, every N
+                              // passes, printed whether or not the signature
+                              // fired. The knob that makes a capture useful
+                              // even when the hunt finds nothing: a trigger
+                              // can miss, a census cannot - it says what IS
+                              // there. 0 = off.
+#define LOGO_CENSUS_MAX   80  // total censuses per boot (each is <= 20 lines)
+#define LOGO_CENSUS_SLOTS 14  // distinct materials listed per census
+#define LOGO_SIG_MAX     8    // TOTAL passes the signature may trigger, ever.
+                              // A hunted surface that stays on screen would
+                              // otherwise dump every frame for as long as it
+                              // is visible; eight passes is plenty and the
+                              // budget is announced when it runs out.
 #define LOGO_MAX_TEX     6    // texture thumbnails per dumped pass (the
                               // expensive part: COLS*ROWS VRAM samples each)
 #define LOGO_TEX_COLS    48
@@ -629,12 +693,47 @@ extern "C" int get_hokuto_hack_preset();
 // second run just to move the address wastes a whole test cycle. Either may be
 // 0 (= unused); both readings of each are accepted (see logo_is_hunted_tex).
 //
-// Currently armed for Headhunter's two ARGB1555 VQ panels, as a PVR viewer
-// reports them: tsp=849804ED tcw addr 0008E548, tsp=849824ED tcw addr
-// 0008D048. LOGO_DEBUG_LOG above is still 0 - flip it to 1 to take the
-// capture, and back to 0 afterwards.
-#define LOGO_TRIGGER_TEX  0x0008E548
-#define LOGO_TRIGGER_TEX2 0x0008D048
+// BOTH OFF, and the first Headhunter capture is why. VRAM gets reused: at
+// boot, the address a mid-game panel will later live at held the SEGA logo's
+// artwork, the hunt fired on THAT polygon (tsp=2080046D, ignA=0 - nothing to
+// do with the panel), and the eight-pass dump budget was spent before the
+// game even started. The scene under investigation produced heartbeats and
+// nothing else. A texture address is not an identity, it is a location.
+// Use these only for a surface whose address you have confirmed IN a capture.
+#define LOGO_TRIGGER_TEX  0
+#define LOGO_TRIGGER_TEX2 0
+
+// Trigger on the polygon's TSP word too, not just its texture address. A PVR
+// viewer reports both, and the TSP is the more durable key of the two: it is
+// the material state, bit-identical on every run, while the texture address
+// moves with whatever the game last uploaded to that VRAM slot. Hunting by
+// address alone silently finds nothing the moment the upload shifts, which
+// looks exactly like "the surface is never drawn".
+// 0 = slot unused.
+//
+// Armed for the two Headhunter panels: ModulateAlpha, IgnoreTexA=1, blend
+// SrcAlpha/One - they differ only in FilterMode (Point vs Bilinear).
+#define LOGO_TRIGGER_TSP  0x849804ED
+#define LOGO_TRIGGER_TSP2 0x849824ED
+
+// Field predicate: match the CLASS of polygon rather than one exact word.
+// An exact TSP is still brittle - the same material drawn at a different size
+// or filter setting is a different word - so this is the trigger that is
+// actually expected to fire, with the two constants above kept as a bonus.
+//   1 = additive + texture-alpha-ignoring  (SrcAlpha/One, IgnoreTexA)
+//   2 = a 256x256 ARGB1555 VQ surface with IgnoreTexA
+//   3 = either (default)
+// Deliberately does NOT test pcw.ListType: the first capture showed Headhunter
+// polygons carrying ListType=2 while our TA had them in the OPAQUE list range,
+// so that field cannot be trusted as a filter here.
+// Checked against the boot screens in that capture: nothing there matches
+// (they are ignA=0, or ignA=1 with dst=5 on a non-VQ 8x8), so the budget
+// survives to the scene that matters.
+#define LOGO_TRIGGER_FIELDS 3
+// Which bits have to match. All of them by default; clear a field here (e.g.
+// 0xFFFF9FFF to ignore FilterMode) to catch a whole family of polygons rather
+// than the exact two a viewer happened to screenshot.
+#define LOGO_TRIGGER_TSP_MASK 0xFFFFFFFFu
 
 #if LOGO_DEBUG_LOG
 // Set by logo_dump_pass() at the top of StartRender and read by the probes
@@ -643,6 +742,8 @@ extern "C" int get_hokuto_hack_preset();
 static bool s_logo_dump_now = false;
 // (plain unsigned rather than u32: this block sits above the typedefs)
 static unsigned s_logo_draw_n = 0; // per-pass counter for the draw-time lines
+static unsigned s_logo_dec_n  = 0; // per-pass counter for decoded-texture grids
+static unsigned s_logo_sig_used = 0; // signature-triggered passes so far (LOGO_SIG_MAX)
 #define LOGO_ARMED() (s_logo_dump_now)
 #else
 #define LOGO_ARMED() (false)
@@ -1701,6 +1802,17 @@ struct PolyParam
 // above the probe block that defines these.
 extern u32 g_vtx_reset_seq;                                 // reset_vtx_state()
 static INLINE bool logo_is_hunted_tex(const PolyParam *pp); // LOGO_TRIGGER_TEX
+static INLINE bool logo_is_hunted(const PolyParam *pp);     // + LOGO_TRIGGER_TSP
+// SetTextureParams records every bind; the per-strip draw dump reads the last
+// one back. "What the game wrote" (logo_dump_texture, raw VRAM) and "what the
+// TX unit will actually sample" are two different questions, and only the
+// second one can clear - or convict - the decoder and the texture cache.
+static void logo_note_texbind(const PolyParam *mod, GXTexObj *obj, int cache_hit);
+static void logo_dump_decoded(const char *what);
+#define LOGO_NOTE_TEXBIND(m, o, h) logo_note_texbind((m), (o), (h))
+#else
+// Gate off: SetTextureParams' two hook sites compile away to nothing.
+#define LOGO_NOTE_TEXBIND(m, o, h) ((void)0)
 #endif
 
 struct TextureCacheDesc
@@ -4982,6 +5094,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       GX_InitTexObjWrapMode(&pbuff->tex, (u8)TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
                                          (u8)TexUV(mod->tsp.FlipV, mod->tsp.ClampV));
     GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
+    LOGO_NOTE_TEXBIND(mod, &pbuff->tex, 1); // cache HIT
     s_tex_is_yuv_tev = yuv_tev;
     if (yuv_tev)
       yuv_tev_bind_uv(&pbuff->tex);
@@ -6204,6 +6317,7 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     GX_InitTexObjWrapMode(&pbuff->tex, (u8)TexUV(mod->tsp.FlipU, mod->tsp.ClampU),
                                        (u8)TexUV(mod->tsp.FlipV, mod->tsp.ClampV));
   GX_LoadTexObj(&pbuff->tex, GX_TEXMAP0);
+  LOGO_NOTE_TEXBIND(mod, &pbuff->tex, 0); // freshly decoded
   s_tex_is_yuv_tev = yuv_tev;
   if (yuv_tev)
     yuv_tev_bind_uv(&pbuff->tex);
@@ -8492,7 +8606,7 @@ void DoRender()
            "adv_alpha=%d blend_mode=%d decal_alpha=%d offset_col=%d "
            "graphics=%d accuracy=%d frameskip=%d trans_zwrite=%d(no_zw=%d) "
            "ppz_write=%d isp_depth_func=%d isp_cull=%d sprite_color=%d "
-           "vtx_alpha=%d"
+           "vtx_alpha=%d tex_alpha=%d"
            " | game_presets section matched: '%s'\n",
            dc_width, dc_height, vtx_min_Z, vtx_max_Z, p5, p6,
            get_texture_cache_preset(), get_fixed_depth_preset(),
@@ -8504,7 +8618,8 @@ void DoRender()
            get_trans_zwrite_preset(), (int)TRANS_NO_ZWRITE(),
            (int)PER_POLYGON_Z_WRITE(),
            ISP_DEPTH_FUNC(), ISP_CULL(), (int)SPRITE_COLOR(),
-           (int)VTX_ALPHA_HONOR(), get_matched_preset_name());
+           (int)VTX_ALPHA_HONOR(), (int)IGNORE_TEX_ALPHA(),
+           get_matched_preset_name());
 #endif
   // The projection matrix maps DC screen-space coords to GX clip space.
   // X aspect ratio is NOT corrected here — DC vertices are already in screen
@@ -8657,6 +8772,7 @@ void DoRender()
   const bool trans_no_zwrite = TRANS_NO_ZWRITE();
   const bool vtx_alpha_honor = VTX_ALPHA_HONOR();
   const bool ignore_tex_alpha = IGNORE_TEX_ALPHA(); // TSP.IgnoreTexAlpha, read once per frame
+  const int  pcw_list = PCW_LIST(); // 0=off 1=blend 2=blend+no Z write
   const int  isp_depth_func = ISP_DEPTH_FUNC(); // 0=off 1=OP/PT lists 2=all lists
   const int  isp_cull       = ISP_CULL();       // 0=off 1=on 2=on, swapped winding
 
@@ -9991,6 +10107,10 @@ void DoRender()
           // ppz_write (default ON) re-enables the write on every strip and
           // silently undoes the boundary setting above.
           if (trans_no_zwrite && in_trans_list) z_write = false;
+          // PCW_LIST() mode 2: a polygon that calls itself Translucent should
+          // not stamp depth either, whichever range our TA filed it in.
+          if (pcw_list == 2 && stripMod->pcw.ListType == ListType_Translucent)
+            z_write = false;
           int z_func = GX_GEQUAL;
           if (isp_depth_func == 2 || (isp_depth_func == 1 && !in_trans_list))
             z_func = (int)stripMod->isp.DepthMode;
@@ -10028,6 +10148,26 @@ void DoRender()
           if (src != last_src_blend || dst != last_dst_blend)
           {
             GX_SetBlendMode(GX_BM_BLEND, dc_src_to_gx[src], dc_dst_to_gx[dst], GX_LO_CLEAR);
+            last_src_blend = src;
+            last_dst_blend = dst;
+          }
+        }
+        // PCW_LIST(): same thing for a polygon our TA filed OUTSIDE the
+        // translucent range although its own PCW says Translucent (see the
+        // macro doc at the top of the file). Taking over the blend state out
+        // here means also putting it back: -2 is "GX_BM_NONE", which cannot
+        // collide with the -1 the translucent boundary resets to.
+        else if (BLEND_MODE() && pcw_list && !seg_as)
+        {
+          const bool poly_trans = (stripMod->pcw.ListType == ListType_Translucent);
+          const int src = poly_trans ? (int)stripMod->tsp.SrcInstr : -2;
+          const int dst = poly_trans ? (int)stripMod->tsp.DstInstr : -2;
+          if (src != last_src_blend || dst != last_dst_blend)
+          {
+            if (poly_trans)
+              GX_SetBlendMode(GX_BM_BLEND, dc_src_to_gx[src], dc_dst_to_gx[dst], GX_LO_CLEAR);
+            else
+              GX_SetBlendMode(GX_BM_NONE, GX_BL_SRCALPHA, GX_BL_INVSRCALPHA, GX_LO_CLEAR);
             last_src_blend = src;
             last_dst_blend = dst;
           }
@@ -10156,10 +10296,9 @@ void DoRender()
       // the frame-wide GEQUAL painter compare because isp_depth_func is off,
       // a strip withheld by the RTT list split, or vertex alpha forced opaque.
       // -1 means "never overridden this frame, still the frame-start default".
-      if (LOGO_ARMED()
-          && (s_logo_draw_n < LOGO_MAX_STRIPS
-              || (stripMod && stripMod->pcw.Texture
-                  && logo_is_hunted_tex(stripMod))))
+      const bool logo_sig_strip = stripMod && stripMod->pcw.Texture
+                               && logo_is_hunted(stripMod);
+      if (LOGO_ARMED() && (s_logo_draw_n < LOGO_MAX_STRIPS || logo_sig_strip))
       {
         // Vertex::z holds W (view depth, larger = farther). The projection
         // maps it to NDC z = -p5 + p6/W, which GX turns into a depth that
@@ -10184,6 +10323,21 @@ void DoRender()
                last_tev_amode, last_cull, (int)emit_clr1,
                count ? drawVTX[0].z : 0.0f, count ? drawVTX[count - 1].z : 0.0f,
                zn0, zn1);
+        // The hunted strip only: what GX was handed for it, and the decoded
+        // texels the TX unit will read. This is the half of the picture the
+        // raw-VRAM thumbnail in the pass dump cannot show.
+        if (logo_sig_strip && s_logo_dec_n < LOGO_MAX_DECODED)
+        {
+          s_logo_dec_n++;
+          printf("[LOGO] draw#%03u ^^ HUNTED (tsp=%08X tcw=%08X ignA=%u shad=%u "
+                 "useA=%u src=%u dst=%u)\n",
+                 s_logo_draw_n, (u32)stripMod->tsp.full, (u32)stripMod->tcw.full,
+                 (unsigned)stripMod->tsp.IgnoreTexA, (unsigned)stripMod->tsp.ShadInstr,
+                 (unsigned)stripMod->tsp.UseAlpha, (unsigned)stripMod->tsp.SrcInstr,
+                 (unsigned)stripMod->tsp.DstInstr);
+          logo_dump_decoded("whole texture, as GX will sample it");
+          fflush(stdout);
+        }
         s_logo_draw_n++;
       }
 #endif
@@ -10915,6 +11069,180 @@ static INLINE bool logo_is_hunted_tex(const PolyParam *pp)
 #endif
 }
 
+// Hunted by texture address OR by TSP word. Kept separate from
+// logo_is_hunted_tex() because the pass-level thumbnail bookkeeping is keyed
+// on the texture and only wants the address half.
+static INLINE bool logo_is_hunted(const PolyParam *pp)
+{
+  if (logo_is_hunted_tex(pp)) return true;
+#if LOGO_TRIGGER_TSP || LOGO_TRIGGER_TSP2
+  const u32 t = (u32)pp->tsp.full & (u32)LOGO_TRIGGER_TSP_MASK;
+#if LOGO_TRIGGER_TSP
+  if (t == ((u32)LOGO_TRIGGER_TSP & (u32)LOGO_TRIGGER_TSP_MASK)) return true;
+#endif
+#if LOGO_TRIGGER_TSP2
+  if (t == ((u32)LOGO_TRIGGER_TSP2 & (u32)LOGO_TRIGGER_TSP_MASK)) return true;
+#endif
+#endif
+#if LOGO_TRIGGER_FIELDS & 1
+  // Additive (SrcAlpha/One) AND ignoring the texture alpha.
+  if (pp->tsp.IgnoreTexA && pp->tsp.SrcInstr == 4 && pp->tsp.DstInstr == 1)
+    return true;
+#endif
+#if LOGO_TRIGGER_FIELDS & 2
+  // 256x256 ARGB1555 VQ with IgnoreTexA. TexU/TexV 5 = 8 << 5 = 256.
+  if (pp->tsp.IgnoreTexA && pp->tcw.NO_PAL.VQ_Comp
+      && pp->tcw.NO_PAL.PixelFmt == 0
+      && pp->tsp.TexU == 5 && pp->tsp.TexV == 5)
+    return true;
+#endif
+  return false;
+}
+
+// Worth a line in the census even when it sits in the opaque range: anything
+// that ignores its texture alpha, blends additively, or is a VQ ARGB1555
+// surface. Keeps the table about translucency instead of about scenery.
+static INLINE bool logo_is_interesting(const PolyParam *m)
+{
+  if (!m->pcw.Texture) return false;
+  return m->tsp.IgnoreTexA
+      || (m->tsp.SrcInstr == 4 && m->tsp.DstInstr == 1)
+      || (m->tcw.NO_PAL.VQ_Comp && m->tcw.NO_PAL.PixelFmt == 0);
+}
+
+// The last texture handed to GX_TEXMAP0, recorded at the bind itself so the
+// draw dump does not have to guess which slot a strip ended up on.
+static struct
+{
+  const u16 *pixels;   // K0 (cached) pointer to the DECODED data
+  u32 fmt;             // GX_TF_*
+  u32 w, h;
+  u32 src_addr;        // the DC texture address it was decoded from
+  int hit;             // 1 = served from cache, 0 = decoded on this bind
+  int valid;
+} s_logo_bind;
+
+static void logo_note_texbind(const PolyParam *mod, GXTexObj *obj, int cache_hit)
+{
+  // GX_GetTexObjData returns a PHYSICAL address (val[3] << 5); the same
+  // MEM_PHYSICAL_TO_K0 round-trip yuv_tev_bind_uv() uses gets a readable
+  // pointer back.
+  s_logo_bind.pixels   = (const u16 *)MEM_PHYSICAL_TO_K0(GX_GetTexObjData(obj));
+  s_logo_bind.fmt      = (u32)GX_GetTexObjFmt(obj);
+  s_logo_bind.w        = (u32)GX_GetTexObjWidth(obj);
+  s_logo_bind.h        = (u32)GX_GetTexObjHeight(obj);
+  s_logo_bind.src_addr = (u32)((mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
+  s_logo_bind.hit      = cache_hit;
+  s_logo_bind.valid    = 1;
+}
+
+// The decoded texture as the TX unit reads it: GX 4x4 block layout, in the GX
+// format the decoder chose. Same ASCII ramp and the same census as
+// logo_dump_texture() so the two can be read side by side -- if the source
+// dump shows a picture and this one does not, the bug is in the decode or the
+// cache, and if both show it then nothing is wrong with the texture at all
+// and the answer is in the draw state on the line above.
+//   space = alpha 0 texel, '.' = opaque black ... '@' = opaque white.
+static void logo_dump_decoded(const char *what)
+{
+  if (!s_logo_bind.valid || !s_logo_bind.pixels)
+  {
+    printf("[LOGO]   decoded: no bind recorded for this strip\n");
+    return;
+  }
+  const u32 fmt = s_logo_bind.fmt;
+  const u32 w   = s_logo_bind.w;
+  const u32 h   = s_logo_bind.h;
+  printf("[LOGO]   decoded %s: gxfmt=%u(%s) %ux%u data=%08X src=%06X cache=%s\n",
+         what, (unsigned)fmt,
+         fmt == GX_TF_RGB5A3 ? "RGB5A3" : fmt == GX_TF_RGB565 ? "RGB565"
+              : fmt == GX_TF_CMPR ? "CMPR" : fmt == GX_TF_CI8 ? "CI8"
+              : fmt == GX_TF_CI4 ? "CI4" : fmt == GX_TF_RGBA8 ? "RGBA8" : "?",
+         (unsigned)w, (unsigned)h, (u32)(unat)s_logo_bind.pixels,
+         s_logo_bind.src_addr, s_logo_bind.hit ? "HIT" : "decoded now");
+
+  if ((fmt != GX_TF_RGB5A3 && fmt != GX_TF_RGB565) || w < 4 || h < 4)
+  {
+    printf("[LOGO]   (only RGB5A3/RGB565 are sampled here - grid skipped)\n");
+    return;
+  }
+
+  static const char ramp[10] = ".:-=+*#%@";
+  char line[LOGO_TEX_COLS + 1];
+  u32 n_clear = 0, n_opaque = 0;
+  int lmin = 255, lmax = 0;
+  u16 hist_val[8];
+  u32 hist_cnt[8];
+  u32 hist_n = 0, hist_other = 0;
+
+  for (u32 ty = 0; ty < LOGO_TEX_ROWS; ty++)
+  {
+    for (u32 tx = 0; tx < LOGO_TEX_COLS; tx++)
+    {
+      u32 x = (u32)(((float)tx + 0.5f) / (float)LOGO_TEX_COLS * (float)w);
+      u32 y = (u32)(((float)ty + 0.5f) / (float)LOGO_TEX_ROWS * (float)h);
+      if (x >= w) x = w - 1;
+      if (y >= h) y = h - 1;
+      const u16 d = s_logo_bind.pixels[GX_TexOffs(x, y, w)];
+
+      u32 hk = 0;
+      for (; hk < hist_n; hk++)
+        if (hist_val[hk] == d) { hist_cnt[hk]++; break; }
+      if (hk == hist_n)
+      {
+        if (hist_n < 8) { hist_val[hist_n] = d; hist_cnt[hist_n] = 1; hist_n++; }
+        else hist_other++;
+      }
+
+      int a, r, g, b;
+      if (fmt == GX_TF_RGB565)
+      {
+        a = 255;
+        r = (((d >> 11) & 31) * 255) / 31;
+        g = (((d >>  5) & 63) * 255) / 63;
+        b = ((  d       & 31) * 255) / 31;
+      }
+      else if (d & 0x8000)          // RGB5A3, opaque half: 1 RRRRR GGGGG BBBBB
+      {
+        a = 255;
+        r = (((d >> 10) & 31) * 255) / 31;
+        g = (((d >>  5) & 31) * 255) / 31;
+        b = ((  d       & 31) * 255) / 31;
+      }
+      else                          // RGB5A3, blended half: 0 AAA RRRR GGGG BBBB
+      {
+        a = (((d >> 12) &  7) * 255) / 7;
+        r = (((d >>  8) & 15) * 255) / 15;
+        g = (((d >>  4) & 15) * 255) / 15;
+        b = ((  d       & 15) * 255) / 15;
+      }
+      const int lum = (r * 77 + g * 151 + b * 28) >> 8;
+      if (lum < lmin) lmin = lum;
+      if (lum > lmax) lmax = lum;
+      if (a == 0) { n_clear++;  line[tx] = ' '; }
+      else        { n_opaque++; line[tx] = ramp[(lum * 8) / 255]; }
+    }
+    line[LOGO_TEX_COLS] = 0;
+    printf("[LOGO]   [%s]\n", line);
+  }
+
+  printf("[LOGO]   decoded %u texels: alpha0=%u alpha>0=%u luma=%d..%d\n",
+         (unsigned)(LOGO_TEX_COLS * LOGO_TEX_ROWS), n_clear, n_opaque, lmin, lmax);
+  printf("[LOGO]   decoded values (raw -> A R G B):");
+  for (u32 hk = 0; hk < hist_n; hk++)
+  {
+    const u16 d = hist_val[hk];
+    int a, r, g, b;
+    if (fmt == GX_TF_RGB565)   { a = 255; r = (d >> 11) & 31; g = (d >> 5) & 63; b = d & 31; }
+    else if (d & 0x8000)       { a = 7;   r = (d >> 10) & 31; g = (d >> 5) & 31; b = d & 31; }
+    else                       { a = (d >> 12) & 7; r = (d >> 8) & 15; g = (d >> 4) & 15; b = d & 15; }
+    printf(" %04X=%u(%d,%d,%d,%d)", d, hist_cnt[hk], a, r, g, b);
+  }
+  if (hist_other)
+    printf(" +%u more", hist_other);
+  printf("\n");
+}
+
 // One source texel -> 8-bit ARGB. Mirrors the real converters (ABGR1555 /
 // ABGR0565 / ABGR4444 near the top of this file) so the thumbnail shows what
 // the decoder sees rather than offering a second opinion.
@@ -11127,6 +11455,109 @@ static void logo_dump_texture(const PolyParam *pp, float u0, float u1,
   printf("\n");
 }
 
+#if LOGO_CENSUS_EVERY
+static u32 s_logo_census_n = 0;
+
+// Inventory of this pass: how many strips landed in each list, and the
+// distinct (TSP, TCW) materials among the translucent/punch-through ones plus
+// any "interesting" opaque one. Runs on quiet passes too, so a session that
+// never trips the signature still says what was on screen.
+//
+// Walks VertexLists rather than PolyParams so it can report the class our
+// renderer actually gave each strip (which list range it landed in) NEXT TO
+// the PCW's own ListType. The first Headhunter capture had those two
+// disagreeing, and a census that printed only one of them would have hidden
+// it.
+static void logo_census()
+{
+  if (s_logo_census_n >= LOGO_CENSUS_MAX) return;
+  s_logo_census_n++;
+
+  const VertexList *l   = s_logo_prev_lst;
+  const PolyParam  *mod = s_logo_prev_mod;
+  const PolyParam  *cur = (mod > listModes) ? mod - 1 : mod;
+
+  u32 cls_n[3] = { 0, 0, 0 };          // OP, TR, PT by list range
+  u32 lt_n[8]  = { 0, 0, 0, 0, 0, 0, 0, 0 }; // by pcw.ListType
+  u32 n_tex = 0, n_ignA = 0, n_add = 0, n_vq1555 = 0, n_strips = 0;
+
+  u32 k_tsp[LOGO_CENSUS_SLOTS], k_tcw[LOGO_CENSUS_SLOTS], k_cnt[LOGO_CENSUS_SLOTS];
+  u8  k_cls[LOGO_CENSUS_SLOTS];
+  u32 k_n = 0, k_over = 0;
+
+  for (; l != curLST; l++)
+  {
+    s32 c = l->count;
+    if (c < 0)
+      cur = mod++;
+    n_strips++;
+
+    const int cls = (PTLST    && l >= PTLST)    ? 2
+                  : (TransLST && l >= TransLST) ? 1 : 0;
+    cls_n[cls]++;
+    lt_n[cur->pcw.ListType & 7]++;
+    if (!cur->pcw.Texture) continue;
+    n_tex++;
+    if (cur->tsp.IgnoreTexA) n_ignA++;
+    if (cur->tsp.SrcInstr == 4 && cur->tsp.DstInstr == 1) n_add++;
+    if (cur->tcw.NO_PAL.VQ_Comp && cur->tcw.NO_PAL.PixelFmt == 0
+        && cur->tsp.TexU == 5 && cur->tsp.TexV == 5) n_vq1555++;
+
+    if (cls == 0 && !logo_is_interesting(cur)) continue;
+
+    u32 i = 0;
+    for (; i < k_n; i++)
+      if (k_tsp[i] == (u32)cur->tsp.full && k_tcw[i] == (u32)cur->tcw.full)
+      { k_cnt[i]++; break; }
+    if (i == k_n)
+    {
+      if (k_n < LOGO_CENSUS_SLOTS)
+      {
+        k_tsp[k_n] = (u32)cur->tsp.full;
+        k_tcw[k_n] = (u32)cur->tcw.full;
+        k_cnt[k_n] = 1;
+        k_cls[k_n] = (u8)cls;
+        k_n++;
+      }
+      else k_over++;
+    }
+  }
+
+  printf("[LOGO] census #%u pass=%u frame=%u strips=%u | range OP=%u TR=%u PT=%u "
+         "| pcw.lt 0=%u 1=%u 2=%u 3=%u 4=%u other=%u\n",
+         s_logo_census_n, s_logo_pass_no, (u32)FrameCount, n_strips,
+         cls_n[0], cls_n[1], cls_n[2],
+         lt_n[0], lt_n[1], lt_n[2], lt_n[3], lt_n[4],
+         lt_n[5] + lt_n[6] + lt_n[7]);
+  printf("[LOGO] census   textured=%u ignoreTexA=%u additive(src4/dst1)=%u "
+         "vq_argb1555_256=%u\n", n_tex, n_ignA, n_add, n_vq1555);
+
+  static const char *clsname[3] = { "OP", "TR", "PT" };
+  for (u32 i = 0; i < k_n; i++)
+  {
+    TSP t; t.full = k_tsp[i];   // through the union, not a pointer cast
+    TCW w; w.full = k_tcw[i];
+    printf("[LOGO] census   [%02u] %s n=%-3u tsp=%08X tcw=%08X | ignA=%u shad=%u "
+           "useA=%u src=%u dst=%u filt=%u | fmt=%u vq=%u scan=%u mip=%u %ux%u "
+           "addr=%06X\n",
+           i, clsname[k_cls[i]], k_cnt[i], k_tsp[i], k_tcw[i],
+           (unsigned)t.IgnoreTexA, (unsigned)t.ShadInstr, (unsigned)t.UseAlpha,
+           (unsigned)t.SrcInstr, (unsigned)t.DstInstr, (unsigned)t.FilterMode,
+           (unsigned)w.NO_PAL.PixelFmt, (unsigned)w.NO_PAL.VQ_Comp,
+           (unsigned)w.NO_PAL.ScanOrder, (unsigned)w.NO_PAL.MipMapped,
+           8u << t.TexU, 8u << t.TexV,
+           (u32)((w.NO_PAL.TexAddr << 3) & VRAM_MASK));
+  }
+  if (k_over)
+    printf("[LOGO] census   ... +%u more distinct materials past the %u slots\n",
+           k_over, (unsigned)LOGO_CENSUS_SLOTS);
+  if (s_logo_census_n == LOGO_CENSUS_MAX)
+    printf("[LOGO] census   budget spent (%u) - no more censuses\n",
+           (unsigned)LOGO_CENSUS_MAX);
+  fflush(stdout);
+}
+#endif // LOGO_CENSUS_EVERY
+
 // One dumped render pass: header, then every strip submitted since the
 // previous StartRender, then a thumbnail for the first few distinct textures.
 static void logo_dump_pass()
@@ -11159,19 +11590,37 @@ static void logo_dump_pass()
     s_logo_seen = 0;
   }
 
+#if LOGO_CENSUS_EVERY
+  if ((s_logo_pass_no % LOGO_CENSUS_EVERY) == 0)
+    logo_census();
+#endif
+
   // Signature trigger: does this pass reference the texture being hunted? One
   // walk over the pass's parameter headers (a few dozen, not the vertices), so
   // it is cheap enough to run on every pass including the quiet ones.
   bool want_sig = false;
-#if LOGO_TRIGGER_TEX || LOGO_TRIGGER_TEX2
+#if LOGO_TRIGGER_TEX || LOGO_TRIGGER_TEX2 || LOGO_TRIGGER_TSP || LOGO_TRIGGER_TSP2 || LOGO_TRIGGER_FIELDS
   // '<' not '!=': a walk that starts past its end would run through the whole
   // 8K param array.
-  for (const PolyParam *m = s_logo_prev_mod; m < curMod; m++)
-    if (m->pcw.Texture && logo_is_hunted_tex(m))
-    {
-      want_sig = true;
-      break;
-    }
+#if LOGO_SIG_FIRST_PASS
+  if (s_logo_sig_used < LOGO_SIG_MAX && s_logo_pass_no >= LOGO_SIG_FIRST_PASS)
+#else
+  if (s_logo_sig_used < LOGO_SIG_MAX)  // LOGO_SIG_FIRST_PASS == 0: no delay
+#endif
+  {
+    for (const PolyParam *m = s_logo_prev_mod; m < curMod; m++)
+      if (m->pcw.Texture && logo_is_hunted(m))
+      {
+        want_sig = true;
+        break;
+      }
+    // Spend the budget on passes that actually fired, not on passes that
+    // merely looked: a surface that stays on screen would otherwise dump
+    // every frame for as long as it is visible.
+    if (want_sig && ++s_logo_sig_used >= LOGO_SIG_MAX)
+      printf("[LOGO] signature budget spent (%u passes) - no more sig dumps\n",
+             (unsigned)LOGO_SIG_MAX);
+  }
 #endif
 
   // Dump every pass at boot, then sample one in LOGO_EVERY until the window
@@ -11191,6 +11640,7 @@ static void logo_dump_pass()
 
   s_logo_tex_n  = 0;
   s_logo_draw_n = 0;
+  s_logo_dec_n  = 0;
 
   const u32 xclip = FB_X_CLIP.full;
   const u32 yclip = FB_Y_CLIP.full;
@@ -11233,7 +11683,7 @@ static void logo_dump_pass()
     // its index, and thumbnail its texture even if the per-pass budget is up.
     const u32 strip_tex = cur->pcw.Texture
                         ? (u32)((cur->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK) : 0u;
-    const bool is_sig = cur->pcw.Texture && logo_is_hunted_tex(cur);
+    const bool is_sig = cur->pcw.Texture && logo_is_hunted(cur);
 
     if (idx < LOGO_MAX_STRIPS || is_sig)
     {
@@ -11867,11 +12317,39 @@ void EndRender() {}
 // VertexDecoder struct: Handles the accumulation of vertex data into strips.
 // ============================
 
+// TA_LIST_DEBUG_LOG: when did each list actually open and close, and at which
+// strip? Two lines per list per frame, rate-limited, so it can ride along in a
+// build that is otherwise quiet.
+//
+// This is the other half of the Headhunter question. PCW_LIST() fixes the
+// PICTURE by honouring each polygon's own ListType; this says whether the TA
+// was right to file them where it did. Expect, for a frame of that menu:
+//   start lt=0 @0 ... end lt=0 @18   (18 strips in the opaque list)
+//   start lt=2 @18 ... end lt=2 @18  (translucent list opened EMPTY, at the end)
+// which means the game never sent an End Of List before its translucent
+// polygons - our TA is doing what the hardware doc says (ListType is only read
+// at list start), so either the doc is wrong or something upstream is being
+// missed. Set back to 0 once the answer is in.
+#define TA_LIST_DEBUG_LOG 0
+#if TA_LIST_DEBUG_LOG
+static u32 s_talist_lines = 0;
+#define TA_LIST_MAX_LINES 60
+#endif
+
 struct VertexDecoder
 {
   // list handling
   __forceinline static void StartList(u32 ListType)
   {
+#if TA_LIST_DEBUG_LOG
+    if (s_talist_lines < TA_LIST_MAX_LINES)
+    {
+      s_talist_lines++;
+      printf("[TALIST] start lt=%u @strip %d\n",
+             (unsigned)ListType, (int)(curLST - lists));
+      fflush(stdout);
+    }
+#endif
     if (ListType == ListType_Translucent)
     {
       TransLST = curLST;
@@ -11894,7 +12372,19 @@ struct VertexDecoder
       OpaqueMod = curMod;
     }
   }
-  __forceinline static void EndList(u32 ListType) {}
+  __forceinline static void EndList(u32 ListType)
+  {
+#if TA_LIST_DEBUG_LOG
+    if (s_talist_lines < TA_LIST_MAX_LINES)
+    {
+      s_talist_lines++;
+      printf("[TALIST] end   lt=%u @strip %d%s\n",
+             (unsigned)ListType, (int)(curLST - lists),
+             s_talist_lines == TA_LIST_MAX_LINES ? "  (budget spent)" : "");
+      fflush(stdout);
+    }
+#endif
+  }
 
   static u32 FLCOL(float *col)
   {
