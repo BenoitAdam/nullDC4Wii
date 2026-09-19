@@ -483,6 +483,11 @@
                                 old flat-grayscale behavior for every other game;
                                 Crazy Taxi needs this on for its HUD arrow/dollar
                                 sign to show their real color instead of gray.
+        pcw_list=on         <- off/on/nozwrite. Honour a polygon's own
+                               PCW.ListType for the blend state, even when the
+                               TA filed it in another list's range. on = blend
+                               only, nozwrite = also drop its depth write.
+                               Needs blend_mode=on. Headhunter's menu needs it.
         tex_alpha=on        <- on/off, honour TSP.IgnoreTexAlpha (read the texture
                                alpha as 1.0 on the polygons that set the bit).
                                Headhunter's black ARGB1555 VQ panels need it.
@@ -934,6 +939,7 @@ extern int g_trans_zwrite_preset;
 extern int g_sprite_color_preset;
 extern int g_vtx_alpha_preset;
 extern int g_tex_alpha_preset;
+extern int g_pcw_list_preset;
 extern int g_list_order_preset;
 extern int g_debug_skip_tex;
 extern int g_debug_skip_tex_saved;
@@ -1059,6 +1065,7 @@ struct GamePreset
     int sprite_color;
     int vtx_alpha;
     int tex_alpha;
+    int pcw_list;
     int list_order;
     int debug_skip_tex;
     int layer_back_tex[LAYER_BACK_TEX_MAX];
@@ -1235,6 +1242,15 @@ static int parse_bool(const char* v)
     if (key_eq(v, "off") || key_eq(v, "false") || key_eq(v, "no")  || strcmp(v, "0") == 0) return 0;
     printf("[game_presets] Unknown on/off value: '%s'\n", v);
     return -1;
+}
+
+// pcw_list is on/off plus a third "no z write" state. Spelled out rather than
+// left to atoi(), which would read "on" as 0 and silently disable the preset.
+static int parse_pcw_list(const char* v)
+{
+    if (key_eq(v, "nozwrite") || key_eq(v, "no_zwrite") || strcmp(v, "2") == 0) return 2;
+    if (key_eq(v, "blend")) return 1;
+    return parse_bool(v);   // on/off/1/0/true/false/yes/no
 }
 
 // render_to_texture is on/off plus a third "overlay" state (carry the dropped
@@ -1513,6 +1529,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "sprite_color")) p->sprite_color = parse_bool(val);
     else if (key_eq(key, "vtx_alpha"))    p->vtx_alpha    = parse_bool(val);
     else if (key_eq(key, "tex_alpha"))    p->tex_alpha    = parse_bool(val);
+    // 0/1/2, not a bool: "on" means mode 1 (blend only).
+    else if (key_eq(key, "pcw_list"))     p->pcw_list     = parse_pcw_list(val);
     else if (key_eq(key, "list_order"))   p->list_order   = parse_bool(val);
     // base 0: takes "0x52C000" straight off a [SCN] census addr= field, and
     // plain decimal too. Diagnostic only — it removes geometry.
@@ -1629,6 +1647,7 @@ static void preset_clear(GamePreset* cur)
     cur->sprite_color = -1;
     cur->vtx_alpha = -1;
     cur->tex_alpha = -1;
+    cur->pcw_list = -1;
     cur->list_order = -1;
     cur->debug_skip_tex = -1;
     cur->layer_back_tex_n = -1;
@@ -1730,6 +1749,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->sprite_color >= 0) { g_sprite_color_preset = p->sprite_color; printf("  sprite_color -> %d\n", p->sprite_color); }
     if (p->vtx_alpha    >= 0) { g_vtx_alpha_preset    = p->vtx_alpha;    printf("  vtx_alpha    -> %d\n", p->vtx_alpha); }
     if (p->tex_alpha    >= 0) { g_tex_alpha_preset    = p->tex_alpha;    printf("  tex_alpha    -> %d\n", p->tex_alpha); }
+    if (p->pcw_list     >= 0) { g_pcw_list_preset     = p->pcw_list;     printf("  pcw_list     -> %d\n", p->pcw_list); }
     if (p->list_order   >= 0) { g_list_order_preset   = p->list_order;   printf("  list_order   -> %d\n", p->list_order); }
     if (p->debug_skip_tex > 0) { g_debug_skip_tex = p->debug_skip_tex; g_debug_skip_tex_saved = p->debug_skip_tex;
                                  printf("  debug_skip_tex -> %06X (DIAGNOSTIC: strips hidden)\n", (unsigned)p->debug_skip_tex); }

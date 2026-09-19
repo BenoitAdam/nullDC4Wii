@@ -227,6 +227,14 @@ int g_vtx_alpha_preset = 0;
 // SrcAlpha/One blend and the panel renders black.
 int g_tex_alpha_preset = 0;
 
+// Honour PCW.ListType for the blend state (see PCW_LIST in gxRend.cpp).
+// 0 = off (a polygon gets the blend state of the list range our TA filed it
+// in); 1 = a polygon that says Translucent gets its own TSP blend factors
+// wherever it was filed; 2 = and drops its depth write too.
+// Headhunter's menu files 16 translucent polys in the opaque list, where
+// nothing issues GX_SetBlendMode, so its additive overlays paint black.
+int g_pcw_list_preset = 0;
+
 // PVR list-type render order (see LIST_ORDER in gxRend.cpp).
 int g_list_order_preset = 0; // 1 for Puyo 4 Only
 
@@ -234,6 +242,7 @@ extern "C" {
   int get_sprite_color_preset() { return g_sprite_color_preset; }
   int get_vtx_alpha_preset()    { return g_vtx_alpha_preset; }
   int get_tex_alpha_preset()    { return g_tex_alpha_preset; }
+  int get_pcw_list_preset()     { return g_pcw_list_preset; }
   int get_list_order_preset()   { return g_list_order_preset; }
 }
 
@@ -2224,6 +2233,7 @@ void checkBiosFiles()
 #define OPT_BLOCKCOPY   94   // shown on Page 6 (JIT/DYNAREC), under JIT CR0 BRANCH
 #define OPT_JIT_FSQRT   95   // shown on Page 6 (JIT/DYNAREC), under BLOCK COPY
 #define OPT_TEX_ALPHA   103  // shown on Page 2 (GRAPHICS), under VTX ALPHA
+#define OPT_PCW_LIST    104  // shown on Page 2 (GRAPHICS), under TEX ALPHA
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2275,6 +2285,7 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_SPRITE_COLOR,
   OPT_VTX_ALPHA,
   OPT_TEX_ALPHA,
+  OPT_PCW_LIST,
   OPT_DECAL_ALPHA,
   OPT_SEAM_FIX,
   OPT_FOG,
@@ -2739,6 +2750,16 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (IgnoreTexA)   >]"); break;
     }
     printf(" ON fixes black panels (Headhunter)");
+    printf("\n");
+
+    // --- Row: honour PCW.ListType for the blend state ---
+    printf("%s PCW LISTTYPE   : ", (selectedRow == OPT_PCW_LIST) ? ">" : " ");
+    switch (g_pcw_list_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< BLEND             >]"); break;
+      case 2: printf("[< BLEND + NO ZWRITE >]"); break;
+    }
+    printf(" TR polys filed in the OP list (Headhunter)");
     printf("\n");
 
     // --- Row: Decal Alpha Fix ---
@@ -3518,6 +3539,7 @@ bool displayOptionsMenu()
         case OPT_SPRITE_COLOR: g_sprite_color_preset = (g_sprite_color_preset  + 1) % 2; break;
         case OPT_VTX_ALPHA:    g_vtx_alpha_preset    = (g_vtx_alpha_preset     + 1) % 2; break;
         case OPT_TEX_ALPHA:    g_tex_alpha_preset    = (g_tex_alpha_preset     + 1) % 2; break;
+        case OPT_PCW_LIST:     g_pcw_list_preset     = (g_pcw_list_preset      + 2) % 3; break;
         case OPT_POLY_OFFSET: g_poly_offset_preset  = (g_poly_offset_preset    + 3) % 4; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
@@ -3632,6 +3654,7 @@ bool displayOptionsMenu()
         case OPT_SPRITE_COLOR: g_sprite_color_preset = (g_sprite_color_preset  + 1) % 2; break;
         case OPT_VTX_ALPHA:    g_vtx_alpha_preset    = (g_vtx_alpha_preset     + 1) % 2; break;
         case OPT_TEX_ALPHA:    g_tex_alpha_preset    = (g_tex_alpha_preset     + 1) % 2; break;
+        case OPT_PCW_LIST:     g_pcw_list_preset     = (g_pcw_list_preset      + 1) % 3; break;
         case OPT_POLY_OFFSET: g_poly_offset_preset  = (g_poly_offset_preset    + 1) % 4; break;
         case OPT_ADV_ALPHA: g_advanced_alpha_preset = (g_advanced_alpha_preset + 1) % 2; break;
         case OPT_DECAL_ALPHA: g_decal_alpha_preset  = (g_decal_alpha_preset    + 1) % 2; break;
@@ -4495,6 +4518,8 @@ int main(int argc, wchar *argv[])
     printf("Sprite Color   : %s\n", g_sprite_color_preset ? "YES (BaseCol)" : "NO (white)");
     printf("Vtx Alpha      : %s\n", g_vtx_alpha_preset ? "YES (TSP.UseAlpha)" : "NO (force opaque)");
     printf("Tex Alpha      : %s\n", g_tex_alpha_preset ? "IgnoreTexA HONORED" : "OFF (legacy)");
+    printf("PCW ListType   : %s\n", g_pcw_list_preset == 2 ? "BLEND + NO ZWRITE"
+                                   : g_pcw_list_preset == 1 ? "BLEND" : "OFF (legacy)");
     printf("List Order     : %s\n", g_list_order_preset ? "ON (opaque list first)" : "OFF (TA order)");
     printf("TRANS ZWRITE   : %s\n", g_trans_zwrite_preset ? "ON (default)" : "OFF (debug)");
     printf("Poly Offset    : ");
