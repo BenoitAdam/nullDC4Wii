@@ -42,7 +42,27 @@ struct FpSample
   u16 n_tex, n_jit, n_clear, n_disc, n_wrap, n_pad;
   u8  vi;           // VI fields that elapsed during this frame (255 = clamped)
   u8  drawn;        // 0 when frameskip dropped the render
+  u8  clear_reasons; // OR of FP_CLR_* (frame_prof.h) for every clear this frame
 };
+
+// One short tag per FP_CLR_* bit, in bit order. Turns a clear_reasons mask
+// into e.g. "flush+blkchk" instead of a number nobody can read at a glance.
+static const char *const kClrTag[] =
+  { "minfree", "flush", "bootaddr", "retry", "blkchk", "reset" };
+
+static void fp_clr_str(char *out, size_t outsz, u8 mask)
+{
+  out[0] = '\0';
+  bool first = true;
+  for (int i = 0; i < (int)(sizeof(kClrTag) / sizeof(kClrTag[0])); i++)
+  {
+    if (!(mask & (1u << i))) continue;
+    size_t len = strlen(out);
+    if (len >= outsz - 1) break;
+    snprintf(out + len, outsz - len, "%s%s", first ? "" : "+", kClrTag[i]);
+    first = false;
+  }
+}
 
 // ~8.5 s of history at 60 Hz. Deep enough that p99 is the 5th-worst frame of a
 // real sample rather than the worst of sixty, which is what a 1-second window
@@ -215,6 +235,7 @@ void frame_prof_vblank()
   s->n_pad   = (u16)(g_fp.n_pad   > 65535u ? 65535u : g_fp.n_pad);
   s->vi      = (u8)(d_vi > 255u ? 255u : d_vi);
   s->drawn   = (u8)(d_rend != 0);
+  s->clear_reasons = (u8)g_fp.clear_reasons;
 
   memset(&g_fp, 0, sizeof(g_fp));
 
@@ -367,11 +388,13 @@ void frame_prof_dump(double secs)
   }
   printf("  => +%.2fms over a typical frame\n", exc_sum);
 
+  char worst_clr[64];
+  fp_clr_str(worst_clr, sizeof(worst_clr), worst->clear_reasons);
   printf("[FPROF] worst f%u %.2fms:", worst->seq, FP_MS(worst->total));
   for (int k = 0; k < FP_NB; k++)
     printf(" %s=%.2f", kFpName[k], FP_MS(worst->b[k]));
-  printf(" | dec=%u blk=%u clr=%u rd=%u wrap=%u pad=%u vi=%u%s\n",
-         (u32)worst->n_tex, (u32)worst->n_jit, (u32)worst->n_clear,
+  printf(" | dec=%u blk=%u clr=%u[%s] rd=%u wrap=%u pad=%u vi=%u%s\n",
+         (u32)worst->n_tex, (u32)worst->n_jit, (u32)worst->n_clear, worst_clr,
          (u32)worst->n_disc, (u32)worst->n_wrap, (u32)worst->n_pad,
          (u32)worst->vi,
          worst->drawn ? "" : " SKIPPED");
@@ -387,11 +410,13 @@ void frame_prof_dump(double secs)
     {
       const FpSample *s = &s_ring[(s_head + FP_RING - 1 - j) % FP_RING];
       if (s->total < p95) continue;
+      char tail_clr[64];
+      fp_clr_str(tail_clr, sizeof(tail_clr), s->clear_reasons);
       printf("[FPROF]  f%u %.2fms:", s->seq, FP_MS(s->total));
       for (int k = 0; k < FP_NB; k++)
         if (s->b[k]) printf(" %s=%.2f", kFpName[k], FP_MS(s->b[k]));
-      printf(" | dec=%u blk=%u clr=%u rd=%u wrap=%u pad=%u vi=%u%s\n",
-             (u32)s->n_tex, (u32)s->n_jit, (u32)s->n_clear,
+      printf(" | dec=%u blk=%u clr=%u[%s] rd=%u wrap=%u pad=%u vi=%u%s\n",
+             (u32)s->n_tex, (u32)s->n_jit, (u32)s->n_clear, tail_clr,
              (u32)s->n_disc, (u32)s->n_wrap, (u32)s->n_pad, (u32)s->vi,
              s->drawn ? "" : " SKIPPED");
       listed++;

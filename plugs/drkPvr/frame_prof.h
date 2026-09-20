@@ -95,6 +95,26 @@ extern "C" int g_frame_prof_preset;
 
 #define FRAME_PROF_ON() (__builtin_expect(g_frame_prof_preset != 0, 0))
 
+// WHY a JIT cache clear fired, as a bitmask so a frame that hits more than one
+// reason (rare, but n_clear can exceed 1) still reports every one of them
+// rather than losing all but the last. Bit order matches dc/sh4/rec_v2/
+// driver.cpp's six recSh4_ClearCache() call sites (5 on Wii; the 65536-byte
+// non-Wii floor check is its own build and cannot fire here).
+//
+// Built because a clr=1 next to a jit storm showed up on real hardware with
+// NONE of the five call sites' printf lines anywhere in the log, even though
+// every one of them prints before clearing and the run continued for many
+// more per-second fflush()es afterward -- so the line was not merely
+// unflushed. Cheap and un-lose-able because it lives in the same gated
+// accumulator as everything else here, instead of a printf that has to win a
+// race with the ARM7/render threads' own stdout traffic to survive.
+#define FP_CLR_MINFREE   (1u << 0)  // emit_FreeSpace() < CACHE_MIN_FREE
+#define FP_CLR_FLUSH     (1u << 1)  // LastAddr >= CACHE_FLUSH_THRESHOLD (92%)
+#define FP_CLR_BOOTADDR  (1u << 2)  // JIT_SBP: IP.BIN / 1ST_READ.BIN transition
+#define FP_CLR_RETRY     (1u << 3)  // first compile attempt failed, clean retry
+#define FP_CLR_BLOCKCHK  (1u << 4)  // rdv_BlockCheckFail: guest overwrote code
+#define FP_CLR_RESET     (1u << 5)  // recSh4_Reset() via ResetDC()
+
 // Live accumulators for the frame in progress. Reset by frame_prof_vblank()
 // once it has folded them into the ring.
 struct FrameProfAcc
@@ -112,6 +132,7 @@ struct FrameProfAcc
   u32 n_disc;    // libGDR_ReadSector() calls
   u32 n_wrap;    // texture arena wraps (a wrap re-decodes the whole working set)
   u32 n_pad;     // host input polls
+  u32 clear_reasons; // OR of FP_CLR_* for every clear this frame, see above
 };
 extern FrameProfAcc g_fp;
 
@@ -121,6 +142,7 @@ extern FrameProfAcc g_fp;
 #define FP_T0(v)          u32 v = FRAME_PROF_ON() ? FP_TICKS32() : 0u
 #define FP_ACC(field, v)  do { if (FRAME_PROF_ON()) g_fp.field += FP_TICKS32() - (v); } while (0)
 #define FP_BUMP(field)    do { if (FRAME_PROF_ON()) g_fp.field++; } while (0)
+#define FP_CLR_TAG(bit)   do { if (FRAME_PROF_ON()) g_fp.clear_reasons |= (bit); } while (0)
 
 // Called from the emulated-vblank handler in SPG.cpp.
 void frame_prof_vblank();          // close the frame, fold it into the ring

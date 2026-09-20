@@ -347,6 +347,7 @@ DynarecCodeEntry* rdv_CompileBlock(u32 bpc)
 	{
 		printf("recSh4: cache below min-free threshold, clearing (free=%u bytes)\n",
 		       emit_FreeSpace());
+		FP_CLR_TAG(FP_CLR_MINFREE);
 		recSh4_ClearCache();
 	}
 	// Proactive clear at high-water threshold
@@ -354,6 +355,7 @@ DynarecCodeEntry* rdv_CompileBlock(u32 bpc)
 	{
 		printf("recSh4: cache above flush threshold (%u%%), clearing\n",
 		       (LastAddr * 100u) / CODE_SIZE);
+		FP_CLR_TAG(FP_CLR_FLUSH);
 		recSh4_ClearCache();
 	}
 #else
@@ -449,6 +451,7 @@ DynarecCodeEntry* rdv_CompilePC()
 		if (masked == 0x08300 || masked == 0x10000)
 		{
 			printf("recSh4: boot address %08X reached, clearing block cache\n", pc);
+			FP_CLR_TAG(FP_CLR_BOOTADDR);
 			recSh4_ClearCache();
 		}
 	}
@@ -459,6 +462,7 @@ DynarecCodeEntry* rdv_CompilePC()
 	{
 		// First attempt failed (decode/ngen error). Retry with a clean cache.
 		printf("recSh4: WARNING - compile failed at %08X, retrying after cache clear\n", pc);
+		FP_CLR_TAG(FP_CLR_RETRY);
 		recSh4_ClearCache();
 		rv = rdv_CompileBlock(pc);
 
@@ -516,6 +520,7 @@ DynarecCodeEntry* FASTCALL rdv_BlockCheckFail(u32 pc)
 
 	printf("recSh4: block check fail at %08X, clearing cache and recompiling\n", pc);
 
+	FP_CLR_TAG(FP_CLR_BLOCKCHK);
 	recSh4_ClearCache();
 	return rdv_CompilePC();
 }
@@ -577,6 +582,11 @@ void recSh4_Skip()  { Sh4_int_Skip(); }
 void recSh4_Reset(bool Manual)
 {
 	Sh4_int_Reset(Manual);
+	// ResetDC() (dc/dc.cpp) already prints "Resetting DC (manual/auto)..."
+	// before this runs, but that line is easy to lose sight of once a run has
+	// scrolled past it -- tag it here too so a clr=1 that traces back to a
+	// mid-game reset is unambiguous in the FPROF dump itself.
+	FP_CLR_TAG(FP_CLR_RESET);
 	recSh4_ClearCache();
 }
 
