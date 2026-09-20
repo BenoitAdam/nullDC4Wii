@@ -76,6 +76,7 @@
 
 #include "wii_audio.h"
 #include <asndlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <ogc/cache.h>        // DCFlushRange
@@ -477,6 +478,8 @@ static void audio_stats_tick()
     stat_drops     = 0;
     stat_waits     = 0;
     stat_timeouts  = 0;
+
+    fflush(stdout);   // log is freopen'd to SD; without this the tail is lost
 }
 
 // Audio sink - one 44.1 kHz stereo sample per call from AICA_Sample() (driven
