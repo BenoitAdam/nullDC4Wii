@@ -56,6 +56,11 @@ void MEMCALL WriteMemBlock_nommu_dma(u32 dst, u32 src, u32 size);
 
 /** Copy from a host pointer into emulated address space (no MMU). */
 void MEMCALL WriteMemBlock_nommu_ptr(u32 dst, u32* src, u32 size);
+// Same, but byte-swapping each 32-bit word on the way in (HOST_TO_LE32).
+// The GD-ROM DMA needs this: its source is raw little-endian disc data, so
+// the plain memmove variant above cannot serve it -- which is why that path
+// was still dispatching one word at a time. See dc/gdrom/gdromv3.cpp.
+void MEMCALL WriteMemBlock_nommu_ptr_le32(u32 dst, u32* src, u32 size);
 
 /** Copy from a host pointer into emulated address space (with MMU). */
 void MEMCALL WriteMemBlock_ptr(u32 dst, u32* src, u32 size);

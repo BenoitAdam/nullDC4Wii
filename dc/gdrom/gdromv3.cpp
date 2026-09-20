@@ -9,6 +9,7 @@
 #include "dc/sh4/sh4_registers.h"
 #include "dc/asic/asic.h"
 #include "dc/sh4/sh4_sched.h"   // SCHED preset: deadline-ordered GD-DMA completion
+#include "plugs/drkPvr/frame_prof.h" // FRAME_PROF: disc bucket
 
 // SCHED preset (wii/main.cpp): route the GD-ROM DMA end IRQ through the unified
 // deadline scheduler so it fires in true order relative to the other DMA/render
@@ -1262,15 +1263,19 @@ void UpdateGDRom()
 			{
 				buff_size=len;
 			}
-			//WriteMemBlock_nommu_ptr(src,(u32*)&read_buff.cache[read_buff.cache_index], buff_size);
-			//Can't use it due to endianess mess :d
-			{
-				u32* pdata=(u32*)&read_buff.cache[read_buff.cache_index];
-				for (u32 i=0;i<buff_size;i+=4)
-				{
-					WriteMem32_nommu(src+i,HOST_TO_LE32(pdata[i>>2]));
-				}
-			}
+			// The old loop here dispatched WriteMem32_nommu once per 32-bit word
+			// -- about 1.9 MILLION calls for a 7.5 MB stage -- because the plain
+			// memmove bulk path cannot byte-swap ("endianess mess"). It can now:
+			// WriteMemBlock_nommu_ptr_le32 does the swap in the bulk path, so this
+			// is one load/stwbrx loop with no dispatch (dc/mem/sh4_mem.cpp).
+			//
+			// FRAME_PROF: charged to disc, not left in the sh4 residual where it
+			// used to read as "the guest is slow during loading". disc now means
+			// the whole GD-ROM cost: host read plus the copy into guest RAM.
+			FP_T0(_fp_gddma0);
+			WriteMemBlock_nommu_ptr_le32(src,
+				(u32*)&read_buff.cache[read_buff.cache_index], buff_size);
+			FP_ACC(disc, _fp_gddma0);
 
 			read_buff.cache_index+=buff_size;
 			src+=buff_size;

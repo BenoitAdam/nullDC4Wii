@@ -277,6 +277,34 @@ void MEMCALL WriteMemBlock_nommu_ptr(u32 dst, u32* src, u32 size)
 		WriteMem32_nommu(dst + i, src[i >> 2]);
 }
 
+// Byte-swapping bulk write. The GD-ROM DMA moves raw little-endian disc data
+// into guest RAM, so it cannot use the plain memmove path above -- and that is
+// exactly why it was left dispatching WriteMem32_nommu once per 32-bit word.
+// A 7.5 MB stage load is ~1.9 MILLION dispatcher calls, and FRAME_PROF charged
+// all of it to sh4 (the residual), where it read as the guest being slow.
+//
+// The swap itself is free: PowerPC has stwbrx, so the fast path is a plain
+// load/byte-reversed-store loop with no call and no dispatch.
+void MEMCALL WriteMemBlock_nommu_ptr_le32(u32 dst, u32* src, u32 size)
+{
+	verify((size & 3) == 0);
+	if (g_blockcopy_preset)
+	{
+		u8* d = _vmem_GetBlockPtr(dst, size);
+		if (d)
+		{
+			blockcopy_announce();
+			u32* dw = (u32*)d;
+			const u32 n = size >> 2;
+			for (u32 i = 0; i < n; i++)
+				dw[i] = HOST_TO_LE32(src[i]);
+			return;
+		}
+	}
+	for (u32 i = 0; i < size; i += 4)
+		WriteMem32_nommu(dst + i, HOST_TO_LE32(src[i >> 2]));
+}
+
 void MEMCALL WriteMemBlock_ptr(u32 addr, u32* data, u32 size)
 {
 	verify((size & 3) == 0);
