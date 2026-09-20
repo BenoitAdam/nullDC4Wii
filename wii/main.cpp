@@ -1037,6 +1037,54 @@ extern "C" int g_ta_profile_preset;
 // Lives in plugs/drkPvr/frame_prof.cpp so plugs/ and dc/ link without wii/.
 extern "C" int g_frame_prof_preset;
 
+// DISC_BULK - serve a run of GD-ROM sectors with ONE fseek + fread instead of
+// one per sector (plugs/ImgReader/iso9660.cpp iso_ReadRun).
+//
+// FRAME_PROF found this on Street Fighter Alpha 3: the pre-fight load spent
+// 63.22 ms of a single 115 ms frame inside libGDR_ReadSector, across 68 calls
+// -- about 0.9 ms each. The bytes are not the problem; the round trips are.
+// FillReadBuffer() asks for up to 32 sectors at a time and the reader served
+// that with 32 separate fseek+fread pairs through libfat, and the fseek before
+// each one throws away whatever stdio had buffered, so nothing amortises.
+//
+// Only coalesces what is provably one contiguous run inside one track; single
+// sectors, negative file offsets, short reads and missing tracks all fall
+// through to the original per-sector path untouched. GDI/ISO images only --
+// CDI and MDS still read per sector. Default OFF: it changes the disc path, so
+// A/B it against a known-good boot before trusting it. 0=off, 1=on.
+int g_disc_bulk_preset = 0;
+
+// CABLE - what video cable the emulated Dreamcast believes is plugged in.
+// Feeds settings.dreamcast.cable, which read_BSC_PDTRA() (dc/sh4/bsc.cpp)
+// reports to the guest through PDTRA bits [9:8]. nullDC.cpp defaulted this to
+// COMPOSITE and it was reachable only from nullDC.cfg, so in practice nobody
+// ever changed it.
+//
+// It matters more than it looks. On composite/RGB the guest picks its refresh
+// from the broadcast byte in dc_flash.bin, so a PAL flash gives a 50 Hz guest
+// -- and a Wii set to EDTV/HDTV 480p can only output 60 Hz, so one emulated
+// frame in five has to be held an extra field forever. FRAME_PROF measured
+// exactly that on SFA3: VI 1x:387 2x:88 3+:15 over 512 frames, ~60.2 Hz of
+// output against a 49.92 Hz guest. No amount of CPU work can fix a cadence.
+//
+// VGA is 640x480 progressive at 60 Hz by definition, independent of the flash
+// region, so it lines the guest up with a 480p console exactly -- and drops
+// the 17% PAL slowdown on the way. The catch is that a game that does not
+// support VGA refuses to boot and says so on a black screen; that is real
+// Dreamcast behaviour, not a bug, so this stays user-selectable rather than
+// something the emulator decides.
+//
+// 0 = COMPOSITE (DC_CABLE_COMPOSITE, legacy default), 1 = RGB SCART, 2 = VGA.
+int g_cable_preset = 0;
+
+extern "C" {
+  int get_cable_preset() { return g_cable_preset; }
+}
+
+extern "C" {
+  int get_disc_bulk_preset() { return g_disc_bulk_preset; }
+}
+
 // BLOCKCOPY - store-queue and DMA block transfers used to run the memory
 // dispatcher once per 32-bit word. do_sqw() alone did EIGHT dispatcher calls
 // per non-TA store-queue flush. The [CC] caller split measured 1,104,636
@@ -2281,6 +2329,8 @@ void checkBiosFiles()
 #define OPT_AUDIO_DRC   106  // Page 4 (AUDIO), under AUDIO BLOCK
 #define OPT_AUDIO_STATS 107  // Page 8 (LOGS), under STRIP DEDUP
 #define OPT_FRAME_PROF 108   // Page 8 (LOGS), under AUDIO STATS
+#define OPT_DISC_BULK  109   // Page 5 (CORE), under SH4 CLOCK
+#define OPT_CABLE      110   // Page 1 (GENERAL), under SPEED LIMITER
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2303,6 +2353,7 @@ static const int OPT_PAGE0_ROWS[] = {
   OPT_LAUNCH,
   OPT_RATIO,
   OPT_SPEED_LIMIT,
+  OPT_CABLE,
   OPT_SHOW_FPS,
   OPT_GRAPHICS,
   OPT_GX,
@@ -2386,7 +2437,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_ASYNC_RENDER,
   OPT_RENDER_DELAY,
   OPT_TMEM_CACHE,
-  OPT_SH4_CLOCK
+  OPT_SH4_CLOCK,
+  OPT_DISC_BULK
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -2565,6 +2617,16 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CAP 100%%)     >]"); break;
     }
     printf(" Stops speed exceeding 100%%");
+    printf("\n");
+
+    // --- Row: CABLE - what cable the guest thinks is attached ---
+    printf("%s CABLE TYPE     : ", (selectedRow == OPT_CABLE) ? ">" : " ");
+    switch (g_cable_preset) {
+      case 0: printf("[< COMPOSITE (FLASH) >]"); break;
+      case 1: printf("[< RGB SCART (FLASH) >]"); break;
+      case 2: printf("[< VGA (480P 60HZ)   >]"); break;
+    }
+    printf(" VGA=60Hz progressive, no judder");
     printf("\n");
 
     // --- Row: Gameplay FPS overlay ---
@@ -3200,6 +3262,15 @@ bool displayOptionsMenu()
     else
       printf("[< %3dMHZ (UNDERCLK) >]", g_sh4_clock_preset);
     printf(" lower=faster host,slower game");
+    printf("\n");
+
+    // --- Row: DISC_BULK - one fseek+fread per RUN of sectors, not per sector ---
+    printf("%s DISC BULK READ : ", (selectedRow == OPT_DISC_BULK) ? ">" : " ");
+    switch (g_disc_bulk_preset) {
+      case 0: printf("[< OFF (PER SECTOR)  >]"); break;
+      case 1: printf("[< ON (BULK, GDI/ISO)>]"); break;
+    }
+    printf(" cuts loading-screen hitches");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3644,6 +3715,7 @@ bool displayOptionsMenu()
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
         case OPT_VQ_CMPR:   g_vq_cmpr_preset        = (g_vq_cmpr_preset        + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
+        case OPT_CABLE:          g_cable_preset           = (g_cable_preset           + 2) % 3; break;
         case OPT_VERTEX_COLOR: g_vertex_color_preset = (g_vertex_color_preset + 1) % 2; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
@@ -3687,6 +3759,7 @@ bool displayOptionsMenu()
         case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset <= 1) ? 16 : g_arm7_batch_preset / 2; break;
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
+        case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
@@ -3763,6 +3836,7 @@ bool displayOptionsMenu()
         case OPT_JOJO_FIX:  g_jojo_fix_preset       = (g_jojo_fix_preset       + 1) % 2; break;
         case OPT_VQ_CMPR:   g_vq_cmpr_preset        = (g_vq_cmpr_preset        + 1) % 2; break;
         case OPT_SPEED_LIMIT: g_speed_limiter_preset = (g_speed_limiter_preset + 1) % 2; break;
+        case OPT_CABLE:          g_cable_preset           = (g_cable_preset           + 1) % 3; break;
         case OPT_VERTEX_COLOR: g_vertex_color_preset = (g_vertex_color_preset + 1) % 2; break;
         case OPT_BLEND_MODE: g_blend_mode_preset    = (g_blend_mode_preset    + 1) % 2; break;
         case OPT_RGB565_OPAQUE_ALPHA: g_rgb565_opaque_alpha_preset = (g_rgb565_opaque_alpha_preset + 1) % 2; break;
@@ -3806,6 +3880,7 @@ bool displayOptionsMenu()
         case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset >= 16) ? 1 : g_arm7_batch_preset * 2; break;
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
+        case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
@@ -4732,6 +4807,9 @@ int main(int argc, wchar *argv[])
                                      g_audio_drc_preset == 2 ? "NORMAL (+-3%)" :
                                      g_audio_drc_preset == 1 ? "GENTLE (+-1%)" : "OFF (LEGACY)");
     printf("Audio Stats    : %s\n", g_audio_stats_preset ? "ON (LOG)" : "OFF");
+    printf("Cable Type     : %s\n", g_cable_preset == 2 ? "VGA (480P 60HZ)" :
+                                     g_cable_preset == 1 ? "RGB SCART" : "COMPOSITE");
+    printf("Disc Bulk Read : %s\n", g_disc_bulk_preset ? "ON (GDI/ISO)" : "OFF (PER SECTOR)");
     printf("Frame Prof     : %s\n", g_frame_prof_preset == 2 ? "ON + TAIL FRAMES" :
                                      g_frame_prof_preset == 1 ? "ON (LOGS [FPROF])" : "OFF");
     printf("Vertex Color Fix: %s\n", g_vertex_color_preset ? "ON" : "OFF");

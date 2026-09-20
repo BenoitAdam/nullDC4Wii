@@ -1,8 +1,10 @@
 #include "iso9660.h"
 #include <unistd.h> // For usleep
+#include <stdlib.h> // malloc, for the DISC BULK READ staging buffer
 
 // This is defined in main.cpp
 extern "C" int get_debug_loop();
+extern "C" int get_disc_bulk_preset();   // DISC BULK READ, see below
 
 bool inbios=true;
 FILE* f_1=0;
@@ -74,6 +76,94 @@ void rss(u8* buff,u32 ss,FILE* file)
 	fseek(file,ss*2352+0x10,SEEK_SET);
 	fread(buff,2048,1,file);
 }
+// ---------------------------------------------------------------------------
+// DISC BULK READ (get_disc_bulk_preset).
+//
+// Found with FRAME_PROF on Street Fighter Alpha 3: the pre-fight load produced
+// a 115 ms frame -- five to six dropped frames of visible hitch -- of which
+// disc=63.22 ms over rd=68 libGDR_ReadSector() calls, i.e. ~0.9 ms per call.
+//
+// The cost is not the bytes, it is the round trips. FillReadBuffer()
+// (dc/gdrom/gdromv3.cpp) asks for up to 32 sectors at a time, and the loop
+// below used to serve that with one fseek and one fread PER SECTOR: 32 trips
+// through libfat for what is a single contiguous run of bytes in a single
+// file. None of the buffering helps either, because the fseek before each
+// read throws away whatever stdio had.
+//
+// iso_ReadRun() serves the longest run it can in one fseek + one fread and
+// then converts out of the staging buffer. The run bound does NOT assume the
+// track table is sorted: iso_ReadSSect() scans backwards and takes the first
+// entry with FAD <= sector, so sector s belongs to track i exactly when no
+// LATER entry also qualifies -- hence the run ends at the smallest FAD above
+// StartSector found after i. Anything it declines (single sector, negative
+// file offset, short read, missing track) falls through to the original
+// per-sector path, which is left untouched so the two agree byte for byte.
+// ---------------------------------------------------------------------------
+#define ISO_BULK_MAX_SECS 32u    // FillReadBuffer() never asks for more
+#define ISO_BULK_MAX_SSZ  2352u  // largest CD sector format
+
+// Lazily allocated (73.5 KB), so the preset costs nothing while it is off.
+static u8 *iso_bulk_buf = 0;
+static bool iso_bulk_nomem = false;
+
+// Returns how many sectors it served; 0 means "caller, use the slow path".
+static u32 iso_ReadRun(u8 *buff, u32 StartSector, u32 SectorCount, u32 secsz)
+{
+	if (SectorCount < 2)
+		return 0;              // nothing to coalesce
+
+	// Resolve the track exactly as iso_ReadSSect() would.
+	s32 ti = -1;
+	for (s32 i = (s32)iso_tc - 1; i >= 0; i--)
+		if (iso_tracks[i].FAD <= StartSector) { ti = i; break; }
+	if (ti < 0)
+		return 0;
+
+	file_TrackInfo *tr = &iso_tracks[ti];
+	if (tr->f == 0 || tr->SectorSize == 0 || tr->SectorSize > ISO_BULK_MAX_SSZ)
+		return 0;
+
+	// The run may not cross into a later track (see the header comment).
+	u32 run_end = 0xFFFFFFFFu;
+	for (u32 j = (u32)ti + 1; j < iso_tc; j++)
+		if (iso_tracks[j].FAD > StartSector && iso_tracks[j].FAD < run_end)
+			run_end = iso_tracks[j].FAD;
+
+	u32 run = SectorCount;
+	if (run > ISO_BULK_MAX_SECS)                 run = ISO_BULK_MAX_SECS;
+	if (run_end != 0xFFFFFFFFu && StartSector + run > run_end)
+		run = run_end - StartSector;
+	if (run < 2)
+		return 0;
+
+	s32 off2 = (s32)((StartSector - tr->FAD) * tr->SectorSize) + tr->offset;
+	if (off2 < 0)
+		return 0;              // pre-start offset: the slow path handles it
+
+	if (iso_bulk_buf == 0)
+	{
+		if (iso_bulk_nomem)
+			return 0;
+		iso_bulk_buf = (u8*)malloc(ISO_BULK_MAX_SECS * ISO_BULK_MAX_SSZ);
+		if (iso_bulk_buf == 0) { iso_bulk_nomem = true; return 0; }
+	}
+
+	fseek(tr->f, off2, SEEK_SET);
+	if (fread(iso_bulk_buf, tr->SectorSize, run, tr->f) != run)
+		return 0;              // short read: let the slow path behave as before
+
+	for (u32 k = 0; k < run; k++)
+	{
+		u8 *src = iso_bulk_buf + (size_t)k * tr->SectorSize;
+		u32 sec = StartSector + k;
+		ConvertSector(src, buff, tr->SectorSize, secsz, sec);
+		if (sec == 45000) PatchRegion_0(buff, secsz);
+		if (sec == 45006) PatchRegion_6(buff, secsz);
+		buff += secsz;
+	}
+	return run;
+}
+
 void iso_DriveReadSector(u8 * buff,u32 StartSector,u32 SectorCount,u32 secsz)
 {
 
@@ -83,11 +173,18 @@ void iso_DriveReadSector(u8 * buff,u32 StartSector,u32 SectorCount,u32 secsz)
   }
 	if (StartSector>150)
 		StartSector-=150;
-	while(SectorCount--)
+	while(SectorCount)
 	{
-		iso_ReadSSect(buff,StartSector,secsz);
-		buff+=secsz;
-		StartSector++;
+		u32 got = get_disc_bulk_preset()
+				  ? iso_ReadRun(buff, StartSector, SectorCount, secsz) : 0;
+		if (got == 0)
+		{
+			iso_ReadSSect(buff,StartSector,secsz);
+			got = 1;
+		}
+		buff        += secsz * got;
+		StartSector += got;
+		SectorCount -= got;
 	}
 	return;
 }

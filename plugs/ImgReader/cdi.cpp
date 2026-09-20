@@ -1,5 +1,8 @@
 #include "cdi.h"
 
+extern "C" int get_debug_loop();
+extern "C" int get_debug_gdrom();
+
 // Debug logging is compiled out. It must still expand to an *expression*, not to
 // nothing: `if (cond) printf(...);` would otherwise be an if with an empty body
 // (-Wempty-body). Swap in `printf(__VA_ARGS__)` to turn the log back on.
@@ -109,8 +112,13 @@ static void cdi_ReadOneSector(u8* out, u32 sector, u32 out_size)
 
 void cdi_DriveReadSector(u8* buff, u32 StartSector, u32 SectorCount, u32 secsz)
 {
-    printf("[CDI] ReadSector FAD=%u count=%u secsz=%u\n",
-           StartSector, SectorCount, secsz);
+    // Gated: this used to run UNCONDITIONALLY, and printf here is a write to the
+    // SD card (stdout is freopen-ed to /ndclog.txt) on EVERY sector read, inside
+    // the disc path that FRAME_PROF just measured at ~0.9 ms/call. Same gate the
+    // ISO and GDR paths already use.
+    if (get_debug_gdrom() && get_debug_loop())
+      printf("[CDI] ReadSector FAD=%u count=%u secsz=%u\n",
+          StartSector, SectorCount, secsz);
     while (SectorCount--)
     {
         cdi_ReadOneSector(buff, StartSector, secsz);

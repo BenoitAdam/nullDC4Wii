@@ -11,6 +11,7 @@
 #include "plugins/plugin_manager.h"
 #include "cl/cl.h"
 #include "plugs/ImgReader/elf_loader.h"   // ELF boot support
+#include "dc/sh4/bsc.h"                   // DC_CABLE_VGA / _RGB / _COMPOSITE
 
 // Frameskipping (preparation : working on it)
 int g_current_frameskip = 0; // 0 = no skip, 1 = skip 1 frame, 2 = skip 2 frame
@@ -22,6 +23,7 @@ __settings settings;
 // Defined in wii/main.cpp — per-game preset (wii/game_presets.cpp) and
 // options-menu override for settings.emulator.AudioBuffers.
 extern "C" int get_audio_buffers_preset();
+extern "C" int get_cable_preset();          // CABLE TYPE, see LoadSettings()
 
 // Defined in wii/main.cpp — options-menu preset selecting the SH4 core
 // back-end (0=Interpreter, 1=Dynarec, default).
@@ -267,6 +269,20 @@ void LoadSettings()
 	settings.dynarec.safemode=cfgLoadInt("nullDC","Dynarec.SafeMode",0)!=0;
 
 	settings.dreamcast.cable=cfgLoadInt("nullDC","Dreamcast.Cable",3);
+
+	// Options menu / per-game preset override (wii/main.cpp "CABLE TYPE",
+	// game_presets "cable="), applied after the cfg value so the menu wins --
+	// same order AudioBuffers uses below. VGA is the interesting one: it is
+	// 640x480 progressive at 60 Hz whatever the dc_flash.bin region says, so
+	// it matches a Wii set to EDTV/HDTV 480p exactly instead of running a
+	// 50 Hz guest into a 60 Hz output. See the preset note in wii/main.cpp.
+	switch (get_cable_preset())
+	{
+		case 2:  settings.dreamcast.cable = DC_CABLE_VGA;       break;
+		case 1:  settings.dreamcast.cable = DC_CABLE_RGB;       break;
+		case 0:  settings.dreamcast.cable = DC_CABLE_COMPOSITE; break;
+		default: break;   // leave whatever nullDC.cfg asked for
+	}
 	settings.dreamcast.RTC=cfgLoadInt("nullDC","Dreamcast.RTC",GetRTC_now());
 
 	settings.emulator.AutoStart=cfgLoadInt("nullDC","Emulator.AutoStart",0)!=0;

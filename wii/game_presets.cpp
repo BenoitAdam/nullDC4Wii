@@ -460,6 +460,58 @@
                                 use, ~30 KB, nothing while off. NOTE: this key
                                 is atoi()-parsed -- `frame_prof=on` reads as 0.
 
+        disc_bulk=on        <- on/off. Serves a run of GD-ROM sectors with ONE
+                                fseek + fread instead of one per sector
+                                (plugs/ImgReader/iso9660.cpp). GDI/ISO images
+                                only; CDI and MDS still read per sector.
+
+                                Found with frame_prof on Street Fighter Alpha 3:
+                                the pre-fight load produced a 115 ms frame --
+                                five to six dropped frames of visible hitch --
+                                with disc=63.22 ms spread over rd=68 calls, so
+                                roughly 0.9 ms each. The bytes were never the
+                                problem: FillReadBuffer() asks for up to 32
+                                sectors at a time and the reader answered with
+                                32 separate fseek+fread pairs through libfat,
+                                and the fseek before each one discards whatever
+                                stdio had buffered, so nothing amortises.
+
+                                Only coalesces what is provably one contiguous
+                                run inside one track (the bound does not assume
+                                the track table is sorted). Single sectors,
+                                negative file offsets, short reads and missing
+                                tracks all fall through to the original
+                                per-sector path, which is untouched, so the two
+                                agree byte for byte.
+
+                                Default OFF: it changes the disc read path, so
+                                A/B it against a known-good boot first. Watch
+                                disc= and rd= in the [FPROF] tail lines.
+
+        cable=2             <- NUMERIC (0/1/2), what video cable the emulated
+                                Dreamcast believes is attached. 0 = composite
+                                (legacy default), 1 = RGB SCART, 2 = VGA.
+
+                                On 0 and 1 the guest takes its refresh rate
+                                from the broadcast byte in dc_flash.bin, so a
+                                PAL flash gives a 50 Hz guest. A Wii set to
+                                EDTV/HDTV 480p can only output 60 Hz, and then
+                                one emulated frame in five has to be held an
+                                extra field, permanently. frame_prof measured
+                                exactly that on SFA3: VI 1x:387 2x:88 3+:15
+                                over 512 frames, ~60.2 Hz out against a
+                                49.92 Hz guest. A cadence mismatch is not
+                                something CPU work can fix.
+
+                                cable=2 (VGA) is 640x480 progressive at 60 Hz
+                                by definition, whatever region the flash is,
+                                so it lines the guest up with a 480p console
+                                exactly and drops the 17%% PAL slowdown too.
+                                The catch is real Dreamcast behaviour: a game
+                                that does not support VGA refuses to boot and
+                                says so. Per-game is exactly the right place
+                                to record which ones those are.
+
         jit_ccalls=on       <- on/off, DEBUG probe. Counts every C function the
                                 dynarec still calls out to and prints a [CC]
                                 block once a second with per-second AND
@@ -1094,6 +1146,8 @@ extern int g_jit_cr0_preset;
 extern "C" int g_jit_ccalls_preset;
 extern "C" int g_ta_profile_preset;
 extern "C" int g_frame_prof_preset;
+extern int g_disc_bulk_preset;
+extern int g_cable_preset;
 extern "C" int g_blockcopy_preset;
 extern int g_jit_fsqrt_preset;
 extern int g_sched_preset;
@@ -1227,6 +1281,8 @@ struct GamePreset
     int jit_ccalls;
     int ta_profile;
     int frame_prof;
+    int disc_bulk;
+    int cable;
     int blockcopy;
     int jit_fsqrt;
     int sched;
@@ -1722,6 +1778,9 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     // NUMERIC, not on/off: 0 off, 1 summary, 2 summary + per-tail-frame lines.
     // `frame_prof=on` would atoi() to 0 and silently disable it.
     else if (key_eq(key, "frame_prof"))     p->frame_prof     = atoi(val);
+    else if (key_eq(key, "disc_bulk"))      p->disc_bulk      = parse_bool(val);
+    // NUMERIC: 0 composite, 1 RGB SCART, 2 VGA. `cable=on` would read as 0.
+    else if (key_eq(key, "cable"))          p->cable          = atoi(val);
     else if (key_eq(key, "blockcopy"))      p->blockcopy      = parse_bool(val);
     else if (key_eq(key, "jit_fsqrt"))      p->jit_fsqrt      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
@@ -1831,6 +1890,8 @@ static void preset_clear(GamePreset* cur)
     cur->jit_ccalls = -1;
     cur->ta_profile = -1;
     cur->frame_prof = -1;
+    cur->disc_bulk  = -1;
+    cur->cable      = -1;
     cur->blockcopy    = -1;
     cur->jit_fsqrt    = -1;
     cur->sched = -1;
@@ -1969,6 +2030,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->jit_ccalls     >= 0) { g_jit_ccalls_preset     = p->jit_ccalls;     printf("  jit_ccalls     -> %d\n", p->jit_ccalls);     }
     if (p->ta_profile     >= 0) { g_ta_profile_preset     = p->ta_profile;     printf("  ta_profile     -> %d\n", p->ta_profile);     }
     if (p->frame_prof     >= 0) { g_frame_prof_preset     = p->frame_prof;     printf("  frame_prof     -> %d\n", p->frame_prof);     }
+    if (p->disc_bulk      >= 0) { g_disc_bulk_preset      = p->disc_bulk;      printf("  disc_bulk      -> %d\n", p->disc_bulk);      }
+    if (p->cable          >= 0) { g_cable_preset          = p->cable;          printf("  cable          -> %d\n", p->cable);          }
     if (p->blockcopy      >= 0) { g_blockcopy_preset      = p->blockcopy;      printf("  blockcopy      -> %d\n", p->blockcopy);      }
     if (p->jit_fsqrt      >= 0) { g_jit_fsqrt_preset      = p->jit_fsqrt;      printf("  jit_fsqrt      -> %d\n", p->jit_fsqrt);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
