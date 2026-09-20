@@ -577,6 +577,22 @@ extern "C" {
   int get_jit_sbp_preset() { return g_jit_sbp_preset; }
 }
 
+// JIT_ICI - what a guest CCR.ICI (I-cache invalidate) write costs us.
+// dc/sh4/ccn.cpp answers one today by calling sh4_cpu.ResetCache(), which is
+// recSh4_ClearCache: the WHOLE 6 MB code cache, every time. Because it goes
+// through the function pointer it matches no grep for the clear function and
+// prints nothing, so a ~10 ms recompile storm showed up in FRAME_PROF as a
+// bare clr=1 with no reason attached -- which is what FP_CLR_ICI now names.
+//
+// 0 = CLEAR ALL (legacy, default, always correct)
+// 1 = IGNORE (needs JIT SBP = ALL RAM to be safe -- see ccn.cpp)
+// 2 = IGNORE + force JIT SBP = ALL RAM, the self-interlocking version
+int g_jit_ici_preset = 0;
+
+extern "C" {
+  int get_jit_ici_preset() { return g_jit_ici_preset; }
+}
+
 // DMA_FIX — bundles the ch2/PVR/Sort/AICA-G2 DMA correctness fixes found by
 // diffing against the verified-working NullDC PSP port (see dc/sh4/dmac.cpp,
 // dc/pvr/pvr_sb_regs.cpp, dc/aica/aica_if.cpp): correct CHCR TE/DE writeback
@@ -2376,6 +2392,7 @@ void checkBiosFiles()
 #define OPT_CABLE      110   // Page 1 (GENERAL), under SPEED LIMITER
 #define OPT_DISC_CENSUS 111  // Page 8 (LOGS), under FRAME PROF
 #define OPT_GDROM_DELAY 112  // Page 5 (CORE), under DISC BULK READ
+#define OPT_JIT_ICI     113  // Page 6 (JIT/DYNAREC), under JIT SBP
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2507,6 +2524,7 @@ static const int OPT_PAGE5_ROWS[] = {
 static const int OPT_PAGE6_ROWS[] = {
   OPT_LAUNCH,
   OPT_JIT_SBP,
+  OPT_JIT_ICI,
   OPT_FASTMEM,
   OPT_BCACHE,
   OPT_DYN_IC,
@@ -3463,6 +3481,16 @@ bool displayOptionsMenu()
     printf(" stale/self-modified block guard");
     printf("\n");
 
+    // --- Row: JIT_ICI - guest I-cache invalidate handling (dc/sh4/ccn.cpp) ---
+    printf("%s JIT ICI        : ", (selectedRow == OPT_JIT_ICI) ? ">" : " ");
+    switch (g_jit_ici_preset) {
+      case 0: printf("[< CLEAR ALL (DEFLT) >]"); break;
+      case 1: printf("[< IGNORE (NEEDS SBP)>]"); break;
+      case 2: printf("[< IGNORE + SBP=ALL  >]"); break;
+    }
+    printf(" guest CCR.ICI: keep or dump the JIT cache");
+    printf("\n");
+
     // --- Row: FASTMEM - PPC-MMU branchless JIT memory access ---
     printf("%s FASTMEM        : ", (selectedRow == OPT_FASTMEM) ? ">" : " ");
     switch (g_fastmem_preset) {
@@ -3832,6 +3860,7 @@ bool displayOptionsMenu()
                                                  (g_gdrom_delay == 3600) ? 1800  :
                                                  (g_gdrom_delay == 7200) ? 3600  : 7200; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
+        case OPT_JIT_ICI:        g_jit_ici_preset         = (g_jit_ici_preset         + 2) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
         case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
@@ -3958,6 +3987,7 @@ bool displayOptionsMenu()
                                                  (g_gdrom_delay == 3600) ? 7200  :
                                                  (g_gdrom_delay == 7200) ? 14400 : 0; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
+        case OPT_JIT_ICI:        g_jit_ici_preset         = (g_jit_ici_preset         + 1) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
         case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
@@ -4849,6 +4879,12 @@ int main(int argc, wchar *argv[])
       case 0: printf("OFF\n");             break;
       case 1: printf("KNOWN (DEFAULT)\n"); break;
       case 2: printf("ALL RAM (SLOW)\n");  break;
+    }
+    printf("JIT ICI        : ");
+    switch (g_jit_ici_preset) {
+      case 0: printf("CLEAR ALL (DEFAULT)\n");   break;
+      case 1: printf("IGNORE (NEEDS SBP=2)\n");  break;
+      case 2: printf("IGNORE + FORCE SBP=ALL\n"); break;
     }
     printf("DMA Fix        : %s\n", g_dma_fix_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
     printf("Fastmem        : %s\n", g_fastmem_preset ? "ON (MMU)" : "OFF (LEGACY)");

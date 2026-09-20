@@ -26,6 +26,11 @@ COULD BE DONE :
 #include "sh4_registers.h"
 #include "plugs/drkPvr/frame_prof.h" // FRAME_PROF: tag the ICI-driven cache clear
 
+// JIT_ICI: what a guest CCR.ICI write does to the compiled-code cache.
+// Defined in wii/main.cpp; reached through a getter so dc/ does not have to
+// link a symbol out of wii/ (same shape as get_jit_sbp_preset()).
+extern "C" int get_jit_ici_preset();
+
 // ---------------------------------------------------------------------------
 // Register storage
 // ---------------------------------------------------------------------------
@@ -102,7 +107,36 @@ static void CCN_CCR_write(u32 value)
         // away all ~3000 compiled blocks from here showed up as a bare clr=1
         // with no reason and no printed line anywhere near it.
         FP_CLR_TAG(FP_CLR_ICI);
-        sh4_cpu.ResetCache();
+
+        // JIT_ICI. The clear below is a SLEDGEHAMMER: the guest is saying "the
+        // bytes behind my I-cache may have changed", and our answer is to throw
+        // away all ~3000 compiled blocks -- the entire 6 MB code cache -- and
+        // recompile the working set from scratch. FRAME_PROF measured that storm
+        // at ~9-10 ms of jit in a single frame, twice, around a stage load.
+        //
+        // It is also far stronger than it needs to be. Almost none of those blocks
+        // were affected; the guest typically rewrote one loader thunk. The clear
+        // is here only because we have no per-block way to tell which ones went
+        // stale -- except that we DO: that is exactly what JIT_SBP mode 2 is, a
+        // source-byte compare at every RAM block entry.
+        //
+        //   0  CLEAR ALL   throw the cache away (legacy, and the default: it is
+        //                  unconditionally correct and costs nothing per frame)
+        //   1  IGNORE      do nothing, and rely on whatever JIT_SBP is set to.
+        //                  With JIT_SBP < 2 this is a CORRECTNESS GAMBLE: a game
+        //                  that really did rewrite code will execute the stale
+        //                  translation. Offered because some games ICI defensively
+        //                  without ever writing code, and for those it is free.
+        //   2  IGNORE+SBP  ignore, and force JIT_SBP to 2 for the whole run so the
+        //                  guard actually covers what the clear used to. This is
+        //                  the coherent pair and the only one worth A/B-ing: it
+        //                  trades a permanent per-block-entry tax against a ~10 ms
+        //                  storm per invalidate. Mode 2 is self-interlocking on
+        //                  purpose -- picking "ignore" and forgetting to raise
+        //                  JIT_SBP is the one way to get a silent wrong answer.
+        if (get_jit_ici_preset() == 0)
+            sh4_cpu.ResetCache();
+
         temp.ICI = 0;
     }
 

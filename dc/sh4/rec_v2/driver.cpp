@@ -57,6 +57,11 @@ extern "C" int get_debug_loop();
 // Defined in main.cpp (JIT_SBP preset) — 0=off (zero protection, legacy),
 // 1=known self-modifying addresses (default), 2=all RAM blocks
 extern "C" int get_jit_sbp_preset();
+// JIT_ICI mode 2 means "stop clearing the cache on a guest I-cache
+// invalidate, and cover it with the per-block guard instead", so it has to
+// raise the effective JIT_SBP mode to 2 no matter what JIT_SBP itself says.
+// See the long note at the ICI site in dc/sh4/ccn.cpp.
+extern "C" int get_jit_ici_preset();
 // JIT_HOTBLOCKS probe (wii_driver.cpp) — drop the tracked-block table when the
 // code cache it describes is thrown away. No-op unless the preset is on.
 extern "C" void hotblocks_reset();
@@ -284,7 +289,7 @@ void AnalyseBlock(DecodedBlock* blk);
 // guarded. This is why the decoder now records sh4_code_size.
 static bool DoCheck(u32 pc, u32 len)
 {
-	const int mode = get_jit_sbp_preset();
+	const int mode = (get_jit_ici_preset() == 2) ? 2 : get_jit_sbp_preset();
 	if (mode == 0)
 		return false;
 
