@@ -5,6 +5,7 @@
 
 #include "spg.h"
 #include "Renderer_if.h"
+#include "frame_prof.h"
 #include "regs.h"
 #include <ogc/system.h>
 #include <unistd.h>
@@ -327,6 +328,14 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
 
             rend_vblank();
 
+            // FRAME_PROF: close the frame here, i.e. AFTER rend_vblank() has
+            // done the present (that GP wait is real frame cost) but BEFORE the
+            // once-a-second stats block and before spg_PaceFrame(). The limiter
+            // pads cheap frames out to exactly one frame period, so a span that
+            // included the sleep would show a flat 16.6 ms everywhere and hide
+            // the very distribution this is here to measure.
+            frame_prof_vblank();
+
             // Update FPS display every 1 second
             double now = os_GetSeconds();
             double tdiff = now - spg_last_vps;
@@ -435,6 +444,7 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 ccall_census_dump(tdiff, spd_vbs); // no-op unless JIT CCALLS is on
                 strip_dedup_dump(tdiff);           // same, for the STRIP DEDUP census
                 arm_jit_census_dump(tdiff);        // same, and only while the ARM7 JIT runs
+                frame_prof_dump(tdiff);            // same, for the per-frame p95/p99 tail profiler
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
             }
@@ -443,6 +453,12 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
             // signal frameskip AUTO consumes. One absolute schedule drives
             // both — see spg_PaceFrame() above.
             spg_PaceFrame();
+
+            // FRAME_PROF: reopen the measured span. Everything above this line
+            // -- the stats printf, the census dumps, the limiter sleep -- is
+            // profiler and pacing overhead, not emulation, and is deliberately
+            // outside every sample.
+            frame_prof_resume();
         }
     }
 

@@ -1021,6 +1021,22 @@ extern "C" int g_jit_ccalls_preset;
 // 0=off (default), 1=on.
 extern "C" int g_ta_profile_preset;
 
+// FRAME_PROF - per-frame tail profiler. Every other measurement in this build
+// averages over one second, which is precisely the wrong shape for a stutter:
+// three bad frames a second move a one-second average by noise while being
+// plainly visible on screen. This one keeps the last ~512 frames, prints
+// p50/p90/p95/p99/max, and then prints the per-bucket DIFFERENCE between a
+// tail frame and a typical one -- which names the culprit (tex / jit / disc /
+// gxw / sh4 / snd) instead of leaving it to be inferred.
+//
+// It also counts real VI fields per frame, because the SH4 thread never
+// VIDEO_WaitVSync()es: perfectly even frames still judder when two presents
+// land in one field, and no amount of CPU work fixes that one.
+//
+// 0 = off (default), 1 = summary, 2 = summary + a line per tail frame.
+// Lives in plugs/drkPvr/frame_prof.cpp so plugs/ and dc/ link without wii/.
+extern "C" int g_frame_prof_preset;
+
 // BLOCKCOPY - store-queue and DMA block transfers used to run the memory
 // dispatcher once per 32-bit word. do_sqw() alone did EIGHT dispatcher calls
 // per non-TA store-queue flush. The [CC] caller split measured 1,104,636
@@ -2264,6 +2280,7 @@ void checkBiosFiles()
 #define OPT_AUDIO_BLOCK 105  // Page 4 (AUDIO), under AUDIO BUFFERS
 #define OPT_AUDIO_DRC   106  // Page 4 (AUDIO), under AUDIO BLOCK
 #define OPT_AUDIO_STATS 107  // Page 8 (LOGS), under STRIP DEDUP
+#define OPT_FRAME_PROF 108   // Page 8 (LOGS), under AUDIO STATS
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2421,7 +2438,8 @@ static const int OPT_PAGE7_ROWS[] = {
   OPT_JIT_CCALLS,
   OPT_TA_PROFILE,
   OPT_STRIP_DEDUP,
-  OPT_AUDIO_STATS
+  OPT_AUDIO_STATS,
+  OPT_FRAME_PROF
 };
 
 static const int *opt_page_rows(int page, int *count)
@@ -3546,6 +3564,16 @@ bool displayOptionsMenu()
     }
     printf(" underruns, drops, ring, pitch");
     printf("\n");
+
+    // --- Row: FRAME_PROF - per-frame p50/p95/p99 + the tail breakdown ---
+    printf("%s FRAME PROF     : ", (selectedRow == OPT_FRAME_PROF) ? ">" : " ");
+    switch (g_frame_prof_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOGS [FPROF]) >]"); break;
+      case 2: printf("[< ON + TAIL FRAMES  >]"); break;
+    }
+    printf(" p95/p99 frames: what stutters");
+    printf("\n");
     printf("\n");
     printf("                  (logs are written to /ndclog.txt on the card)");
     printf("\n\n");
@@ -3704,6 +3732,7 @@ bool displayOptionsMenu()
         case OPT_AUDIO_BLOCK:    g_audio_block_preset    = (g_audio_block_preset    + 2) % 3; break;
         case OPT_AUDIO_DRC:      g_audio_drc_preset      = (g_audio_drc_preset      + 3) % 4; break;
         case OPT_AUDIO_STATS:    g_audio_stats_preset    = (g_audio_stats_preset    + 1) % 2; break;
+        case OPT_FRAME_PROF:     g_frame_prof_preset     = (g_frame_prof_preset     + 2) % 3; break;
         default: break;
       }
     }
@@ -3822,6 +3851,7 @@ bool displayOptionsMenu()
         case OPT_AUDIO_BLOCK:    g_audio_block_preset    = (g_audio_block_preset    + 1) % 3; break;
         case OPT_AUDIO_DRC:      g_audio_drc_preset      = (g_audio_drc_preset      + 1) % 4; break;
         case OPT_AUDIO_STATS:    g_audio_stats_preset    = (g_audio_stats_preset    + 1) % 2; break;
+        case OPT_FRAME_PROF:     g_frame_prof_preset     = (g_frame_prof_preset     + 1) % 3; break;
         default: break;
       }
     }
@@ -4702,6 +4732,8 @@ int main(int argc, wchar *argv[])
                                      g_audio_drc_preset == 2 ? "NORMAL (+-3%)" :
                                      g_audio_drc_preset == 1 ? "GENTLE (+-1%)" : "OFF (LEGACY)");
     printf("Audio Stats    : %s\n", g_audio_stats_preset ? "ON (LOG)" : "OFF");
+    printf("Frame Prof     : %s\n", g_frame_prof_preset == 2 ? "ON + TAIL FRAMES" :
+                                     g_frame_prof_preset == 1 ? "ON (LOGS [FPROF])" : "OFF");
     printf("Vertex Color Fix: %s\n", g_vertex_color_preset ? "ON" : "OFF");
     printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("RGB565 Opq Alpha: %s\n", g_rgb565_opaque_alpha_preset ? "ON (FMT0+FMT1)" : "OFF (FMT0 ONLY)");

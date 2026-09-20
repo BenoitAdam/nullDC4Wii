@@ -11,6 +11,7 @@
 #include "plugins/plugin_manager.h"
 #include "dc/asic/asic.h"
 #include "dc/maple/maple_helper.h"
+#include "plugs/drkPvr/frame_prof.h" // FRAME_PROF: pad bucket
 
 maple_device* MapleDevices[4][6];
 s32 maple_dma_pending=0;
@@ -91,6 +92,12 @@ bool IsOnSh4Ram(u32 addr)
 u32 dmacount=0;
 void maple_DoDma()
 {
+	// FRAME_PROF: every device dma() below ends in a host input read --
+	// PAD_ScanPads/WPAD_ScanPads, and on the Sixaxis path a USB transfer. Those
+	// are host calls with host latency sitting in the middle of an emulated
+	// frame, so they get their own bucket instead of hiding in the sh4 residual.
+	FP_T0(_fp_pad0);
+
 	verify(SB_MDEN &1)
 	verify(SB_MDST &1)
 
@@ -167,6 +174,9 @@ void maple_DoDma()
 
 	//printf("Maple XFER size %d bytes - %.2f ms\n",xfer_count,xfer_count*100.0f/(2*1024*1024/8));
 	maple_dma_pending=xfer_count*(SH4_CLOCK_EFF/(2*1024*1024/8));
+
+	FP_ACC(pad, _fp_pad0);
+	FP_BUMP(n_pad);
 }
 
 void maple_Update(u32 cycles)

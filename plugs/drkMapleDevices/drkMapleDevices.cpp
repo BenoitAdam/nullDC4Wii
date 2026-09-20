@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <gccore.h>
+#include "plugs/drkPvr/frame_prof.h" // FRAME_PROF: pad bucket
 #include <wiiuse/wpad.h>
 #include "plugs/libwiidrc/wiidrc.h" // Wii U GamePad (vWii mode)
 #include "plugs/libsicksaxis/libsicksaxis/sicksaxis.h" // Sixaxis/DualShock3 (USB)
@@ -333,6 +334,11 @@ static inline void CheckExitCombination(u32 wiiButtons, u32 gcButtons, u32 class
 // cannot steal an edge from the Maple path.
 extern "C" void ExitCombo_HostPoll(void)
 {
+    // FRAME_PROF: same bucket as maple_DoDma. This one is driven off the
+    // scanline counter rather than the guest, so it keeps polling even when a
+    // game has stopped touching Maple -- and it is a host call either way.
+    FP_T0(_fp_pad0);
+
     PAD_ScanPads();
     WPAD_ScanPads();
 
@@ -367,6 +373,9 @@ extern "C" void ExitCombo_HostPoll(void)
     }
 
     CheckExitCombination(wiiButtons, gcButtons, classicButtons);
+
+    FP_ACC(pad, _fp_pad0);
+    FP_BUMP(n_pad);
 }
 
 // ============================================================================

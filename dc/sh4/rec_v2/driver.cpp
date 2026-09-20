@@ -48,6 +48,7 @@
 #include "blockmanager.h"
 #include "ngen.h"
 #include "decoder.h"
+#include "plugs/drkPvr/frame_prof.h" // FRAME_PROF: jit bucket + clear count
 
 #ifndef HOST_NO_REC
 
@@ -231,6 +232,11 @@ void emit_WriteCodeCache()
 // ============================================================================
 void recSh4_ClearCache()
 {
+	// FRAME_PROF: counted, not timed. A clear is cheap in itself; what costs a
+	// visible hitch is the recompile storm behind it, and that lands in the jit
+	// bucket of the next few frames. clr=1 next to a jit spike is the signature.
+	FP_BUMP(n_clear);
+
 	// One line per cache clear, and games clear several times a second: pure
 	// log flood in a normal run. Uncomment when investigating cache thrashing
 	// (the "used N / CODE_SIZE" figure is what says whether clears are premature).
@@ -429,6 +435,11 @@ u32 rdv_FailedToFindBlock_pc;
 
 DynarecCodeEntry* rdv_CompilePC()
 {
+	// FRAME_PROF: decode + analyse + ngen_Compile, plus any cache clear this
+	// call forces. Bracketed here rather than at the three call sites so that
+	// nothing can reach the compiler unmeasured.
+	FP_T0(_fp_jit0);
+
 	u32 pc = next_pc;
 
 	// Drop every stale translation before compiling the boot entry block.
@@ -454,11 +465,16 @@ DynarecCodeEntry* rdv_CompilePC()
 		if (!rv)
 		{
 			printf("recSh4: FATAL - compile still failed at %08X after cache clear\n", pc);
+			FP_ACC(jit, _fp_jit0);
+			FP_BUMP(n_jit);
 			return 0;
 		}
 	}
 
 	bm_AddCode(pc, rv);
+
+	FP_ACC(jit, _fp_jit0);
+	FP_BUMP(n_jit);
 
 	return rv;
 }

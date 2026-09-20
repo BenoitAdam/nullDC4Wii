@@ -1262,6 +1262,15 @@ int frame_counter;
 #include "regs.h"
 #include "wii/wii_audio.h"
 #include <stdio.h> // needed for log
+#include "frame_prof.h" // FRAME_PROF per-frame tail profiler
+
+// FRAME_PROF: every blocking wait on the GP in this file goes through one of
+// these two, so the gxw column is the WHOLE GPU stall rather than a sample of
+// it -- which matters because the waits taken OUTSIDE DoRender() (StartRender,
+// PresentFramebuffer) are exactly the ones a render-time average hides. Both
+// compile to the bare GX call plus a not-taken branch while the preset is off.
+static INLINE void fp_GX_DrawDone()     { FP_T0(t); GX_DrawDone();     FP_ACC(gxw, t); }
+static INLINE void fp_GX_WaitDrawDone() { FP_T0(t); GX_WaitDrawDone(); FP_ACC(gxw, t); }
 
 // The FIFO is the command buffer for the GX hardware. 
 // 256KB is a standard size for most homebrew applications. May need more for NullDC4Wii to avoid FIFO error ?
@@ -1630,7 +1639,7 @@ static void gx_sync_pending()
 {
   if (!s_gx_pending)
     return;
-  GX_WaitDrawDone(); // GPU finished the queued frame's draws + display copy
+  fp_GX_WaitDrawDone(); // GPU finished the queued frame's draws + display copy
 
   DrawXfbFpsText(frameBuffer[s_gx_pending_fb]);
 
@@ -2108,7 +2117,7 @@ static TextureCacheDesc* fast_bump_alloc(u32 pixel_bytes, u32 **pixel_out,
       // the [TEXC] line measures in wraps per SECOND, not per frame.
       if (!s_fast_drained_frame)
       {
-        GX_DrawDone(); // GP is finished with every texture bound so far
+        fp_GX_DrawDone(); // GP is finished with every texture bound so far
         s_fast_drained_frame = true;
         if (DEBUG_MESSAGE()) g_texc_drains++;
       }
@@ -2133,6 +2142,7 @@ static TextureCacheDesc* fast_bump_alloc(u32 pixel_bytes, u32 **pixel_out,
     memset(s_fastmap, 0xFF, sizeof(s_fastmap));
     if (DEBUG_MESSAGE()) g_texc_wraps++;
     g_texc_wraps_frame++; // feeds s_plus_arena_ok — always on, see declaration
+    FP_BUMP(n_wrap);      // FRAME_PROF: a wrap re-decodes the whole working set
   }
   if (DEBUG_MESSAGE())
   {
@@ -5264,6 +5274,12 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
   if (!cache_valid)
   {
+    // FRAME_PROF: this whole block is the texture cache MISS path -- twiddle,
+    // VQ/palette expand, format convert, DCFlushRange. It is the prime suspect
+    // for a one-frame hitch because its cost is bursty by nature: a camera cut
+    // or a new opponent faults in a whole working set at once, while the frames
+    // either side of it decode nothing at all and look perfectly healthy.
+    FP_T0(_fp_tex0);
     if (DEBUG_MESSAGE())
     {
       g_texc_decodes++; // see tex_frame_reset()
@@ -6306,6 +6322,9 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     // draw that samples this texture, and frames with no decodes pay nothing.
     if (TMEM_CACHE())
       GX_InvalidateTexAll();
+
+    FP_ACC(tex, _fp_tex0);
+    FP_BUMP(n_tex);
   }
 
   // TEX_CLAMP_FIX(): Clamp/Flip are per-POLYGON TSP bits, but the GXTexObj keeps
@@ -6996,7 +7015,7 @@ static void split_compose_present()
 
   const bool async_render = ASYNC_RENDER();
   if (!async_render)
-    GX_DrawDone();
+    fp_GX_DrawDone();
 
   GX_CopyDisp(frameBuffer[fb], GX_TRUE);
   if (async_render)
@@ -7009,7 +7028,7 @@ static void split_compose_present()
   }
   else
   {
-    GX_DrawDone(); // wait for the copy before the CPU draws the FPS text
+    fp_GX_DrawDone(); // wait for the copy before the CPU draws the FPS text
     DrawXfbFpsText(frameBuffer[fb]);
     VIDEO_SetNextFramebuffer(frameBuffer[fb]);
     VIDEO_Flush();
@@ -7160,7 +7179,7 @@ static inline u8 as_dbg_texel(const u8 *tex, u32 w, u32 x, u32 y)
 // samples where NOTHING was selected.
 static void as_dbg_census(int peel, u32 park16)
 {
-  GX_DrawDone(); // the copies are FIFO commands; make them land in RAM first
+  fp_GX_DrawDone(); // the copies are FIFO commands; make them land in RAM first
   const u32 w = rmode->fbWidth, h = rmode->efbHeight;
   const u32 bytes = ((w + 7) & ~7u) * ((h + 3) & ~3u);
   DCInvalidateRange(s_as_zref_hi, bytes);
@@ -7312,7 +7331,7 @@ static void as_dbg_copy_probe(float parkW)
   GX_SetTexCopyDst(CW, CH, GX_TF_I8, GX_FALSE);
   GX_CopyTex(s_as_zref_hi, GX_FALSE);
   GX_PixModeSync();
-  GX_DrawDone();
+  fp_GX_DrawDone();
   DCInvalidateRange(s_as_zref_hi, i8sz);
   as_dbg_tally("MEM2 colour", s_as_zref_hi, i8sz);
   as_dbg_tally("MEM2 col uncach", (const u8 *)MEM_K0_TO_K1(s_as_zref_hi), i8sz);
@@ -7322,7 +7341,7 @@ static void as_dbg_copy_probe(float parkW)
   GX_SetTexCopyDst(CW, CH, GX_TF_I8, GX_FALSE);
   GX_CopyTex(s_as_dbg_mem1, GX_FALSE);
   GX_PixModeSync();
-  GX_DrawDone();
+  fp_GX_DrawDone();
   DCInvalidateRange(s_as_dbg_mem1, i8sz);
   as_dbg_tally("MEM1 colour", s_as_dbg_mem1, i8sz);
   as_dbg_tally("MEM1 col uncach", (const u8 *)MEM_K0_TO_K1(s_as_dbg_mem1), i8sz);
@@ -7335,7 +7354,7 @@ static void as_dbg_copy_probe(float parkW)
   GX_SetTexCopyDst(CW, CH, GX_TF_Z8, GX_FALSE);
   GX_CopyTex(s_as_dbg_mem1, GX_FALSE);
   GX_PixModeSync();
-  GX_DrawDone();
+  fp_GX_DrawDone();
   DCInvalidateRange(s_as_dbg_mem1, i8sz);
   as_dbg_tally("MEM1 Z8", (const u8 *)MEM_K0_TO_K1(s_as_dbg_mem1), i8sz);
 
@@ -7346,7 +7365,7 @@ static void as_dbg_copy_probe(float parkW)
   GX_SetTexCopyDst(CW, CH, GX_TF_Z24X8, GX_FALSE);
   GX_CopyTex(s_as_dbg_mem1, GX_FALSE);
   GX_PixModeSync();
-  GX_DrawDone();
+  fp_GX_DrawDone();
   DCInvalidateRange(s_as_dbg_mem1, rgbasz);
   as_dbg_tally("MEM1 Z24X8", (const u8 *)MEM_K0_TO_K1(s_as_dbg_mem1), rgbasz);
   as_dbg_hexrow_rgba("MEM1 Z24X8 ARGB", (const u8 *)MEM_K0_TO_K1(s_as_dbg_mem1), CW);
@@ -7908,7 +7927,7 @@ static void rtt_copy_efb_to_vram()
   GX_CopyTex(fb2d_tex, GX_FALSE);
   GX_PixModeSync();
   GX_SetCopyFilter(rmode->aa, rmode->sample_pattern, GX_TRUE, rmode->vfilter);
-  GX_DrawDone(); // wait for the copy to land in main memory
+  fp_GX_DrawDone(); // wait for the copy to land in main memory
   DCInvalidateRange(fb2d_tex, copy_w * copy_h * 2);
 
 #if RTT_DEBUG_LOG
@@ -8003,7 +8022,7 @@ static void rtt_copy_efb_to_vram()
   }
   // Wait for the discard-copies: fb2d_tex must not be pending as a GP copy
   // destination when PresentFramebuffer() next fills it from the CPU side.
-  GX_DrawDone();
+  fp_GX_DrawDone();
 }
 
 // ============================
@@ -10513,7 +10532,7 @@ void DoRender()
   // sampling from.
   if (s_cmp_pass)
   {
-    GX_DrawDone();
+    fp_GX_DrawDone();
     return;
   }
 
@@ -10522,7 +10541,7 @@ void DoRender()
   // keep the legacy full sync, the game reads the result back right away.
   const bool async_render = ASYNC_RENDER() && !s_rtt_pass;
   if (!async_render)
-    GX_DrawDone();
+    fp_GX_DrawDone();
 
   if (s_rtt_pass)
   {
@@ -10552,7 +10571,7 @@ void DoRender()
   {
     // GX_CopyDisp was issued immediately before this block. Wait until GX has
     // completely finished writing the XFB before the CPU draws the FPS text.
-    GX_DrawDone();
+    fp_GX_DrawDone();
 
     DrawXfbFpsText(frameBuffer[fb]);
 
@@ -10733,7 +10752,7 @@ void PresentFramebuffer()
     GX_Position2f32(x0_2d, 480); GX_TexCoord2f32(0,  v1);
   GX_End();
 
-  GX_DrawDone();
+  fp_GX_DrawDone();
   GX_CopyDisp(frameBuffer[fb], GX_TRUE);
   VIDEO_SetNextFramebuffer(frameBuffer[fb]);
   VIDEO_Flush();
@@ -12088,7 +12107,7 @@ void StartRender()
       s_rtt_w = rtt_w;           // always, 0,0)
       s_rtt_h = rtt_h;
       s_rtt_pass = true;
-      { const u64 _rt0 = PERF_TICKS(); DoRender(); RenderTicks += PERF_TICKS() - _rt0; }
+      { const u64 _rt0 = PERF_TICKS(); const u32 _fpg0 = g_fp.gxw; DoRender(); RenderTicks += PERF_TICKS() - _rt0; g_fp.gxw_rend += g_fp.gxw - _fpg0; }
       s_rtt_pass = false;
       s_sr_path[SR_RTT_RENDER]++;
       return; // not a presented frame: no FrameCount++, display untouched
@@ -12154,7 +12173,7 @@ void StartRender()
           FB_W_SOF1, FB_R_SOF1, (int)FB_R_CTRL.fb_depth, VtxCnt);
         s_did_3d_render = false;
         gx_sync_pending(); // ASYNC_RENDER(): apply the queued frame's flip first
-        GX_DrawDone();
+        fp_GX_DrawDone();
         GX_CopyDisp(frameBuffer[fb], GX_TRUE);
         VIDEO_SetNextFramebuffer(frameBuffer[fb]);
         VIDEO_Flush();
@@ -12270,7 +12289,7 @@ void StartRender()
       s_cmp_dy0 = (u32)dy0; s_cmp_dy1 = (u32)dy1;
       s_cmp_shift_y = (float)shift;
       s_cmp_pass = true;
-      { const u64 _rt0 = PERF_TICKS(); DoRender(); RenderTicks += PERF_TICKS() - _rt0; }          // draws into the band; no copy, no present
+      { const u64 _rt0 = PERF_TICKS(); const u32 _fpg0 = g_fp.gxw; DoRender(); RenderTicks += PERF_TICKS() - _rt0; g_fp.gxw_rend += g_fp.gxw - _fpg0; }          // draws into the band; no copy, no present
       s_cmp_pass = false;
       s_cmp_scissor_on = false;
 
@@ -12303,7 +12322,7 @@ void StartRender()
   if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[PATH] 3D: FB_W_SOF1=%08X FB_R_SOF1=%08X VtxCnt=%d lists=%d\n",
     FB_W_SOF1, FB_R_SOF1, VtxCnt, (int)(curLST - lists));
 
-  { const u64 _rt0 = PERF_TICKS(); DoRender(); RenderTicks += PERF_TICKS() - _rt0; }
+  { const u64 _rt0 = PERF_TICKS(); const u32 _fpg0 = g_fp.gxw; DoRender(); RenderTicks += PERF_TICKS() - _rt0; g_fp.gxw_rend += g_fp.gxw - _fpg0; }
 
   FrameCount++;
   s_sr_path[SR_RENDER]++;

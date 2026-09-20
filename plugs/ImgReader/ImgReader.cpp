@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "common.h"
+#include "plugs/drkPvr/frame_prof.h" // FRAME_PROF: disc bucket
 
 extern "C" int get_debug_loop();
 extern "C" int get_debug_gdrom();
@@ -106,11 +107,19 @@ void FASTCALL libGDR_GetSessionInfo(u8* out,u8 ses)
 */
 void FASTCALL libGDR_ReadSector(u8 * buff,u32 StartSector,u32 SectorCount,u32 secsz)
 {
+  // FRAME_PROF: the SD/USB fread behind the emulated GD-ROM. The guest reads
+  // ahead in bursts, so this is bounded by the card, not by the emulator, and
+  // one slow read is enough to blow a frame. Counted as rd= as well as timed,
+  // because "one 40 ms read" and "sixty 0.7 ms reads" want different fixes.
+  FP_T0(_fp_disc0);
   if (get_debug_gdrom() && get_debug_loop()) {
 	  printf("[GDR] libGDR_ReadSector FAD=%u count=%u secsz=%u\n", StartSector, SectorCount, secsz);
   }
 	if (CurrDrive)
 		CurrDrive->ReadSector(buff,StartSector,SectorCount,secsz);
+
+  FP_ACC(disc, _fp_disc0);
+  FP_BUMP(n_disc);
 }
 
 void FASTCALL libGDR_GetToc(u32* toc,u32 area)
