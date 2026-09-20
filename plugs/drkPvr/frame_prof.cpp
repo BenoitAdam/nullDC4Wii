@@ -48,7 +48,7 @@ struct FpSample
 // One short tag per FP_CLR_* bit, in bit order. Turns a clear_reasons mask
 // into e.g. "flush+blkchk" instead of a number nobody can read at a glance.
 static const char *const kClrTag[] =
-  { "minfree", "flush", "bootaddr", "retry", "blkchk", "reset" };
+  { "minfree", "flush", "bootaddr", "retry", "blkchk", "reset", "ici" };
 
 static void fp_clr_str(char *out, size_t outsz, u8 mask)
 {

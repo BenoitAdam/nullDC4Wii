@@ -114,6 +114,13 @@ extern "C" int g_frame_prof_preset;
 #define FP_CLR_RETRY     (1u << 3)  // first compile attempt failed, clean retry
 #define FP_CLR_BLOCKCHK  (1u << 4)  // rdv_BlockCheckFail: guest overwrote code
 #define FP_CLR_RESET     (1u << 5)  // recSh4_Reset() via ResetDC()
+// The one that was invisible. dc/sh4/ccn.cpp reaches recSh4_ClearCache through
+// the sh4_cpu.ResetCache function POINTER, so it matches no grep for
+// "recSh4_ClearCache(" and prints nothing (its printf is commented out on
+// purpose -- "games invalidate the I-cache several times a second"). A guest
+// CCR.ICI write therefore threw away the whole 6 MB code cache with no trace
+// in the log at all. That is what a bare clr=1[] was.
+#define FP_CLR_ICI       (1u << 6)  // guest CCR.ICI: SH4 I-cache invalidate
 
 // Live accumulators for the frame in progress. Reset by frame_prof_vblank()
 // once it has folded them into the ring.

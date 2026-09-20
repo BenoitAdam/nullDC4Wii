@@ -24,6 +24,7 @@ COULD BE DONE :
 #include "plugins/plugin_manager.h"
 #include "ccn.h"
 #include "sh4_registers.h"
+#include "plugs/drkPvr/frame_prof.h" // FRAME_PROF: tag the ICI-driven cache clear
 
 // ---------------------------------------------------------------------------
 // Register storage
@@ -93,6 +94,14 @@ static void CCN_CCR_write(u32 value)
         // harmless BIOS invalidation) when chasing a stale-block bug.
         //if (curr_pc != 0xAC13DBF8)
         //    printf("CCN: I-cache invalidation requested (pc=%08X)\n", curr_pc);
+        //
+        // FRAME_PROF: tag it. This reaches recSh4_ClearCache() through the
+        // sh4_cpu.ResetCache function pointer, so it matches no grep for the
+        // function's name with a paren and — with the printf above commented
+        // out — leaves nothing whatsoever in the log. A stage load that threw
+        // away all ~3000 compiled blocks from here showed up as a bare clr=1
+        // with no reason and no printed line anywhere near it.
+        FP_CLR_TAG(FP_CLR_ICI);
         sh4_cpu.ResetCache();
         temp.ICI = 0;
     }
