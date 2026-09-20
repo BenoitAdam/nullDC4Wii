@@ -19,6 +19,48 @@ extern "C" int get_sched_preset();
 // in gdrom_reg_Init(); armed at transfer completion when the preset is on.
 static int gdrom_dma_schid = -1;
 
+// ---------------------------------------------------------------------------
+// GDROM_DELAY preset (wii/main.cpp): how fast the GD-DMA is allowed to move
+// data, in KB/s. 0 = off, the legacy behaviour.
+//
+// Legacy moves up to 32000 bytes every SlowUpdate. SlowUpdate runs every
+// s_timeslice * s_slow_period cycles -- 7168 on ACCURATE -- so at 200 MHz that
+// is ~27900 calls a second, i.e. about 890 MB/s. A real GD-ROM drive sustains
+// roughly 1.8 MB/s. We are ~500x too fast, and the DMA-end interrupt therefore
+// arrives ~500x too early: Marvel vs Capcom 2's 816-sector stage load finishes
+// in 1.9 ms of emulated time instead of ~930 ms.
+//
+// That matters for the same reason RENDER_DELAY matters, and for the same game:
+// MvC2 paces itself off interrupt arrival, and an interrupt that lands three
+// orders of magnitude early desynchronises whatever was supposed to still be in
+// flight. Emulators that model drive speed do not show its stage-2 failure.
+//
+// The budget is credited from elapsed SH4 cycles (gdrom_CreditCycles, called
+// from SlowUpdate) and spent by the transfer below, so the pacing follows the
+// emulated clock and scales correctly under the SH4_CLOCK underclock preset.
+// ---------------------------------------------------------------------------
+extern "C" int get_gdrom_delay();
+
+static u32 s_gd_budget = 0;	// bytes the drive may still move right now
+
+void gdrom_CreditCycles(u32 cycles)
+{
+	const int kbps = get_gdrom_delay();
+	if (kbps <= 0)
+	{
+		s_gd_budget = 0;
+		return;
+	}
+
+	s_gd_budget += (u32)(((u64)cycles * (u64)kbps * 1024ull) / (u64)SH4_CLOCK_EFF);
+
+	// An idle drive must not bank credit and then burst through a whole read the
+	// instant one is issued -- that would reproduce the very behaviour this
+	// preset exists to stop. One legacy chunk is as far ahead as it may get.
+	if (s_gd_budget > 32000u)
+		s_gd_budget = 32000u;
+}
+
 // Small DMA-finish latency (SH4 cycles). Only needs to be >0 so the completion
 // passes through the ordered queue rather than firing inline; the exact value
 // isn't load-bearing for ordering.
@@ -627,7 +669,9 @@ void gd_process_spi_cmd()
       if (get_debug_gdrom() && get_debug_loop()) {
 			  printf_spicmd("SPI_CD_READ sec=%d sz=%d/%d dma=%d\n",read_params.start_sector,read_params.remaining_sectors,read_params.sector_type,Features.CDRead.DMA);
       }
-			if (get_debug_gdrom()) printf("[GDR] SPI_CD_READ: FAD=%d count=%d dma=%d\n",read_params.start_sector,read_params.remaining_sectors,Features.CDRead.DMA);
+			if (get_debug_gdrom()) printf("[GDR] SPI_CD_READ: FAD=%d count=%d secsz=%d dma=%d (%d bytes)\n",
+				read_params.start_sector,read_params.remaining_sectors,read_params.sector_type,
+				Features.CDRead.DMA,read_params.remaining_sectors*read_params.sector_type);
 			if (Features.CDRead.DMA==1)
 			{
 				gd_set_state(gds_readsector_dma);
@@ -1158,7 +1202,19 @@ void UpdateGDRom()
 	u32	src		= SB_GDSTARD,
 		len		= SB_GDLEN-SB_GDLEND ;
 
-	len=min(len,(u32)32000);
+	// GDROM_DELAY: spend the paced byte budget instead of taking 32000 a call.
+	// Only when there is something left to move -- a zero-length call still has
+	// to fall through to the completion checks at the bottom.
+	u32 chunk = 32000;
+	if (get_gdrom_delay() > 0 && len != 0)
+	{
+		chunk = s_gd_budget & ~31u;	// keep the 32-byte alignment checked below
+		if (chunk == 0)
+			return;					// no credit yet; resume on the next SlowUpdate
+		if (chunk > 32000)
+			chunk = 32000;
+	}
+	len=min(len,chunk);
 	// do we need to do this for gdrom dma ?
 	if(0x8201 != (dmaor &DMAOR_MASK)) {
 		if (get_debug_gdrom()) printf("\n!\tGDROM: DMAOR has invalid settings (%X) !\n", dmaor);
@@ -1181,9 +1237,24 @@ void UpdateGDRom()
 			u32 buff_size =read_buff.cache_size - read_buff.cache_index;
 			if (buff_size==0)
 			{
-				verify(read_params.remaining_sectors>0);
+				// The read command has nothing left to give. Falling through to
+				// FillReadBuffer() here sets cache_size to 0, so buff_size stays
+				// 0, so `len` never decreases: an infinite loop inside the
+				// emulator with interrupts still off. The old verify() only
+				// trapped that in a debug build; in a release build it span.
+				// Stop instead and let the transfer be short -- the bookkeeping
+				// below now accounts for what was ACTUALLY moved.
+				if (read_params.remaining_sectors==0)
+					break;
+
 				//buffer is empty , fill it :)
 				FillReadBuffer();
+
+				// Re-read it: FillReadBuffer() just changed both halves of this
+				// subtraction, and the stale 0 would waste an iteration.
+				buff_size = read_buff.cache_size - read_buff.cache_index;
+				if (buff_size==0)
+					break;
 			}
 
 			//transfer up to len bytes
@@ -1212,8 +1283,15 @@ void UpdateGDRom()
 	//SB_GDLEN = 0x00000000; //13/5/2k7 -> acording to docs these regs are not updated by hardware
 	//SB_GDSTAR = (src + len_backup);
 
-	SB_GDLEND+= len_backup;
-	SB_GDSTARD+= len_backup;//(src + len_backup)&0x1FFFFFFF;
+	// What actually moved, not what was asked for: the loop above can now stop
+	// early when the read command runs dry, and advancing the pointers by the
+	// requested length in that case would silently skip a hole in the data.
+	const u32 moved = len_backup - len;
+
+	s_gd_budget = (s_gd_budget > moved) ? (s_gd_budget - moved) : 0;
+
+	SB_GDLEND+= moved;
+	SB_GDSTARD+= moved;//(src + len_backup)&0x1FFFFFFF;
 
 	if (SB_GDLEND==SB_GDLEN)
 	{
@@ -1249,12 +1327,54 @@ void GDROM_DmaStart(u32 data)
 		if (get_debug_gdrom()) printf("Invalid GD-DMA start, SB_GDEN=0.Ingoring it.\n");
 		return;
 	}
+	// A write of 1 to SB_GDST while a transfer is ALREADY running is a no-op on
+	// hardware -- the channel is going, there is nothing to start. The code below
+	// used to re-latch SB_GDSTARD/SB_GDLEND from the registers on any such write,
+	// which rewinds a transfer already in flight: the sector buffer has advanced
+	// but the destination pointer goes back to the top, so the second half of the
+	// file lands over the first.
+	//
+	// This was nearly unreachable while a DMA completed inside a single
+	// UpdateGDRom() call. GDROM_DELAY deliberately spreads one over hundreds of
+	// milliseconds of emulated time, which turns a theoretical window into a wide
+	// open one -- so this is a bug that preset could have introduced by itself.
+	if ((SB_GDST&1) && (data&1))
+	{
+		if (get_debug_gdrom()) printf("[GDR] SB_GDST=1 during a running transfer, ignored\n");
+		return;
+	}
+
 	SB_GDST|=data&1;
 
 	if (SB_GDST==1)
 	{
 		SB_GDSTARD=SB_GDSTAR;
 		SB_GDLEND=0;
+
+		if (get_debug_gdrom())
+		{
+			// Bytes the command still owes the DMA. read_params.remaining_sectors
+			// alone is NOT that number: gd_set_state() has already prefetched
+			// min(count,32) sectors into read_buff, so those sectors are spoken
+			// for but no longer counted as remaining. Leaving the prefetch out
+			// made every single transfer look like a length mismatch.
+			const u32 cached = read_buff.cache_size - read_buff.cache_index;
+			const u32 queued = read_params.remaining_sectors * read_params.sector_type
+			                 + cached;
+
+			printf("[GDR] DMA start: dest=%08X len=%u (queued %u = %u sectors + %u prefetched)%s\n",
+			       SB_GDSTAR,SB_GDLEN,queued,read_params.remaining_sectors,cached,
+			       (SB_GDSTAR & 0x1FFFFFFFu) < 0x00200000u
+			           ? "   <-- DEST IS BOOT ROM / NULL, THIS TRANSFER IS LOST" : "");
+
+			// A genuine length mismatch is still worth catching: too long and the
+			// transfer runs off the end of the queued sectors, too short and the
+			// command never reaches procpacketdone.
+			if (SB_GDLEN != queued)
+				printf("[GDR]   MISMATCH: DMA wants %u bytes, read has %u queued\n",
+				       SB_GDLEN,queued);
+		}
+
 		//printf("Streamed GDMA start\n");
 		UpdateGDRom();
 	}

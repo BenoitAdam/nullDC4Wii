@@ -341,6 +341,9 @@ void FASTCALL VerySlowUpdate()
 
 void FASTCALL SlowUpdate()
 {
+	// GDROM_DELAY: this tier cadence IS the drive clock. Credit the elapsed
+	// cycles before the transfer, so the budget it spends matches emulated time.
+	gdrom_CreditCycles(s_timeslice * s_slow_period);
 	UpdateGDRom();
 
 	if (!(update_cnt & (s_vslow_period - 1)))

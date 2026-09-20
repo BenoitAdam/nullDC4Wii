@@ -10,6 +10,11 @@ u32 ReadMem_gdrom(u32 Addr, u32 sz);
 void WriteMem_gdrom(u32 Addr, u32 data, u32 sz);
 void UpdateGDRom();
 
+// GDROM_DELAY preset: credit the paced transfer budget with `cycles` worth of
+// drive time. Called from SlowUpdate() just before UpdateGDRom(); a no-op when
+// the preset is off.
+void gdrom_CreditCycles(u32 cycles);
+
 //Structs & unions
 struct SpiCommandInfo
 {

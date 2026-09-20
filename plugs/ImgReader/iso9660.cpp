@@ -6,6 +6,11 @@
 extern "C" int get_debug_loop();
 extern "C" int get_disc_bulk_preset();   // DISC BULK READ, see below
 
+// DISC census counters (defined in ImgReader.cpp). Say which reader is live
+// and, when a run is NOT coalesced, which of the five guards rejected it.
+extern u32 g_dc_iso, g_dc_runs, g_dc_runsecs;
+extern u32 g_dc_fb_small, g_dc_fb_notrk, g_dc_fb_neg, g_dc_fb_short, g_dc_fb_nomem;
+
 bool inbios=true;
 FILE* f_1=0;
 FILE* f_2=0;
@@ -110,18 +115,21 @@ static bool iso_bulk_nomem = false;
 static u32 iso_ReadRun(u8 *buff, u32 StartSector, u32 SectorCount, u32 secsz)
 {
 	if (SectorCount < 2)
-		return 0;              // nothing to coalesce
+	{
+		g_dc_fb_small++;       // the guest asked for one sector: nothing to coalesce
+		return 0;
+	}
 
 	// Resolve the track exactly as iso_ReadSSect() would.
 	s32 ti = -1;
 	for (s32 i = (s32)iso_tc - 1; i >= 0; i--)
 		if (iso_tracks[i].FAD <= StartSector) { ti = i; break; }
 	if (ti < 0)
-		return 0;
+	{ g_dc_fb_notrk++; return 0; }
 
 	file_TrackInfo *tr = &iso_tracks[ti];
 	if (tr->f == 0 || tr->SectorSize == 0 || tr->SectorSize > ISO_BULK_MAX_SSZ)
-		return 0;
+	{ g_dc_fb_notrk++; return 0; }
 
 	// The run may not cross into a later track (see the header comment).
 	u32 run_end = 0xFFFFFFFFu;
@@ -134,23 +142,23 @@ static u32 iso_ReadRun(u8 *buff, u32 StartSector, u32 SectorCount, u32 secsz)
 	if (run_end != 0xFFFFFFFFu && StartSector + run > run_end)
 		run = run_end - StartSector;
 	if (run < 2)
-		return 0;
+	{ g_dc_fb_small++; return 0; }
 
 	s32 off2 = (s32)((StartSector - tr->FAD) * tr->SectorSize) + tr->offset;
 	if (off2 < 0)
-		return 0;              // pre-start offset: the slow path handles it
+	{ g_dc_fb_neg++; return 0; }   // pre-start offset: slow path handles it
 
 	if (iso_bulk_buf == 0)
 	{
 		if (iso_bulk_nomem)
 			return 0;
 		iso_bulk_buf = (u8*)malloc(ISO_BULK_MAX_SECS * ISO_BULK_MAX_SSZ);
-		if (iso_bulk_buf == 0) { iso_bulk_nomem = true; return 0; }
+		if (iso_bulk_buf == 0) { iso_bulk_nomem = true; g_dc_fb_nomem++; return 0; }
 	}
 
 	fseek(tr->f, off2, SEEK_SET);
 	if (fread(iso_bulk_buf, tr->SectorSize, run, tr->f) != run)
-		return 0;              // short read: let the slow path behave as before
+	{ g_dc_fb_short++; return 0; }  // short read: slow path behaves as before
 
 	for (u32 k = 0; k < run; k++)
 	{
@@ -161,6 +169,8 @@ static u32 iso_ReadRun(u8 *buff, u32 StartSector, u32 SectorCount, u32 secsz)
 		if (sec == 45006) PatchRegion_6(buff, secsz);
 		buff += secsz;
 	}
+	g_dc_runs++;
+	g_dc_runsecs += run;
 	return run;
 }
 
@@ -168,6 +178,8 @@ void iso_DriveReadSector(u8 * buff,u32 StartSector,u32 SectorCount,u32 secsz)
 {
 
   // DOLPHIN ERROR LOOP
+	g_dc_iso++;   // census: proves the ISO reader is the live one
+
   if(get_debug_loop() == 1){
 	  printf("GDR(ISO)->Read : Sector %d , size %d , mode %d \n",StartSector,SectorCount,secsz);
   }

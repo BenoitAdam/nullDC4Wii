@@ -1037,6 +1037,49 @@ extern "C" int g_ta_profile_preset;
 // Lives in plugs/drkPvr/frame_prof.cpp so plugs/ and dc/ link without wii/.
 extern "C" int g_frame_prof_preset;
 
+// DISC_CENSUS - one [DISC] line a second: calls, sectors, the SectorCount
+// histogram, and for GDI/ISO how many runs DISC BULK READ actually coalesced
+// plus which guard rejected the rest.
+//
+// Exists because the first disc_bulk A/B was inconclusive -- per-call cost did
+// not move, and both "the preset was off" and "the guest reads one sector per
+// call so there is never a run to coalesce" produce exactly that. cnt(1:...)
+// tells the two apart in one line instead of one Wii run each.
+// Lives in plugs/ImgReader/ImgReader.cpp. 0=off (default), 1=on.
+int g_disc_census_preset = 0;
+
+extern "C" {
+  int get_disc_census_preset() { return g_disc_census_preset; }
+}
+
+// GDROM_DELAY - how fast the emulated GD-ROM DMA may move data, in KB/s.
+// 0 = off (legacy: the whole request moves in one synchronous burst and the
+// completion lands instantly, roughly 500x a real drive). 1800 is about a
+// real GD-ROM (12x CD).
+//
+// THIS is the loading-screen fix. FRAME_PROF measured a 172 ms frame on
+// SFA3 -- disc=118.65 ms over rd=114 calls, i.e. 7.5 MB moved between two
+// vblanks, a ten-field freeze. It is NOT slow I/O: the DISC census reads
+// cnt(32:118) and bulk=120 runs, so the reads are already 32 sectors a call,
+// already coalesced, near 60 MB/s. The loader is unpaced, not inefficient.
+//
+// Implementation (dc/gdrom/gdromv3.cpp GDROM_DELAY): a byte budget credited
+// from elapsed SH4 cycles in SlowUpdate() and spent by UpdateGDRom(), which
+// moves only what it can afford and returns to be resumed on the next tick.
+// SB_GDST stays 1 across that on its own, because the transfer really is
+// unfinished -- no surgery on the completion path, which is what makes this
+// safe. Ported from the mvc2-fix-attempt branch, where it was already
+// working; an earlier attempt here that instead held the COMPLETION in the
+// scheduler hung after the Dreamcast logo, so do not reinvent that one.
+//
+// Same class of fix as RENDER DELAY, and originally for the same game.
+// Higher = shorter load, bigger per-frame bite. Default OFF.
+int g_gdrom_delay = 0;
+
+extern "C" {
+  int get_gdrom_delay() { return g_gdrom_delay; }
+}
+
 // DISC_BULK - serve a run of GD-ROM sectors with ONE fseek + fread instead of
 // one per sector (plugs/ImgReader/iso9660.cpp iso_ReadRun).
 //
@@ -2331,6 +2374,8 @@ void checkBiosFiles()
 #define OPT_FRAME_PROF 108   // Page 8 (LOGS), under AUDIO STATS
 #define OPT_DISC_BULK  109   // Page 5 (CORE), under SH4 CLOCK
 #define OPT_CABLE      110   // Page 1 (GENERAL), under SPEED LIMITER
+#define OPT_DISC_CENSUS 111  // Page 8 (LOGS), under FRAME PROF
+#define OPT_GDROM_DELAY 112  // Page 5 (CORE), under DISC BULK READ
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2438,7 +2483,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_RENDER_DELAY,
   OPT_TMEM_CACHE,
   OPT_SH4_CLOCK,
-  OPT_DISC_BULK
+  OPT_DISC_BULK,
+  OPT_GDROM_DELAY
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -2491,7 +2537,8 @@ static const int OPT_PAGE7_ROWS[] = {
   OPT_TA_PROFILE,
   OPT_STRIP_DEDUP,
   OPT_AUDIO_STATS,
-  OPT_FRAME_PROF
+  OPT_FRAME_PROF,
+  OPT_DISC_CENSUS
 };
 
 static const int *opt_page_rows(int page, int *count)
@@ -3271,6 +3318,17 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (BULK, GDI/ISO)>]"); break;
     }
     printf(" cuts loading-screen hitches");
+    printf("\n");
+
+    // --- Row: GDROM_DELAY - pace the drive so a stage load arrives over
+    //     many frames instead of freezing one (dc/gdrom/gdromv3.cpp) ---
+    printf("%s GDROM DELAY    : ", (selectedRow == OPT_GDROM_DELAY) ? ">" : " ");
+    switch (g_gdrom_delay) {
+      case 0:    printf("[< OFF (INSTANT)     >]"); break;
+      case 1800: printf("[< 1800 KB/S (REAL)  >]"); break;
+      default:   printf("[< %-5d KB/S        >]", g_gdrom_delay); break;
+    }
+    printf(" spreads loads, no frame freeze");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3645,6 +3703,15 @@ bool displayOptionsMenu()
     }
     printf(" p95/p99 frames: what stutters");
     printf("\n");
+
+    // --- Row: DISC_CENSUS - GD-ROM read shape, and whether bulk fires ---
+    printf("%s DISC CENSUS    : ", (selectedRow == OPT_DISC_CENSUS) ? ">" : " ");
+    switch (g_disc_census_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOGS [DISC])  >]"); break;
+    }
+    printf(" sectors/call + bulk hit rate");
+    printf("\n");
     printf("\n");
     printf("                  (logs are written to /ndclog.txt on the card)");
     printf("\n\n");
@@ -3760,6 +3827,10 @@ bool displayOptionsMenu()
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
+        case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
+                                                 (g_gdrom_delay == 1800) ? 0     :
+                                                 (g_gdrom_delay == 3600) ? 1800  :
+                                                 (g_gdrom_delay == 7200) ? 3600  : 7200; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 2) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
@@ -3806,6 +3877,7 @@ bool displayOptionsMenu()
         case OPT_AUDIO_DRC:      g_audio_drc_preset      = (g_audio_drc_preset      + 3) % 4; break;
         case OPT_AUDIO_STATS:    g_audio_stats_preset    = (g_audio_stats_preset    + 1) % 2; break;
         case OPT_FRAME_PROF:     g_frame_prof_preset     = (g_frame_prof_preset     + 2) % 3; break;
+        case OPT_DISC_CENSUS:    g_disc_census_preset    = (g_disc_census_preset    + 1) % 2; break;
         default: break;
       }
     }
@@ -3881,6 +3953,10 @@ bool displayOptionsMenu()
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
+        case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
+                                                 (g_gdrom_delay == 1800) ? 3600  :
+                                                 (g_gdrom_delay == 3600) ? 7200  :
+                                                 (g_gdrom_delay == 7200) ? 14400 : 0; break;
         case OPT_JIT_SBP:        g_jit_sbp_preset         = (g_jit_sbp_preset         + 1) % 3; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
@@ -3927,6 +4003,7 @@ bool displayOptionsMenu()
         case OPT_AUDIO_DRC:      g_audio_drc_preset      = (g_audio_drc_preset      + 1) % 4; break;
         case OPT_AUDIO_STATS:    g_audio_stats_preset    = (g_audio_stats_preset    + 1) % 2; break;
         case OPT_FRAME_PROF:     g_frame_prof_preset     = (g_frame_prof_preset     + 1) % 3; break;
+        case OPT_DISC_CENSUS:    g_disc_census_preset    = (g_disc_census_preset    + 1) % 2; break;
         default: break;
       }
     }
@@ -4810,8 +4887,11 @@ int main(int argc, wchar *argv[])
     printf("Cable Type     : %s\n", g_cable_preset == 2 ? "VGA (480P 60HZ)" :
                                      g_cable_preset == 1 ? "RGB SCART" : "COMPOSITE");
     printf("Disc Bulk Read : %s\n", g_disc_bulk_preset ? "ON (GDI/ISO)" : "OFF (PER SECTOR)");
+    printf("GDrom Delay    : %d KB/s%s\n", g_gdrom_delay,
+           g_gdrom_delay ? "" : "  (OFF - instant, ~500x a real drive)");
     printf("Frame Prof     : %s\n", g_frame_prof_preset == 2 ? "ON + TAIL FRAMES" :
                                      g_frame_prof_preset == 1 ? "ON (LOGS [FPROF])" : "OFF");
+    printf("Disc Census    : %s\n", g_disc_census_preset ? "ON (LOGS [DISC])" : "OFF");
     printf("Vertex Color Fix: %s\n", g_vertex_color_preset ? "ON" : "OFF");
     printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("RGB565 Opq Alpha: %s\n", g_rgb565_opaque_alpha_preset ? "ON (FMT0+FMT1)" : "OFF (FMT0 ONLY)");

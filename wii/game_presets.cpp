@@ -488,6 +488,38 @@
                                 A/B it against a known-good boot first. Watch
                                 disc= and rd= in the [FPROF] tail lines.
 
+        gdrom_delay=3600    <- NUMERIC, KB/s the GD-ROM DMA may move. 0 = off
+                                (legacy: the whole request moves in one
+                                synchronous burst, roughly 500x a real drive).
+                                1800 is about a real GD-ROM (12x CD).
+
+                                THIS is the loading-screen fix, not disc_bulk.
+                                frame_prof measured a 172 ms frame on SFA3 --
+                                disc=118.65 ms over rd=114 calls, i.e. 7.5 MB
+                                moved between two vblanks, a ten-field freeze.
+
+                                That is not slow I/O, which is worth saying
+                                because it was the first theory and it was
+                                wrong. The disc census reads cnt(32:118) and
+                                bulk=120 runs: 32 sectors a call, coalesced,
+                                near 60 MB/s. Nothing is inefficient; the
+                                loader is simply unpaced.
+
+                                A byte budget is credited from elapsed SH4
+                                cycles in SlowUpdate() and spent by
+                                UpdateGDRom(), which moves what it can afford
+                                and returns to be resumed next tick. SB_GDST
+                                stays 1 by itself because the transfer really
+                                is unfinished, so the completion path needs no
+                                surgery -- that is what makes it safe. An
+                                earlier attempt that held the COMPLETION in the
+                                scheduler instead hung after the Dreamcast
+                                logo. Do not reinvent that one.
+
+                                Higher = shorter load, bigger per-frame bite.
+                                3600 is a good start. Default OFF; A/B it and
+                                watch for a game that times out.
+
         cable=2             <- NUMERIC (0/1/2), what video cable the emulated
                                 Dreamcast believes is attached. 0 = composite
                                 (legacy default), 1 = RGB SCART, 2 = VGA.
@@ -1148,6 +1180,8 @@ extern "C" int g_ta_profile_preset;
 extern "C" int g_frame_prof_preset;
 extern int g_disc_bulk_preset;
 extern int g_cable_preset;
+extern int g_disc_census_preset;
+extern int g_gdrom_delay;
 extern "C" int g_blockcopy_preset;
 extern int g_jit_fsqrt_preset;
 extern int g_sched_preset;
@@ -1283,6 +1317,8 @@ struct GamePreset
     int frame_prof;
     int disc_bulk;
     int cable;
+    int disc_census;
+    int gdrom_delay;
     int blockcopy;
     int jit_fsqrt;
     int sched;
@@ -1781,6 +1817,9 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "disc_bulk"))      p->disc_bulk      = parse_bool(val);
     // NUMERIC: 0 composite, 1 RGB SCART, 2 VGA. `cable=on` would read as 0.
     else if (key_eq(key, "cable"))          p->cable          = atoi(val);
+    else if (key_eq(key, "disc_census"))    p->disc_census    = parse_bool(val);
+    // NUMERIC: KB/s the GD-ROM DMA may move. 0 = off, 1800 = a real drive.
+    else if (key_eq(key, "gdrom_delay"))    p->gdrom_delay    = atoi(val);
     else if (key_eq(key, "blockcopy"))      p->blockcopy      = parse_bool(val);
     else if (key_eq(key, "jit_fsqrt"))      p->jit_fsqrt      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
@@ -1892,6 +1931,8 @@ static void preset_clear(GamePreset* cur)
     cur->frame_prof = -1;
     cur->disc_bulk  = -1;
     cur->cable      = -1;
+    cur->disc_census = -1;
+    cur->gdrom_delay = -1;
     cur->blockcopy    = -1;
     cur->jit_fsqrt    = -1;
     cur->sched = -1;
@@ -2032,6 +2073,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->frame_prof     >= 0) { g_frame_prof_preset     = p->frame_prof;     printf("  frame_prof     -> %d\n", p->frame_prof);     }
     if (p->disc_bulk      >= 0) { g_disc_bulk_preset      = p->disc_bulk;      printf("  disc_bulk      -> %d\n", p->disc_bulk);      }
     if (p->cable          >= 0) { g_cable_preset          = p->cable;          printf("  cable          -> %d\n", p->cable);          }
+    if (p->disc_census    >= 0) { g_disc_census_preset    = p->disc_census;    printf("  disc_census    -> %d\n", p->disc_census);    }
+    if (p->gdrom_delay    >= 0) { g_gdrom_delay           = p->gdrom_delay;    printf("  gdrom_delay    -> %d\n", p->gdrom_delay);    }
     if (p->blockcopy      >= 0) { g_blockcopy_preset      = p->blockcopy;      printf("  blockcopy      -> %d\n", p->blockcopy);      }
     if (p->jit_fsqrt      >= 0) { g_jit_fsqrt_preset      = p->jit_fsqrt;      printf("  jit_fsqrt      -> %d\n", p->jit_fsqrt);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }

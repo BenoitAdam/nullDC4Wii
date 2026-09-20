@@ -27,6 +27,9 @@ extern "C" int get_render_delay_preset();
 // the same fflush and the same time base.
 extern "C" void ifb_probe_dump(double seconds);
 extern "C" void hotblocks_dump(double seconds);
+// GD-ROM read census (plugs/ImgReader/ImgReader.cpp). Silent unless the
+// DISC CENSUS preset is on AND the guest actually touched the disc.
+extern "C" void disc_census_dump(double seconds);
 // C call-out census (dc/sh4/rec_v2/ccall_census.h). Takes vblanks/sec too,
 // so it can report the per-FRAME rate dave actually asked for.
 extern "C" void ccall_census_dump(double seconds, double vbs);
@@ -445,6 +448,7 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
                 strip_dedup_dump(tdiff);           // same, for the STRIP DEDUP census
                 arm_jit_census_dump(tdiff);        // same, and only while the ARM7 JIT runs
                 frame_prof_dump(tdiff);            // same, for the per-frame p95/p99 tail profiler
+                disc_census_dump(tdiff);           // same, for the GD-ROM read census
 #endif
                 // PSP profiler logging removed for Wii build — not applicable
             }
