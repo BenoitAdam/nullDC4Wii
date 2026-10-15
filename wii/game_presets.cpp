@@ -34,7 +34,8 @@
                                 fast | balanced | accurate: SH4 interpreter
                                 timing (timeslice + peripheral polling)
         accuracy_fpu=fast   <- fast | balanced | accurate: FIPR/FTRV
-                                intermediate precision (interpreter only)
+                                intermediate precision (interpreter only;
+                                the dynarec's switch is jit_fipr)
         graphics=low        <- low | normal. TEXTURE FILTER ONLY:
                                 low=GX_NEAR (point sampling, best for 240p
                                 games whose art already matches the output
@@ -582,6 +583,10 @@
         jit_fsqrt=on        <- on/off, inlines fsqrt as frsqrte + Newton-
                                Raphson instead of calling newlib sqrtf
                                (a 25-iteration bit loop). Bit-exact.
+        jit_fipr=on         <- on/off, the dynarec's fipr/ftrv sum in double
+                               and round to single once, as the SH4 does,
+                               instead of after every fmadds. Fewer wrong
+                               low bits when the terms cancel. Default off.
         tex_wrap_guard=on   <- on/off, stops the persistent texture arena from
                                 recycling bytes the GPU is still sampling this
                                 frame (texture corruption when the cache fills).
@@ -1202,6 +1207,7 @@ extern int g_disc_census_preset;
 extern int g_gdrom_delay;
 extern "C" int g_blockcopy_preset;
 extern int g_jit_fsqrt_preset;
+extern int g_jit_fipr_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
 extern int g_tex_clamp_fix_preset;
@@ -1341,6 +1347,7 @@ struct GamePreset
     int gdrom_delay;
     int blockcopy;
     int jit_fsqrt;
+    int jit_fipr;
     int sched;
     int tex_wrap_guard;
     int tex_clamp_fix;
@@ -1844,6 +1851,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "gdrom_delay"))    p->gdrom_delay    = atoi(val);
     else if (key_eq(key, "blockcopy"))      p->blockcopy      = parse_bool(val);
     else if (key_eq(key, "jit_fsqrt"))      p->jit_fsqrt      = parse_bool(val);
+    else if (key_eq(key, "jit_fipr"))       p->jit_fipr       = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
     else if (key_eq(key, "tex_clamp_fix"))  p->tex_clamp_fix  = parse_bool(val);
@@ -1959,6 +1967,7 @@ static void preset_clear(GamePreset* cur)
     cur->gdrom_delay = -1;
     cur->blockcopy    = -1;
     cur->jit_fsqrt    = -1;
+    cur->jit_fipr     = -1;
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
     cur->tex_clamp_fix  = -1;
@@ -2103,6 +2112,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->gdrom_delay    >= 0) { g_gdrom_delay           = p->gdrom_delay;    printf("  gdrom_delay    -> %d\n", p->gdrom_delay);    }
     if (p->blockcopy      >= 0) { g_blockcopy_preset      = p->blockcopy;      printf("  blockcopy      -> %d\n", p->blockcopy);      }
     if (p->jit_fsqrt      >= 0) { g_jit_fsqrt_preset      = p->jit_fsqrt;      printf("  jit_fsqrt      -> %d\n", p->jit_fsqrt);      }
+    if (p->jit_fipr       >= 0) { g_jit_fipr_preset       = p->jit_fipr;       printf("  jit_fipr       -> %d\n", p->jit_fipr);       }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }
     if (p->tex_clamp_fix  >= 0) { g_tex_clamp_fix_preset  = p->tex_clamp_fix;  printf("  tex_clamp_fix  -> %d\n", p->tex_clamp_fix);  }

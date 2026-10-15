@@ -1180,6 +1180,27 @@ extern "C" {
   int get_jit_fsqrt_preset() { return g_jit_fsqrt_preset; }
 }
 
+// JIT_FIPR - accumulate the dynarec's fipr/ftrv in double precision and round
+// to single ONCE, instead of rounding after every fmuls/fmadds.
+//
+// The SH4 forms all four products, adds them and rounds the sum a single time
+// (skmp's bit-exact model, sh4_fpu_approx.h, verified on a real Dreamcast).
+// The single-precision fmadds chain rounds three extra times, which is
+// harmless when the terms share a sign but drifts badly when they cancel --
+// exactly the dot products T&L code is full of. Offline against that model:
+//   mixed-sign vectors: 59% bit-exact -> 86% (tail up to 99+ ulp cut short)
+//   same-sign vectors : 75% bit-exact -> 93%
+// The rest is the hardware's own 28-bit truncated multipliers, which nothing
+// cheap reproduces. Same instruction count (fmul/fmadd instead of the -s
+// forms, plus one frsp per FIPR; FTRV's frsp replaces its stash fmr), but
+// Broadway's double multiply-add may be slower than the single one -- A/B it.
+// Read when a block is COMPILED. 0=off (default, legacy), 1=on.
+int g_jit_fipr_preset = 1;
+
+extern "C" {
+  int get_jit_fipr_preset() { return g_jit_fipr_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -2399,6 +2420,7 @@ void checkBiosFiles()
 #define OPT_GDROM_DELAY 112  // Page 5 (CORE), under DISC BULK READ
 #define OPT_JIT_ICI     113  // Page 6 (JIT/DYNAREC), under JIT SBP
 #define OPT_ACCURACY_FPU 114 // Page 5 (CORE), under ACCURACY INT
+#define OPT_JIT_FIPR    115  // Page 6 (JIT/DYNAREC), under JIT FSQRT
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2546,7 +2568,8 @@ static const int OPT_PAGE6_ROWS[] = {
   OPT_JIT_FSCHG,
   OPT_JIT_CR0,
   OPT_BLOCKCOPY,
-  OPT_JIT_FSQRT
+  OPT_JIT_FSQRT,
+  OPT_JIT_FIPR
 };
 
 // Page 7 - LOGS (everything that writes to /ndclog.txt, incl. the JIT census tools)
@@ -3642,6 +3665,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (INLINE NR+4%%?)>]"); break;
     }
     printf(" frsqrte+Newton, no C call");
+    printf("\n");
+
+    // --- Row: JIT_FIPR - fipr/ftrv summed in double, rounded once ---
+    printf("%s JIT FIPR DP    : ", (selectedRow == OPT_JIT_FIPR) ? ">" : " ");
+    switch (g_jit_fipr_preset) {
+      case 0: printf("[< OFF (SINGLE)      >]"); break;
+      case 1: printf("[< ON (DOUBLE SUM)   >]"); break;
+    }
+    printf(" fipr/ftrv: round once, like HW");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3898,6 +3930,7 @@ bool displayOptionsMenu()
         case OPT_JIT_CCALLS:     g_jit_ccalls_preset      = (g_jit_ccalls_preset      + 1) % 2; break;
         case OPT_BLOCKCOPY:      g_blockcopy_preset       = (g_blockcopy_preset       + 1) % 2; break;
         case OPT_JIT_FSQRT:      g_jit_fsqrt_preset       = (g_jit_fsqrt_preset       + 1) % 2; break;
+        case OPT_JIT_FIPR:       g_jit_fipr_preset        = (g_jit_fipr_preset        + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
@@ -4026,6 +4059,7 @@ bool displayOptionsMenu()
         case OPT_JIT_CCALLS:     g_jit_ccalls_preset      = (g_jit_ccalls_preset      + 1) % 2; break;
         case OPT_BLOCKCOPY:      g_blockcopy_preset       = (g_blockcopy_preset       + 1) % 2; break;
         case OPT_JIT_FSQRT:      g_jit_fsqrt_preset       = (g_jit_fsqrt_preset       + 1) % 2; break;
+        case OPT_JIT_FIPR:       g_jit_fipr_preset        = (g_jit_fipr_preset        + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
@@ -4928,6 +4962,7 @@ int main(int argc, wchar *argv[])
     printf("JIT Fmov Direct: %s\n", g_jit_fmov_preset ? "ON (LFS/STFS)" : "OFF (GPR BOUNCE)");
     printf("JIT Carry Ops  : %s\n", g_jit_carry_preset ? "ON (10 OPS JITTED)" : "OFF (LEGACY)");
     printf("JIT Mac Ops    : %s\n", g_jit_mac_preset ? "ON (FASTMEM READS)" : "OFF (LEGACY)");
+    printf("JIT Fipr DP    : %s\n", g_jit_fipr_preset ? "ON (DOUBLE SUM)" : "OFF (SINGLE)");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Tex wrap guard : %s\n", g_tex_wrap_guard_preset ? "ON (SAFE WRAP)" : "OFF (LEGACY)");
     printf("Strip dedup    : %s\n", g_strip_dedup_preset == 2 ? "SKIP REPEATED" :

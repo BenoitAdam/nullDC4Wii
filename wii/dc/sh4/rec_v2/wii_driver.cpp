@@ -265,6 +265,10 @@ extern "C" int get_jit_tfwd_preset();
 // instead of calling libm. See the comment block above rec_fsqrt.
 extern "C" int get_jit_fsqrt_preset();
 
+// JIT_FIPR preset (main.cpp): accumulate fipr/ftrv in double and round to
+// single once, as the SH4 does, instead of rounding after every fmadds.
+extern "C" int get_jit_fipr_preset();
+
 // JIT_CR0 preset (main.cpp): let a block-ending compare leave its answer in
 // CR0 and have the conditional exit branch on it directly, instead of moving
 // the bit into a GPR only to compare it back to 0/1. See emit_t_to_cr0().
@@ -4283,15 +4287,22 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		// rs1,rs2 are FV4 vectors (base fr); rd is the 4th element slot.
 		case shop_fipr:
 			{
+				const bool dp=get_jit_fipr_preset()!=0;
 				ppc_fvec_load(ppc_f1,op->rs1,0);
 				ppc_fvec_load(ppc_f2,op->rs2,0);
-				ppc_fmulsx(ppc_f0,ppc_f1,ppc_f2,0);		// acc = a0*b0
+				if (dp) ppc_fmulx (ppc_f0,ppc_f1,ppc_f2,0);	// acc = a0*b0 (exact in double)
+				else    ppc_fmulsx(ppc_f0,ppc_f1,ppc_f2,0);	// acc = a0*b0
 				for (u32 i=1;i<4;i++)
 				{
 					ppc_fvec_load(ppc_f1,op->rs1,i);
 					ppc_fvec_load(ppc_f2,op->rs2,i);
-					ppc_fmaddsx(ppc_f0,ppc_f1,ppc_f0,ppc_f2,0);	// acc = ai*bi + acc
+					if (dp) ppc_fmaddx (ppc_f0,ppc_f1,ppc_f0,ppc_f2,0);	// acc = ai*bi + acc
+					else    ppc_fmaddsx(ppc_f0,ppc_f1,ppc_f0,ppc_f2,0);	// acc = ai*bi + acc
 				}
+				// The double sum MUST be rounded here: stfs truncates instead of
+				// rounding, and the FPU_PIN store is a bare fmr into the pinned
+				// FPR, which would carry the extra precision into later ops.
+				if (dp) ppc_frspx(ppc_f0,ppc_f0,0);
 				ppc_sh_store_f32(ppc_f0,op->rd);
 			}
 			break;
@@ -4303,6 +4314,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		// before any store).
 		case shop_ftrv:
 			{
+				const bool dp=get_jit_fipr_preset()!=0;
 				// Load the input vector once into f8..f11.
 				for (u32 j=0;j<4;j++)
 					ppc_fvec_load(ppc_f8+j,op->rs1,j);
@@ -4310,13 +4322,18 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				for (u32 i=0;i<4;i++)
 				{
 					ppc_fvec_load(ppc_f1,op->rs2,i);		// m[i]
-					ppc_fmulsx(ppc_f0,ppc_f1,ppc_f8,0);		// out = m[i]*v0
+					if (dp) ppc_fmulx (ppc_f0,ppc_f1,ppc_f8,0);	// out = m[i]*v0
+					else    ppc_fmulsx(ppc_f0,ppc_f1,ppc_f8,0);	// out = m[i]*v0
 					for (u32 j=1;j<4;j++)
 					{
 						ppc_fvec_load(ppc_f1,op->rs2,j*4+i);	// m[j*4+i]
-						ppc_fmaddsx(ppc_f0,ppc_f1,ppc_f0,ppc_f8+j,0);	// out += m*vj
+						if (dp) ppc_fmaddx (ppc_f0,ppc_f1,ppc_f0,ppc_f8+j,0);	// out += m*vj
+						else    ppc_fmaddsx(ppc_f0,ppc_f1,ppc_f0,ppc_f8+j,0);	// out += m*vj
 					}
-					ppc_fmrx(ppc_f4+i,ppc_f0,0);			// stash out[i]
+					// JIT_FIPR: the rounding to single replaces the stash move,
+					// so FTRV costs no extra instruction (see shop_fipr).
+					if (dp) ppc_frspx(ppc_f4+i,ppc_f0,0);		// stash round(out[i])
+					else    ppc_fmrx (ppc_f4+i,ppc_f0,0);		// stash out[i]
 				}
 				for (u32 i=0;i<4;i++)
 					ppc_fvec_store(ppc_f4+i,op->rd,i);
