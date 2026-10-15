@@ -700,7 +700,7 @@ extern "C" {
 // enough spare non-volatile PPC FPRs to pin both banks. New/unproven, so
 // runtime-gated like fastmem/bcache rather than a compile-time switch.
 // 0=off (legacy, default), 1=on.
-int g_fpu_pin_preset = 0;
+int g_fpu_pin_preset = 1;
 
 extern "C" {
   int get_fpu_pin_preset() { return g_fpu_pin_preset; }
@@ -2613,7 +2613,7 @@ static void printOptionsFooter(void)
 {
   int cols, rows;
   CON_GetMetrics(&cols, &rows);
-  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.77", rows);
+  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.78", rows);
 }
 
 bool displayOptionsMenu()
@@ -3488,7 +3488,7 @@ bool displayOptionsMenu()
       case 1: printf("[< IGNORE (NEEDS SBP)>]"); break;
       case 2: printf("[< IGNORE + SBP=ALL  >]"); break;
     }
-    printf(" guest CCR.ICI: keep or dump the JIT cache");
+    printf(" Help to avoid suttering/freeze");
     printf("\n");
 
     // --- Row: FASTMEM - PPC-MMU branchless JIT memory access ---
@@ -4429,7 +4429,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - alpha 0.77   ");
+    printf("\nNullDC4Wii - alpha 0.78   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");

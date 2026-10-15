@@ -23,17 +23,16 @@ a fork from https://github.com/skmp/nullDCe
 - Fishing Rod/USB Keyboard/Lightgun/Maracas support (probably unsupported now)
 - Put external config file for controllers (controls.cfg)
 - fix Volgarr regresion
-- DualShock 3 issue: left stick has the Y axis inverted, up is down, and down is up.
+- DualShock 3 issue: left stick has the Y axis inverted, up is down, and down is up ?
 - Custom layout : Chuchu rocket/Quake3 (bith Gamecube & wii)
 - Custom layout : a toggle to make the right analog stick with supported controllers act as buttons X (Left) - Y (Up) - A (Down) - B (Right). This is useful for twin stick shooters that use the diamond button layout for gameplay (like Xeno Crisis). (like chuchu probably ? so it's done I think)
-- Add a winCE preset to put an additional menu message (after option screen) to prevent that game is WinCE and isn't supported (wince=yes in game_presets.cfg). Message be like : "This is a WinCE game, it's not supported yet by NullDC4Wii (and probably never will). Press A to launch Anyway, B to return to file selection."
 - Add zlib-compressed CHDs Support (cdzl). Make a message that CHD with cdlz is not supported
 
 ### Developer (Normal)
 
 - 4/3 support (implemented, need fix on some games like Shenmue)
-- Support for CHD/ELF game file
-- Return to file list (instead return to homebrew menu)
+- Support for ELF file
+- Return to file list (instead return to homebrew menu) (see #14)
 - Synchronise Dreamcast clock to Wii's clock
 - Get RGB565_opaque_alpha AUTO mode
 - Get Offset color AUTO mode
@@ -41,7 +40,7 @@ a fork from https://github.com/skmp/nullDCe
 ### Developer (Hard)
 
 - Fix Chuchu Rocket 16Bit PCM bug
-- Fix non WinCE games not launching (Rez, San Francisco 2049...)
+- Fix non WinCE games not launching (Rez, San Francisco 2049...) https://github.com/BenoitAdam94/nullDC4Wii/issues/88
 - Improve gxRend.cpp = main file about specific rendering for Wii
 - Splitting gxRend.cpp in multiple files ? (beware this is more tricky than it look)
 - Table convertion between SH4 Opcodes of SH4 and the WiiPPC ?
@@ -173,7 +172,7 @@ https://wiibrew.org/wiki/NullDC4Wii/Compatibility
 
 ## Presets
 
-Presets are grouped in the in-emulator menu across **7 pages**. The order below follows the exact same order shown on screen (Page 1 to Page 7). "Default" below is what actually ships out of the box, from `game_presets.cfg`'s `[default]` section (applied on every launch before any per-game section) - see [game_presets.cfg](#game_presetscfg) further down for how to override any of this per game.
+Presets are grouped in the in-emulator menu across **8 pages**. The order below follows the exact same order shown on screen (Page 1 to Page 8). "Default" below is what actually ships out of the box, from `game_presets.cfg`'s `[default]` section (applied on every launch before any per-game section) - see [game_presets.cfg](#game_presetscfg) further down for how to override any of this per game.
 
 ### Page 1 : General
 
@@ -191,6 +190,16 @@ Presets are grouped in the in-emulator menu across **7 pages**. The order below 
 |------|----------| ------------------------- |
 | **OFF (uncapped, default)** | Emulator can run above 100% speed | Uncapped |
 | **ON (cap 100%)** | Stops speed exceeding 100% | Capped |
+
+#### CABLE TYPE
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **COMPOSITE (default)** | Guest sees a composite cable plugged in | Standard |
+| **RGB SCART** | Guest sees SCART | Standard |
+| **VGA** | Guest sees VGA (480p, 60Hz progressive) - drops the ~17% PAL-on-60Hz judder for games that support VGA | A game without VGA support just refuses to boot (real Dreamcast behavior) |
+
+Haven't tested much for now. Some games (like SFA3) are set to VGA in `game_presets.cfg` since it fixes judder there.
 
 #### SHOW FPS
 
@@ -425,7 +434,7 @@ Pair with VTX ALPHA for sprite-based fades.
 | **OFF (faster, default)** | no decal alpha  | Not accurate |
 | **ON (correct)** | Decal alpha implemented | Accurate, fixes Crazy Taxi's cars |
 
-See more : https://github.com/BenoitAdam/nullDC4Wii/issues/68
+See more : https://github.com/BenoitAdam/nullDC4Wii/issues/48
 
 #### SEAM FIX
 
@@ -637,19 +646,42 @@ See compatiblity wiki for more info
 |------|----------| ------------------------- |
 | **OFF (default)** | No bias | Legacy |
 | **Tier 1-3** | Native polygon offset / Z bias via a Z-texture in ADD mode (`GX_SetZTexture`), applied to the Punch-Through list - increasing bias strength | GX equivalent of the co-planar decal/shadow/road-marking sort that real PVR tile order used to give for free (real hardware has no `glPolygonOffset`-style register) |
+Probably needs Punch-Trough=ON to be effective
 
 ### Page 4 : Audio
 
-#### AUDIO BUFFERS
+#### AUDIO BUFFERS (Default : 4)
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
-| **DEFAULT (saved)** | Leaves the value at its cfg/UI setting | Depends on saved config |
-| **0 (never block)** | Never blocks/drops on overrun | Fastest, most likely to drop |
+| **DEFAULT (saved)** | Leaves the value at its cfg/UI setting (`game_presets.cfg` ships `audio_buffers=4`) | Depends on saved config |
+| **0 (free run)** | Never blocks/drops on overrun | Fastest, most likely to drop |
 | **1 / 2** | Blocks until below N queued buffers | More paced |
-| **3 (most paced)** | Most conservative pacing | Most paced, safest |
+| **4 (recommended)** | Blocks until below 4 queued buffers | Recommended balance |
+| **8 (most slack)** | Most conservative pacing | Most paced, safest |
 
 Put audio buffers = 1 generally leads to good audio. To the cost of FPS unfortunatly.
+
+#### AUDIO BLOCK (Default = 1024)
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **1024 (default)** | 23ms per ASND buffer | 109% - lowest delay |
+| **1536** | 35ms per ASND buffer | 163% |
+| **2048** | 46ms per ASND buffer | 218% - most slack |
+
+Bigger = more delay, but more slack against underruns.
+
+#### AUDIO DRC (Default = normal)
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | No pitch trim | Standard, crackles possible when speed isn't 100% |
+| **GENTLE (+-1%)** | Small pitch retune | Subtle |
+| **NORMAL (+-3%, default)** | Retunes output to kill crackle | Balanced |
+| **WIDE (+-15%)** | Strong pitch retune | Most aggressive |
+
+Instead of crackles, this detunes audio if the speed isn't 100%.
 
 #### CDDA MUSIC
 
@@ -741,6 +773,24 @@ Haven't seen any effect but keeping on for now
 | **Underclock (150-200MHz, step 5)** | Lower value = fewer emulated cycles per real second | Lower = faster host, slower game |
 
 Underclocking is supposed to raise FPS. Didn't see any difference
+
+#### DISC BULK READ
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (per sector, default)** | One fseek+fread per sector | Standard |
+| **ON (bulk, GDI/ISO)** | One fseek+fread per RUN of sectors instead | Meant to cut loading-screen hitches |
+
+Unused for now.
+
+#### GDROM DELAY
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (instant, default)** | GD-ROM data arrives immediately | Fastest, can freeze a frame on a big stage load |
+| **1800 KB/S (real)** | Paces reads like a real Dreamcast GD-ROM (1x) | Spreads the load over several frames instead of freezing one |
+
+Can read GDROM exactly like a real Dreamcast at 1x speed. Unused for now.
 
 ### Page 6 : Experimental Stuff & Debug
 
@@ -834,17 +884,11 @@ Hardcoded to one address - meaningless for any other game.
 | **INTERPRETER** | Interpreted SH4 core | Slow, for debugging only |
 | **DYNAREC (default)** | JIT recompiler | Fast |
 
-#### Debug logs
+#### Debug Skip Tex
 
-All default OFF, all write to `/ndclog.txt` on the card, costing a card write every frame while on - turn back off once a log has answered its question.
+Default OFF, diagnostic only. Hides every polygon using one texture (VRAM address, hex or decimal, from a `[SCN]` census `addr=` field) - it REMOVES geometry, never fixes anything. Answers whether an element is missing because something draws OVER it, or because it's drawn wrong itself - this is how the Hokuto no Ken layering bug was pinned down.
 
-| Row | What it logs |
-|-----|--------------|
-| **Dbg FB2D Log** | Whether a game ever takes the bit-24 render path 2D FRAMEBUFFER (Page 1) would act on - answers "is it worth trying on this game?" before flipping it |
-| **Debug Message** | Renderer trace (`[PATH]`, `[FB]`, `[RTT]`...) |
-| **Debug Loop** | Per-loop CPU/GD-ROM/IO trace. VERY slow |
-| **Debug GDROM** | GD-ROM / CDDA SPI command trace |
-| **Debug Skip Tex** | Hides every polygon using one texture (VRAM address, hex or decimal, from a `[SCN]` census `addr=` field). Diagnostic only - it REMOVES geometry, never fixes anything. Answers whether an element is missing because something draws OVER it, or because it's drawn wrong itself - this is how the Hokuto no Ken layering bug was pinned down |
+The other debug/log rows (Dbg FB2D, Debug Message, Debug Loop, Debug GDROM, and the JIT diagnostics) moved to **Page 8 : LOGS**, below.
 
 ### Page 7 : JIT/DYNAREC
 
@@ -857,6 +901,16 @@ Perf and diagnostic presets for the SH4 dynarec and its interpreter-fallback pat
 | **OFF** | No stale/self-modified block guard | Fastest, riskiest |
 | **KNOWN (default)** | Guards known self-modifying regions (DOA2LE, Shenmue 1/2, ...) plus the boot-entry cache flush | Balanced |
 | **ALL RAM (slow)** | Guards all RAM | Safest, slowest, diagnosis only |
+
+#### JIT ICI
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **CLEAR ALL (default)** | A guest I-cache invalidate (`CCR.ICI`) clears the whole JIT cache, as before | Standard, can cost a big stall recompiling everything right after |
+| **IGNORE (needs SBP)** | Ignores the invalidate instead, relying on JIT SBP to catch anything that actually got self-modified | Needs JIT SBP on |
+| **IGNORE + SBP=ALL** | Same, and forces JIT SBP to guard all RAM | Safest of the two IGNORE modes |
+
+Fixes some freezes/stuttering - e.g. kills a ~24ms stage-load frame (1648 blocks recompiled after one `CCR.ICI`) in Street Fighter Alpha 3. Costs ~25-30% more sh4 time, so only worth it on a game with budget to spare - don't set this on a game already near 100% SPEED.
 
 #### FASTMEM
 
@@ -905,15 +959,6 @@ Crash observed in Re-Volt when launching a race. Only game that does that for no
 
 An opcode not on the allow-list keeps the full spill either way - slow, never wrong. Best candidates: games doing lots of integer division. Pair with JIT IFB PROBE to see if a game issues enough to matter.
 
-#### JIT IFB PROBE (diagnostic)
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (default)** | No counting | Standard |
-| **ON (logs [IFB])** | Counts interpreter fallbacks per opcode, writes an `[IFB]` breakdown to `/ndclog.txt` once a second: total/s, how much JIT IFB FLUSH could narrow, spill memory-op rate with/without it | Costs 4 instructions per fallback site - turn off for timing runs |
-
-Read at compile time - set before launching.
-
 #### JIT NEW OPS
 
 | Mode | Settings | Rendering |
@@ -922,15 +967,6 @@ Read at compile time - set before launching.
 | **ON (9 ops jitted, default)** | Wires all 9 into the dispatch table | `stc SR` alone measured up to 96k/s in ChuChu Rocket scenes; all 9 now skip JIT IFB FLUSH's allow-list entirely |
 
 Changes SH4 codegen - read at compile time. Run JIT IFB PROBE first to see if a game issues enough of these.
-
-#### JIT HOTBLOCKS (diagnostic)
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (default)** | No counting | Standard |
-| **ON (logs [HOT])** | Counts executions per compiled SH4 block, writes the hottest ones to `/ndclog.txt` once a second as `[HOT]` lines with codegen density (PPC bytes/SH4-opcode), plus a full SH4+PPC dump of the top block twice per session | Costs 4 instructions per block entry - turn off for timing runs. Covers everything JIT IFB PROBE doesn't (i.e. non-fallback codegen) |
-
-Read at compile time - set before launching.
 
 #### JIT T-FORWARD
 
@@ -978,15 +1014,6 @@ Expect little effect for most games - the SH4 has a real FPU, so MAC is rarer he
 | **OFF (legacy)** | A conditional block exit rebuilds T via `mfcr`/`rlwinm`/`stw`/`cmpi` | Standard |
 | **ON (default)** | Branches directly on the PPC CR0 bit the compare already set (sr_T is still written, since a later block may read it) | Wii-measured +2.8% on BIOS boot phase; null in Castlevania gameplay. Only fires when the flag producer is the block's LAST op |
 
-#### JIT CCALL CENSUS (diagnostic)
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (default)** | No counting | Standard |
-| **ON** | Counts every C function the dynarec still calls out to, prints a `[CC]` block once a second (per-second AND per-frame rates: scheduler tick, interrupt, `bm_GetCode`, `do_sqw`/TA, `UpdateSR`, `UpdateFPSCR`, fsqrt, fsrra, ReadMem/WriteMem misses, mac saturation) | Far cheaper than JIT HOTBLOCKS since counters live inside the callees, but still re-measure speed with it off before trusting a comparison |
-
-The census that found `writemem` at 1.1M calls/s in Crazy Taxi (57% of all JIT call-outs), which led to BLOCKCOPY below.
-
 #### BLOCKCOPY
 
 | Mode | Settings | Rendering |
@@ -1000,6 +1027,83 @@ The census that found `writemem` at 1.1M calls/s in Crazy Taxi (57% of all JIT c
 |------|----------| ------------------------- |
 | **OFF (legacy)** | `fsqrt` calls newlib `sqrtf` - a 25-iteration shift-and-subtract bit loop bracketed by two load-hit-store stack round-trips (~300 cycles) | Standard |
 | **ON (default)** | Inline `frsqrte` + 3 Newton-Raphson steps + an exact-residual step, verified bit-identical to `sqrtf` over 2.07M simulated cases | **Wii-CONFIRMED +3.5-4.3%** (Crazy Taxi, which measured 167,906 fsqrt/s). Zero, negative, Inf and NaN still take the old libm call - `frsqrte` alone is only a 5-bit estimate and once distorted the BIOS swirl |
+
+### Page 8 : LOGS
+
+Every row here is diagnostic, default OFF, and writes to `/ndclog.txt` on the card - costing a card write every frame while on, so turn it back off once a log has answered its question.
+
+#### Debug logs
+
+| Row | What it logs |
+|-----|--------------|
+| **Dbg FB2D Log** | Whether a game ever takes the bit-24 render path 2D FRAMEBUFFER (Page 1) would act on - answers "is it worth trying on this game?" before flipping it |
+| **Debug Message** | Renderer trace (`[PATH]`, `[FB]`, `[RTT]`...) |
+| **Debug Loop** | Per-loop CPU/GD-ROM/IO trace. VERY slow |
+| **Debug GDROM** | GD-ROM / CDDA SPI command trace |
+
+#### JIT IFB PROBE
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No counting | Standard |
+| **ON (logs [IFB])** | Counts interpreter fallbacks per opcode, writes an `[IFB]` breakdown to `/ndclog.txt` once a second: total/s, how much JIT IFB FLUSH could narrow, spill memory-op rate with/without it | Costs 4 instructions per fallback site - turn off for timing runs |
+
+Read at compile time - set before launching.
+
+#### JIT HOTBLOCKS
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No counting | Standard |
+| **ON (logs [HOT])** | Counts executions per compiled SH4 block, writes the hottest ones to `/ndclog.txt` once a second as `[HOT]` lines with codegen density (PPC bytes/SH4-opcode), plus a full SH4+PPC dump of the top block twice per session | Costs 4 instructions per block entry - turn off for timing runs. Covers everything JIT IFB PROBE doesn't (i.e. non-fallback codegen) |
+
+Read at compile time - set before launching.
+
+#### JIT CCALL CENSUS
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No counting | Standard |
+| **ON** | Counts every C function the dynarec still calls out to, prints a `[CC]` block once a second (per-second AND per-frame rates: scheduler tick, interrupt, `bm_GetCode`, `do_sqw`/TA, `UpdateSR`, `UpdateFPSCR`, fsqrt, fsrra, ReadMem/WriteMem misses, mac saturation) | Far cheaper than JIT HOTBLOCKS since counters live inside the callees, but still re-measure speed with it off before trusting a comparison |
+
+The census that found `writemem` at 1.1M calls/s in Crazy Taxi (57% of all JIT call-outs), which led to BLOCKCOPY.
+
+#### TA PROFILE
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No counting | Standard |
+| **ON (stats ta:)** | Measures the TA decoder's own share of wall time and folds it into the stats line as `ta:%` | Costs ~1% |
+
+#### STRIP DEDUP
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | Disable | Standard |
+| **CENSUS (log only)** | Per-strip/per-texture render census to `/ndclog.txt`, nothing skipped | Diagnostic only |
+| **SKIP REPEATED** | Also skips strips it detects as exact repeats | Closed/not worth shipping - measured ~0.17% gain, keep on CENSUS or OFF |
+
+#### AUDIO STATS
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No counting | Standard |
+| **ON (1 line/sec)** | Logs underruns, drops, ring depth, pitch trim once a second | Can help debugging audio |
+
+#### FRAME PROF
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No profiling | Standard |
+| **ON (logs [FPROF])** | Per-frame p50/p95/p99 timing breakdown | Helps chasing down freezes/stutters |
+| **ON + TAIL FRAMES** | Same, plus logs the individual tail (p95/p99) frames | For digging into what specifically stutters |
+
+#### DISC CENSUS
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No counting | Standard |
+| **ON (logs [DISC])** | Logs sectors/call and DISC BULK READ's hit rate | For GDROM |
 
 ### Game Specific Presets
 
@@ -1275,7 +1379,11 @@ The Wii can't read those disc format. Maybe if you change the optical drive and 
 
 ### Can it read CDI/Utopia disc ?
 
-Maybe it's possible, but we don't have time to focus on this. CDI Files on SD Card/USB are supported since alpha 0.28 anyway.
+Maybe it's possible, but I don't have time to focus on this. CDI Files on SD Card/USB are supported since alpha 0.28 anyway.
+
+### Can it run files Hard Drive disk ?
+
+USB disk is currently implemented but I'm having trouble recently. Try alpha 0.63 if you have the same problem. USB key (FAT32 32kb cluster) is probably better to use
 
 ### Will WinCE games be implemented ?
 
@@ -1289,7 +1397,7 @@ Probably not, we are super tight on RAM, and it also cost 1/2% of cpu cycle
 
 ### Will Netplay be implemented ?
 
-Probably not, again, we are very short on RAM/CPU. And on Wii we don't have the 100% speed everytime.
+Probably not, again, we are very short on RAM/CPU. And on Wii we don't have the 100% speed everytime, that would f*** up other players
 
 ### How is AI involved in the project ?
 
