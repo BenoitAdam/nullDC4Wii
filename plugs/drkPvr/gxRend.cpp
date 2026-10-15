@@ -5,12 +5,12 @@
 // RUNTIME - PRESET SELECTION
 
 // This is defined in main.cpp
-extern "C" int get_accuracy_preset();
+extern "C" int get_accuracy_int_preset();
 
 // Helper macros to check current accuracy mode
-#define FAST() (get_accuracy_preset() == 0)
-#define BALANCED() (get_accuracy_preset() == 1)
-#define ACCURATE() (get_accuracy_preset() == 2)
+#define FAST() (get_accuracy_int_preset() == 0)
+#define BALANCED() (get_accuracy_int_preset() == 1)
+#define ACCURATE() (get_accuracy_int_preset() == 2)
 
 // This is defined in main.cpp
 extern "C" int get_graphism_preset();
@@ -8623,7 +8623,7 @@ void DoRender()
            "| presets: tex_cache=%d fixed_depth=%d legacy_depth=%d depth_clip=%d "
            "hud_pass=%d punch_through=%d trans_sort=%d autosort=%d bg_poly_fix=%d "
            "adv_alpha=%d blend_mode=%d decal_alpha=%d offset_col=%d "
-           "graphics=%d accuracy=%d frameskip=%d trans_zwrite=%d(no_zw=%d) "
+           "graphics=%d accuracy_int=%d frameskip=%d trans_zwrite=%d(no_zw=%d) "
            "ppz_write=%d isp_depth_func=%d isp_cull=%d sprite_color=%d "
            "vtx_alpha=%d tex_alpha=%d"
            " | game_presets section matched: '%s'\n",
@@ -8633,7 +8633,7 @@ void DoRender()
            HUD_PASS(), (int)PUNCH_THROUGH_FIX(), (int)TRANS_SORT(), AUTOSORT(),
            (int)BG_POLY_FIX(), (int)ADVANCED_ALPHA(), (int)BLEND_MODE(),
            (int)DECAL_ALPHA_FIX(), (int)OFFSET_COLOR_FIX(),
-           get_graphism_preset(), get_accuracy_preset(), get_frameskip_preset(),
+           get_graphism_preset(), get_accuracy_int_preset(), get_frameskip_preset(),
            get_trans_zwrite_preset(), (int)TRANS_NO_ZWRITE(),
            (int)PER_POLYGON_Z_WRITE(),
            ISP_DEPTH_FUNC(), ISP_CULL(), (int)SPRITE_COLOR(),

@@ -12,14 +12,17 @@ Future Optimization Opportunities:
 // RUNTIME - ACCURACY SELECTION
 // ============================================================================
 
-// External function to get the user's selected accuracy mode
+// External function to get the user's selected FPU accuracy mode
+// (ACCURACY FPU, separate from the interpreter-timing ACCURACY INT).
 // This is defined in main.cpp
-extern "C" int get_accuracy_preset();
+extern "C" int get_accuracy_fpu_preset();
 
-// Helper macros to check current accuracy mode
-#define FAST() (get_accuracy_preset() == 0)
-#define BALANCED() (get_accuracy_preset() == 1)
-#define ACCURATE() (get_accuracy_preset() == 2)
+// Helper macros to check current FPU accuracy mode. Deliberately not named
+// FAST()/BALANCED()/ACCURATE(): sh4_interpreter.h (included below) defines
+// those on the INT preset.
+#define FPU_FAST()     (get_accuracy_fpu_preset() == 0)
+#define FPU_BALANCED() (get_accuracy_fpu_preset() == 1)
+#define FPU_ACCURATE() (get_accuracy_fpu_preset() == 2)
 
 #include "types.h"
 #include <math.h>
@@ -524,7 +527,7 @@ sh4op(i1111_nnmm_1110_1101)
 
   if (fpscr.PR == 0)
   {
-    if (ACCURATE())
+    if (FPU_ACCURATE())
     {
       // ACCURATE mode: Use double precision for intermediate calculations
       double idp = (double)fr[n + 0] * fr[m + 0];
@@ -534,7 +537,7 @@ sh4op(i1111_nnmm_1110_1101)
 
       fr[n + 3] = fixNaN((float)idp);
     }
-    else if (BALANCED())
+    else if (FPU_BALANCED())
     {
       // BALANCED mode: Use double precision with NaN fixing
       double idp = (double)fr[n + 0] * fr[m + 0];
@@ -740,7 +743,7 @@ sh4op(i1111_nn01_1111_1101)
 
   if (fpscr.PR == 0)
   {
-    if (ACCURATE() || BALANCED())
+    if (FPU_ACCURATE() || FPU_BALANCED())
     {
       // ACCURATE/BALANCED mode: Use double precision for intermediate calculations
       double v1 = (double)xf[0] * fr[n + 0] +

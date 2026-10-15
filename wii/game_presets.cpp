@@ -25,12 +25,16 @@
                                 match wins, more specific first — same rule
                                 as before):
                                     <segatetris><sega tetris>   ; Wii U
-                                    accuracy=accurate
+                                    accuracy_int=accurate
                                     [segatetris][sega tetris]   ; Wii (fallback)
-                                    accuracy=fast
+                                    accuracy_int=fast
                                 A real Wii simply fails the Wii U gate and
                                 falls through to the plain section below it.
-        accuracy=fast       <- only fields listed are overridden
+        accuracy_int=fast   <- only fields listed are overridden.
+                                fast | balanced | accurate: SH4 interpreter
+                                timing (timeslice + peripheral polling)
+        accuracy_fpu=fast   <- fast | balanced | accurate: FIPR/FTRV
+                                intermediate precision (interpreter only)
         graphics=low        <- low | normal. TEXTURE FILTER ONLY:
                                 low=GX_NEAR (point sampling, best for 240p
                                 games whose art already matches the output
@@ -1092,7 +1096,8 @@
 // ---------------------------------------------------------------------------
 // Global presets declared in main.cpp
 // ---------------------------------------------------------------------------
-extern int g_accuracy_preset;
+extern int g_accuracy_int_preset;
+extern int g_accuracy_fpu_preset;
 extern int g_graphism_preset;
 extern int g_gx_preset;
 extern int g_lod_bias_preset;
@@ -1227,7 +1232,8 @@ extern bool g_is_wiiu;
 struct GamePreset
 {
     // -1 = not set (leave user default untouched)
-    int accuracy;
+    int accuracy_int;  // ACCURACY INT (SH4 timing)
+    int accuracy_fpu;  // ACCURACY FPU (FIPR/FTRV precision)
     int graphics;
     int gx;
     int lod_bias;
@@ -1722,7 +1728,8 @@ static int parse_sh4_clock(const char* v)
 
 static void apply_kv(GamePreset* p, const char* key, const char* val)
 {
-    if      (key_eq(key, "accuracy"))   p->accuracy   = parse_accuracy(val);
+    if      (key_eq(key, "accuracy_int")) p->accuracy_int = parse_accuracy(val);
+    else if (key_eq(key, "accuracy_fpu")) p->accuracy_fpu = parse_accuracy(val);
     else if (key_eq(key, "graphics"))   p->graphics   = parse_graphics(val);
     else if (key_eq(key, "gx"))         p->gx         = parse_gx(val);
     else if (key_eq(key, "lod_bias"))   p->lod_bias   = parse_lod_bias(val);
@@ -1852,7 +1859,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
 static void preset_clear(GamePreset* cur)
 {
     memset(cur, 0, sizeof(*cur));
-    cur->accuracy = cur->graphics  = cur->ratio    = cur->adv_alpha = -1;
+    cur->accuracy_int = cur->accuracy_fpu = -1;
+    cur->graphics = cur->ratio = cur->adv_alpha = -1;
     cur->frameskip= cur->tex_cache = cur->bpp4     = cur->bpp8      = -1;
     cur->gx = cur->lod_bias = cur->aniso = -1;
     cur->jojo_fix = -1;
@@ -1964,7 +1972,8 @@ static void preset_clear(GamePreset* cur)
 // Apply every set field of a preset slot onto the live g_*_preset globals
 static void preset_apply_fields(const GamePreset* p)
 {
-    if (p->accuracy   >= 0) { g_accuracy_preset      = p->accuracy;   printf("  accuracy   -> %d\n", p->accuracy);   }
+    if (p->accuracy_int >= 0) { g_accuracy_int_preset = p->accuracy_int; printf("  accuracy_int -> %d\n", p->accuracy_int); }
+    if (p->accuracy_fpu >= 0) { g_accuracy_fpu_preset = p->accuracy_fpu; printf("  accuracy_fpu -> %d\n", p->accuracy_fpu); }
     if (p->graphics   >= 0) { g_graphism_preset       = p->graphics;   printf("  graphics   -> %d\n", p->graphics);   }
     if (p->gx         >= 0) { g_gx_preset             = p->gx;         printf("  gx         -> %d\n", p->gx);         }
     if (p->lod_bias   >= 0) { g_lod_bias_preset       = p->lod_bias;   printf("  lod_bias   -> %d\n", p->lod_bias);   }

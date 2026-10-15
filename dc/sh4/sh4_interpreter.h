@@ -13,11 +13,11 @@ typedef void (FASTCALL OpCallFP)(u32 op);
 //   1 = Balanced — moderate timeslice, good compatibility
 //   2 = Accurate — original timeslice, tightest peripheral timing
 // -------------------------------------------------------------------------
-extern "C" int get_accuracy_preset();
+extern "C" int get_accuracy_int_preset();
 
-#define FAST()     (get_accuracy_preset() == 0)
-#define BALANCED() (get_accuracy_preset() == 1)
-#define ACCURATE() (get_accuracy_preset() == 2)
+#define FAST()     (get_accuracy_int_preset() == 0)
+#define BALANCED() (get_accuracy_int_preset() == 1)
+#define ACCURATE() (get_accuracy_int_preset() == 2)
 
 // -------------------------------------------------------------------------
 // Per-preset SH4 execution constants

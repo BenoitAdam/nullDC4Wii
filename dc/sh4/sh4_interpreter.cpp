@@ -1,7 +1,7 @@
 /*
  * SH4 Interpreter — Dreamcast / Wii port
  *
- * Runtime accuracy preset (get_accuracy_preset()):
+ * Runtime accuracy preset (get_accuracy_int_preset()):
  *   0 = Fast     — timeslice 1792, loose peripheral polling
  *   1 = Balanced — timeslice  896, moderate peripheral polling
  *   2 = Accurate — timeslice  448, original peripheral polling (default)
@@ -69,7 +69,7 @@ static u32 s_vslow_period  = SH4_VSLOW_ACCURATE;
 // Called once at the start of each Run() so changes take effect immediately.
 static void ApplyAccuracyPreset()
 {
-	const int preset = get_accuracy_preset();
+	const int preset = get_accuracy_int_preset();
 
 	if (preset == 0)  // Fast
 	{

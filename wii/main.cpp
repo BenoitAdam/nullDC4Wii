@@ -46,10 +46,15 @@ int SS_IsEnabled(void);
 // GLOBAL EMULATOR PRESETS
 // ============================================================================
 
-int g_accuracy_preset = 0;     // 0=Fast, 1=Balanced, 2=Accurate (default)
+// Two independent accuracy presets (cfg keys accuracy_int= / accuracy_fpu=):
+//   ACCURACY INT -- SH4 interpreter/scheduler timing (timeslice, peripheral polling)
+//   ACCURACY FPU -- FIPR/FTRV intermediate precision in the interpreter FPU handlers
+int g_accuracy_int_preset = 0; // ACCURACY INT: 0=Fast (default), 1=Balanced, 2=Accurate
+int g_accuracy_fpu_preset = 0; // ACCURACY FPU: 0=Fast (default), 1=Balanced, 2=Accurate
 
 extern "C" {
-  int get_accuracy_preset() { return g_accuracy_preset; }
+  int get_accuracy_int_preset() { return g_accuracy_int_preset; }
+  int get_accuracy_fpu_preset() { return g_accuracy_fpu_preset; }
 }
 
 int g_graphism_preset = 1;     // 0=Low (GX_NEAR), 1=Normal (GX_LINEAR). The old
@@ -2313,7 +2318,7 @@ void checkBiosFiles()
 #define OPT_CANVAS_WIDTH 32
 
 // --- Page 3: accuracy / experimental presets ---
-#define OPT_ACCURACY    33
+#define OPT_ACCURACY_INT 33
 #define OPT_HOKUTO_HACK 34 // now shown on Page 6 (EXPERIMENTAL), see OPT_PAGE5_ROWS
 #define OPT_JOJO_FIX    35
 #define OPT_VQ_CMPR     67    // now shown on Page 1 (GENERAL), under TEXTURE CACHE, see OPT_PAGE0_ROWS
@@ -2393,6 +2398,7 @@ void checkBiosFiles()
 #define OPT_DISC_CENSUS 111  // Page 8 (LOGS), under FRAME PROF
 #define OPT_GDROM_DELAY 112  // Page 5 (CORE), under DISC BULK READ
 #define OPT_JIT_ICI     113  // Page 6 (JIT/DYNAREC), under JIT SBP
+#define OPT_ACCURACY_FPU 114 // Page 5 (CORE), under ACCURACY INT
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2495,7 +2501,8 @@ static const int OPT_PAGE3_ROWS[] = {
 // Page 4 - CORE
 static const int OPT_PAGE4_ROWS[] = {
   OPT_LAUNCH,
-  OPT_ACCURACY,
+  OPT_ACCURACY_INT,
+  OPT_ACCURACY_FPU,
   OPT_ASYNC_RENDER,
   OPT_RENDER_DELAY,
   OPT_TMEM_CACHE,
@@ -3283,14 +3290,24 @@ bool displayOptionsMenu()
     } // end page 3
 
     if (optionsPage == 4) {
-    // --- Row: Accuracy ---
-    printf("%s ACCURACY       : ", (selectedRow == OPT_ACCURACY) ? ">" : " ");
-    switch (g_accuracy_preset) {
+    // --- Row: Accuracy (interpreter / scheduler timing) ---
+    printf("%s ACCURACY INT   : ", (selectedRow == OPT_ACCURACY_INT) ? ">" : " ");
+    switch (g_accuracy_int_preset) {
       case 0: printf("[< FAST (DEFAULT)    >]"); break;
       case 1: printf("[< BALANCED          >]"); break;
       case 2: printf("[< ACCURATE          >]"); break;
     }
     printf(" ACCURATE if strange AI behavior");
+    printf("\n");
+
+    // --- Row: Accuracy (FPU FIPR/FTRV precision) ---
+    printf("%s ACCURACY FPU   : ", (selectedRow == OPT_ACCURACY_FPU) ? ">" : " ");
+    switch (g_accuracy_fpu_preset) {
+      case 0: printf("[< FAST (DEFAULT)    >]"); break;
+      case 1: printf("[< BALANCED          >]"); break;
+      case 2: printf("[< ACCURATE          >]"); break;
+    }
+    printf(" FIPR/FTRV precision (interpreter)");
     printf("\n");
 
     // --- Row: Async render (CPU/GPU overlap) ---
@@ -3790,7 +3807,8 @@ bool displayOptionsMenu()
         case OPT_GX:        g_gx_preset            = (g_gx_preset            + 1) % 2; break;
         case OPT_LOD_BIAS:  g_lod_bias_preset      = (g_lod_bias_preset      + 4) % 5; break;
         case OPT_ANISO:     g_aniso_preset         = (g_aniso_preset         + 2) % 3; break;
-        case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 2) % 3; break;
+        case OPT_ACCURACY_INT: g_accuracy_int_preset = (g_accuracy_int_preset + 2) % 3; break;
+        case OPT_ACCURACY_FPU: g_accuracy_fpu_preset = (g_accuracy_fpu_preset + 2) % 3; break;
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 2) % 3; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
         case OPT_TRANS_ZWRITE: g_trans_zwrite_preset = (g_trans_zwrite_preset  + 1) % 2; break;
@@ -3917,7 +3935,8 @@ bool displayOptionsMenu()
         case OPT_GX:        g_gx_preset            = (g_gx_preset            + 1) % 2; break;
         case OPT_LOD_BIAS:  g_lod_bias_preset      = (g_lod_bias_preset      + 1) % 5; break;
         case OPT_ANISO:     g_aniso_preset         = (g_aniso_preset         + 1) % 3; break;
-        case OPT_ACCURACY:  g_accuracy_preset       = (g_accuracy_preset       + 1) % 3; break;
+        case OPT_ACCURACY_INT: g_accuracy_int_preset = (g_accuracy_int_preset + 1) % 3; break;
+        case OPT_ACCURACY_FPU: g_accuracy_fpu_preset = (g_accuracy_fpu_preset + 1) % 3; break;
         case OPT_RATIO:     g_ratio_preset          = (g_ratio_preset          + 1) % 3; break;
         case OPT_PPZ_WRITE: g_ppz_write_preset      = (g_ppz_write_preset      + 1) % 2; break;
         case OPT_TRANS_ZWRITE: g_trans_zwrite_preset = (g_trans_zwrite_preset  + 1) % 2; break;
@@ -4781,8 +4800,14 @@ int main(int argc, wchar *argv[])
     // a generated mip chain - warn instead of letting the setting look active.
     if (g_aniso_preset > 0 && g_mipmap_preset == 0)
       printf("               (Anisotropic does nothing while Mipmaps is OFF)\n");
-    printf("Accuracy       : ");
-    switch(g_accuracy_preset) {
+    printf("Accuracy INT   : ");
+    switch(g_accuracy_int_preset) {
+      case 0: printf("FAST\n");     break;
+      case 1: printf("BALANCED\n"); break;
+      case 2: printf("ACCURATE\n"); break;
+    }
+    printf("Accuracy FPU   : ");
+    switch(g_accuracy_fpu_preset) {
       case 0: printf("FAST\n");     break;
       case 1: printf("BALANCED\n"); break;
       case 2: printf("ACCURATE\n"); break;
