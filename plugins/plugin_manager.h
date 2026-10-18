@@ -75,6 +75,8 @@ void plugins_Term();
 	void FASTCALL libGDR_GetToc(u32* toc,u32 area);
 	u32 FASTCALL libGDR_GetDiscType();
 	void FASTCALL libGDR_GetSessionInfo(u8* pout,u8 session);
+	// GDROM_STAT_FIX: track holding fad (0xAA = none), its start FAD, (CTRL<<4)|ADR.
+	u32 FASTCALL libGDR_GetTrackForFAD(u32 fad, u32* start_fad, u8* ctrl_adr);
 
 
 //ExtDev

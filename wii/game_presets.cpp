@@ -668,6 +668,19 @@
                                C for addv/subv/mul.l, mac.w with S=1 skipped,
                                mac.l with S=1 a hang. Matters in interpreter
                                mode and wherever the dynarec falls back.
+        gdrom_stat_fix=on   <- on/off, the drive's position reports (REQ_STAT,
+                               GET_SCD) give the real FAD, track and ctrl/ADR
+                               from the TOC, in Flycast's layout. Default on.
+                               off (legacy): REQ_STAT read FAD 45150 back as
+                               176 on big endian, GET_SCD format 1 had every
+                               byte one late. BIOS CD player, CD music timing.
+        gdrom_hang_fix=on   <- on/off, rare drive commands are answered like a
+                               real drive (abort, clamp, ignore) instead of a
+                               die()/verify() that freezes the Wii: unknown ATA
+                               command, EXEC_DIAG, IDENTIFY_DEV, CD_READ2
+                               length, GET_TOC/SET_MODE length, DRVSEL/COMMAND
+                               writes, GD-DMA length 0 or longer than its read,
+                               2340-byte sectors. Default on.
         tex_wrap_guard=on   <- on/off, stops the persistent texture arena from
                                 recycling bytes the GPU is still sampling this
                                 frame (texture corruption when the cache fills).
@@ -1317,6 +1330,8 @@ extern int g_jit_fsqrt_preset;
 extern int g_jit_fipr_preset;
 extern int g_div32_fix_preset;
 extern int g_interp_fix_preset;
+extern int g_gdrom_stat_fix_preset;
+extern int g_gdrom_hang_fix_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
 extern int g_tex_clamp_fix_preset;
@@ -1469,6 +1484,8 @@ struct GamePreset
     int jit_fipr;
     int div32_fix;
     int interp_fix;
+    int gdrom_stat_fix;
+    int gdrom_hang_fix;
     int sched;
     int tex_wrap_guard;
     int tex_clamp_fix;
@@ -2004,6 +2021,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_fipr"))       p->jit_fipr       = parse_bool(val);
     else if (key_eq(key, "div32_fix"))      p->div32_fix      = parse_bool(val);
     else if (key_eq(key, "interp_fix"))     p->interp_fix     = parse_bool(val);
+    else if (key_eq(key, "gdrom_stat_fix")) p->gdrom_stat_fix = parse_bool(val);
+    else if (key_eq(key, "gdrom_hang_fix")) p->gdrom_hang_fix = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
     else if (key_eq(key, "tex_clamp_fix"))  p->tex_clamp_fix  = parse_bool(val);
@@ -2132,6 +2151,8 @@ static void preset_clear(GamePreset* cur)
     cur->jit_fipr     = -1;
     cur->div32_fix    = -1;
     cur->interp_fix   = -1;
+    cur->gdrom_stat_fix = -1;
+    cur->gdrom_hang_fix = -1;
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
     cur->tex_clamp_fix  = -1;
@@ -2289,6 +2310,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->jit_fipr       >= 0) { g_jit_fipr_preset       = p->jit_fipr;       printf("  jit_fipr       -> %d\n", p->jit_fipr);       }
     if (p->div32_fix      >= 0) { g_div32_fix_preset      = p->div32_fix;      printf("  div32_fix      -> %d\n", p->div32_fix);      }
     if (p->interp_fix     >= 0) { g_interp_fix_preset     = p->interp_fix;     printf("  interp_fix     -> %d\n", p->interp_fix);     }
+    if (p->gdrom_stat_fix >= 0) { g_gdrom_stat_fix_preset = p->gdrom_stat_fix; printf("  gdrom_stat_fix -> %d\n", p->gdrom_stat_fix); }
+    if (p->gdrom_hang_fix >= 0) { g_gdrom_hang_fix_preset = p->gdrom_hang_fix; printf("  gdrom_hang_fix -> %d\n", p->gdrom_hang_fix); }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }
     if (p->tex_clamp_fix  >= 0) { g_tex_clamp_fix_preset  = p->tex_clamp_fix;  printf("  tex_clamp_fix  -> %d\n", p->tex_clamp_fix);  }

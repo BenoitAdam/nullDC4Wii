@@ -1330,6 +1330,47 @@ extern "C" {
 // global by sh4_cpu.cpp, once per instruction. 0=off (legacy), 1=on (default).
 int g_interp_fix_preset = 1;
 
+// GDROM_STAT_FIX - what the drive reports as its position (dc/gdrom/gdromv3.cpp;
+// flycastPS3 other_fix.md 3.3a/b, Flycast REQ_STAT / gd_get_subcode):
+//   REQ_STAT  the FAD bytes came from a u8[3] overlay of a u32, i.e. bits 31-8
+//             on big endian: FAD 45150 read back as 176. Now shifted from the
+//             FAD; track and (CTRL<<4)|ADR from the TOC instead of "track 1".
+//   GET_SCD   format 1 wrote 0x14 twice, so every byte after it was one late,
+//             and sent 12 bytes, cutting the absolute FAD. Now Flycast's 14-byte
+//             layout. Format 0 sent alloc_len (up to 64K) from a 100-byte buffer.
+// The position is the CD-DA head after a CD_PLAY, the last data sector read
+// after a CD_READ. Track lookup: ImgReader libGDR_GetTrackForFAD(). Matters for
+// the BIOS CD player and games that time their CD music. Wii-untested.
+// 0=off (legacy), 1=on (default).
+int g_gdrom_stat_fix_preset = 0;
+
+extern "C" {
+  int get_gdrom_stat_fix_preset() { return g_gdrom_stat_fix_preset; }
+}
+
+// GDROM_HANG_FIX - drive commands that hung or misbehaved on rare input
+// (flycastPS3 other_fix.md 3.3e/f, all taken from Flycast). On the Wii die()
+// and verify() end in for(;;), so each of these was a freeze:
+//   unknown ATA command -> abort (ABRT, sense 5, CHECK, IRQ) instead of die()
+//   ATA_EXEC_DIAG       -> "no error" + IRQ (left BSY set: caller waited forever)
+//   IDENTIFY_DEV        -> the whole 80-byte block (offset/length were stale
+//                          bytes of the previous SPI packet)
+//   CD_READ2            -> length from bytes 6-7, not 8-10
+//   GET_TOC             -> clamped to the 408-byte TOC (read past it on the stack)
+//   SET_MODE            -> clipped to the 10 writable bytes (verify) and written
+//                          at the byte offset REQ_MODE reads (was offset*2)
+//   GD_DRVSEL / COMMAND -> 5 writable bits; wrong-size or slave-drive commands
+//                          ignored (verify)
+//   GD-DMA              -> SB_GDLEN 0 = 32 MB; a DMA longer than its read ends
+//                          the packet once instead of verify()-hanging
+//   2340-byte sectors   -> converted from raw 2352 (were left unfilled)
+// Wii-untested. 0=off (legacy), 1=on (default).
+int g_gdrom_hang_fix_preset = 1;
+
+extern "C" {
+  int get_gdrom_hang_fix_preset() { return g_gdrom_hang_fix_preset; }
+}
+
 extern "C" {
   int get_disc_bulk_preset() { return g_disc_bulk_preset; }
 }
@@ -2638,6 +2679,8 @@ void checkBiosFiles()
 #define OPT_AICA_CA_CLAMP 125 // Page 4 (AUDIO), under AICA RACE FIX
 #define OPT_DIV32_FIX   126  // Page 6 (JIT/DYNAREC), under JIT FIPR DP
 #define OPT_INTERP_FIX  127  // Page 5 (CORE), under FLASH BROADCAST
+#define OPT_GDROM_STAT_FIX 128 // Page 5 (CORE), under SH4 INTERP FIX
+#define OPT_GDROM_HANG_FIX 129 // Page 5 (CORE), under GDROM STAT FIX
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2756,7 +2799,9 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_GDROM_DELAY,
   OPT_CDI_HDR_FIX,
   OPT_FLASH_BROADCAST,
-  OPT_INTERP_FIX
+  OPT_INTERP_FIX,
+  OPT_GDROM_STAT_FIX,
+  OPT_GDROM_HANG_FIX
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -3698,6 +3743,24 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (MANUAL OPS)   >]"); break;
     }
     printf(" div1/addv/subv/mul.l/mac exact");
+    printf("\n");
+
+    // --- Row: GDROM_STAT_FIX - REQ_STAT / GET_SCD position reports (gdromv3.cpp) ---
+    printf("%s GDROM STAT FIX : ", (selectedRow == OPT_GDROM_STAT_FIX) ? ">" : " ");
+    switch (g_gdrom_stat_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FAD+TRACK)    >]"); break;
+    }
+    printf(" CD position/subcode reports");
+    printf("\n");
+
+    // --- Row: GDROM_HANG_FIX - rare drive commands abort instead of die() (gdromv3.cpp) ---
+    printf("%s GDROM HANG FIX : ", (selectedRow == OPT_GDROM_HANG_FIX) ? ">" : " ");
+    switch (g_gdrom_hang_fix_preset) {
+      case 0: printf("[< OFF (DIE/VERIFY)  >]"); break;
+      case 1: printf("[< ON (ABORT/CLAMP)  >]"); break;
+    }
+    printf(" bad drive cmds no longer hang");
     printf("\n\n");
 
     printOptionsFooter();
@@ -4252,6 +4315,8 @@ bool displayOptionsMenu()
         case OPT_CDDA_PAUSE_FIX: g_cdda_pause_fix_preset  = (g_cdda_pause_fix_preset  + 1) % 2; break;
         case OPT_FLASH_BROADCAST: g_flash_broadcast_preset = (g_flash_broadcast_preset + 2) % 3; break;
         case OPT_INTERP_FIX:     g_interp_fix_preset      = (g_interp_fix_preset      + 1) % 2; break;
+        case OPT_GDROM_STAT_FIX: g_gdrom_stat_fix_preset  = (g_gdrom_stat_fix_preset  + 1) % 2; break;
+        case OPT_GDROM_HANG_FIX: g_gdrom_hang_fix_preset  = (g_gdrom_hang_fix_preset  + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
                                                  (g_gdrom_delay == 1800) ? 0     :
                                                  (g_gdrom_delay == 3600) ? 1800  :
@@ -4393,6 +4458,8 @@ bool displayOptionsMenu()
         case OPT_CDDA_PAUSE_FIX: g_cdda_pause_fix_preset  = (g_cdda_pause_fix_preset  + 1) % 2; break;
         case OPT_FLASH_BROADCAST: g_flash_broadcast_preset = (g_flash_broadcast_preset + 1) % 3; break;
         case OPT_INTERP_FIX:     g_interp_fix_preset      = (g_interp_fix_preset      + 1) % 2; break;
+        case OPT_GDROM_STAT_FIX: g_gdrom_stat_fix_preset  = (g_gdrom_stat_fix_preset  + 1) % 2; break;
+        case OPT_GDROM_HANG_FIX: g_gdrom_hang_fix_preset  = (g_gdrom_hang_fix_preset  + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
                                                  (g_gdrom_delay == 1800) ? 3600  :
                                                  (g_gdrom_delay == 3600) ? 7200  :
@@ -5410,6 +5477,8 @@ int main(int argc, wchar *argv[])
     printf("Flash Broadcast: %s\n", g_flash_broadcast_preset == 2 ? "NTSC (ALWAYS)" :
                                     g_flash_broadcast_preset == 1 ? "DISC (IP.BIN)" : "OFF (FLASH VALUE)");
     printf("SH4 Interp Fix : %s\n", g_interp_fix_preset ? "ON (MANUAL OPS)" : "OFF (LEGACY)");
+    printf("GDROM Stat Fix : %s\n", g_gdrom_stat_fix_preset ? "ON (FAD+TRACK)" : "OFF (LEGACY)");
+    printf("GDROM Hang Fix : %s\n", g_gdrom_hang_fix_preset ? "ON (ABORT/CLAMP)" : "OFF (DIE/VERIFY)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
     printf("ADPCM Loop Fix : %s\n", g_adpcm_loop_preset ? "ON (KEEP STATE)" : "OFF (RESET/LAP)");

@@ -76,6 +76,8 @@ static int gdrom_dma_end_cb(int tag, int sch_cycl, int jitter)
 extern "C" int get_debug_loop();
 extern "C" int get_debug_gdrom();
 extern "C" int get_cdda_pause_fix_preset();   // wii/main.cpp, CDDA_PAUSE_FIX
+extern "C" int get_gdrom_stat_fix_preset();   // wii/main.cpp, GDROM_STAT_FIX
+extern "C" int get_gdrom_hang_fix_preset();   // wii/main.cpp, GDROM_HANG_FIX
 
 enum gd_states
 {
@@ -174,6 +176,8 @@ struct
 	union
 	{
 		u32 FAD;
+		// Not the FAD's bytes on either endian (B0 is bits 31-24 on big endian,
+		// the LOW byte on little endian). GDROM_STAT_FIX shifts FAD instead.
 		struct
 		{
 			u8 B0;		//msb
@@ -182,6 +186,18 @@ struct
 		};
 	}CurrAddr,EndAddr,StartAddr;
 } cdda;
+
+// GDROM_STAT_FIX: which position REQ_STAT / GET_SCD report. The CD-DA head from
+// a CD_PLAY on (playing or paused), the last data sector read from the next
+// CD_READ on -- Flycast's rule, without its separate paused state.
+static bool s_cdda_pos_valid = false;
+
+static u32 gd_report_fad()
+{
+	if (s_cdda_pos_valid || cdda.playing)
+		return cdda.CurrAddr.FAD;
+	return read_params.start_sector ? read_params.start_sector - 1 : 150;
+}
 
 
 gd_states gd_state;
@@ -395,7 +411,13 @@ void gd_set_state(gd_states state)
 			break;
 
 		case gds_process_set_mode:
-			memcpy(&gd_data_0x11[set_mode_offset*2],pio_buff.data ,pio_buff.size<<1);
+			// GDROM_HANG_FIX (flycastPS3 P48): gd_data_0x11 is a BYTE table now
+			// (gdrom_response.cpp) and REQ_MODE reads it at the byte offset; the
+			// *2 dates from when it was u16[], and wrote the mode bytes elsewhere.
+			if (get_gdrom_hang_fix_preset())
+				memcpy(&gd_data_0x11[set_mode_offset],pio_buff.data ,pio_buff.size<<1);
+			else
+				memcpy(&gd_data_0x11[set_mode_offset*2],pio_buff.data ,pio_buff.size<<1);
 			//end pio transfer ;)
 			gd_set_state(gds_pio_end);
 			break;
@@ -525,6 +547,17 @@ void gd_process_ata_cmd()
 
 	case ATA_EXEC_DIAG:
 		printf_ata("ATA_EXEC_DIAG\n");
+		if (get_gdrom_hang_fix_preset())
+		{
+			// GDROM_HANG_FIX (Flycast): report "no error" and complete. Doing
+			// nothing left BSY set and raised no interrupt: the caller waits forever.
+			Error.full = 1;
+			GDStatus.BSY = 0;
+			GDStatus.CHECK = 1;
+			asic_RaiseInterrupt(holly_GDROM_CMD);
+			gd_set_state(gds_waitcmd);
+			break;
+		}
 		if (get_debug_gdrom()) printf("ATA_EXEC_DIAG -- not implemented\n");
 		break;
 
@@ -547,7 +580,13 @@ void gd_process_ata_cmd()
 	case ATA_IDENTIFY_DEV:
 		printf_ata("ATA_IDENTIFY_DEV\n");
 		GDStatus.BSY = 0;
-		gd_spi_pio_end(&reply_a1[packet_cmd.data_8[2] & ~1], packet_cmd.data_8[4]);
+		// GDROM_HANG_FIX (Flycast): an ATA command has no SPI packet; offset and
+		// length came from whatever the LAST packet left in packet_cmd (and could
+		// run past the 80-byte table). Send the whole block.
+		if (get_gdrom_hang_fix_preset())
+			gd_spi_pio_end(&reply_a1[0], 0x50);
+		else
+			gd_spi_pio_end(&reply_a1[packet_cmd.data_8[2] & ~1], packet_cmd.data_8[4]);
 		break;
 
 	// Claude Test for Rez Fix - confirmed unrelated to Rez (never issued: the
@@ -599,6 +638,19 @@ void gd_process_ata_cmd()
 		break;
 
 	default:
+		if (get_gdrom_hang_fix_preset())
+		{
+			// GDROM_HANG_FIX (Flycast): abort it like a real drive -- ABRT, sense
+			// key 5 (illegal request), CHECK, completion IRQ. die() hangs the Wii.
+			printf("GDROM: unknown ATA command %02X, aborted\n", ata_cmd.command);
+			Error.ABRT = 1;
+			Error.Sense = 5;
+			GDStatus.BSY = 0;
+			GDStatus.CHECK = 1;
+			asic_RaiseInterrupt(holly_GDROM_CMD);
+			gd_set_state(gds_waitcmd);
+			break;
+		}
 		die("Unkown ATA command..");
 		break;
 	};
@@ -664,6 +716,12 @@ void gd_process_spi_cmd()
 			u32 start_sector = GetFAD(&readcmd.b[2],readcmd.prmtype);
 
 			u32 sector_count = (readcmd.b[8]<<16) | (readcmd.b[9]<<8) | (readcmd.b[10]);
+			// GDROM_HANG_FIX (Flycast): CD_READ2 carries its length in bytes 6-7.
+			if (get_gdrom_hang_fix_preset() && packet_cmd.data_8[0] == SPI_CD_READ2)
+				sector_count = (readcmd.b[6]<<8) | readcmd.b[7];
+
+			// GDROM_STAT_FIX: a data read; REQ_STAT/GET_SCD report it from now on.
+			s_cdda_pos_valid = false;
 
 			read_params.start_sector=start_sector;
 			read_params.remaining_sectors=sector_count;
@@ -694,7 +752,13 @@ void gd_process_spi_cmd()
 			//toc - dd/sd
 			libGDR_GetToc(&toc_gd[0],packet_cmd.data_8[1]&0x1);
 
-			gd_spi_pio_end((u8*)&toc_gd[0], (packet_cmd.data_8[4]) | (packet_cmd.data_8[3]<<8) );
+			u32 toc_len = (packet_cmd.data_8[4]) | (packet_cmd.data_8[3]<<8);
+			// GDROM_HANG_FIX (Flycast): the request can ask for up to 64K, but the
+			// TOC is 408 bytes -- send no more than exists (a longer length read
+			// past toc_gd on the stack, and 0xFFFF tripped gd_spi_pio_end's verify).
+			if (get_gdrom_hang_fix_preset() && toc_len > sizeof(toc_gd))
+				toc_len = sizeof(toc_gd);
+			gd_spi_pio_end((u8*)&toc_gd[0], toc_len);
 		}
 		break;
 
@@ -729,6 +793,10 @@ void gd_process_spi_cmd()
 			printf_spicmd("SPI_SET_MODE\n");
 			u32 Offset = packet_cmd.data_8[2];
 			u32 Count = packet_cmd.data_8[4];
+			// GDROM_HANG_FIX (Flycast): clip to the 10 writable bytes instead of a
+			// verify() that hangs the Wii on a bad request.
+			if (get_gdrom_hang_fix_preset())
+				Count = Offset < 10 ? (Count < 10 - Offset ? Count : 10 - Offset) : 0;
 			verify((Offset+Count)<11);	//cant set write olny things :P
 			set_mode_offset=Offset;
 			gd_spi_pio_read_end(Count,gds_process_set_mode);
@@ -762,6 +830,24 @@ void gd_process_spi_cmd()
 			stat[6]=cdda.CurrAddr.B1;
 			//7	FAD
 			stat[7]=cdda.CurrAddr.B2;
+
+			if (get_gdrom_stat_fix_preset())
+			{
+				// GDROM_STAT_FIX (Flycast SPI_REQ_STAT, flycastPS3 3.3a): the B0..B2
+				// bytes above are bits 31-8 on big endian -- FAD 45150 read back as
+				// 176. Shift the FAD itself, and take the track and ctrl/ADR from the
+				// TOC instead of a fixed "track 1, 0x04".
+				const u32 fad = gd_report_fad();
+				u32 tstart;
+				u8  ctrl_adr;
+				const u32 track = libGDR_GetTrackForFAD(fad, &tstart, &ctrl_adr);
+				stat[2]=ctrl_adr;
+				stat[3]=(u8)track;
+				stat[4]=1;                 // index
+				stat[5]=(u8)(fad>>16);
+				stat[6]=(u8)(fad>>8);
+				stat[7]=(u8)fad;
+			}
 			//8	Max Read Error Retry Times
 			stat[8]=0;
 			//9	0	0	0	0	0	0	0	0
@@ -821,6 +907,7 @@ void gd_process_spi_cmd()
 
 			cdda.playing=true;
 			SecNumber.Status=GD_PLAY;
+			s_cdda_pos_valid=true;   // GDROM_STAT_FIX: report the CD-DA head
 
 			u32 param_type=packet_cmd.data_8[1]&0x7;
 			if (get_debug_gdrom()) printf("param_type=%d\n",param_type);
@@ -994,6 +1081,9 @@ void gd_process_spi_cmd()
 				subc_info[13]=(u8)TOBCD(absFrames); // Absolute Frame (BCD)
 				#undef TOBCD
 				sz=alloc_len;  // send exactly what BIOS requested (100 bytes); bytes 18+ are zero-padded
+				// GDROM_STAT_FIX: never more than the buffer holds (alloc_len is up to 64K).
+				if (get_gdrom_stat_fix_preset() && sz>sizeof(subc_info))
+					sz=sizeof(subc_info);
 				if (get_debug_loop()) printf("[GDR] SPI_GET_SCD fmt=0: bytes[0..13]=%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X sz=%u\n",
 					subc_info[0],subc_info[1],subc_info[2],subc_info[3],subc_info[4],subc_info[5],subc_info[6],
 					subc_info[7],subc_info[8],subc_info[9],subc_info[10],subc_info[11],subc_info[12],subc_info[13],sz);
@@ -1030,6 +1120,33 @@ void gd_process_spi_cmd()
 				//we'l see about em ;p
 				if (get_debug_loop()) printf("[GDR] SPI_GET_SCD fmt=%u Status=0x%02X TNO=%u X=%u FAD_el=%u absFAD=%u\n",format,SecNumber.Status,subc[1],subc[2],FAD_el,cdda.CurrAddr.FAD);
 				sz=12;
+
+				if (get_gdrom_stat_fix_preset())
+				{
+					// GDROM_STAT_FIX (Flycast gd_get_subcode format 1, flycastPS3
+					// 3.3b): the block above starts DATA-Q at [5] and writes 0x14 a
+					// second time, so every later byte is one late, and sz=12 cuts the
+					// absolute FAD. 14 bytes, Q data right after the length; track,
+					// ctrl/ADR and the elapsed FADs from the TOC.
+					const u32 fad = gd_report_fad();
+					u32 tstart;
+					u8  ctrl_adr;
+					const u32 track = libGDR_GetTrackForFAD(fad, &tstart, &ctrl_adr);
+					const u32 elapsed = fad - tstart;
+					subc_info[2]=0;
+					subc_info[3]=0xE;
+					subc_info[4]=ctrl_adr;
+					subc_info[5]=(u8)track;
+					subc_info[6]=1;                 // index
+					subc_info[7]=(u8)(elapsed>>16);
+					subc_info[8]=(u8)(elapsed>>8);
+					subc_info[9]=(u8)elapsed;
+					subc_info[10]=0;
+					subc_info[11]=(u8)(fad>>16);
+					subc_info[12]=(u8)(fad>>8);
+					subc_info[13]=(u8)fad;
+					sz = alloc_len < 14 ? alloc_len : 14;
+				}
 				//printf("NON raw subcode read -- partialy wrong\n");
 			}
 
@@ -1164,7 +1281,11 @@ void WriteMem_gdrom(u32 Addr, u32 data, u32 sz)
 
 	case GD_DRVSEL:
 		if (get_debug_gdrom()) printf("GDROM: Write to GD_DRVSEL\n");
-		DriveSel = data;
+		// GDROM_HANG_FIX (Flycast): only the low 5 bits are writable.
+		if (get_gdrom_hang_fix_preset())
+			DriveSel = (DriveSel & 0xe0) | (data & 0x1f);
+		else
+			DriveSel = data;
 		break;
 
 
@@ -1187,6 +1308,13 @@ void WriteMem_gdrom(u32 Addr, u32 data, u32 sz)
 		break;
 
 	case GD_COMMAND_Write:
+		// GDROM_HANG_FIX (Flycast): a wrong-size write, or a command to the slave
+		// drive (which does not exist), is ignored -- not a verify() hang.
+		if (get_gdrom_hang_fix_preset() && (sz != 1 || (DriveSel & 0x10)))
+		{
+			printf("GDROM: COMMAND write ignored (size %u, drive select %02X)\n", sz, DriveSel);
+			break;
+		}
 		verify(sz==1);
 		if ((data !=ATA_NOP) && (data != ATA_SOFT_RESET))
 			verify(gd_state==gds_waitcmd);
@@ -1207,13 +1335,25 @@ void UpdateGDRom()
 	if(!(SB_GDST&1) || !(SB_GDEN &1))
 		return;
 
+	// GDROM_HANG_FIX (Flycast GDRomschd): the read is fully drained, so there is
+	// nothing to move. A DMA set up longer than its read stays SB_GDST=1 after
+	// the packet completed below; without this guard every later call would
+	// re-run that completion (procpacketdone + IRQ) on top of the next command.
+	if (get_gdrom_hang_fix_preset() && read_params.remaining_sectors == 0 &&
+	    read_buff.cache_size == read_buff.cache_index)
+		return;
+
 	//SB_GDST=0;
 
 	//TODO : Fix dmaor
 	u32 dmaor	= DMAC_DMAOR.full;
 
+	// GDROM_HANG_FIX (Flycast UpdateGDRom): SB_GDLEN = 0 means 32 MB (0x02000000),
+	// not "nothing" -- 0 used to raise the end IRQ at once with no data moved.
+	const u32 gd_len = (get_gdrom_hang_fix_preset() && SB_GDLEN == 0) ? 0x02000000u : SB_GDLEN;
+
 	u32	src		= SB_GDSTARD,
-		len		= SB_GDLEN-SB_GDLEND ;
+		len		= gd_len-SB_GDLEND ;
 
 	// GDROM_DELAY: spend the paced byte budget instead of taking 32000 a call.
 	// Only when there is something left to move -- a zero-length call still has
@@ -1310,7 +1450,7 @@ void UpdateGDRom()
 	SB_GDLEND+= moved;
 	SB_GDSTARD+= moved;//(src + len_backup)&0x1FFFFFFF;
 
-	if (SB_GDLEND==SB_GDLEN)
+	if (SB_GDLEND==gd_len)
 	{
 		//printf("Streamed GDMA end - %d bytes trasnfered\n",SB_GDLEND);
 		SB_GDST=0;//done (kept immediate: a game polling SB_GDST is unaffected,
@@ -1331,7 +1471,11 @@ void UpdateGDRom()
 		//And all buffer :p
 		if (buff_size==0)
 		{
-			verify(!(SB_GDST&1))
+			// GDROM_HANG_FIX (Flycast): a DMA set up longer than its read command
+			// is still running here (SB_GDST=1). Finish the packet anyway; the
+			// verify() hung the Wii. The DMA keeps waiting, as on hardware.
+			if (!get_gdrom_hang_fix_preset())
+				verify(!(SB_GDST&1))
 			gd_set_state(gds_procpacketdone);
 		}
 	}

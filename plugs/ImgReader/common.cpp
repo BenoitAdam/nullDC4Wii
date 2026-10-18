@@ -5,6 +5,8 @@
 #include "ioctl.h"
 #include "os_base.h"
 
+extern "C" int get_gdrom_hang_fix_preset();   // wii/main.cpp, GDROM_HANG_FIX (ConvertSector 2340)
+
 u32 NullDriveDiscType;
 DriveIF* CurrDrive;
 DriveIF drives[]=
@@ -110,6 +112,19 @@ bool ConvertSector(u8* in_buff , u8* out_buff , int from , int to,int sector)
 			else
 				memcpy(out_buff,&in_buff[0x8],2048);	//hmm only possible on mode2.Skip the mode2 header
 		}
+		break;
+	case 2340:
+		// GDROM_HANG_FIX (flycastPS3 3.3f): the 2340-byte read (header +
+		// subheader + data) that gdromv3.cpp already requests for one CD_READ
+		// form fell to "not supported" below and left the buffer untouched --
+		// the game got whatever was there before. From a raw sector: skip the
+		// 12-byte sync. Other source sizes keep the old behaviour.
+		if (get_gdrom_hang_fix_preset() && from == 2352)
+		{
+			memcpy(out_buff,&in_buff[12],2340);
+			break;
+		}
+		printf("Sector convertion from %d to %d not supported \n", from , to);
 		break;
 	case 2352:
 		//if (from >= 2352)

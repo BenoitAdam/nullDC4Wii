@@ -208,6 +208,51 @@ void FASTCALL libGDR_GetSessionInfo(u8* out,u8 ses)
 	GetDriveSessionInfo(out,ses);
 }
 
+// GDROM_STAT_FIX (dc/gdrom/gdromv3.cpp REQ_STAT / GET_SCD; Flycast
+// libGDR_GetTrackNumber + libGDR_GetTrackAdrAndControl): the track that holds
+// fad, from the TOC of every area the disc has (a GDI keeps tracks 1-2 in the
+// single-density area and 3.. in the high-density one). Only FistTrack..
+// LastTrack are trusted: unused slots hold sentinel FADs. Returns the track
+// number and fills its start FAD and the Q-channel byte (CTRL << 4) | ADR; ADR
+// is forced to 1 (current position) as the readers' own ADR is not reliable
+// (GDI/MDS store 0). No track holds fad: 0xAA (lead-out), start = fad, 0.
+u32 FASTCALL libGDR_GetTrackForFAD(u32 fad, u32* start_fad, u8* ctrl_adr)
+{
+	u32 best = 0xAA, best_start = fad;
+	u8  best_ca = 0;
+	if (CurrDrive && CurrDrive->GetToc)
+	{
+		const u32 areas = (CurrDrive->GetDiscType() == GdRom) ? 2 : 1;
+		u32 best_fad = 0;
+		bool found = false;
+		for (u32 a = 0; a < areas; a++)
+		{
+			TocInfo toc;
+			CurrDrive->GetToc(&toc, a == 0 ? SingleDensity : DoubleDensity);
+			if (toc.FistTrack < 1 || toc.LastTrack > 99 || toc.FistTrack > toc.LastTrack)
+				continue;
+			if (fad >= toc.LeadOut.FAD)
+				continue;
+			for (u32 t = toc.FistTrack; t <= toc.LastTrack; t++)
+			{
+				const TocTrackInfo& tr = toc.tracks[t - 1];
+				if (tr.FAD <= fad && (!found || tr.FAD >= best_fad))
+				{
+					found    = true;
+					best_fad = tr.FAD;
+					best     = t;
+					best_ca  = (u8)(((tr.Control & 0xF) << 4) | 1);
+				}
+			}
+		}
+		if (found)
+			best_start = best_fad;
+	}
+	if (start_fad) *start_fad = best_start;
+	if (ctrl_adr)  *ctrl_adr  = best_ca;
+	return best;
+}
+
 
 //called when plugin is used by emu (you should do first time init here)
 s32 FASTCALL libGDR_Load()
