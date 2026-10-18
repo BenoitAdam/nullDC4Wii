@@ -500,7 +500,7 @@ int g_aica_fast_preset = 1;
 // does. Loops starting at 0 give the same samples either way, so most games do
 // not change. flycastPS3 other_fix.md 1.4: fixed SA2 City Escape on PS3
 // hardware (2026-10-14), no effect on ChuChu Rocket. Wii-untested.
-// Covers both mixers (legacy and AICA FAST). 0=off (legacy, default), 1=on.
+// Covers both mixers (legacy and AICA FAST). 0=off (legacy), 1=on (default).
 int g_adpcm_loop_preset = 1;
 
 extern "C" {
@@ -568,11 +568,56 @@ int g_arm7_batch_preset = 4;
 // (fixed on PS3 hardware 2026-10-12; Crazy Taxi/Sonic Adventure/Looney Tunes
 // do no unaligned stores, so no change there). Wii-untested.
 // Logs "[ARM7] unaligned STR" lines either way, so OFF still shows whether a
-// game takes this path. 0=off (legacy scatter, default), 1=on (aligned word).
-int g_arm7_str_align_preset = 0;
+// game takes this path. 0=off (legacy scatter), 1=on (aligned word, default).
+int g_arm7_str_align_preset = 1;
 
 extern "C" {
   int get_arm7_str_align_preset() { return g_arm7_str_align_preset; }
+}
+
+// ARM7_RESET_FIX - what an ARM7 reset (power-on, or the game's own ARM7 enable)
+// leaves behind (plugs/vbaARM/arm7.cpp arm_Reset). The AICA's ARM7DI is ARMv3:
+// it has no System mode, so a reset enters SVC (0x13), not 0x1F; and the e68k
+// FIQ latch and pending interrupt level clear with it (Reicast 4caa2b47,
+// Flycast 882e14f13 / reset()). The PS3 saw a stale latch at Crazy Taxi's own
+// ARM7 reset. Part of flycastPS3 other_fix.md 1.6 (the Looney Tunes Space
+// Race sound group, PS3 hardware 2026-10-07; which of the three parts fixed
+// the cues is not known). Covers all three ARM7 engines. Wii-untested.
+// 0=off (legacy System mode, latch kept), 1=on (default).
+int g_arm7_reset_fix_preset = 1;
+
+extern "C" {
+  int get_arm7_reset_fix_preset() { return g_arm7_reset_fix_preset; }
+}
+
+// AICA_RACE - Flycast's AICA timing rules around the G2 DMA and the AICA->SH4
+// interrupt (Flycast a920ae590 / a44619931; flycastPS3 other_fix.md 1.6b):
+//   - G2 DMA end: ADLEN bit 31 set => ADEN = 0 (dc/aica/aica_if.cpp had it the
+//     other way round), ADSTAR/ADSTAG advance at the end not the start,
+//     ADSUSP bit 4 set; a start while a DMA is busy is ignored, and SB_ADST
+//     reads go through Read_SB_ADST() (Le Mans / Looney Tunes double-DMA rule,
+//     dead code until now because of REG_READ_DATA).
+//   - SCIEB / MCIEB writes update the interrupt lines at once (nullAICA).
+//   - an AICA write that raises the SH4 interrupt leaves the running ARM7
+//     slice >= 50 more cycles (Flycast avoidRaceCondition), in the cached
+//     engine and the ARM7 JIT's slow-write stub.
+// Wii-untested. 0=off (legacy), 1=on (default).
+int g_aica_race_preset = 1;
+
+extern "C" {
+  int get_aica_race_preset() { return g_aica_race_preset; }
+}
+
+// AICA_CA_CLAMP - a game workaround, so OFF by default: the CA (play position)
+// register read never reports within 3 samples of the loop end. Flycast
+// 788cbfb64 added it for some Visual Concepts sports games; real hardware can
+// read LEA at a one-shot end, and the Feb 2026 Flycast master on disk does not
+// have it. The weakest part of flycastPS3 other_fix.md 1.6 (0-3 clamps per 5 s
+// in Looney Tunes). Turn on per game. 0=off (default), 1=on.
+int g_aica_ca_clamp_preset = 0;
+
+extern "C" {
+  int get_aica_ca_clamp_preset() { return g_aica_ca_clamp_preset; }
 }
 
 extern "C" {
@@ -681,7 +726,8 @@ extern "C" {
 //   2 = FULL (1 + TI keeps sq_remap, V=0 UTLB entry leaves its slot alone,
 //             data-array-2 writes get their own word: the PS3-tested set)
 // Log proof: "[mmu] self-test" at boot, then "CCN: MMUCR write ..." lines.
-int g_mmucr_fix_preset = 0;
+// Default 1: the level the cfg already sets per game as "needed to launch".
+int g_mmucr_fix_preset = 1;
 
 extern "C" {
   int get_mmucr_fix_preset() { return g_mmucr_fix_preset; }
@@ -1186,8 +1232,8 @@ extern "C" {
 // Rocket) are read the same either way. Ported from flycastPS3 other_fix.md
 // 1.1 (fixed on PS3 hardware 2026-09-20); Wii-untested. The log line
 // "[CDI] V3 header at 0x..." shows which rule found it.
-// 0=off (legacy, default), 1=on (cdirip rule).
-int g_cdi_hdr_fix_preset = 0;
+// 0=off (legacy), 1=on (cdirip rule, default).
+int g_cdi_hdr_fix_preset = 1;
 
 extern "C" {
   int get_cdi_hdr_fix_preset() { return g_cdi_hdr_fix_preset; }
@@ -1200,8 +1246,8 @@ extern "C" {
 // nullDC-v1, Reicast, Flycast -- and this file before that change -- only
 // pause: the position stays. Fixed ChuChu Rocket's and Looney Tunes' music
 // after a pause on PS3 hardware (flycastPS3 other_fix.md 1.2, 2026-10-03).
-// 0=off (legacy, default), 1=on (pause keeps the position).
-int g_cdda_pause_fix_preset = 0;
+// 0=off (legacy), 1=on (pause keeps the position, default).
+int g_cdda_pause_fix_preset = 1;
 
 extern "C" {
   int get_cdda_pause_fix_preset() { return g_cdda_pause_fix_preset; }
@@ -1264,8 +1310,8 @@ extern "C" {
 //   1 = DISC (NTSC if the disc's IP.BIN lists J or U, PAL if only E; GDIs always
 //             read NTSC, the GDI reader patches their area to "JUE")
 //   2 = NTSC (always '0', Flycast's default; not hardware-tested)
-// Log proof: one "[FLASH] broadcast ..." line per boot.
-int g_flash_broadcast_preset = 0;
+// Log proof: one "[FLASH] broadcast ..." line per boot. Default 1 (DISC).
+int g_flash_broadcast_preset = 1;
 
 extern "C" {
   int get_flash_broadcast_preset() { return g_flash_broadcast_preset; }
@@ -2554,6 +2600,9 @@ void checkBiosFiles()
 #define OPT_CDDA_PAUSE_FIX 120 // Page 4 (AUDIO), under CDDA MUSIC
 #define OPT_FLASH_BROADCAST 121 // Page 5 (CORE), under CDI HEADER FIX
 #define OPT_ADPCM_LOOP  122  // Page 4 (AUDIO), under AICA FAST
+#define OPT_ARM7_RESET_FIX 123 // Page 4 (AUDIO), under ARM7 STR ALIGN
+#define OPT_AICA_RACE   124  // Page 4 (AUDIO), under ARM7 RESET FIX
+#define OPT_AICA_CA_CLAMP 125 // Page 4 (AUDIO), under AICA RACE FIX
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2653,7 +2702,10 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_ARM7_SPEED,
   OPT_ARM7_JIT,
   OPT_ARM7_BATCH,
-  OPT_ARM7_STR_ALIGN
+  OPT_ARM7_STR_ALIGN,
+  OPT_ARM7_RESET_FIX,
+  OPT_AICA_RACE,
+  OPT_AICA_CA_CLAMP
 };
 
 // Page 4 - CORE
@@ -3474,6 +3526,33 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (ALIGNED WORD) >]"); break;
     }
     printf(" ChuChu SFX echo/slow fix");
+    printf("\n");
+
+    // --- Row: ARM7_RESET_FIX - ARM7 reset enters SVC, clears the FIQ latch (arm7.cpp) ---
+    printf("%s ARM7 RESET FIX : ", (selectedRow == OPT_ARM7_RESET_FIX) ? ">" : " ");
+    switch (g_arm7_reset_fix_preset) {
+      case 0: printf("[< OFF (SYSTEM MODE) >]"); break;
+      case 1: printf("[< ON (SVC + LATCH)  >]"); break;
+    }
+    printf(" sound CPU reset like real HW");
+    printf("\n");
+
+    // --- Row: AICA_RACE - Flycast G2-DMA / AICA IRQ timing rules (aica_if.cpp, aica.cpp) ---
+    printf("%s AICA RACE FIX  : ", (selectedRow == OPT_AICA_RACE) ? ">" : " ");
+    switch (g_aica_race_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FLYCAST)      >]"); break;
+    }
+    printf(" DMA/IRQ timing: Looney Tunes");
+    printf("\n");
+
+    // --- Row: AICA_CA_CLAMP - game workaround, CA read clamped below LEA (sgc_if.cpp) ---
+    printf("%s AICA CA CLAMP  : ", (selectedRow == OPT_AICA_CA_CLAMP) ? ">" : " ");
+    switch (g_aica_ca_clamp_preset) {
+      case 0: printf("[< OFF (REAL HW)     >]"); break;
+      case 1: printf("[< ON (LEA-3)        >]"); break;
+    }
+    printf(" game hack: VC sports games");
     printf("\n\n");
 
     printOptionsFooter();
@@ -4108,6 +4187,9 @@ bool displayOptionsMenu()
         case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 5) % 6; break;
         case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset <= 1) ? 16 : g_arm7_batch_preset / 2; break;
         case OPT_ARM7_STR_ALIGN: g_arm7_str_align_preset  = (g_arm7_str_align_preset  + 1) % 2; break;
+        case OPT_ARM7_RESET_FIX: g_arm7_reset_fix_preset  = (g_arm7_reset_fix_preset  + 1) % 2; break;
+        case OPT_AICA_RACE:      g_aica_race_preset       = (g_aica_race_preset       + 1) % 2; break;
+        case OPT_AICA_CA_CLAMP:  g_aica_ca_clamp_preset   = (g_aica_ca_clamp_preset   + 1) % 2; break;
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
@@ -4244,6 +4326,9 @@ bool displayOptionsMenu()
         case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 1) % 6; break;
         case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset >= 16) ? 1 : g_arm7_batch_preset * 2; break;
         case OPT_ARM7_STR_ALIGN: g_arm7_str_align_preset  = (g_arm7_str_align_preset  + 1) % 2; break;
+        case OPT_ARM7_RESET_FIX: g_arm7_reset_fix_preset  = (g_arm7_reset_fix_preset  + 1) % 2; break;
+        case OPT_AICA_RACE:      g_aica_race_preset       = (g_aica_race_preset       + 1) % 2; break;
+        case OPT_AICA_CA_CLAMP:  g_aica_ca_clamp_preset   = (g_aica_ca_clamp_preset   + 1) % 2; break;
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
@@ -5151,6 +5236,9 @@ int main(int argc, wchar *argv[])
                                     g_arm7_jit_preset == 1 ? "ON (BASIC)"  : "OFF (INTERPRETER)");
     printf("ARM7 Batch     : %d%s\n", g_arm7_batch_preset, g_arm7_batch_preset <= 1 ? " (DEFAULT)" : " (BATCHED)");
     printf("ARM7 STR Align : %s\n", g_arm7_str_align_preset ? "ON (ALIGNED WORD)" : "OFF (LEGACY)");
+    printf("ARM7 Reset Fix : %s\n", g_arm7_reset_fix_preset ? "ON (SVC + LATCH)" : "OFF (SYSTEM MODE)");
+    printf("AICA Race Fix  : %s\n", g_aica_race_preset ? "ON (FLYCAST)" : "OFF (LEGACY)");
+    printf("AICA CA Clamp  : %s\n", g_aica_ca_clamp_preset ? "ON (LEA-3)" : "OFF (REAL HW)");
     printf("SH4 Clock      : %dMHz%s\n", g_sh4_clock_preset,
            g_sh4_clock_preset >= 200 ? " (FULL)" : " (UNDERCLOCK)");
     printf("JIT SBP        : ");

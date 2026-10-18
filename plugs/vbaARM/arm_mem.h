@@ -20,6 +20,14 @@ void FASTCALL sh4_WriteMem_reg(u32 addr,u32 data,u32 size);
 void arm_init_mem();
 void arm_term_mem();
 
+// ARM7_RESET_FIX: clear the e68k FIQ latch and pending level (arm_Reset).
+void arm_reset_latch();
+
+// AICA_RACE: see ArmAvoidRaceCondition() in arm_mem.cpp.
+extern bool arm_in_slice;
+extern bool arm_race_pending;
+void FASTCALL ArmAvoidRaceCondition();
+
 extern u8 *aica_ram;
 #define aica_reg_16 ((u16*)aica_reg)
 

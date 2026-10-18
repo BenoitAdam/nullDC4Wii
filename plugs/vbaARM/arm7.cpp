@@ -36,6 +36,8 @@
 void arm_Run_Cached(u32 CycleCount, bool reset);
 #endif
 
+extern "C" int get_arm7_reset_fix_preset();   // wii/main.cpp, ARM7_RESET_FIX
+
 //#define CPUReadHalfWordQuick(addr) arm_ReadMem16(addr & 0x7FFFFF)
 #define CPUReadMemoryQuick(addr) arm_ReadMem32(addr & ARAM_MASK)
 #define CPUReadByte arm_ReadMem8
@@ -362,7 +364,17 @@ void arm_Reset()
 	IF       = 0x0000;
 	IME      = 0x0000;
 
-	armMode = 0x1F;
+	// ARM7_RESET_FIX (Reicast 4caa2b47, Flycast 882e14f13 / reset()): the
+	// AICA's ARM7DI is ARMv3, which has no System mode (0x1F), so a reset
+	// enters SVC (0x13); and the FIQ latch + pending level clear with it. The
+	// JIT reads armMode at run time, so this covers all three engines.
+	if (get_arm7_reset_fix_preset())
+	{
+		armMode = 0x13;
+		arm_reset_latch();
+	}
+	else
+		armMode = 0x1F;
 
 	reg[13].I = 0x03007F00;
 	reg[15].I = 0x0000000;
@@ -474,26 +486,36 @@ void arm_Run(u32 CycleCount)
   if (!Arm7Enabled)
 	 return;
 
+	// AICA_RACE: ArmAvoidRaceCondition() only extends a slice that is running.
+	arm_in_slice = true;
+	arm_race_pending = false;
+
 	if (arm_jit_active())
 	{
 		arm_jit_run(CycleCount);
-		return;
+	}
+	else
+	{
+#ifdef ARM7_USE_CACHED
+		arm_Run_Cached(CycleCount, false);
+#else
+		// Not built on the Wii (ARM7_USE_CACHED is defined above), so it has no
+		// AICA_RACE hook; arm_race_pending is simply dropped below.
+		u32 clockTicks=0;
+		while (clockTicks<CycleCount)
+		{
+			if (armFiqEnable && e68k_out)
+			{
+				CPUFiq();
+			}
+
+			#include "arm-new.h"
+		}
+#endif
 	}
 
-#ifdef ARM7_USE_CACHED
-	arm_Run_Cached(CycleCount, false);
-#else
-	u32 clockTicks=0;
-	while (clockTicks<CycleCount)
-	{
-		if (armFiqEnable && e68k_out)
-		{
-			CPUFiq();
-		}
-		
-		#include "arm-new.h"
-	}
-#endif
+	arm_in_slice = false;
+	arm_race_pending = false;
 }
 
 void arm_SetEnabled(bool enabled)

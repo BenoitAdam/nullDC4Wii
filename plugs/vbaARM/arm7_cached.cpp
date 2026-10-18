@@ -433,9 +433,27 @@ void arm_Run(u32 CycleCount);
 //  reaching NEXT, which then re-homes on the branch target.
 // ════════════════════════════════════════════════════════════════════════════
 
+// AICA_RACE: the running slice's tick count and limit, at file scope so that
+// arm_cached_avoid_race() (reached from an AICA register write inside this
+// slice, through ArmAvoidRaceCondition) can give the slice >= 50 more cycles,
+// as Flycast's avoidRaceCondition. Same storage class as the function-static
+// it replaces, so the hot loop's code is unchanged.
+static int  s_cached_ticks;
+static u32  s_cached_limit;
+static bool s_cached_running = false;
+
+void arm_cached_avoid_race()
+{
+	if (!s_cached_running)
+		return;
+	const int floor = s_cached_limit > 50 ? (int)s_cached_limit - 50 : 0;
+	if (s_cached_ticks > floor)
+		s_cached_ticks = floor;
+}
+
 void arm_Run_Cached(u32 CycleCount, bool reset)
 {
-	static int clockTicks;            // matches arm-new.h / LDM-STM helper signature
+	int& clockTicks = s_cached_ticks;  // matches arm-new.h / LDM-STM helper signature
 	static ARM7CACHEOP* pc_op;
 	// Condition-code -> guard-uop label, indexed by opcode[31:28]. Filled once
 	// below (label addresses are only valid inside this function). Index 0xE (AL)
@@ -475,6 +493,8 @@ void arm_Run_Cached(u32 CycleCount, bool reset)
 	}
 
 	clockTicks = 0;
+	s_cached_limit = CycleCount;
+	s_cached_running = true;
 
 	// Hot-block profiler: once per slice, dump the top 10 if >=1s has elapsed.
 	PROF_TICK();
@@ -1005,6 +1025,7 @@ lbl_exit:
 	// (armNextPC = next instr, reg[15] = next instr + 4).
 	armNextPC = dispatch_pc;
 	reg[15].I = dispatch_pc + 4;
+	s_cached_running = false;
 	return;
 
 	#undef DISPATCH

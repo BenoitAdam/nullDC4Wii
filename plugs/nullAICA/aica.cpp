@@ -54,6 +54,14 @@ u32 GetL(u32 witch)
 // vbaARM/arm_mem.cpp; an extern "C" wrapper here breaks the link.
 void FASTCALL ArmInterruptChange(u32 bits, u32 L);
 
+// AICA_RACE (wii/main.cpp; Flycast a920ae590): SCIEB / MCIEB writes update the
+// interrupt lines at once, and a write that raises the SH4 interrupt gives the
+// ARM7 slice >= 50 more cycles (ArmAvoidRaceCondition, vbaARM arm_mem.cpp --
+// C++ linkage, like ArmInterruptChange). Read only on those register writes.
+extern "C" int get_aica_race_preset();
+#define AICA_RACE_FIX() (get_aica_race_preset() != 0)
+void FASTCALL ArmAvoidRaceCondition();
+
 extern int g_aica_fast_preset;   // wii/main.cpp
 
 void update_arm_interrupts()
@@ -86,18 +94,21 @@ void update_arm_interrupts()
     ArmInterruptChange(p_ints, Lval);
 }
 
-void UpdateSh4Ints()
+// Returns whether an SH4 interrupt is pending (Flycast's shape; AICA_RACE uses it).
+bool UpdateSh4Ints()
 {
     u32 p_ints = MCIEB->full & MCIPD->full;
     if (p_ints)
     {
         if ((*aica_params.SB_ISTEXT & SH4_IRQ_BIT) == 0)
             aica_params.RaiseInterrupt(holly_SPU_IRQ);
+        return true;
     }
     else
     {
         if (*aica_params.SB_ISTEXT & SH4_IRQ_BIT)
             aica_params.CancelInterrupt(holly_SPU_IRQ);
+        return false;
     }
 }
 
@@ -217,9 +228,23 @@ void WriteAicaReg(u32 reg, u32 data)
         {
             verify(sz != 1);
             MCIPD->SCPU = 1;
-            UpdateSh4Ints();
+            if (UpdateSh4Ints() && AICA_RACE_FIX())
+                ArmAvoidRaceCondition();
         }
         return; // read-only
+
+    // AICA_RACE: the enable masks take effect now, not at the next UpdateAICA().
+    case SCIEB_addr:
+        WriteMemArr(aica_reg, reg, data, sz);
+        if (AICA_RACE_FIX())
+            update_arm_interrupts();
+        break;
+
+    case MCIEB_addr:
+        WriteMemArr(aica_reg, reg, data, sz);
+        if (AICA_RACE_FIX() && UpdateSh4Ints())
+            ArmAvoidRaceCondition();
+        break;
 
     case MCIRE_addr:
         verify(sz != 1);

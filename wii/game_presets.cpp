@@ -140,12 +140,30 @@
         arm7_str_align=on   <- on/off, an ARM7 word store to an address that is
                                 not a multiple of 4 writes the aligned word,
                                 unrotated, as the real ARM7DI and Flycast do
-                                (plugs/vbaARM/arm_mem.cpp). off (default, legacy)
+                                (plugs/vbaARM/arm_mem.cpp). Default on. off (legacy)
                                 scatters the 4 bytes from the unaligned address
                                 and corrupts two words: ChuChu Rocket's echoing,
                                 slow-motion effects. Covers all three ARM7
                                 engines. Logs [ARM7] unaligned STR lines either
                                 way. With it on, mute_pcm16 is not needed.
+        arm7_reset_fix=on   <- on/off, an ARM7 reset enters SVC mode (the
+                                ARMv3 ARM7DI has no System mode) and clears the
+                                FIQ latch, as Flycast does (plugs/vbaARM/
+                                arm7.cpp). Default on. off (legacy) entered
+                                System mode and kept a stale FIQ latch.
+        aica_race=on        <- on/off, Flycast's AICA timing rules: G2 DMA end
+                                sets ADEN the right way round and advances the
+                                addresses at the end, a busy DMA ignores a new
+                                start, SB_ADST reads apply the double-DMA rule,
+                                SCIEB/MCIEB writes take effect at once, and an
+                                AICA write that raises the SH4 interrupt gives
+                                the ARM7 at least 50 more cycles. Default on.
+                                off = legacy.
+        aica_ca_clamp=on    <- on/off, GAME WORKAROUND (default off): the CA
+                                (play position) read never reports within 3
+                                samples of the loop end (Flycast 788cbfb64, for
+                                some Visual Concepts sports games). Real
+                                hardware does not do this; set it per game.
         arm7_jit=2          <- 0..5 (off/on = 0/1), ARM7 sound-CPU recompiler
                                 (see plugs/vbaARM/arm7_jit.cpp). 0 runs the
                                 cached interpreter; 1 translates ARM code to
@@ -200,7 +218,7 @@
                                the new target right on the old exit, and the
                                patch then breaks that block: a freeze that comes
                                and goes with code layout. Off still logs each
-                               stale site as [LINK] in /ndclog.txt. Default off.
+                               stale site as [LINK] in /ndclog.txt. Default on.
         jit_sbp=1           <- 0/1/2, JIT_SBP (Stale Block Protection). Gates
                                 all three defenses against executing stale or
                                 self-modified translations (see
@@ -236,7 +254,7 @@
                                 stall after the BIOS logo. 1 = mask reads +
                                 Flycast write handler (the cause). 2 = 1 + the
                                 Flycast TLB rules that go with it (PS3-tested
-                                set). Default 0 (legacy).
+                                set). Default 1. 0 = legacy.
         fastmem=on          <- on/off, PPC-MMU fastmem for the SH4 dynarec
                                 (wii/wii_fastmem.cpp). Worth ~+20% FPS, so it
                                 stays ON by default. One user has reported that
@@ -535,7 +553,7 @@
         cdi_hdr_fix=on      <- on/off, where a .cdi (DiscJuggler) image keeps its
                                 header. Only V3.5 stores the offset from the
                                 end of the file; V2 and V3 store an absolute
-                                one (cdirip). off (default, legacy) read V2
+                                one (cdirip). Default on. off (legacy) read V2
                                 from byte 0 and V3 from the end, found 0
                                 sessions and refused the image (Crazy Taxi PAL,
                                 a V3 CDI). V3.5 images are read the same either
@@ -597,8 +615,8 @@
                                 to record which ones those are.
         flash_broadcast=disc <- off/disc/ntsc (or 0/1/2), the broadcast byte of
                                 the flash's factory partition, which picks
-                                50 or 60 Hz on composite/RGB. off (default,
-                                legacy) leaves the flash alone, so a PAL flash
+                                50 or 60 Hz on composite/RGB. Default disc.
+                                off (legacy) leaves the flash alone, so a PAL flash
                                 gives a 50 Hz guest. disc sets NTSC when the
                                 disc's IP.BIN lists J or U and PAL when it lists
                                 only E (GDIs always read NTSC: the GDI reader
@@ -901,8 +919,8 @@
                                 (~75 reads/s) and mixes them into the output.
         cdda_pause_fix=on   <- on/off, a CD-audio PAUSE (SPI_CD_SEEK parameter 4)
                                 keeps the play position, as nullDC-v1, Reicast
-                                and Flycast do (dc/gdrom/gdromv3.cpp). off
-                                (default, legacy) moves the head to FAD 150 and
+                                and Flycast do (dc/gdrom/gdromv3.cpp). Default
+                                on. off (legacy) moves the head to FAD 150 and
                                 reports STANDBY, so music resumed after a pause
                                 restarts from the disc start or stays silent
                                 (ChuChu Rocket, Looney Tunes Space Race).
@@ -922,7 +940,7 @@
         adpcm_loop=on       <- on/off, a looped ADPCM sound keeps the decoder
                                 state it had at the loop start and restores it
                                 on each lap (Flycast), instead of resetting the
-                                decoder every lap (off, default, legacy). A loop
+                                decoder every lap (off, legacy). Default on. A loop
                                 that starts after sample 0 was decoded from the
                                 wrong state on every lap after the first:
                                 Sonic Adventure 2's held effects going almost
@@ -1247,6 +1265,9 @@ extern int g_arm7_speed_preset;
 extern int g_arm7_jit_preset;
 extern int g_arm7_batch_preset;
 extern int g_arm7_str_align_preset;
+extern int g_arm7_reset_fix_preset;
+extern int g_aica_race_preset;
+extern int g_aica_ca_clamp_preset;
 extern int g_sh4_clock_preset;
 extern int g_jit_sbp_preset;
 extern int g_jit_ici_preset;
@@ -1394,6 +1415,9 @@ struct GamePreset
     int arm7_jit;
     int arm7_batch;
     int arm7_str_align;
+    int arm7_reset_fix;
+    int aica_race;
+    int aica_ca_clamp;
     int sh4_clock;
     int jit_sbp;
     int jit_ici;
@@ -1920,6 +1944,9 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "arm7_jit"))       p->arm7_jit       = (val[0] >= '0' && val[0] <= '9') ? atoi(val) : parse_bool(val);
     else if (key_eq(key, "arm7_batch"))     p->arm7_batch     = atoi(val);
     else if (key_eq(key, "arm7_str_align")) p->arm7_str_align = parse_bool(val);
+    else if (key_eq(key, "arm7_reset_fix")) p->arm7_reset_fix = parse_bool(val);
+    else if (key_eq(key, "aica_race"))      p->aica_race      = parse_bool(val);
+    else if (key_eq(key, "aica_ca_clamp"))  p->aica_ca_clamp  = parse_bool(val);
     else if (key_eq(key, "sh4_clock"))      p->sh4_clock      = parse_sh4_clock(val);
     else if (key_eq(key, "jit_sbp"))        p->jit_sbp        = atoi(val);
     else if (key_eq(key, "jit_ici"))        p->jit_ici        = atoi(val);
@@ -2047,6 +2074,9 @@ static void preset_clear(GamePreset* cur)
     cur->arm7_jit = -1;
     cur->arm7_batch = -1;
     cur->arm7_str_align = -1;
+    cur->arm7_reset_fix = -1;
+    cur->aica_race = -1;
+    cur->aica_ca_clamp = -1;
     cur->sh4_clock = -1;
     cur->jit_sbp = -1;
     cur->jit_ici = -1;
@@ -2199,6 +2229,9 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->arm7_batch     >= 1) { g_arm7_batch_preset     = p->arm7_batch >= 16 ? 16 : p->arm7_batch >= 8 ? 8 : p->arm7_batch >= 4 ? 4 : p->arm7_batch >= 2 ? 2 : 1;
                                   printf("  arm7_batch     -> %d\n", g_arm7_batch_preset); }
     if (p->arm7_str_align >= 0) { g_arm7_str_align_preset = p->arm7_str_align; printf("  arm7_str_align -> %d\n", p->arm7_str_align); }
+    if (p->arm7_reset_fix >= 0) { g_arm7_reset_fix_preset = p->arm7_reset_fix; printf("  arm7_reset_fix -> %d\n", p->arm7_reset_fix); }
+    if (p->aica_race      >= 0) { g_aica_race_preset      = p->aica_race;      printf("  aica_race      -> %d\n", p->aica_race);      }
+    if (p->aica_ca_clamp  >= 0) { g_aica_ca_clamp_preset  = p->aica_ca_clamp;  printf("  aica_ca_clamp  -> %d\n", p->aica_ca_clamp);  }
     if (p->sh4_clock      >= 0) { g_sh4_clock_preset      = p->sh4_clock;      printf("  sh4_clock      -> %d\n", p->sh4_clock);      }
     if (p->jit_sbp        >= 0) { g_jit_sbp_preset        = p->jit_sbp;        printf("  jit_sbp        -> %d\n", p->jit_sbp);        }
     if (p->jit_ici        >= 0) { g_jit_ici_preset        = p->jit_ici;        printf("  jit_ici        -> %d\n", p->jit_ici);        }

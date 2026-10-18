@@ -35,6 +35,38 @@ void e68k_AcceptInterrupt()
 	update_e68k();
 }
 
+// ARM7_RESET_FIX (arm_Reset): Flycast reset() clears the e68k FIQ latch and the
+// pending interrupt level. Without it a latch left set before the game's own
+// ARM7 reset fires a FIQ into the freshly loaded driver (seen on the PS3 in
+// Crazy Taxi). The next ArmInterruptChange() rebuilds it from the AICA state.
+void arm_reset_latch()
+{
+	aica_interr = false;
+	aica_reg_L = 0;
+	e68k_out = false;
+	e68k_reg_L = 0;
+	e68k_reg_M = 0;
+}
+
+// AICA_RACE (Flycast a920ae590, avoidRaceCondition): when an AICA register write
+// raises the SH4 interrupt (nullAICA MCIEB / MCIPD.SCPU), the ARM7 that did the
+// write must keep running at least 50 more cycles before its slice ends, so it
+// finishes its side of the handshake before the SH4 services the IRQ. Only acts
+// inside an ARM7 slice (arm_Run sets arm_in_slice): an SH4-side write has no
+// ARM slice to extend. The cached engine is clamped here; the JIT reads
+// arm_race_pending back in its slow-write stub (arm7_jit.cpp jit_race_budget).
+bool arm_in_slice = false;
+bool arm_race_pending = false;
+void arm_cached_avoid_race();   // arm7_cached.cpp
+
+void FASTCALL ArmAvoidRaceCondition()
+{
+	if (!arm_in_slice)
+		return;
+	arm_race_pending = true;
+	arm_cached_avoid_race();
+}
+
 //Reg reads from arm side ..
 template <u32 sz,class T>
 inline T fastcall arm_ReadReg(u32 addr)

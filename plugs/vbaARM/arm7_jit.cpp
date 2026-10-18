@@ -343,6 +343,24 @@ static u32  jit_rd8(u32 a)         { ARMC(ARMC_RD_SLOW); CensusTimer t(ARMT_RD);
 static void jit_wr32(u32 a, u32 v) { ARMC(ARMC_WR_SLOW); CensusTimer t(ARMT_WR); arm_WriteMem32(a, v); }
 static void jit_wr8(u32 a, u32 v)  { ARMC(ARMC_WR_SLOW); CensusTimer t(ARMT_WR); arm_WriteMem8(a, (u8)v); }
 
+// AICA_RACE: the CK_WR stub hands its budget (R_BUD = cycles left in the slice)
+// to these and takes it back. A write that raised the SH4 interrupt
+// (ArmAvoidRaceCondition -> arm_race_pending) leaves the slice >= 50 cycles,
+// as Flycast's avoidRaceCondition. Every AICA register store lands here (the
+// inline path only writes ARAM), so the hot path is untouched.
+static s32 jit_race_budget(s32 bud)
+{
+	if (arm_race_pending)
+	{
+		arm_race_pending = false;
+		if (bud < 50)
+			bud = 50;
+	}
+	return bud;
+}
+static s32 jit_wr32_b(u32 a, u32 v, s32 bud) { jit_wr32(a, v); return jit_race_budget(bud); }
+static s32 jit_wr8_b(u32 a, u32 v, s32 bud)  { jit_wr8(a, v);  return jit_race_budget(bud); }
+
 // LDM/STM helpers (defined below), also reached from the CK_BLOCK cold stub.
 static int jit_stm(u32 op);
 static int jit_ldm_nopc(u32 op);
@@ -522,7 +540,9 @@ static void flush_cold()
 				ppc_andi(4, R_VAL, 0xFF);
 			else
 				ppc_mr(4, R_VAL);
-			ppc_call(c.size == 1 ? (void*)&jit_wr8 : (void*)&jit_wr32);
+			ppc_mr(5, R_BUD);                   // AICA_RACE: budget in, maybe raised
+			ppc_call(c.size == 1 ? (void*)&jit_wr8_b : (void*)&jit_wr32_b);
+			ppc_mr(R_BUD, 3);                   // charged after the join, which resets CR0
 			ppc_jump(c.back);
 			break;
 

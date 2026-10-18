@@ -11,6 +11,10 @@
 
 extern "C" int get_dma_fix_preset();
 
+// AICA_RACE preset (wii/main.cpp): Flycast's G2-DMA register rules, see
+// aica_dma_complete() / Write_SB_ADST() / Read_SB_ADST().
+extern "C" int get_aica_race_preset();
+
 // SCHED preset (wii/main.cpp): route the AICA G2-DMA end IRQ through the unified
 // deadline scheduler (in true order relative to the ch2/PVR/GD-ROM completions)
 // instead of the standalone aica_dma_delay_cycles countdown in UpdateAicaDma().
@@ -211,10 +215,29 @@ static inline u32 clamp_dma_len(u32 len)
 // confused by an instant one.
 s32 aica_dma_delay_cycles = 0;
 
+// AICA_RACE: length of the transfer in flight; the address registers advance
+// by it when the DMA ENDS (Flycast dma_end_sched), not when it starts.
+static u32 s_aica_dma_len = 0;
+
 static void aica_dma_complete()
 {
-    // Bit 31 of ADLEN: keep ADEN asserted (continuous mode)
-    SB_ADEN  = (SB_ADLEN & 0x80000000) ? 1 : 0;
+    if (get_aica_race_preset())
+    {
+        // AICA_RACE (Flycast a44619931 / a920ae590, dma_end_sched): ADLEN bit 31
+        // set means "disable after this transfer", so ADEN goes to 0 -- the
+        // legacy line below had it the wrong way round. ADSTAR/ADSTAG step
+        // forward now that the data has moved, and ADSUSP bit 4 = "no DMA in
+        // progress (or suspended)".
+        SB_ADEN    = (SB_ADLEN & 0x80000000) ? 0 : 1;
+        SB_ADSTAR += s_aica_dma_len;
+        SB_ADSTAG += s_aica_dma_len;
+        SB_ADSUSP |= 0x10;
+    }
+    else
+    {
+        // Legacy: bit 31 of ADLEN keeps ADEN asserted (continuous mode)
+        SB_ADEN = (SB_ADLEN & 0x80000000) ? 1 : 0;
+    }
     SB_ADST  = 0;
     SB_ADLEN = 0;
     asic_RaiseInterrupt(holly_SPU_DMA);
@@ -250,13 +273,17 @@ static int aica_dma_end_cb(int tag, int sch_cycl, int jitter)
 // REG_READ_DATA set alongside this readFunction. The dispatch order in
 // sb.cpp (both ports, identical) checks REG_READ_DATA FIRST and returns the
 // raw register directly when it's set — readFunction is only consulted when
-// it is NOT set. So this function is DEAD CODE in PSP itself; the "fix" its
-// comment describes never actually runs on real hardware there either. Kept
-// here, with matching flags, to faithfully replicate PSP's real (not
-// aspirational) behavior rather than silently diverge into untested
-// territory. Not a source of the stall either way — it's inert in both.
+// it is NOT set. So this function was DEAD CODE in PSP itself, and here too.
+//
+// AICA_RACE: SB_ADST is now registered WITHOUT REG_READ_DATA (aica_sb_Init),
+// so this always runs, and the preset decides: on = Flycast's rule above (it
+// is live code in Flycast), off = the raw register, exactly what the old
+// REG_READ_DATA path returned.
 u32 Read_SB_ADST()
 {
+    if (!get_aica_race_preset())
+        return SB_ADST;
+
     if ((SB_ISTNRM & (1u << (u8)holly_SPU_DMA)) && !(SB_ADST & 2))
     {
         SB_ADST |= 2;
@@ -272,6 +299,13 @@ u32 Read_SB_ADST()
 void Write_SB_ADST(u32 data)
 {
     if (!(data & 1))
+        return;
+
+    // AICA_RACE (Flycast Write_SB_ADST): a start while a transfer is still in
+    // flight is ignored. With DMA_FIX the completion is deferred, so without
+    // this a second start before the end IRQ would begin another copy.
+    const int race = get_aica_race_preset();
+    if (race && (SB_ADST & 1))
         return;
 
     if (!(SB_ADEN & 1))
@@ -298,8 +332,18 @@ void Write_SB_ADST(u32 data)
         WriteMem32_nommu(dst + i, word);
     }
 
-    SB_ADSTAR += len;
-    SB_ADSTAG += len;
+    if (race)
+    {
+        // AICA_RACE: the addresses advance at the end (aica_dma_complete), and
+        // ADSUSP bit 4 drops while the DMA is in progress.
+        s_aica_dma_len = len;
+        SB_ADSUSP &= ~0x10u;
+    }
+    else
+    {
+        SB_ADSTAR += len;
+        SB_ADSTAG += len;
+    }
     SB_ADST    = 1;
 
     if (get_dma_fix_preset())
@@ -432,7 +476,9 @@ void Write_SB_E2ST(u32 data)
 // ---------------------------------------------------------------------------
 void aica_sb_Init()
 {
-    sb_regs[((SB_ADST_addr - SB_BASE) >> 2)].flags         = REG_32BIT_READWRITE | REG_READ_DATA;
+    // No REG_READ_DATA: sb.cpp would return the raw register and never call
+    // Read_SB_ADST(), which now applies the AICA_RACE rule itself.
+    sb_regs[((SB_ADST_addr - SB_BASE) >> 2)].flags         = REG_32BIT_READWRITE;
     sb_regs[((SB_ADST_addr - SB_BASE) >> 2)].readFunction  = Read_SB_ADST;
     sb_regs[((SB_ADST_addr - SB_BASE) >> 2)].writeFunction = Write_SB_ADST;
 

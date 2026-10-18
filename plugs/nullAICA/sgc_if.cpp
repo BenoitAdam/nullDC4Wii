@@ -57,6 +57,11 @@ extern "C" int get_mute_pcm16_preset();
 extern "C" int get_adpcm_loop_preset();
 #define ADPCM_LOOP_FIX() (get_adpcm_loop_preset() != 0)
 
+// AICA_CA_CLAMP_FIX(): preset-gated (default OFF, a game workaround). See the
+// CA register read in ReadCommonReg(). Called only on a CA read.
+extern "C" int get_aica_ca_clamp_preset();
+#define AICA_CA_CLAMP_FIX() (get_aica_ca_clamp_preset() != 0)
+
 // x.15
 s32  volume_lut[16];
 u32  SendLevel[16] = {0xF000<<3,14<<3,13<<3,12<<3,11<<3,10<<3,9<<3,8<<3,
@@ -1137,6 +1142,15 @@ void ReadCommonReg(u32 reg, bool byte)
         {
             u32 chan = CommonData->MSLC;
             CommonData->CA = Chans[chan].CA;
+            // AICA_CA_CLAMP (game workaround, default OFF): never report a play
+            // position within 3 samples of the loop end. Flycast 788cbfb64 added
+            // it for some Visual Concepts sports games; real hardware can read
+            // LEA at a one-shot end, and the Feb 2026 Flycast master checked here
+            // has no such clamp. In the PS3's Looney Tunes group (other_fix.md
+            // 1.6c) it fired 0-3 times per 5 s.
+            const ChannelEx& ch = Chans[chan];
+            if (AICA_CA_CLAMP_FIX() && ch.loop.LEA > ch.loop.LSA && ch.loop.LEA > 3)
+                CommonData->CA = min(ch.CA, ch.loop.LEA - 3);
         }
         break;
     }
