@@ -5,8 +5,9 @@
 // TLB entry: pairs a virtual address (PTEH) with its physical mapping (PTEL)
 struct TLB_Entry
 {
-	CCN_PTEH_type Address;  // Virtual Page Number + ASID
-	CCN_PTEL_type Data;     // Physical Page Number + protection bits
+	CCN_PTEH_type Address;     // Virtual Page Number + ASID
+	CCN_PTEL_type Data;        // Physical Page Number + protection bits
+	CCN_PTEA_type Assistance;  // data array 2: SA and TC (MMUCR_FIX=2)
 };
 
 // SH4 Unified TLB: 64 entries for data + instruction translation

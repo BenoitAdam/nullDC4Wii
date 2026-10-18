@@ -278,11 +278,16 @@ void FASTCALL WriteMem_P4(u32 addr, T data)
 			return;
 		}
 
-	// ITLB data arrays (F3)
+	// ITLB data arrays (F3). Address bit 23 = data array 2 (SA/TC). Legacy
+	// wrote it into data array 1, overwriting PPN and V; MMUCR_FIX=2 gives it
+	// its own word (Flycast, Reicast).
 	case 0xF3:
 		{
 			u32 entry = (addr >> 8) & 3;
-			ITLB[entry].Data.reg_data = data;
+			if ((addr & 0x800000) && get_mmucr_fix_preset() >= 2)
+				ITLB[entry].Assistance.reg_data = data & 0xF;
+			else
+				ITLB[entry].Data.reg_data = data;
 			ITLB_Sync(entry);
 			return;
 		}
@@ -343,11 +348,14 @@ void FASTCALL WriteMem_P4(u32 addr, T data)
 			return;
 		}
 
-	// UTLB data arrays (F7)
+	// UTLB data arrays (F7); bit 23 as in F3.
 	case 0xF7:
 		{
 			u32 entry = (addr >> 8) & 63;
-			UTLB[entry].Data.reg_data = data;
+			if ((addr & 0x800000) && get_mmucr_fix_preset() >= 2)
+				UTLB[entry].Assistance.reg_data = data & 0xF;
+			else
+				UTLB[entry].Data.reg_data = data;
 			UTLB_Sync(entry);
 			return;
 		}

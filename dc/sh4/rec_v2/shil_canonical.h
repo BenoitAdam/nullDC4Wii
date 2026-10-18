@@ -629,7 +629,7 @@ shil_canonical(
 )
 shil_compile(
     shil_cf_arg_u32(rs1);
-    if (CCN_MMUCR.AT)
+    if (mmucr_at())
     {
         shil_cf(f1);
     }

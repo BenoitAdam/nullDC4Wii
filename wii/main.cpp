@@ -632,6 +632,27 @@ extern "C" {
   int get_dma_fix_preset() { return g_dma_fix_preset; }
 }
 
+// MMUCR_FIX - read the SH4 MMU control register at its real bits.
+// CCN_MMUCR_type (dc/sh4/ccn.h) declares 28 bits, not 32, so on big endian
+// every field but LRUI reads the wrong bits: AT from bit 4, TI from bit 6, URC
+// from 19-14. Rez, Ikaruga, Sonic Shuffle and Border Down write MMUCR =
+// 0x00040005 and map the store queues through the UTLB; we never saw AT=1, so
+// their store-queue flushes went to area 0 (boot ROM) instead of RAM/TA and
+// they stalled after the BIOS logo. The little-endian layout gets AT right,
+// which is why the PSP port boots Rez and we did not. Ported from flycastPS3
+// rez_fix.md (fixed all four on PS3 hardware, 2026-10-12/13); Wii-untested.
+//   0 = OFF  (legacy bitfield reads)
+//   1 = BITS (Part A+B: AT/TI/URC/URB from masks, Flycast write mask, JIT cache
+//             clear on an AT edge -- the cause on its own)
+//   2 = FULL (1 + TI keeps sq_remap, V=0 UTLB entry leaves its slot alone,
+//             data-array-2 writes get their own word: the PS3-tested set)
+// Log proof: "[mmu] self-test" at boot, then "CCN: MMUCR write ..." lines.
+int g_mmucr_fix_preset = 0;
+
+extern "C" {
+  int get_mmucr_fix_preset() { return g_mmucr_fix_preset; }
+}
+
 // SCHED — unified cycle-deadline scheduler (dc/sh4/sh4_sched.cpp). When on,
 // the completion/IRQ events whose RELATIVE ordering matters (GD-ROM read-done,
 // ch2/PVR/AICA-DMA completion, render-done, TA list-end) fire through a single
@@ -2443,6 +2464,7 @@ void checkBiosFiles()
 #define OPT_ACCURACY_FPU 114 // Page 5 (CORE), under ACCURACY INT
 #define OPT_JIT_FIPR    115  // Page 6 (JIT/DYNAREC), under JIT FSQRT
 #define OPT_JIT_LINK_GUARD 116 // Page 6 (JIT/DYNAREC), under JIT ICI
+#define OPT_MMUCR_FIX   117  // Page 5 (EXPERIMENTAL), under DMA FIX
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2561,6 +2583,7 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_MIPMAP,
   OPT_TEX_WRAP_GUARD,
   OPT_DMA_FIX,
+  OPT_MMUCR_FIX,
   OPT_SCHED,
   OPT_EXIT_FIX,
   OPT_TRANS_ZWRITE,
@@ -3444,6 +3467,16 @@ bool displayOptionsMenu()
     printf(" ch2/PVR/Sort/AICA DMA fixes");
     printf("\n");
 
+    // --- Row: MMUCR_FIX - MMU control register at its real bits (ccn.h) ---
+    printf("%s MMUCR FIX      : ", (selectedRow == OPT_MMUCR_FIX) ? ">" : " ");
+    switch (g_mmucr_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< BITS (AT/TI/URC)  >]"); break;
+      case 2: printf("[< FULL (PS3 TESTED) >]"); break;
+    }
+    printf(" Rez/Ikaruga/Border Down boot");
+    printf("\n");
+
     // --- Row: SCHED - unified cycle-deadline event scheduler ---
     printf("%s SCHED (ORDER)  : ", (selectedRow == OPT_SCHED) ? ">" : " ");
     switch (g_sched_preset) {
@@ -3945,6 +3978,7 @@ bool displayOptionsMenu()
         case OPT_JIT_ICI:        g_jit_ici_preset         = (g_jit_ici_preset         + 2) % 3; break;
         case OPT_JIT_LINK_GUARD: g_jit_link_guard_preset  = (g_jit_link_guard_preset  + 1) % 2; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
+        case OPT_MMUCR_FIX:      g_mmucr_fix_preset       = (g_mmucr_fix_preset       + 2) % 3; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
         case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
         case OPT_DYN_IC:         g_dyn_ic_preset          = (g_dyn_ic_preset          + 2) % 3; break;
@@ -4075,6 +4109,7 @@ bool displayOptionsMenu()
         case OPT_JIT_ICI:        g_jit_ici_preset         = (g_jit_ici_preset         + 1) % 3; break;
         case OPT_JIT_LINK_GUARD: g_jit_link_guard_preset  = (g_jit_link_guard_preset  + 1) % 2; break;
         case OPT_DMA_FIX:        g_dma_fix_preset         = (g_dma_fix_preset         + 1) % 2; break;
+        case OPT_MMUCR_FIX:      g_mmucr_fix_preset       = (g_mmucr_fix_preset       + 1) % 3; break;
         case OPT_FASTMEM:        g_fastmem_preset         = (g_fastmem_preset         + 1) % 2; break;
         case OPT_BCACHE:         g_bcache_preset          = (g_bcache_preset          + 1) % 2; break;
         case OPT_DYN_IC:         g_dyn_ic_preset          = (g_dyn_ic_preset          + 1) % 3; break;
@@ -4981,6 +5016,8 @@ int main(int argc, wchar *argv[])
     }
     printf("JIT Link Guard : %s\n", g_jit_link_guard_preset ? "ON (SKIP STALE)" : "OFF (LOG ONLY)");
     printf("DMA Fix        : %s\n", g_dma_fix_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
+    printf("MMUCR Fix      : %s\n", g_mmucr_fix_preset == 2 ? "FULL (PS3 TESTED)" :
+                                    g_mmucr_fix_preset == 1 ? "BITS (AT/TI/URC)" : "OFF (LEGACY)");
     printf("Fastmem        : %s\n", g_fastmem_preset ? "ON (MMU)" : "OFF (LEGACY)");
     printf("JIT BCache     : %s\n", g_bcache_preset ? "ON (FLAT)" : "OFF (LEGACY)");
     printf("JIT Dyn IC     : %s\n", g_dyn_ic_preset == 2 ? "ON (+RTS)" :

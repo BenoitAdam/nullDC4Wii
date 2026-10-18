@@ -121,6 +121,7 @@ extern "C" int g_frame_prof_preset;
 // CCR.ICI write therefore threw away the whole 6 MB code cache with no trace
 // in the log at all. That is what a bare clr=1[] was.
 #define FP_CLR_ICI       (1u << 6)  // guest CCR.ICI: SH4 I-cache invalidate
+#define FP_CLR_MMUCR     (1u << 7)  // MMUCR_FIX: guest MMUCR.AT edge (ccn.cpp)
 
 // Live accumulators for the frame in progress. Reset by frame_prof_vblank()
 // once it has folded them into the ring.
