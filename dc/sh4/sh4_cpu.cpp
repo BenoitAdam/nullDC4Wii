@@ -345,12 +345,26 @@ sh4op(i0011_nnnn_mmmm_1101)
 	mach = (u32)(result >> 32);
 }
 
+// INTERP_FIX preset (wii/main.cpp; flycastPS3 other_fix.md 3.2): div1, addv,
+// subv, mul.l, mac.w and mac.l give the SH4 manual's result. Read as a plain
+// global (like g_aica_fast_preset) because these run once per instruction.
+// They matter wherever the interpreter executes the op: interpreter mode, and
+// in the dynarec with jit_carry / jit_mac off (and every interpreter fallback).
+extern int g_interp_fix_preset;
+
+// The saturation rules of mac.l / mac.w, shared with the JIT (dc/sh4/rec_v2/shil.cpp).
+extern "C" void sh4_mac_l(u32 a, u32 b, u32 oldl, u32 oldh, u32 srs);
+extern "C" void sh4_mac_w(u32 a, u32 b, u32 oldl, u32 oldh, u32 srs);
+
 // mul.l <REG_M>,<REG_N> - Multiply long
 sh4op(i0000_nnnn_mmmm_0111)
 {
 	const u32 n = GetN(op);
 	const u32 m = GetM(op);
-	macl = (u32)(((s32)r[n]) * ((s32)r[m]));
+	if (g_interp_fix_preset)
+		macl = r[n] * r[m];   // same low 32 bits, without signed overflow (UB at -O3, no -fwrapv)
+	else
+		macl = (u32)(((s32)r[n]) * ((s32)r[m]));
 }
 
 // mac.w @<REG_M>+,@<REG_N>+ - Multiply-accumulate word
@@ -358,7 +372,27 @@ sh4op(i0100_nnnn_mmmm_1111)
 {
 	const u32 n = GetN(op);
 	const u32 m = GetM(op);
-	
+
+	if (g_interp_fix_preset)
+	{
+		// INTERP_FIX: S=1 saturates (sh4_mac_w) instead of skipping the whole
+		// instruction, post-increments included. Same reads as below.
+		const s32 rn = (s32)(s16)ReadMem16(r[n]);
+		r[n] += 2;
+		const s32 rm = (s32)(s16)ReadMem16(r[m]);
+		r[m] += 2;
+		if (sr.S != 0)
+			sh4_mac_w((u32)rm, (u32)rn, macl, mach, sr.status);
+		else
+		{
+			u64 mac = macl | ((u64)mach << 32);
+			mac += (u64)(s64)(rm * rn);   // |rm*rn| <= 2^30: no overflow
+			macl = (u32)mac;
+			mach = (u32)(mac >> 32);
+		}
+		return;
+	}
+
 	if (sr.S != 0)
 	{
 		printf("mac.w @<REG_M>+,@<REG_N>+ : S=%d (saturation mode)\n", !!sr.S);
@@ -385,7 +419,28 @@ sh4op(i0000_nnnn_mmmm_1111)
 {
 	const u32 n = GetN(op);
 	const u32 m = GetM(op);
-	
+
+	if (g_interp_fix_preset)
+	{
+		// INTERP_FIX: S=1 saturates (sh4_mac_l) instead of a verify() that
+		// hangs the Wii; the 64-bit add is done unsigned (no signed overflow).
+		s32 rm, rn;
+		ReadMemS32(rm, r[m]);
+		r[m] += 4;
+		ReadMemS32(rn, r[n]);
+		r[n] += 4;
+		if (sr.S != 0)
+			sh4_mac_l((u32)rm, (u32)rn, macl, mach, sr.status);
+		else
+		{
+			u64 mac = macl | ((u64)mach << 32);
+			mac += (u64)((s64)rm * (s64)rn);
+			macl = (u32)mac;
+			mach = (u32)(mac >> 32);
+		}
+		return;
+	}
+
 	verify(sr.S == 0);  // Saturation not supported
 	
 	s32 rm, rn;
@@ -430,7 +485,34 @@ sh4op(i0011_nnnn_mmmm_0100)
 {
 	const u32 n = GetN(op);
 	const u32 m = GetM(op);
-	
+
+	if (g_interp_fix_preset)
+	{
+		// INTERP_FIX: Flycast master's div1 (the SH4 manual). The legacy body
+		// below chose add/sub from the old Q alone and set Q = (r[n] > tmp1),
+		// losing the bit shifted out of Rn: 75% of single steps came out wrong
+		// (Rn, Q or T) over 20M random states on the PC. This form, the
+		// jit_carry canonical and flycastPS3's agree on all 20M.
+		const u32 old_q = sr.Q;
+		u32 q = (r[n] >> 31) & 1;
+		const u32 old_rm = r[m];
+		r[n] = (r[n] << 1) | sr.T;
+		const u32 old_rn = r[n];
+		if (old_q == 0)
+		{
+			if (sr.M == 0) { r[n] -= old_rm; q = q ^ (r[n] > old_rn ? 1 : 0); }
+			else           { r[n] += old_rm; q = (q ^ 1) ^ (r[n] < old_rn ? 1 : 0); }
+		}
+		else
+		{
+			if (sr.M == 0) { r[n] += old_rm; q = q ^ (r[n] < old_rn ? 1 : 0); }
+			else           { r[n] -= old_rm; q = (q ^ 1) ^ (r[n] > old_rn ? 1 : 0); }
+		}
+		sr.Q = q;
+		sr.T = (sr.Q == sr.M) ? 1 : 0;
+		return;
+	}
+
 	const u32 old_Q = sr.Q;
 
 	r[n] = (r[n] << 1) | sr.T;
@@ -477,6 +559,15 @@ sh4op(i0011_nnnn_mmmm_1111)
 {
 	const u32 n = GetN(op);
 	const u32 m = GetM(op);
+	if (g_interp_fix_preset)
+	{
+		// INTERP_FIX: unsigned add, T from the sign bits. The legacy s32 add
+		// below overflows -- undefined in C, and -O3 may fold the test away.
+		const u32 ans = r[n] + r[m];
+		sr.T = ((r[n] ^ ans) & (r[m] ^ ans)) >> 31;
+		r[n] = ans;
+		return;
+	}
 	const s32 dest = (s32)r[n];
 	const s32 src = (s32)r[m];
 	const s32 ans = dest + src;
@@ -508,6 +599,14 @@ sh4op(i0011_nnnn_mmmm_1011)
 {
 	const u32 n = GetN(op);
 	const u32 m = GetM(op);
+	if (g_interp_fix_preset)
+	{
+		// INTERP_FIX: as addv.
+		const u32 ans = r[n] - r[m];
+		sr.T = ((r[n] ^ r[m]) & (r[n] ^ ans)) >> 31;
+		r[n] = ans;
+		return;
+	}
 	const s32 dest = (s32)r[n];
 	const s32 src = (s32)r[m];
 	const s32 ans = dest - src;
