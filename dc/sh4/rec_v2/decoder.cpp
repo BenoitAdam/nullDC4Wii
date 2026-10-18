@@ -817,8 +817,14 @@ static Sh4RegType div_som_reg1;
 static Sh4RegType div_som_reg2;
 static Sh4RegType div_som_reg3;
 
+// DIV32_FIX preset (wii/main.cpp): emit the 64/32 one's-complement replacement
+// (Flycast master / flycastPS3 other_fix.md 3.1) instead of the 32/32 one that
+// dropped the high word. Read at compile time, together with the Wii backend.
+extern "C" int get_div32_fix_preset();
+
 static u32 MatchDiv32(u32 pc, Sh4RegType& reg1, Sh4RegType& reg2, Sh4RegType& reg3)
 {
+	const bool fix = get_div32_fix_preset() != 0;
 	u32 v_pc = pc;
 	u32 match = 1;
 	for (int i = 0; i < 32; i++)
@@ -854,6 +860,11 @@ static u32 MatchDiv32(u32 pc, Sh4RegType& reg1, Sh4RegType& reg2, Sh4RegType& re
 				break;
 
 			if (reg3 == reg1)
+				break;
+
+			// DIV32_FIX: div1 Rn,Rn divides by a value that changes every step;
+			// the single divide below assumes a fixed divisor.
+			if (fix && reg3 == reg2)
 				break;
 
 			match++;
@@ -1240,7 +1251,42 @@ bool dec_generic(u32 op)
 			if (!state.cpu.is_delayslot)
 				dec_div0_probe(state.cpu.rpc, e==1, matched);
 
-			if (matched)
+			if (matched && get_div32_fix_preset())
+			{
+				// DIV32_FIX (Flycast master decoder.cpp, flycastPS3 3.1): reg3:reg1 is
+				// a 64-bit dividend. The legacy form below passed no rs3, so it divided
+				// reg1 alone (32/32): every unsigned 64/32 and ~1/3 of the SH manual's
+				// signed 32/32 idiom (one's complement) came out wrong -- 100% / 32.7%
+				// in a 2M-case PC simulation against the div1 chain; this form: 0.
+				const shil_param q = mk_reg(div_som_reg1);
+				const shil_param d = mk_reg(div_som_reg2);
+				const shil_param h = mk_reg(div_som_reg3);
+				const shil_param T = mk_reg(reg_sr_T);
+				if (e==1)
+				{
+					block.Emit(shop_div32u, q, q, d, 0, h, h);          // rs3 = high word
+					block.Emit(shop_and, T, q, mk_imm(1));
+					block.Emit(shop_shr, q, q, mk_imm(1));
+					block.Emit(shop_div32p2, h, h, d, 0, T);
+				}
+				else
+				{
+					// T bit 31 carries the quotient sign (div0s's T) into div32p2.
+					block.Emit(shop_xor, T, h, d);
+					block.Emit(shop_and, T, T, mk_imm(0x80000000));
+					block.Emit(shop_div32s, q, q, d, 0, h, h);
+					block.Emit(shop_and, mk_reg(reg_temp), q, mk_imm(1));
+					block.Emit(shop_sar, q, q, mk_imm(1));
+					block.Emit(shop_or, T, T, mk_reg(reg_temp));
+					block.Emit(shop_div32p2, h, h, d, 0, T);
+					block.Emit(shop_and, T, T, mk_imm(1));              // T back to 0/1
+				}
+
+				state.cpu.rpc += 128;
+				block.cycles  += CPU_RATIO*64;
+				block.opcodes += 64;
+			}
+			else if (matched)
 			{
 				if (e==1)
 				{

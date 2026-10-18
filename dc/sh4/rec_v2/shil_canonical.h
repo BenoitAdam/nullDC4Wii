@@ -520,19 +520,39 @@ shil_opc(mul_s64) BIN_OP_I4(s64, *, u64, s32) shil_opc_end()
 // NOTE: the u64 is packed via pointer-cast on purpose: word [0] always ends up
 // in the FIRST return register (eax on x86, r3 on big-endian PPC), which is
 // what CPT_u64rvL stores to rd — so quo->rd / rem->rd2 holds on BOTH endians.
-// (The native PPC cases in wii_driver.cpp bypass this entirely.)
+// (With DIV32_FIX off, the native PPC cases in wii_driver.cpp bypass this
+// entirely and keep the legacy 32/32 behaviour. With it on, the Wii backend
+// calls these, and rs3 is the high word: the decoder always passes it then.)
+//
+// DIV32_FIX: Flycast master's 64/32 forms (flycastPS3 other_fix.md 3.1).
+// reg3:reg1 is the dividend. The SH4's div1 chain works in one's complement,
+// so div32s converts in and out, and div32p2 takes the quotient sign in bit 31
+// of T. Checked on the PC against a div1-chain model over 2M cases per shape
+// (unsigned 64/32, signed 32/32 SH manual idiom): 0 mismatches.
 // ---------------------------------------------------------------------------
 shil_opc(div32u)
 shil_canonical(
-    u64, f1, (u32 r1, u32 r2),
-    u32 quo = r1 / r2;
-    u32 rem = r1 % r2;
+    u64, f1, (u32 r1, u32 r2, u32 r3),
+    u64 dividend = ((u64)r3 << 32) | r1;
+    u32 quo;
+    u32 rem;
+    if (r2)
+    {
+        quo = (u32)(dividend / r2);
+        rem = (u32)(dividend % r2);
+    }
+    else
+    {
+        quo = 0;
+        rem = (u32)dividend;
+    }
     u64 rv;
     ((u32*)&rv)[0] = quo;
     ((u32*)&rv)[1] = rem;
     return rv;
 )
 shil_compile(
+    shil_cf_arg_u32(rs3);
     shil_cf_arg_u32(rs2);
     shil_cf_arg_u32(rs1);
     shil_cf(f1);
@@ -542,15 +562,25 @@ shil_opc_end()
 
 shil_opc(div32s)
 shil_canonical(
-    u64, f1, (s32 r1, s32 r2),
-    u32 quo = r1 / r2;
-    u32 rem = r1 % r2;
+    u64, f1, (u32 r1, s32 r2, s32 r3),
+    s64 dividend = (s64)(((u64)(u32)r3 << 32) | r1);
+    // 1's complement -> 2's complement
+    if (dividend < 0)
+        dividend++;
+    s32 quo = (s32)(r2 ? dividend / r2 : 0);
+    u32 rem = (u32)dividend - (u32)quo * (u32)r2;
+    // 2's complement -> 1's complement
+    if ((r3 ^ r2) & 0x80000000)
+        quo--;
+    else if (r3 < 0)
+        rem--;
     u64 rv;
-    ((u32*)&rv)[0] = quo;
+    ((u32*)&rv)[0] = (u32)quo;
     ((u32*)&rv)[1] = rem;
     return rv;
 )
 shil_compile(
+    shil_cf_arg_u32(rs3);
     shil_cf_arg_u32(rs2);
     shil_cf_arg_u32(rs1);
     shil_cf(f1);
@@ -559,13 +589,29 @@ shil_compile(
 shil_opc_end()
 
 // div32 fixup step: reproduces the architectural register state the
-// non-restoring DIV1 sequence leaves behind (rd = T ? a : a-b).
+// non-restoring DIV1 sequence leaves behind. T bit 0 = the last quotient bit;
+// T bit 31 = the quotient sign (div32s only; 0 for div32u, where this is just
+// rd = T ? a : a-b).
 shil_opc(div32p2)
 shil_canonical(
-    u32, f1, (s32 a, s32 b, s32 T),
-    if (!T)
-        a -= b;
-    return a;
+    u32, f1, (s32 a, s32 b, u32 T),
+    // u32 arithmetic: the same bits as Flycast's s32 version without signed
+    // overflow (undefined in C; the Wii builds -O3 with no -fwrapv).
+    u32 ua = (u32)a;
+    if (!(T & 0x80000000))
+    {
+        if (!(T & 1))
+            ua -= (u32)b;
+    }
+    else
+    {
+        // 2's complement -> 1's complement
+        if (b > 0)
+            ua--;
+        if (T & 1)
+            ua += (u32)b;
+    }
+    return ua;
 )
 shil_compile(
     shil_cf_arg_u32(rs3);

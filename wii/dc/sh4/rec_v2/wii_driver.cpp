@@ -278,6 +278,10 @@ extern "C" int get_jit_cr0_preset();
 // still the one that asked for the link. See ngen_LinkBlock_Static().
 extern "C" int get_jit_link_guard_preset();
 
+// DIV32_FIX preset (main.cpp): the matched divide is 64/32 one's complement;
+// shop_div32u/s/p2 call their canonical bodies. See case shop_div32u.
+extern "C" int get_div32_fix_preset();
+
 // JIT_FSCHG preset (main.cpp): `fschg` toggles FPSCR.SZ only, so UpdateFPSCR()
 // has nothing to do but keep old_fpscr in step. Lets shop_sync_fpscr skip the
 // C call and the pinned-FPU spill/reload that brackets it. See shop_sync_fpscr.
@@ -3837,7 +3841,18 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		// Broadway has hardware divide; remainder = dividend - quo*divisor.
 		// Division by zero gives an undefined register result on PPC (no trap),
 		// which is fine — matched sequences are compiler-generated divisions.
+		// DIV32_FIX: the decoder emitted the 64/32 one's-complement forms (rs3 =
+		// the high word, T bit 31 = the quotient sign). Broadway has no 64-bit
+		// divide, so call the canonical C bodies -- directly, NOT through the
+		// default: case: there reg_flush_all/reg_reload_all bracket the call,
+		// and the results ppc_sh_store'd into pinned registers (a bare `mr`)
+		// would be overwritten by the reload with stale context values. These
+		// three are pure functions and pinned GPRs are callee-saved, so no
+		// bracket is needed. Rare ops (matched compiler divides), so the call
+		// costs nothing measurable against the 64 guest ops it replaces.
+		// With DIV32_FIX off: the legacy native 32/32 cases below.
 		case shop_div32u:
+			if (get_div32_fix_preset()) { shil_chf[op->op](op); break; }
 			binop_start(op);				// rarg0=dividend, rarg1=divisor
 			ppc_divwux(ppc_rarg2,ppc_rarg0,ppc_rarg1,0,0);	// quo = divwu
 			ppc_mullwx(ppc_rarg3,ppc_rarg2,ppc_rarg1,0,0);	// quo*divisor
@@ -3846,7 +3861,8 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			ppc_sh_store(ppc_rarg3,op->rd2);
 			break;
 		case shop_div32s:
-			// divw truncates toward zero, same as the C canonical.
+			if (get_div32_fix_preset()) { shil_chf[op->op](op); break; }
+			// divw truncates toward zero (legacy 32/32 form).
 			binop_start(op);
 			ppc_divwx(ppc_rarg2,ppc_rarg0,ppc_rarg1,0,0);	// quo = divw
 			ppc_mullwx(ppc_rarg3,ppc_rarg2,ppc_rarg1,0,0);
@@ -3855,6 +3871,9 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 			ppc_sh_store(ppc_rarg3,op->rd2);
 			break;
 		case shop_div32p2:
+			// DIV32_FIX: T may carry the quotient sign in bit 31, which the
+			// T-1 mask below cannot handle -- canonical body.
+			if (get_div32_fix_preset()) { shil_chf[op->op](op); break; }
 			// rd = T ? a : a-b  (non-restoring remainder fixup).
 			// PRECONDITION: T (rs3) is 0/1 — guaranteed because the decoder
 			// emits "and T,quo,1" immediately before this op. mask = T-1 maps

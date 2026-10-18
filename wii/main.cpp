@@ -1373,6 +1373,26 @@ extern "C" {
   int get_jit_fipr_preset() { return g_jit_fipr_preset; }
 }
 
+// DIV32_FIX - the matched 32-step rotcl/div1 divide (dc/sh4/rec_v2/decoder.cpp
+// MatchDiv32) replaced 64 guest ops with ONE 32/32 divide: it dropped the high
+// word of the dividend (reg3) and used the unsigned fixup for signed divides,
+// but the SH4 chain is a 64/32 divide in one's complement. A 2M-case PC
+// simulation against the div1 chain: unsigned 64/32 wrong 100% of the time,
+// the SH manual's signed 32/32 idiom left a wrong state 50% (wrong quotient
+// register 32.7%). With this on, the decoder emits Flycast master's 64/32
+// forms (flycastPS3 other_fix.md 3.1) and the backend calls their C bodies
+// (Broadway has no 64-bit divide): 0 mismatches. Also refuses to match
+// div1 Rn,Rn (changing divisor). The BIOS boot animation, Sonic Adventure and
+// Rayman 2 use the matched path; Flycast once kept a safe-mode list for this
+// very bug (Demolition Racer, Ducati, Aqua GT, Rayman 2, Silent Scope, Power
+// Stone, MSR, Donald Duck...). Read when a block is COMPILED.
+// 0=off (legacy 32/32), 1=on (default).
+int g_div32_fix_preset = 1;
+
+extern "C" {
+  int get_div32_fix_preset() { return g_div32_fix_preset; }
+}
+
 int g_bg_poly_preset = 0; // 0=off (legacy: v0 color used for EFB clear only, no background quad drawn), 1=on (barycentric-extrapolated background quad drawn, e.g. Who Wants to Be a Millionaire)
 
 extern "C" {
@@ -2603,6 +2623,7 @@ void checkBiosFiles()
 #define OPT_ARM7_RESET_FIX 123 // Page 4 (AUDIO), under ARM7 STR ALIGN
 #define OPT_AICA_RACE   124  // Page 4 (AUDIO), under ARM7 RESET FIX
 #define OPT_AICA_CA_CLAMP 125 // Page 4 (AUDIO), under AICA RACE FIX
+#define OPT_DIV32_FIX   126  // Page 6 (JIT/DYNAREC), under JIT FIPR DP
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2761,7 +2782,8 @@ static const int OPT_PAGE6_ROWS[] = {
   OPT_JIT_CR0,
   OPT_BLOCKCOPY,
   OPT_JIT_FSQRT,
-  OPT_JIT_FIPR
+  OPT_JIT_FIPR,
+  OPT_DIV32_FIX
 };
 
 // Page 7 - LOGS (everything that writes to /ndclog.txt, incl. the JIT census tools)
@@ -3958,6 +3980,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (DOUBLE SUM)   >]"); break;
     }
     printf(" fipr/ftrv: round once, like HW");
+    printf("\n");
+
+    // --- Row: DIV32_FIX - matched divide as 64/32 one's complement (decoder.cpp) ---
+    printf("%s JIT DIV32 FIX  : ", (selectedRow == OPT_DIV32_FIX) ? ">" : " ");
+    switch (g_div32_fix_preset) {
+      case 0: printf("[< OFF (32/32)       >]"); break;
+      case 1: printf("[< ON (64/32 EXACT)  >]"); break;
+    }
+    printf(" matched divide: high word kept");
     printf("\n\n");
 
     printOptionsFooter();
@@ -4224,6 +4255,7 @@ bool displayOptionsMenu()
         case OPT_BLOCKCOPY:      g_blockcopy_preset       = (g_blockcopy_preset       + 1) % 2; break;
         case OPT_JIT_FSQRT:      g_jit_fsqrt_preset       = (g_jit_fsqrt_preset       + 1) % 2; break;
         case OPT_JIT_FIPR:       g_jit_fipr_preset        = (g_jit_fipr_preset        + 1) % 2; break;
+        case OPT_DIV32_FIX:      g_div32_fix_preset       = (g_div32_fix_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
@@ -4363,6 +4395,7 @@ bool displayOptionsMenu()
         case OPT_BLOCKCOPY:      g_blockcopy_preset       = (g_blockcopy_preset       + 1) % 2; break;
         case OPT_JIT_FSQRT:      g_jit_fsqrt_preset       = (g_jit_fsqrt_preset       + 1) % 2; break;
         case OPT_JIT_FIPR:       g_jit_fipr_preset        = (g_jit_fipr_preset        + 1) % 2; break;
+        case OPT_DIV32_FIX:      g_div32_fix_preset       = (g_div32_fix_preset       + 1) % 2; break;
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
@@ -5274,6 +5307,7 @@ int main(int argc, wchar *argv[])
     printf("JIT Carry Ops  : %s\n", g_jit_carry_preset ? "ON (10 OPS JITTED)" : "OFF (LEGACY)");
     printf("JIT Mac Ops    : %s\n", g_jit_mac_preset ? "ON (FASTMEM READS)" : "OFF (LEGACY)");
     printf("JIT Fipr DP    : %s\n", g_jit_fipr_preset ? "ON (DOUBLE SUM)" : "OFF (SINGLE)");
+    printf("JIT Div32 Fix  : %s\n", g_div32_fix_preset ? "ON (64/32 EXACT)" : "OFF (32/32)");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Tex wrap guard : %s\n", g_tex_wrap_guard_preset ? "ON (SAFE WRAP)" : "OFF (LEGACY)");
     printf("Strip dedup    : %s\n", g_strip_dedup_preset == 2 ? "SKIP REPEATED" :

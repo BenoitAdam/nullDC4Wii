@@ -653,6 +653,14 @@
                                and round to single once, as the SH4 does,
                                instead of after every fmadds. Fewer wrong
                                low bits when the terms cancel. Default off.
+        div32_fix=on        <- on/off, the dynarec's matched rotcl/div1 divide
+                               is a 64/32 divide in one's complement, as the
+                               SH4 chain really is (Flycast). Default on. off
+                               (legacy) did 32/32 and dropped the high word:
+                               wrong quotients for every unsigned 64/32 and
+                               about 1 in 3 signed divides (BIOS, Sonic
+                               Adventure, Rayman 2 use it). Read when code is
+                               COMPILED, so set it before launching.
         tex_wrap_guard=on   <- on/off, stops the persistent texture arena from
                                 recycling bytes the GPU is still sampling this
                                 frame (texture corruption when the cache fills).
@@ -1300,6 +1308,7 @@ extern int g_gdrom_delay;
 extern "C" int g_blockcopy_preset;
 extern int g_jit_fsqrt_preset;
 extern int g_jit_fipr_preset;
+extern int g_div32_fix_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
 extern int g_tex_clamp_fix_preset;
@@ -1450,6 +1459,7 @@ struct GamePreset
     int blockcopy;
     int jit_fsqrt;
     int jit_fipr;
+    int div32_fix;
     int sched;
     int tex_wrap_guard;
     int tex_clamp_fix;
@@ -1983,6 +1993,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "blockcopy"))      p->blockcopy      = parse_bool(val);
     else if (key_eq(key, "jit_fsqrt"))      p->jit_fsqrt      = parse_bool(val);
     else if (key_eq(key, "jit_fipr"))       p->jit_fipr       = parse_bool(val);
+    else if (key_eq(key, "div32_fix"))      p->div32_fix      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
     else if (key_eq(key, "tex_clamp_fix"))  p->tex_clamp_fix  = parse_bool(val);
@@ -2109,6 +2120,7 @@ static void preset_clear(GamePreset* cur)
     cur->blockcopy    = -1;
     cur->jit_fsqrt    = -1;
     cur->jit_fipr     = -1;
+    cur->div32_fix    = -1;
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
     cur->tex_clamp_fix  = -1;
@@ -2264,6 +2276,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->blockcopy      >= 0) { g_blockcopy_preset      = p->blockcopy;      printf("  blockcopy      -> %d\n", p->blockcopy);      }
     if (p->jit_fsqrt      >= 0) { g_jit_fsqrt_preset      = p->jit_fsqrt;      printf("  jit_fsqrt      -> %d\n", p->jit_fsqrt);      }
     if (p->jit_fipr       >= 0) { g_jit_fipr_preset       = p->jit_fipr;       printf("  jit_fipr       -> %d\n", p->jit_fipr);       }
+    if (p->div32_fix      >= 0) { g_div32_fix_preset      = p->div32_fix;      printf("  div32_fix      -> %d\n", p->div32_fix);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }
     if (p->tex_clamp_fix  >= 0) { g_tex_clamp_fix_preset  = p->tex_clamp_fix;  printf("  tex_clamp_fix  -> %d\n", p->tex_clamp_fix);  }
