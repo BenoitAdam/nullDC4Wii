@@ -137,6 +137,15 @@
                                 DOES change emulated timing: 8 and 16 make
                                 Castlevania wobble loud/quiet, so set
                                 arm7_batch=1 for any game that sounds off.
+        arm7_str_align=on   <- on/off, an ARM7 word store to an address that is
+                                not a multiple of 4 writes the aligned word,
+                                unrotated, as the real ARM7DI and Flycast do
+                                (plugs/vbaARM/arm_mem.cpp). off (default, legacy)
+                                scatters the 4 bytes from the unaligned address
+                                and corrupts two words: ChuChu Rocket's echoing,
+                                slow-motion effects. Covers all three ARM7
+                                engines. Logs [ARM7] unaligned STR lines either
+                                way. With it on, mute_pcm16 is not needed.
         arm7_jit=2          <- 0..5 (off/on = 0/1), ARM7 sound-CPU recompiler
                                 (see plugs/vbaARM/arm7_jit.cpp). 0 runs the
                                 cached interpreter; 1 translates ARM code to
@@ -1197,6 +1206,7 @@ extern int g_audio_stats_preset;
 extern int g_arm7_speed_preset;
 extern int g_arm7_jit_preset;
 extern int g_arm7_batch_preset;
+extern int g_arm7_str_align_preset;
 extern int g_sh4_clock_preset;
 extern int g_jit_sbp_preset;
 extern int g_jit_ici_preset;
@@ -1339,6 +1349,7 @@ struct GamePreset
     int arm7_speed;
     int arm7_jit;
     int arm7_batch;
+    int arm7_str_align;
     int sh4_clock;
     int jit_sbp;
     int jit_ici;
@@ -1841,6 +1852,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "arm7_speed"))     p->arm7_speed     = atoi(val);
     else if (key_eq(key, "arm7_jit"))       p->arm7_jit       = (val[0] >= '0' && val[0] <= '9') ? atoi(val) : parse_bool(val);
     else if (key_eq(key, "arm7_batch"))     p->arm7_batch     = atoi(val);
+    else if (key_eq(key, "arm7_str_align")) p->arm7_str_align = parse_bool(val);
     else if (key_eq(key, "sh4_clock"))      p->sh4_clock      = parse_sh4_clock(val);
     else if (key_eq(key, "jit_sbp"))        p->jit_sbp        = atoi(val);
     else if (key_eq(key, "jit_ici"))        p->jit_ici        = atoi(val);
@@ -1964,6 +1976,7 @@ static void preset_clear(GamePreset* cur)
     cur->arm7_speed = -1;
     cur->arm7_jit = -1;
     cur->arm7_batch = -1;
+    cur->arm7_str_align = -1;
     cur->sh4_clock = -1;
     cur->jit_sbp = -1;
     cur->jit_ici = -1;
@@ -2111,6 +2124,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->arm7_jit       >= 0) { g_arm7_jit_preset       = p->arm7_jit;       printf("  arm7_jit       -> %d\n", p->arm7_jit);       }
     if (p->arm7_batch     >= 1) { g_arm7_batch_preset     = p->arm7_batch >= 16 ? 16 : p->arm7_batch >= 8 ? 8 : p->arm7_batch >= 4 ? 4 : p->arm7_batch >= 2 ? 2 : 1;
                                   printf("  arm7_batch     -> %d\n", g_arm7_batch_preset); }
+    if (p->arm7_str_align >= 0) { g_arm7_str_align_preset = p->arm7_str_align; printf("  arm7_str_align -> %d\n", p->arm7_str_align); }
     if (p->sh4_clock      >= 0) { g_sh4_clock_preset      = p->sh4_clock;      printf("  sh4_clock      -> %d\n", p->sh4_clock);      }
     if (p->jit_sbp        >= 0) { g_jit_sbp_preset        = p->jit_sbp;        printf("  jit_sbp        -> %d\n", p->jit_sbp);        }
     if (p->jit_ici        >= 0) { g_jit_ici_preset        = p->jit_ici;        printf("  jit_ici        -> %d\n", p->jit_ici);        }

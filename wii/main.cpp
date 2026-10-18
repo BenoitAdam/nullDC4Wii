@@ -541,6 +541,23 @@ extern "C" {
 // symptom as arm7_speed=1), so a game that sounds off wants arm7_batch=1.
 int g_arm7_batch_preset = 4;
 
+// ARM7_STR_ALIGN - an unaligned ARM7 word store (STR to an address that is not
+// a multiple of 4) writes the ALIGNED word, unrotated, as the AICA's ARM7DI and
+// Flycast do (plugs/vbaARM/arm_mem.cpp WriteMemArm). Legacy scattered the four
+// bytes from the unaligned address, corrupting half of that word and half of
+// the next. ChuChu Rocket's sound driver does ~1930 of these a second (all at
+// 0x1103A first), which corrupted its own state: late key-offs, slow echoing
+// effects -- the bug mute_pcm16 only hid. Ported from flycastPS3 chuchu_fix.md
+// (fixed on PS3 hardware 2026-10-12; Crazy Taxi/Sonic Adventure/Looney Tunes
+// do no unaligned stores, so no change there). Wii-untested.
+// Logs "[ARM7] unaligned STR" lines either way, so OFF still shows whether a
+// game takes this path. 0=off (legacy scatter, default), 1=on (aligned word).
+int g_arm7_str_align_preset = 0;
+
+extern "C" {
+  int get_arm7_str_align_preset() { return g_arm7_str_align_preset; }
+}
+
 extern "C" {
   int get_arm7_batch_preset() { return g_arm7_batch_preset; }
 }
@@ -2465,6 +2482,7 @@ void checkBiosFiles()
 #define OPT_JIT_FIPR    115  // Page 6 (JIT/DYNAREC), under JIT FSQRT
 #define OPT_JIT_LINK_GUARD 116 // Page 6 (JIT/DYNAREC), under JIT ICI
 #define OPT_MMUCR_FIX   117  // Page 5 (EXPERIMENTAL), under DMA FIX
+#define OPT_ARM7_STR_ALIGN 118 // Page 4 (AUDIO), under ARM7 BATCH
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2561,7 +2579,8 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_AICA_FAST,
   OPT_ARM7_SPEED,
   OPT_ARM7_JIT,
-  OPT_ARM7_BATCH
+  OPT_ARM7_BATCH,
+  OPT_ARM7_STR_ALIGN
 };
 
 // Page 4 - CORE
@@ -3353,6 +3372,15 @@ bool displayOptionsMenu()
       default: printf("[< 1 (DEFAULT)       >]"); break;
     }
     printf(" sound CPU runs per N updates");
+    printf("\n");
+
+    // --- Row: ARM7 unaligned STR writes the aligned word (plugs/vbaARM/arm_mem.cpp) ---
+    printf("%s ARM7 STR ALIGN : ", (selectedRow == OPT_ARM7_STR_ALIGN) ? ">" : " ");
+    switch (g_arm7_str_align_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (ALIGNED WORD) >]"); break;
+    }
+    printf(" ChuChu SFX echo/slow fix");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3967,6 +3995,7 @@ bool displayOptionsMenu()
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
         case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 5) % 6; break;
         case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset <= 1) ? 16 : g_arm7_batch_preset / 2; break;
+        case OPT_ARM7_STR_ALIGN: g_arm7_str_align_preset  = (g_arm7_str_align_preset  + 1) % 2; break;
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
@@ -4098,6 +4127,7 @@ bool displayOptionsMenu()
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
         case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 1) % 6; break;
         case OPT_ARM7_BATCH:     g_arm7_batch_preset      = (g_arm7_batch_preset >= 16) ? 1 : g_arm7_batch_preset * 2; break;
+        case OPT_ARM7_STR_ALIGN: g_arm7_str_align_preset  = (g_arm7_str_align_preset  + 1) % 2; break;
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
@@ -5000,6 +5030,7 @@ int main(int argc, wchar *argv[])
                                     g_arm7_jit_preset == 2 ? "ON (LINKED)" :
                                     g_arm7_jit_preset == 1 ? "ON (BASIC)"  : "OFF (INTERPRETER)");
     printf("ARM7 Batch     : %d%s\n", g_arm7_batch_preset, g_arm7_batch_preset <= 1 ? " (DEFAULT)" : " (BATCHED)");
+    printf("ARM7 STR Align : %s\n", g_arm7_str_align_preset ? "ON (ALIGNED WORD)" : "OFF (LEGACY)");
     printf("SH4 Clock      : %dMHz%s\n", g_sh4_clock_preset,
            g_sh4_clock_preset >= 200 ? " (FULL)" : " (UNDERCLOCK)");
     printf("JIT SBP        : ");

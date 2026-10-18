@@ -119,6 +119,25 @@ T fastcall ReadMemArm(u32 addr)
 	}
 }
 
+// ARM7_STR_ALIGN preset (wii/main.cpp): how an unaligned word STR lands.
+extern "C" int get_arm7_str_align_preset();
+
+// Unaligned word stores seen. Logs the first 4 addresses, then the running
+// total at each power of two, so a game that does this ~2000 times a second
+// (ChuChu Rocket on the PS3, first address 0x1103A) still writes only ~20
+// lines an hour. Only reached on the unaligned path, never on a normal store.
+static u32 s_arm_unal_str=0;
+static void arm_unal_store(u32 addr, int aligned)
+{
+	s_arm_unal_str++;
+	if (s_arm_unal_str<=4 || (s_arm_unal_str & (s_arm_unal_str-1))==0)
+	{
+		printf("[ARM7] unaligned STR #%u at %06X (%s)\n", s_arm_unal_str, addr,
+		       aligned ? "aligned word" : "legacy scatter");
+		fflush(stdout);
+	}
+}
+
 template<int sz,typename T>
 void fastcall WriteMemArm(u32 addr,T data)
 {
@@ -131,13 +150,34 @@ void fastcall WriteMemArm(u32 addr,T data)
             switch (sz)
             {
                 case 4:
+                {
+                    // Every unaligned word store lands here, from all three ARM7
+                    // engines (interpreter, cached, and arm7_jit's CK_WR cold
+                    // stub / jit_swp); the JIT's inline STM masks the base & ~3.
+                    const int aligned = get_arm7_str_align_preset();
+                    arm_unal_store(addr, aligned);
+                    if (aligned)
+                    {
+                        // ARM7DI: address bits 1-0 are ignored, the full register
+                        // is written, not rotated, to the aligned word (Flycast
+                        // arm_mem.h writeMem). No byte swap: arm_aica_ram holds
+                        // each word in host order, as the aligned path below.
+                        // The read side (ReadMemArm) already does the ARM7DI rule.
+                        *(u32*)&arm_aica_ram[addr&ARAM_MASK&~3u]=(u32)data;
+                        break;
+                    }
+                    // Legacy: scatters the 4 bytes from the unaligned address,
+                    // corrupting half of this word and half of the next one --
+                    // ChuChu Rocket's sound driver state, hence its late key-offs
+                    // and slow, echoing effects (flycastPS3 chuchu_fix.md).
                     u8 t[4];
                     t[3]=data>>24; t[2]=data>>16; t[1]=data>>8; t[0]=data;
-                    
+
                     int i;
                     for(i=0;i<4;++i)
                         arm_aica_ram[((addr+i)^3)&ARAM_MASK]=t[i];
                     break;
+                }
                 default:
                     dbgbreak;
             }
