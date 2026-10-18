@@ -13,7 +13,7 @@ a fork from https://github.com/skmp/nullDCe
 - Test 2/3/4 player mode on wiimote & gamecube also, please report
 - Help me finding regression (NOT bugs or glitch, only regression for now please)
 - Comment / Guides / Documentation (WiiBrew Wiki)
-- Test and report Fishing Rod/USB Keyboard/Lightgun/Maracas support
+- Test and report USB Keyboard on typing of the Dead
 
 
 ### Developer (Easy)
@@ -36,17 +36,20 @@ a fork from https://github.com/skmp/nullDCe
 - Synchronise Dreamcast clock to Wii's clock
 - Get RGB565_opaque_alpha AUTO mode
 - Get Offset color AUTO mode
+- Get seam_fix to AUTO mode
 
 ### Developer (Hard)
 
 - Fix Chuchu Rocket 16Bit PCM bug
-- Fix non WinCE games not launching (Rez, San Francisco 2049...) https://github.com/BenoitAdam94/nullDC4Wii/issues/88
+- Fix non WinCE games not launching (San Francisco 2049 and some others)
+- VMU Screen support in 4/3 and 16/9
 - Improve gxRend.cpp = main file about specific rendering for Wii
+- Improve with TEV
 - Splitting gxRend.cpp in multiple files ? (beware this is more tricky than it look)
 - Table convertion between SH4 Opcodes of SH4 and the WiiPPC ?
 - Use LLVM to port code for PowerPC ? (skmp says its not a good idea in this case)
 - Dynarec improvement (very performant right now, but if we can find boost...)
-- WinCE Games support https://github.com/BenoitAdam94/nullDC4Wii/issues/37
+- WinCE Games support ? https://github.com/BenoitAdam94/nullDC4Wii/issues/37
 
 ## Installation
 
