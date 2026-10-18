@@ -78,6 +78,13 @@ union CCN_PTEL_type
 //   SV  : Single Virtual mode
 //   SQMD: Store Queue Mode
 //   URC/URB/LRUI: TLB replacement control
+//
+// WRONG ON BIG ENDIAN: the fields below sum to 28 bits, not 32 -- the manual's
+// two reserved gaps (bits 17-16 and 25-24) are missing. GCC on PowerPC fills
+// from bit 31 down, so only LRUI lands on its real bits; AT reads bit 4, TI
+// bit 6, SV bit 12, URC bits 19-14 (confirmed from devkitPPC -S output). Read
+// the fields with the MMUCR_* masks / mmucr_*() accessors further down, never
+// the members. Kept for reg_data and for MMUCR_FIX=0 (legacy A/B).
 union CCN_MMUCR_type
 {
 	struct
@@ -193,6 +200,28 @@ extern CCN_PTEL_type CCN_PTEL;
 extern u32 CCN_TTB;
 extern u32 CCN_TEA;
 extern CCN_MMUCR_type CCN_MMUCR;
+
+// MMUCR fields at the manual's bits (see the bitfield warning above).
+#define MMUCR_AT(v)    ((v) & 1u)
+#define MMUCR_TI(v)    (((v) >> 2) & 1u)
+#define MMUCR_SV(v)    (((v) >> 8) & 1u)
+#define MMUCR_SQMD(v)  (((v) >> 9) & 1u)
+#define MMUCR_URC(v)   (((v) >> 10) & 63u)
+#define MMUCR_URB(v)   (((v) >> 18) & 63u)
+#define MMUCR_LRUI(v)  (((v) >> 26) & 63u)
+#define MMUCR_TI_BIT   0x00000004u
+// The bits a write keeps (Flycast CCN_MMUCR_write).
+#define MMUCR_WMASK    0xFCFCFF05u
+
+// MMUCR_FIX preset (wii/main.cpp): 0 = legacy bitfield reads, 1 = mask reads +
+// Flycast write handler, 2 = 1 + the TLB rules that go with it (mmu.cpp,
+// sh4_internal_reg.cpp). Ported from flycastPS3 rez_fix.md.
+extern "C" int get_mmucr_fix_preset();
+
+static inline u32 mmucr_at()  { return get_mmucr_fix_preset() ? MMUCR_AT(CCN_MMUCR.reg_data)  : (u32)CCN_MMUCR.AT;  }
+static inline u32 mmucr_urc() { return get_mmucr_fix_preset() ? MMUCR_URC(CCN_MMUCR.reg_data) : (u32)CCN_MMUCR.URC; }
+static inline u32 mmucr_urb() { return get_mmucr_fix_preset() ? MMUCR_URB(CCN_MMUCR.reg_data) : (u32)CCN_MMUCR.URB; }
+
 extern u8 CCN_BASRA;
 extern u8 CCN_BASRB;
 extern CCN_CCR_type CCN_CCR;

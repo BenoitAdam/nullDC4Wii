@@ -218,6 +218,16 @@
                                 G2-DMA completion + SB_E2ST. Default on. off
                                 reproduces the legacy pre-fix behavior, for A/B
                                 comparison only.
+        mmucr_fix=2         <- 0/1/2, NUMERIC (atoi: mmucr_fix=on reads as 0).
+                                Reads the SH4 MMU control register at its real
+                                bits; the 28-bit bitfield in dc/sh4/ccn.h reads
+                                AT/TI/URC from the wrong bits on big endian, so
+                                games that map the store queues through the
+                                TLB (Rez, Ikaruga, Sonic Shuffle, Border Down)
+                                stall after the BIOS logo. 1 = mask reads +
+                                Flycast write handler (the cause). 2 = 1 + the
+                                Flycast TLB rules that go with it (PS3-tested
+                                set). Default 0 (legacy).
         fastmem=on          <- on/off, PPC-MMU fastmem for the SH4 dynarec
                                 (wii/wii_fastmem.cpp). Worth ~+20% FPS, so it
                                 stays ON by default. One user has reported that
@@ -1192,6 +1202,7 @@ extern int g_jit_sbp_preset;
 extern int g_jit_ici_preset;
 extern int g_jit_link_guard_preset;
 extern int g_dma_fix_preset;
+extern int g_mmucr_fix_preset;
 extern int g_fastmem_preset;
 extern int g_bcache_preset;
 extern int g_dyn_ic_preset;
@@ -1333,6 +1344,7 @@ struct GamePreset
     int jit_ici;
     int jit_link_guard;
     int dma_fix;
+    int mmucr_fix;
     int fastmem;
     int bcache;
     int dyn_ic;
@@ -1834,6 +1846,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_ici"))        p->jit_ici        = atoi(val);
     else if (key_eq(key, "jit_link_guard")) p->jit_link_guard = parse_bool(val);
     else if (key_eq(key, "dma_fix"))        p->dma_fix        = parse_bool(val);
+    // NUMERIC: 0 off, 1 bits, 2 full. `mmucr_fix=on` would read as 0.
+    else if (key_eq(key, "mmucr_fix"))      p->mmucr_fix      = atoi(val);
     else if (key_eq(key, "fastmem"))        p->fastmem        = parse_bool(val);
     else if (key_eq(key, "bcache"))         p->bcache         = parse_bool(val);
     else if (key_eq(key, "dyn_ic"))         p->dyn_ic         = atoi(val);
@@ -1955,6 +1969,7 @@ static void preset_clear(GamePreset* cur)
     cur->jit_ici = -1;
     cur->jit_link_guard = -1;
     cur->dma_fix = -1;
+    cur->mmucr_fix = -1;
     cur->fastmem = -1;
     cur->bcache = -1;
     cur->dyn_ic = -1;
@@ -2101,6 +2116,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->jit_ici        >= 0) { g_jit_ici_preset        = p->jit_ici;        printf("  jit_ici        -> %d\n", p->jit_ici);        }
     if (p->jit_link_guard >= 0) { g_jit_link_guard_preset = p->jit_link_guard; printf("  jit_link_guard -> %d\n", p->jit_link_guard); }
     if (p->dma_fix        >= 0) { g_dma_fix_preset        = p->dma_fix;        printf("  dma_fix        -> %d\n", p->dma_fix);        }
+    if (p->mmucr_fix      >= 0) { g_mmucr_fix_preset      = p->mmucr_fix;      printf("  mmucr_fix      -> %d\n", p->mmucr_fix);      }
     if (p->fastmem        >= 0) { g_fastmem_preset        = p->fastmem;        printf("  fastmem        -> %d\n", p->fastmem);        }
     if (p->bcache         >= 0) { g_bcache_preset         = p->bcache;         printf("  bcache         -> %d\n", p->bcache);         }
     if (p->dyn_ic         >= 0) { g_dyn_ic_preset         = p->dyn_ic;         printf("  dyn_ic         -> %d\n", p->dyn_ic);         }

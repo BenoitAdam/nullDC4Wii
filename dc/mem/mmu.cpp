@@ -20,9 +20,12 @@ TLB_Entry ITLB[4];
 
 
 // Invalidate the whole TLB (MMUCR.TI). Clears the V bit on every ITLB/UTLB
-// entry AND drops the derived sq_remap fast-path table — the remap slots are a
-// cache of UTLB contents, so leaving them populated would keep translations
-// alive that the guest believes it just flushed.
+// entry. Legacy also drops the derived sq_remap table.
+//
+// MMUCR_FIX=2 keeps sq_remap, as Flycast's mmu_flush_table does: this emulator
+// has no TLB-miss exception, so nothing would ever load a cleared slot again
+// and every later flush through it would go to address 0 + offset. Only safe
+// together with the V=0 rule in UTLB_Sync() -- the two ship as one level.
 void mmu_InvalidateTLB()
 {
 	for (u32 i = 0; i < 4; i++)
@@ -31,7 +34,8 @@ void mmu_InvalidateTLB()
 	for (u32 i = 0; i < 64; i++)
 		UTLB[i].Data.V = 0;
 
-	memset(sq_remap, 0, sizeof(sq_remap));
+	if (get_mmucr_fix_preset() < 2)
+		memset(sq_remap, 0, sizeof(sq_remap));
 }
 
 // Sync a UTLB entry into the emulator's fast lookup structures.
@@ -55,12 +59,22 @@ void UTLB_Sync(u32 entry)
 		// VPN is the virtual address right-shifted by 10, so bits [15:10] of VPN
 		// correspond to address bits [25:20]. Mask to 6 bits for 64 slots.
 		u32 sq_index = (UTLB[entry].Address.VPN >> 10) & 0x3F;
+
+		// MMUCR_FIX=2 (Flycast UTLB_Sync): an entry that is not valid maps
+		// nothing, so the slot keeps the address it had.
+		if (!UTLB[entry].Data.V && get_mmucr_fix_preset() >= 2)
+		{
+			printf("SQ remap [%u] slot=%u : virt=0x%08X not valid, slot stays 0x%08X\n",
+			       entry, sq_index, UTLB[entry].Address.VPN << 10, sq_remap[sq_index]);
+			return;
+		}
 		sq_remap[sq_index] = UTLB[entry].Data.PPN << 10;
 
-		printf("SQ remap [%u] slot=%u : virt=0x%08X -> phys=0x%08X\n",
+		printf("SQ remap [%u] slot=%u : virt=0x%08X -> phys=0x%08X V=%u\n",
 		       entry, sq_index,
 		       UTLB[entry].Address.VPN << 10,
-		       UTLB[entry].Data.PPN << 10);
+		       UTLB[entry].Data.PPN << 10,
+		       (u32)UTLB[entry].Data.V);
 	}
 	else
 	{

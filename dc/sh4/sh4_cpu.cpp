@@ -90,12 +90,15 @@ void cpu_iWarn(u32 op, const char* info)
 //=============================================================================
 
 // ldtlb - Load UTLB entry
+// URC/URB through the accessors: the MMUCR bitfield reads URC from bits 19-14
+// on big endian, so ldtlb wrote the wrong entry (MMUCR_FIX, ccn.h).
 sh4op(i0000_0000_0011_1000)
 {
-	printf("ldtlb %d/%d\n", CCN_MMUCR.URC, CCN_MMUCR.URB);
-	UTLB[CCN_MMUCR.URC].Data = CCN_PTEL;
-	UTLB[CCN_MMUCR.URC].Address = CCN_PTEH;
-	UTLB_Sync(CCN_MMUCR.URC);
+	const u32 urc = mmucr_urc();
+	printf("ldtlb %u/%u\n", urc, mmucr_urb());
+	UTLB[urc].Data = CCN_PTEL;
+	UTLB[urc].Address = CCN_PTEH;
+	UTLB_Sync(urc);
 }
 
 // ocbi @<REG_N> - Operand Cache Block Invalidate
@@ -162,7 +165,7 @@ sh4op(i0000_nnnn_1000_0011)
 
 	if ((Dest >> 26) == 0x38)  // Store Queue address range
 	{
-		if (CCN_MMUCR.AT)
+		if (mmucr_at())
 			do_sqw<true>(Dest);
 		else
 			do_sqw<false>(Dest);

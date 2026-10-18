@@ -14,7 +14,7 @@ Things worth doing
 COULD BE DONE :
 - Replacing the CCN[idx].field = ... repetition with a loop/table — you'd need to expose the address list somehow, and the _addr tokens being struct members makes this genuinely awkward in this codebase. The readability gain isn't worth the complexity.
 - Adding TLB emulation — the comment ONLY SQ remaps work is honest; full MMU emulation is a large project and most DC games run with AT=0 anyway.
-- Changing the union bitfield layout — it works, it's tested, and bitfield portability issues are already handled by the endian guards. Don't touch it.
+- Changing the union bitfield layout — mostly fine, BUT CCN_MMUCR_type sums to 28 bits and reads the wrong bits on big endian (ccn.h). MMUCR is read through the MMUCR_* masks under MMUCR_FIX; the other unions sum to 32 and are correct.
 
 */
 
@@ -52,16 +52,44 @@ CCN_QACR_type  CCN_QACR1;
 // ---------------------------------------------------------------------------
 // MMUCR write handler
 // Logs MMU enable/disable transitions; clears self-clearing TI bit.
+//
+// MMUCR_FIX >= 1 (flycastPS3 rez_fix.md, Flycast CCN_MMUCR_write):
+//   - AT and TI come from the masks, not the 28-bit bitfield. Rez, Ikaruga,
+//     Sonic Shuffle and Border Down write 0x00040005 (AT=1 TI=1 URB=1) and map
+//     the store queues through the UTLB. The bitfield reads AT from bit 4 = 0,
+//     so pref took the QACR path and their display lists went to area 0 (boot
+//     ROM) instead of RAM: logo, then no picture forever.
+//   - only the real bits are kept (MMUCR_WMASK).
+//   - an AT edge (either way) clears the JIT cache: shop_pref picks
+//     do_sqw_mmu/do_sqw_nommu at COMPILE time, so a block compiled before the
+//     write would keep the old target forever. Safe from inside a running block
+//     -- CCR.ICI below does the same -- and JIT LINK GUARD covers the exit.
 // ---------------------------------------------------------------------------
 static void CCN_MMUCR_write(u32 value)
 {
+    const int fix = get_mmucr_fix_preset();
     CCN_MMUCR_type temp;
-    temp.reg_data = value;
+    temp.reg_data = fix ? (value & MMUCR_WMASK) : value;
 
-    if (temp.AT != CCN_MMUCR.AT)
+    // Decoded at the manual's bits whatever the preset, so the log shows what
+    // the guest asked for. Bounded: a game writes MMUCR a handful of times.
+    static u32 s_mmucr_writes = 0;
+    if (s_mmucr_writes < 64)
+    {
+        s_mmucr_writes++;
+        printf("CCN: MMUCR write %08X (was %08X): AT=%u TI=%u SV=%u SQMD=%u URC=%u URB=%u LRUI=%u (pc=%08X)\n",
+               value, CCN_MMUCR.reg_data, MMUCR_AT(value), MMUCR_TI(value), MMUCR_SV(value),
+               MMUCR_SQMD(value), MMUCR_URC(value), MMUCR_URB(value), MMUCR_LRUI(value), curr_pc);
+        fflush(stdout);
+    }
+
+    const u32 at = fix ? MMUCR_AT(temp.reg_data) : (u32)temp.AT;
+    const bool at_edge = at != mmucr_at();
+
+    if (at_edge)
     {
         printf("CCN: MMU address translation %s (pc=%08X)\n",
-               temp.AT ? "ENABLED - only SQ remaps supported" : "disabled",
+               at ? "ENABLED - only SQ remaps supported" : "disabled",
                curr_pc);
     }
 
@@ -70,14 +98,38 @@ static void CCN_MMUCR_write(u32 value)
     // never invalidated, so stale entries (and the sq_remap table derived from
     // them) survived a flush the guest believed had happened. Now actually
     // invalidates, matching the PSP port.
-    if (temp.TI)
+    if (fix ? MMUCR_TI(temp.reg_data) : (u32)temp.TI)
     {
         printf("CCN: TLB invalidate (pc=%08X)\n", curr_pc);
         mmu_InvalidateTLB();
-        temp.TI = 0;
+        if (fix)
+            temp.reg_data &= ~MMUCR_TI_BIT;
+        else
+            temp.TI = 0;
     }
 
     CCN_MMUCR = temp;
+
+    if (fix && at_edge)
+    {
+        FP_CLR_TAG(FP_CLR_MMUCR);
+        sh4_cpu.ResetCache();
+    }
+}
+
+// MMUCR_FIX: prove the bitfield problem on the target itself, once per boot.
+// On big endian the bitfield must print AT=0 TI=0 SV=0 URC=2 and the masks
+// AT=1 TI=1 SV=1 URC=42. Other bitfield numbers mean this compiler lays the
+// struct out differently from devkitPPC; the mask numbers never change.
+static void ccn_mmucr_selftest()
+{
+    CCN_MMUCR_type t;
+    t.reg_data = 0x0000A905;
+    printf("[mmu] self-test %08X: bitfield AT=%u TI=%u SV=%u URC=%u, masks AT=%u TI=%u SV=%u URC=%u (mmucr_fix=%d)\n",
+           t.reg_data, (u32)t.AT, (u32)t.TI, (u32)t.SV, (u32)t.URC,
+           MMUCR_AT(t.reg_data), MMUCR_TI(t.reg_data), MMUCR_SV(t.reg_data), MMUCR_URC(t.reg_data),
+           get_mmucr_fix_preset());
+    fflush(stdout);
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +215,8 @@ static void CCN_CCR_write(u32 value)
 // ---------------------------------------------------------------------------
 void ccn_Init()
 {
+    ccn_mmucr_selftest();
+
     // CCN PTEH 0xFF000000
     CCN[(CCN_PTEH_addr&0xFF)>>2].flags         = REG_32BIT_READWRITE | REG_READ_DATA | REG_WRITE_DATA;
     CCN[(CCN_PTEH_addr&0xFF)>>2].readFunction  = 0;

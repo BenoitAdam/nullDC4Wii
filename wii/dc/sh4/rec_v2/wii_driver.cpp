@@ -4427,7 +4427,9 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		// store-queue flush — the canonical guards with `if ((addr>>26)==0x38)`
 		// BEFORE calling do_sqw (do_sqw itself assumes an SQ address). For any
 		// other address pref is a no-op. The MMU vs no-MMU variant is chosen at
-		// COMPILE time from CCN_MMUCR.AT. addr in rarg0.
+		// COMPILE time from MMUCR.AT (mmucr_at(): the bitfield reads the wrong
+		// bit on big endian, see ccn.h), and ccn.cpp clears the cache on an AT
+		// edge so no block keeps the old choice. addr in rarg0.
 		case shop_pref:
 			{
 				ppc_sh_load(ppc_rarg0,op->rs1);
@@ -4435,7 +4437,7 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 				ppc_cmpi(ppc_cr0,ppc_rarg1,0x38,0);		// SQ region?
 				ppc_label* skip=ppc_CreateLabel();
 				ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);		// bne skip (not SQ -> no-op)
-				if (CCN_MMUCR.AT)
+				if (mmucr_at())
 					ppc_call(&do_sqw_mmu);			// do_sqw reloads rarg0=addr arg
 				else
 					ppc_call(&do_sqw_nommu);
