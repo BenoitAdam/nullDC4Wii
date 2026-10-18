@@ -2,6 +2,7 @@
 
 extern "C" int get_debug_loop();
 extern "C" int get_debug_gdrom();
+extern "C" int get_cdi_hdr_fix_preset();   // wii/main.cpp, CDI_HDR_FIX
 
 // Debug logging is compiled out. It must still expand to an *expression*, not to
 // nothing: `if (cond) printf(...);` would otherwise be an if with an empty body
@@ -518,22 +519,31 @@ bool cdi_init(char* file)
         fclose(f); return false;
     }
 
+    // CDI_HDR_FIX (flycastPS3 other_fix.md 1.1, cdirip cdipsr.cpp): only V3.5
+    // stores the header offset from the END of the file; V2 and V3 store an
+    // absolute file offset. Legacy read V2 from byte 0 and V3 from
+    // file_size - hdr_offset (809 bytes in for Crazy Taxi PAL): track data,
+    // session_count 0, image rejected. V3.5 (ChuChu Rocket) is the same either way.
+    const int hdr_fix = get_cdi_hdr_fix_preset();
     long hdr_pos;
-    if (version == CDI_V2)
-    {
+    if (hdr_fix)
+        hdr_pos = (version == CDI_V35) ? file_size - (long)hdr_offset : (long)hdr_offset;
+    else if (version == CDI_V2)
         hdr_pos = 0;
-    }
     else
-    {
         hdr_pos = file_size - (long)hdr_offset;
-        printf("[CDI] hdr_pos = %ld - %u = %ld (0x%08lX)\n",
-               file_size, hdr_offset, hdr_pos, hdr_pos);
-        if (hdr_pos < 0 || hdr_pos >= file_size)
-        {
-            printf("[CDI] ERROR: hdr_pos out of bounds\n");
-            printf("********************************END********************************\n\n");
-            fclose(f); return false;
-        }
+
+    // One line per image load, past the compiled-out printf above on purpose:
+    // it is the only way to see in /ndclog.txt which rule found the header.
+    (printf)("[CDI] %s header at 0x%08lX (hdr_offset=%u, cdi_hdr_fix=%d)\n",
+             version==CDI_V2?"V2":version==CDI_V3?"V3":"V3.5",
+             hdr_pos, hdr_offset, hdr_fix);
+
+    if (hdr_pos < 0 || hdr_pos >= file_size)
+    {
+        printf("[CDI] ERROR: hdr_pos out of bounds\n");
+        printf("********************************END********************************\n\n");
+        fclose(f); return false;
     }
 
     printf("********************************END********************************\n\n");

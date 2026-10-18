@@ -75,6 +75,7 @@ static int gdrom_dma_end_cb(int tag, int sch_cycl, int jitter)
 
 extern "C" int get_debug_loop();
 extern "C" int get_debug_gdrom();
+extern "C" int get_cdda_pause_fix_preset();   // wii/main.cpp, CDDA_PAUSE_FIX
 
 enum gd_states
 {
@@ -883,11 +884,22 @@ void gd_process_spi_cmd()
 			}
 			else if (param_type==4)
 			{
-				//pause audio/stop - drive goes to STANDBY, positioned at FAD 150
-				cdda.CurrAddr.FAD = cdda.StartAddr.FAD = 150;
-				cdda.playing = 0;
-				SecNumber.Status = GD_STANDBY;  // STANDBY = audio playback ended/stopped
-				GDStatus.DSC=1;
+				if (get_cdda_pause_fix_preset())
+				{
+					// CDDA_PAUSE_FIX: pause only (nullDC-v1, Reicast, Flycast, and
+					// this file before Feb 2026). The common code above already set
+					// GD_PAUSE and stopped playback; the position stays, so a
+					// CD_PLAY param 7 resumes from here. Fixed ChuChu Rocket and
+					// Looney Tunes music stopping after a pause (flycastPS3 1.2).
+				}
+				else
+				{
+					//pause audio/stop - drive goes to STANDBY, positioned at FAD 150
+					cdda.CurrAddr.FAD = cdda.StartAddr.FAD = 150;
+					cdda.playing = 0;
+					SecNumber.Status = GD_STANDBY;  // STANDBY = audio playback ended/stopped
+					GDStatus.DSC=1;
+				}
 			}
 			else
 			{

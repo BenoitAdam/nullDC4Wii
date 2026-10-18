@@ -504,7 +504,7 @@ extern "C" {
 
 // ARM7 sound-CPU speed divider stage
 // 0=off (bias 20, ~10 MHz — legacy), 1=half (bias 40), 2=quarter (bias 80).
-int g_arm7_speed_preset = 0;
+int g_arm7_speed_preset = 1;
 
 extern "C" {
   int get_arm7_speed_preset() { return g_arm7_speed_preset; }
@@ -1158,6 +1158,36 @@ int g_gdrom_delay = 0;
 
 extern "C" {
   int get_gdrom_delay() { return g_gdrom_delay; }
+}
+
+// CDI_HDR_FIX - where a DiscJuggler image keeps its header.
+// The last 8 bytes of a .cdi are its version and a header offset. Only V3.5
+// counts that offset back from the END of the file; V2 and V3 store an
+// absolute position (cdirip cdipsr.cpp). plugs/ImgReader/cdi.cpp read V2 from
+// byte 0 and V3 from the end, so it landed in track data, read 0 sessions and
+// rejected the image: Crazy Taxi PAL (V3) did not load. V3.5 images (ChuChu
+// Rocket) are read the same either way. Ported from flycastPS3 other_fix.md
+// 1.1 (fixed on PS3 hardware 2026-09-20); Wii-untested. The log line
+// "[CDI] V3 header at 0x..." shows which rule found it.
+// 0=off (legacy, default), 1=on (cdirip rule).
+int g_cdi_hdr_fix_preset = 0;
+
+extern "C" {
+  int get_cdi_hdr_fix_preset() { return g_cdi_hdr_fix_preset; }
+}
+
+// CDDA_PAUSE_FIX - what SPI_CD_SEEK parameter 4 (pause CD audio) does.
+// dc/gdrom/gdromv3.cpp moved the head to FAD 150 and reported STANDBY (a Feb
+// 2026 change made while chasing CDI boots), so a game resuming its music with
+// CD_PLAY parameter 7 started over from the start of the disc, or not at all.
+// nullDC-v1, Reicast, Flycast -- and this file before that change -- only
+// pause: the position stays. Fixed ChuChu Rocket's and Looney Tunes' music
+// after a pause on PS3 hardware (flycastPS3 other_fix.md 1.2, 2026-10-03).
+// 0=off (legacy, default), 1=on (pause keeps the position).
+int g_cdda_pause_fix_preset = 0;
+
+extern "C" {
+  int get_cdda_pause_fix_preset() { return g_cdda_pause_fix_preset; }
 }
 
 // DISC_BULK - serve a run of GD-ROM sectors with ONE fseek + fread instead of
@@ -2483,6 +2513,8 @@ void checkBiosFiles()
 #define OPT_JIT_LINK_GUARD 116 // Page 6 (JIT/DYNAREC), under JIT ICI
 #define OPT_MMUCR_FIX   117  // Page 5 (EXPERIMENTAL), under DMA FIX
 #define OPT_ARM7_STR_ALIGN 118 // Page 4 (AUDIO), under ARM7 BATCH
+#define OPT_CDI_HDR_FIX  119 // Page 5 (CORE), under GDROM DELAY
+#define OPT_CDDA_PAUSE_FIX 120 // Page 4 (AUDIO), under CDDA MUSIC
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2575,6 +2607,7 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_AUDIO_BLOCK,
   OPT_AUDIO_DRC,
   OPT_CDDA,
+  OPT_CDDA_PAUSE_FIX,
   OPT_MUTE_PCM16,
   OPT_AICA_FAST,
   OPT_ARM7_SPEED,
@@ -2593,7 +2626,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_TMEM_CACHE,
   OPT_SH4_CLOCK,
   OPT_DISC_BULK,
-  OPT_GDROM_DELAY
+  OPT_GDROM_DELAY,
+  OPT_CDI_HDR_FIX
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -3321,6 +3355,15 @@ bool displayOptionsMenu()
     printf(" (GD-ROM CD audio tracks)");
     printf("\n");
 
+    // --- Row: CDDA_PAUSE_FIX - CD audio pause keeps its position (gdromv3.cpp) ---
+    printf("%s CDDA PAUSE FIX : ", (selectedRow == OPT_CDDA_PAUSE_FIX) ? ">" : " ");
+    switch (g_cdda_pause_fix_preset) {
+      case 0: printf("[< OFF (TO FAD 150)  >]"); break;
+      case 1: printf("[< ON (KEEP POS)     >]"); break;
+    }
+    printf(" music resumes after a pause");
+    printf("\n");
+
     // --- Row: Mute 16-bit PCM channels (ChuChu Rocket SFX workaround) ---
     printf("%s MUTE 16BIT PCM : ", (selectedRow == OPT_MUTE_PCM16) ? ">" : " ");
     switch (g_mute_pcm16_preset) {
@@ -3461,6 +3504,15 @@ bool displayOptionsMenu()
       default:   printf("[< %-5d KB/S        >]", g_gdrom_delay); break;
     }
     printf(" spreads loads, no frame freeze");
+    printf("\n");
+
+    // --- Row: CDI_HDR_FIX - V2/V3 DiscJuggler header offset (cdi.cpp) ---
+    printf("%s CDI HEADER FIX : ", (selectedRow == OPT_CDI_HDR_FIX) ? ">" : " ");
+    switch (g_cdi_hdr_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CDIRIP RULE)  >]"); break;
+    }
+    printf(" V2/V3 .cdi images load");
     printf("\n\n");
 
     printOptionsFooter();
@@ -3999,6 +4051,8 @@ bool displayOptionsMenu()
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
+        case OPT_CDI_HDR_FIX:    g_cdi_hdr_fix_preset     = (g_cdi_hdr_fix_preset     + 1) % 2; break;
+        case OPT_CDDA_PAUSE_FIX: g_cdda_pause_fix_preset  = (g_cdda_pause_fix_preset  + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
                                                  (g_gdrom_delay == 1800) ? 0     :
                                                  (g_gdrom_delay == 3600) ? 1800  :
@@ -4131,6 +4185,8 @@ bool displayOptionsMenu()
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
+        case OPT_CDI_HDR_FIX:    g_cdi_hdr_fix_preset     = (g_cdi_hdr_fix_preset     + 1) % 2; break;
+        case OPT_CDDA_PAUSE_FIX: g_cdda_pause_fix_preset  = (g_cdda_pause_fix_preset  + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
                                                  (g_gdrom_delay == 1800) ? 3600  :
                                                  (g_gdrom_delay == 3600) ? 7200  :
@@ -5137,6 +5193,8 @@ int main(int argc, wchar *argv[])
     printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("CDDA Music     : %s\n", g_cdda_preset ? "ON (CD MUSIC)" : "OFF (LEGACY)");
+    printf("CDDA Pause Fix : %s\n", g_cdda_pause_fix_preset ? "ON (KEEP POS)" : "OFF (TO FAD 150)");
+    printf("CDI Header Fix : %s\n", g_cdi_hdr_fix_preset ? "ON (CDIRIP RULE)" : "OFF (LEGACY)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
     printf("BG Polygon     : %s\n", g_bg_poly_preset ? "ON (CORRECT)" : "OFF (FASTER)");

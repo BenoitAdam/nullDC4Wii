@@ -532,6 +532,14 @@
                                 A/B it against a known-good boot first. Watch
                                 disc= and rd= in the [FPROF] tail lines.
 
+        cdi_hdr_fix=on      <- on/off, where a .cdi (DiscJuggler) image keeps its
+                                header. Only V3.5 stores the offset from the
+                                end of the file; V2 and V3 store an absolute
+                                one (cdirip). off (default, legacy) read V2
+                                from byte 0 and V3 from the end, found 0
+                                sessions and refused the image (Crazy Taxi PAL,
+                                a V3 CDI). V3.5 images are read the same either
+                                way. Applied when the image is opened.
         gdrom_delay=3600    <- NUMERIC, KB/s the GD-ROM DMA may move. 0 = off
                                 (legacy: the whole request moves in one
                                 synchronous burst, roughly 500x a real drive).
@@ -878,6 +886,13 @@
                                 music as CD audio tracks have no music; on pulls
                                 the playing track's sectors from the disc image
                                 (~75 reads/s) and mixes them into the output.
+        cdda_pause_fix=on   <- on/off, a CD-audio PAUSE (SPI_CD_SEEK parameter 4)
+                                keeps the play position, as nullDC-v1, Reicast
+                                and Flycast do (dc/gdrom/gdromv3.cpp). off
+                                (default, legacy) moves the head to FAD 150 and
+                                reports STANDBY, so music resumed after a pause
+                                restarts from the disc start or stays silent
+                                (ChuChu Rocket, Looney Tunes Space Race).
         mute_pcm16=on       <- on/off, silence 16-bit PCM channels (see sgc_if.cpp
                                 MUTE_PCM16_FIX()). off (default, legacy) plays all
                                 sample formats. on drops any AICA channel whose
@@ -1187,6 +1202,8 @@ extern int g_hud_pass_preset;
 extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
 extern int g_cdda_preset;
+extern int g_cdda_pause_fix_preset;
+extern int g_cdi_hdr_fix_preset;
 extern int g_mute_pcm16_preset;
 extern int g_aica_fast_preset;
 extern int g_bg_poly_preset;
@@ -1330,6 +1347,8 @@ struct GamePreset
     int tmem_cache;
     int show_fps;
     int cdda;
+    int cdda_pause_fix;
+    int cdi_hdr_fix;
     int mute_pcm16;
     int aica_fast;
     int bg_poly;
@@ -1833,6 +1852,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = parse_bool(val);
     else if (key_eq(key, "show_fps"))       p->show_fps       = parse_bool(val);
     else if (key_eq(key, "cdda"))           p->cdda           = parse_bool(val);
+    else if (key_eq(key, "cdda_pause_fix")) p->cdda_pause_fix = parse_bool(val);
+    else if (key_eq(key, "cdi_hdr_fix"))    p->cdi_hdr_fix    = parse_bool(val);
     else if (key_eq(key, "mute_pcm16"))     p->mute_pcm16     = parse_bool(val);
     else if (key_eq(key, "aica_fast"))      p->aica_fast      = parse_bool(val);
     else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
@@ -1957,6 +1978,8 @@ static void preset_clear(GamePreset* cur)
     cur->tmem_cache = -1;
     cur->show_fps = -1;
     cur->cdda = -1;
+    cur->cdda_pause_fix = -1;
+    cur->cdi_hdr_fix = -1;
     cur->mute_pcm16 = -1;
     cur->aica_fast = -1;
     cur->bg_poly = -1;
@@ -2096,6 +2119,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
     if (p->show_fps       >= 0) { g_show_fps_overlay     = p->show_fps;        printf("  show_fps       -> %d\n", p->show_fps);       }
     if (p->cdda           >= 0) { g_cdda_preset          = p->cdda;            printf("  cdda           -> %d\n", p->cdda);           }
+    if (p->cdda_pause_fix >= 0) { g_cdda_pause_fix_preset = p->cdda_pause_fix; printf("  cdda_pause_fix -> %d\n", p->cdda_pause_fix); }
+    if (p->cdi_hdr_fix    >= 0) { g_cdi_hdr_fix_preset    = p->cdi_hdr_fix;    printf("  cdi_hdr_fix    -> %d\n", p->cdi_hdr_fix);    }
     if (p->mute_pcm16     >= 0) { g_mute_pcm16_preset    = p->mute_pcm16;      printf("  mute_pcm16     -> %d\n", p->mute_pcm16);     }
     if (p->aica_fast      >= 0) { g_aica_fast_preset     = p->aica_fast;       printf("  aica_fast      -> %d\n", p->aica_fast);      }
     if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
