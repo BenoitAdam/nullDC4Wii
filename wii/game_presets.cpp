@@ -184,6 +184,14 @@
                                so the per-block guard covers what the clear
                                used to. 2 is the only combination worth A/B-ing
                                and the one that cannot be set half-way.
+        jit_link_guard=on   <- on/off, a static block exit is linked (patched
+                               to `b target`) only if its 3 words are still the
+                               ones that asked for the link. A code-cache clear
+                               in between (jit_ici=0, cache threshold) can put
+                               the new target right on the old exit, and the
+                               patch then breaks that block: a freeze that comes
+                               and goes with code layout. Off still logs each
+                               stale site as [LINK] in /ndclog.txt. Default off.
         jit_sbp=1           <- 0/1/2, JIT_SBP (Stale Block Protection). Gates
                                 all three defenses against executing stale or
                                 self-modified translations (see
@@ -1182,6 +1190,7 @@ extern int g_arm7_batch_preset;
 extern int g_sh4_clock_preset;
 extern int g_jit_sbp_preset;
 extern int g_jit_ici_preset;
+extern int g_jit_link_guard_preset;
 extern int g_dma_fix_preset;
 extern int g_fastmem_preset;
 extern int g_bcache_preset;
@@ -1322,6 +1331,7 @@ struct GamePreset
     int sh4_clock;
     int jit_sbp;
     int jit_ici;
+    int jit_link_guard;
     int dma_fix;
     int fastmem;
     int bcache;
@@ -1822,6 +1832,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "sh4_clock"))      p->sh4_clock      = parse_sh4_clock(val);
     else if (key_eq(key, "jit_sbp"))        p->jit_sbp        = atoi(val);
     else if (key_eq(key, "jit_ici"))        p->jit_ici        = atoi(val);
+    else if (key_eq(key, "jit_link_guard")) p->jit_link_guard = parse_bool(val);
     else if (key_eq(key, "dma_fix"))        p->dma_fix        = parse_bool(val);
     else if (key_eq(key, "fastmem"))        p->fastmem        = parse_bool(val);
     else if (key_eq(key, "bcache"))         p->bcache         = parse_bool(val);
@@ -1942,6 +1953,7 @@ static void preset_clear(GamePreset* cur)
     cur->sh4_clock = -1;
     cur->jit_sbp = -1;
     cur->jit_ici = -1;
+    cur->jit_link_guard = -1;
     cur->dma_fix = -1;
     cur->fastmem = -1;
     cur->bcache = -1;
@@ -2087,6 +2099,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->sh4_clock      >= 0) { g_sh4_clock_preset      = p->sh4_clock;      printf("  sh4_clock      -> %d\n", p->sh4_clock);      }
     if (p->jit_sbp        >= 0) { g_jit_sbp_preset        = p->jit_sbp;        printf("  jit_sbp        -> %d\n", p->jit_sbp);        }
     if (p->jit_ici        >= 0) { g_jit_ici_preset        = p->jit_ici;        printf("  jit_ici        -> %d\n", p->jit_ici);        }
+    if (p->jit_link_guard >= 0) { g_jit_link_guard_preset = p->jit_link_guard; printf("  jit_link_guard -> %d\n", p->jit_link_guard); }
     if (p->dma_fix        >= 0) { g_dma_fix_preset        = p->dma_fix;        printf("  dma_fix        -> %d\n", p->dma_fix);        }
     if (p->fastmem        >= 0) { g_fastmem_preset        = p->fastmem;        printf("  fastmem        -> %d\n", p->fastmem);        }
     if (p->bcache         >= 0) { g_bcache_preset         = p->bcache;         printf("  bcache         -> %d\n", p->bcache);         }

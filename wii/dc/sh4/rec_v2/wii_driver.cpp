@@ -274,6 +274,10 @@ extern "C" int get_jit_fipr_preset();
 // the bit into a GPR only to compare it back to 0/1. See emit_t_to_cr0().
 extern "C" int get_jit_cr0_preset();
 
+// JIT_LINK_GUARD preset (main.cpp): patch a static exit only if the site is
+// still the one that asked for the link. See ngen_LinkBlock_Static().
+extern "C" int get_jit_link_guard_preset();
+
 // JIT_FSCHG preset (main.cpp): `fschg` toggles FPSCR.SZ only, so UpdateFPSCR()
 // has nothing to do but keep old_fpscr in step. Lets shop_sync_fpscr skip the
 // C call and the pinned-FPU spill/reload that brackets it. See shop_sync_fpscr.
@@ -4646,12 +4650,54 @@ void ngen_ResetBlocks()
 	rec_fastmem_reset_pool();
 }
 
+// The three words DoStatic() emits for `pc` at `site`:
+//   addis rarg0,0,pc>>16 ; ori rarg0,rarg0,pc&0xFFFF ; bl ngen_LinkBlock_Static_stub
+static inline bool static_site_wants(const u32* site, u32 pc)
+{
+	const u32 rg = (u32)ppc_rarg0;
+	snat offs = ((u8*)ngen_LinkBlock_Static_stub - (u8*)(site+2)) >> 2;
+	return site[0] == (0x3C000000u | (rg<<21) | (pc>>16))
+	    && site[1] == (0x60000000u | (rg<<21) | (rg<<16) | (pc&0xFFFFu))
+	    && site[2] == (0x48000000u | ((0xffffffu & (u32)offs) << 2) | 1u);
+}
+
+// Static exits whose site no longer asked for this link when the patch came due.
+static u32 s_link_stale=0;
+
+// JIT_LINK_GUARD. rdv_FindOrCompile() can clear the whole code cache before it
+// returns (CACHE_MIN_FREE / CACHE_FLUSH_THRESHOLD in rdv_CompileBlock), and a
+// guest CCR.ICI write (ccn.cpp, jit_ici=0) clears it from INSIDE the running
+// block, which then still reaches this exit. Either way LastAddr went back to
+// the start and the target was just compiled there -- possibly right on top of
+// `patch`. Patching then writes `b target` into the middle of an unrelated new
+// block: a freeze that comes and goes with code layout (flycastPS3, Looney
+// Tunes BIOS hang, 2026-10-08). Checking all three words matters: the PS3
+// checked the `bl` alone, and the new block had its own link `bl` there.
+// A site that still holds the same three words for the same pc is a genuine
+// link request at that address, so patching it is correct either way.
 void* FASTCALL ngen_LinkBlock_Static(u32 pc,u32* patch)
 {
 	next_pc=pc;
-	
+
 	DynarecCodeEntry* rv=rdv_FindOrCompile();
-	
+
+	if (!static_site_wants(patch,pc))
+	{
+		const int guard=get_jit_link_guard_preset();
+		s_link_stale++;
+		// Bounded: the first 8, then a running total every 256th. Flushed,
+		// because with the guard off the next thing may be a freeze.
+		if (s_link_stale<=8 || (s_link_stale&255)==0)
+		{
+			printf("[LINK] stale static site #%u at %p for pc=%08X (%08X %08X %08X): %s\n",
+			       s_link_stale, patch, pc, patch[0], patch[1], patch[2],
+			       guard ? "skipped" : "PATCHED ANYWAY (guard off)");
+			fflush(stdout);
+		}
+		if (guard)
+			return (void*)rv;
+	}
+
 	emit_ptr=patch;
 	{
 		ppc_jump(rv);
@@ -4736,6 +4782,9 @@ void ngen_mainloop()
 	// Called here (not recSh4_Init) so the game preset file has been
 	// applied and _vmem_reserve() has placed the guest arrays.
 	WiiFastmem_Init();
+
+	printf("[LINK] static-link site check ARMED (jit_link_guard=%d)\n", get_jit_link_guard_preset());
+	fflush(stdout);
 
 	if (loop_code==0)
 	{
