@@ -919,6 +919,15 @@
                                 filter-envelope call is gone, no DSP send while
                                 the DSP is off, master volume is cached, silent
                                 CD-audio sectors are skipped. off (default, legacy).
+        adpcm_loop=on       <- on/off, a looped ADPCM sound keeps the decoder
+                                state it had at the loop start and restores it
+                                on each lap (Flycast), instead of resetting the
+                                decoder every lap (off, default, legacy). A loop
+                                that starts after sample 0 was decoded from the
+                                wrong state on every lap after the first:
+                                Sonic Adventure 2's held effects going almost
+                                silent after ~1 s. Loops starting at 0 sound
+                                the same either way. Covers both mixers.
         bg_poly=on          <- on/off, background polygon rendering (see gxRend.cpp
                                 BG_POLY_FIX()). ISP_BACKGND_T's 3 vertices are
                                 normally only used for the EFB clear color;
@@ -1219,6 +1228,7 @@ extern int g_cdda_pause_fix_preset;
 extern int g_cdi_hdr_fix_preset;
 extern int g_mute_pcm16_preset;
 extern int g_aica_fast_preset;
+extern int g_adpcm_loop_preset;
 extern int g_bg_poly_preset;
 extern int g_layer_sort_preset;
 extern int g_hokuto_hack_preset;
@@ -1365,6 +1375,7 @@ struct GamePreset
     int cdi_hdr_fix;
     int mute_pcm16;
     int aica_fast;
+    int adpcm_loop;
     int bg_poly;
     int layer_sort;
     int hokuto_hack;
@@ -1890,6 +1901,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "cdi_hdr_fix"))    p->cdi_hdr_fix    = parse_bool(val);
     else if (key_eq(key, "mute_pcm16"))     p->mute_pcm16     = parse_bool(val);
     else if (key_eq(key, "aica_fast"))      p->aica_fast      = parse_bool(val);
+    else if (key_eq(key, "adpcm_loop"))     p->adpcm_loop     = parse_bool(val);
     else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
     else if (key_eq(key, "layer_sort"))     p->layer_sort     = parse_bool(val);
     else if (key_eq(key, "hokuto_hack"))    p->hokuto_hack    = parse_bool(val);
@@ -2016,6 +2028,7 @@ static void preset_clear(GamePreset* cur)
     cur->cdi_hdr_fix = -1;
     cur->mute_pcm16 = -1;
     cur->aica_fast = -1;
+    cur->adpcm_loop = -1;
     cur->bg_poly = -1;
     cur->layer_sort = -1;
     cur->hokuto_hack = -1;
@@ -2158,6 +2171,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->cdi_hdr_fix    >= 0) { g_cdi_hdr_fix_preset    = p->cdi_hdr_fix;    printf("  cdi_hdr_fix    -> %d\n", p->cdi_hdr_fix);    }
     if (p->mute_pcm16     >= 0) { g_mute_pcm16_preset    = p->mute_pcm16;      printf("  mute_pcm16     -> %d\n", p->mute_pcm16);     }
     if (p->aica_fast      >= 0) { g_aica_fast_preset     = p->aica_fast;       printf("  aica_fast      -> %d\n", p->aica_fast);      }
+    if (p->adpcm_loop     >= 0) { g_adpcm_loop_preset    = p->adpcm_loop;      printf("  adpcm_loop     -> %d\n", p->adpcm_loop);     }
     if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
     if (p->layer_sort     >= 0) { g_layer_sort_preset    = p->layer_sort;      printf("  layer_sort     -> %d\n", p->layer_sort);     }
     if (p->hokuto_hack    >= 0) { g_hokuto_hack_preset   = p->hokuto_hack;     printf("  hokuto_hack    -> %d\n", p->hokuto_hack);    }

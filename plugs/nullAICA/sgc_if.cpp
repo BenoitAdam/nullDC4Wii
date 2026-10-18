@@ -47,6 +47,16 @@ SampleType mixr;
 extern "C" int get_mute_pcm16_preset();
 #define MUTE_PCM16_FIX() (get_mute_pcm16_preset() != 0)
 
+// ADPCM_LOOP_FIX(): preset-gated (default OFF). A looped ADPCM channel keeps
+// the decoder state it had at LSA on its first pass and, in mode 2 (PCMS==2),
+// restores it at each loop lap, instead of resetting the decoder to quant 127 /
+// sample 0 on every lap (Flycast 3f70e47ad; flycastPS3 other_fix.md 1.4). A
+// loop that starts after sample 0 decoded every lap after the first from the
+// wrong state: -24..-27 dB, Sonic Adventure 2's held effects going near silent.
+// Called only when CA == LSA, so about once per loop lap, never per sample.
+extern "C" int get_adpcm_loop_preset();
+#define ADPCM_LOOP_FIX() (get_adpcm_loop_preset() != 0)
+
 // x.15
 s32  volume_lut[16];
 u32  SendLevel[16] = {0xF000<<3,14<<3,13<<3,12<<3,11<<3,10<<3,9<<3,8<<3,
@@ -361,9 +371,17 @@ struct ChannelEx
     struct
     {
         s32 last_quant;
+        // ADPCM_LOOP_FIX: decoder state at the first pass over LSA; mode 2
+        // restores it on each loop lap (Flycast).
+        s32        loopstart_quant;
+        SampleType loopstart_prev_sample;
+        bool       in_loop;
         void Reset(ChannelEx* ch)
         {
             last_quant = 127;
+            loopstart_quant = 0;
+            loopstart_prev_sample = 0;
+            in_loop = false;
             ch->s0 = 0;
         }
     } adpcm;
@@ -776,6 +794,22 @@ INLINE void FASTCALL StepDecodeSample(ChannelEx* ch, u32 CA)
             ad1 &= 0xF;
             ad2 &= 0xF;
             s32 q = ch->adpcm.last_quant;
+            // ADPCM_LOOP_FIX (Flycast 3f70e47ad): both ADPCM modes save the
+            // state at LSA on the first pass; only mode 2 restores it on a lap.
+            if (CA == ch->loop.LSA && ADPCM_LOOP_FIX())
+            {
+                if (!ch->adpcm.in_loop)
+                {
+                    ch->adpcm.in_loop = true;
+                    ch->adpcm.loopstart_quant = q;
+                    ch->adpcm.loopstart_prev_sample = ch->s0;
+                }
+                else if (PCMS == 2)
+                {
+                    q = ch->adpcm.loopstart_quant;
+                    ch->s0 = ch->adpcm.loopstart_prev_sample;
+                }
+            }
             s0 = DecodeADPCM(ad1, ch->s0, q);
             ch->adpcm.last_quant = q;
             s1 = last ? DecodeADPCM(ad2, s0, q) : 0;
@@ -821,7 +855,9 @@ void FASTCALL StreamStep(ChannelEx* ch)
             CA = ch->loop.LSA;
             if (LPCTL)
             {
-                if (PCMS == 2) ch->adpcm.Reset(ch);
+                // Legacy reset on every lap; ADPCM_LOOP_FIX restores the LSA
+                // state in StepDecodeSample() instead. Key-on still resets.
+                if (PCMS == 2 && !ADPCM_LOOP_FIX()) ch->adpcm.Reset(ch);
             }
             else
             {

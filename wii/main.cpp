@@ -490,6 +490,23 @@ extern "C" {
 // audible change. Default ON.
 int g_aica_fast_preset = 1;
 
+// ADPCM_LOOP - how a looped ADPCM sound starts its next lap.
+// plugs/nullAICA/sgc_if.cpp reset the ADPCM decoder (quant 127, previous
+// sample 0) at every loop lap. A loop that starts after sample 0 then decodes
+// each lap from the wrong state: a PC decode of Sonic Adventure 2's stage bank
+// gave -24..-27 dB on every lap after the first for 4 of its 7 looped waves,
+// i.e. held effects going almost silent. On, the decoder state at LSA is saved
+// on the first pass and restored on each lap (mode 2), as Flycast 3f70e47ad
+// does. Loops starting at 0 give the same samples either way, so most games do
+// not change. flycastPS3 other_fix.md 1.4: fixed SA2 City Escape on PS3
+// hardware (2026-10-14), no effect on ChuChu Rocket. Wii-untested.
+// Covers both mixers (legacy and AICA FAST). 0=off (legacy, default), 1=on.
+int g_adpcm_loop_preset = 1;
+
+extern "C" {
+  int get_adpcm_loop_preset() { return g_adpcm_loop_preset; }
+}
+
 int g_speed_limiter_preset = 0; // 0=off (uncapped, may run >100%), 1=on (capped at real-hardware speed)
 
 extern "C" {
@@ -2536,6 +2553,7 @@ void checkBiosFiles()
 #define OPT_CDI_HDR_FIX  119 // Page 5 (CORE), under GDROM DELAY
 #define OPT_CDDA_PAUSE_FIX 120 // Page 4 (AUDIO), under CDDA MUSIC
 #define OPT_FLASH_BROADCAST 121 // Page 5 (CORE), under CDI HEADER FIX
+#define OPT_ADPCM_LOOP  122  // Page 4 (AUDIO), under AICA FAST
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2631,6 +2649,7 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_CDDA_PAUSE_FIX,
   OPT_MUTE_PCM16,
   OPT_AICA_FAST,
+  OPT_ADPCM_LOOP,
   OPT_ARM7_SPEED,
   OPT_ARM7_JIT,
   OPT_ARM7_BATCH,
@@ -3404,6 +3423,15 @@ bool displayOptionsMenu()
     printf(" same sound, less CPU");
     printf("\n");
 
+    // --- Row: ADPCM_LOOP - looped ADPCM keeps its LSA decoder state (sgc_if.cpp) ---
+    printf("%s ADPCM LOOP FIX : ", (selectedRow == OPT_ADPCM_LOOP) ? ">" : " ");
+    switch (g_adpcm_loop_preset) {
+      case 0: printf("[< OFF (RESET/LAP)   >]"); break;
+      case 1: printf("[< ON (KEEP STATE)   >]"); break;
+    }
+    printf(" SA2: looped SFX keep volume");
+    printf("\n");
+
     // --- Row: ARM7 sound-CPU speed divider (plugs/vbaARM/arm_aica.cpp) ---
     printf("%s ARM7 SPEED     : ", (selectedRow == OPT_ARM7_SPEED) ? ">" : " ");
     switch (g_arm7_speed_preset) {
@@ -4117,6 +4145,7 @@ bool displayOptionsMenu()
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
+        case OPT_ADPCM_LOOP:     g_adpcm_loop_preset      = (g_adpcm_loop_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
@@ -4252,6 +4281,7 @@ bool displayOptionsMenu()
         case OPT_CDDA:           g_cdda_preset            = (g_cdda_preset            + 1) % 2; break;
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
+        case OPT_ADPCM_LOOP:     g_adpcm_loop_preset      = (g_adpcm_loop_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
@@ -5233,6 +5263,7 @@ int main(int argc, wchar *argv[])
                                     g_flash_broadcast_preset == 1 ? "DISC (IP.BIN)" : "OFF (FLASH VALUE)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
+    printf("ADPCM Loop Fix : %s\n", g_adpcm_loop_preset ? "ON (KEEP STATE)" : "OFF (RESET/LAP)");
     printf("BG Polygon     : %s\n", g_bg_poly_preset ? "ON (CORRECT)" : "OFF (FASTER)");
     printf("X Scaler       : %s\n", g_x_scaler_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");
     printf("Y Scaler       : %s\n", g_y_scaler_preset ? "ON (VSCALEFACTOR)" : "OFF (LEGACY)");
