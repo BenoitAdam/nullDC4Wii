@@ -75,6 +75,12 @@ void Stop_DC();
 void LoadBiosFiles();
 
 /**
+ * FLASH_BROADCAST: put back the flash's own broadcast bytes that
+ * LoadBiosFiles() may have patched. Call right before saving the flash.
+ */
+void dc_flash_restore_broadcast();
+
+/**
  * Check if the Dreamcast emulator is initialized
  * 
  * @return true if initialized, false otherwise

@@ -351,6 +351,114 @@ static char* BuildFilePath(const char* base_path, const char* filename)
 /**
  * Load BIOS and system files
  */
+// ---------------------------------------------------------------------------
+// FLASH_BROADCAST (flycastPS3 other_fix.md 1.3, Flycast fixUpDCFlash()).
+// The flash factory partition is stored twice, at 0x1A000 and 0x1A0A0; byte 4
+// of each copy is the broadcast standard as an ASCII digit ('0' NTSC, '1' PAL).
+// Games that support both read it to pick 60 or 50 Hz, so a PAL flash gave a
+// 50 Hz guest -- the reason CABLE=VGA exists. Flycast rewrites the byte at
+// every boot; we never did. flash_b holds the file bytes in file order, so
+// byte access is endian-neutral. The original bytes go back before the flash
+// is saved (dc_flash_restore_broadcast), so dc_flash_wb.bin keeps its own.
+// ---------------------------------------------------------------------------
+extern "C" int get_flash_broadcast_preset();   // wii/main.cpp
+
+#define FLASH_FACTORY_A 0x1A000
+#define FLASH_FACTORY_B 0x1A0A0
+#define FACT_BROADCAST  4
+static u8   s_bc_orig[2];
+static bool s_bc_patched = false;
+
+// The disc's IP.BIN area symbols (8 bytes at IP.BIN + 0x30), as the PS3 port
+// reads them: a GD-ROM at FAD 45150, a CD at the start of its last session.
+// Note: the GDI reader patches the area to "JUE" (PatchRegion_0), so a GDI
+// always reads as NTSC here.
+static bool flash_read_disc_area(char area[8])
+{
+	u32 fad;
+	const u32 type = libGDR_GetDiscType();
+	if (type == NoDisk)
+		return false;
+	if (type == GdRom)
+		fad = 45150;
+	else
+	{
+		u8 ses[6];
+		libGDR_GetSessionInfo(ses, 0);
+		if (ses[2] == 0)
+			return false;
+		libGDR_GetSessionInfo(ses, ses[2]);
+		fad = ((u32)ses[3] << 16) | ((u32)ses[4] << 8) | ses[5];
+	}
+
+	u8 sec[2048];
+	libGDR_ReadSector(sec, fad, 1, 2048);
+	if (memcmp(sec, "SEGA SEGAKATANA ", 16) != 0)
+		return false;
+	memcpy(area, sec + 0x30, 8);
+	return true;
+}
+
+// Called right after the flash is (re)loaded. 0 = leave the flash alone,
+// 1 = DISC (the PS3 hardware-tested rule: NTSC if the disc lists J or U, PAL
+// if it lists only E), 2 = NTSC always (Flycast's default).
+static void dc_flash_set_broadcast()
+{
+	s_bc_patched = false;   // flash_b was just loaded from the file
+	const int mode = get_flash_broadcast_preset();
+	if (mode == 0)
+		return;
+
+	const u8 old_a = flash_b[FLASH_FACTORY_A + FACT_BROADCAST];
+	const u8 old_b = flash_b[FLASH_FACTORY_B + FACT_BROADCAST];
+	// No factory partition (flash missing or blank): nothing sane to patch.
+	if (old_a < '0' || old_a > '3' || old_b < '0' || old_b > '3')
+	{
+		printf("[FLASH] broadcast: no valid factory partition (%02X/%02X), left alone\n", old_a, old_b);
+		return;
+	}
+
+	char area[8] = { 0 };
+	u8 bc;
+	if (mode == 2)
+		bc = '0';
+	else
+	{
+		if (!flash_read_disc_area(area))
+		{
+			printf("[FLASH] broadcast: no IP.BIN on the disc, flash value '%c' kept\n", old_a);
+			return;
+		}
+		const bool ju = memchr(area, 'J', 8) || memchr(area, 'U', 8);
+		const bool e  = memchr(area, 'E', 8) != 0;
+		if (!ju && !e)
+		{
+			printf("[FLASH] broadcast: area \"%.8s\" names no region, flash value '%c' kept\n", area, old_a);
+			return;
+		}
+		bc = ju ? '0' : '1';
+	}
+
+	s_bc_orig[0] = old_a;
+	s_bc_orig[1] = old_b;
+	flash_b[FLASH_FACTORY_A + FACT_BROADCAST] = bc;
+	flash_b[FLASH_FACTORY_B + FACT_BROADCAST] = bc;
+	s_bc_patched = true;
+	printf("[FLASH] broadcast '%c' -> '%c' (%s, flash_broadcast=%d, area \"%.8s\")\n",
+	       old_a, bc, bc == '0' ? "NTSC 60 Hz" : "PAL 50 Hz", mode, area);
+}
+
+// Puts the flash's own broadcast bytes back. Call right before the flash is
+// written to disk.
+void dc_flash_restore_broadcast()
+{
+	if (!s_bc_patched)
+		return;
+	flash_b[FLASH_FACTORY_A + FACT_BROADCAST] = s_bc_orig[0];
+	flash_b[FLASH_FACTORY_B + FACT_BROADCAST] = s_bc_orig[1];
+	s_bc_patched = false;
+}
+
 void LoadBiosFiles()
 {
 	printf("Loading BIOS files...\n");
@@ -411,6 +519,10 @@ void LoadBiosFiles()
 		if (flash_path)
 			free(flash_path);
 	}
+
+	// FLASH_BROADCAST: the disc is already open (libGDR_Init runs in
+	// plugins_Init, before the first reset), so its IP.BIN can be read here.
+	dc_flash_set_broadcast();
 
 	// Load syscalls
 	char* syscalls_path = BuildFilePath(base_path, "syscalls.bin");

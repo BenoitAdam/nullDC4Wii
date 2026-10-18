@@ -227,7 +227,7 @@
                                 G2-DMA completion + SB_E2ST. Default on. off
                                 reproduces the legacy pre-fix behavior, for A/B
                                 comparison only.
-        mmucr_fix=2         <- 0/1/2, NUMERIC (atoi: mmucr_fix=on reads as 0).
+        mmucr_fix=2         <- 0/1/2, or off/bits/full; on = 1 (bits).
                                 Reads the SH4 MMU control register at its real
                                 bits; the 28-bit bitfield in dc/sh4/ccn.h reads
                                 AT/TI/URC from the wrong bits on big endian, so
@@ -595,6 +595,19 @@
                                 that does not support VGA refuses to boot and
                                 says so. Per-game is exactly the right place
                                 to record which ones those are.
+        flash_broadcast=disc <- off/disc/ntsc (or 0/1/2), the broadcast byte of
+                                the flash's factory partition, which picks
+                                50 or 60 Hz on composite/RGB. off (default,
+                                legacy) leaves the flash alone, so a PAL flash
+                                gives a 50 Hz guest. disc sets NTSC when the
+                                disc's IP.BIN lists J or U and PAL when it lists
+                                only E (GDIs always read NTSC: the GDI reader
+                                patches their area to JUE). ntsc always sets
+                                NTSC, as Flycast does. The flash's own byte is
+                                put back before the flash is saved. Unlike
+                                cable=2 no game refuses to boot over it; it
+                                only changes games that take their refresh
+                                rate from the flash (most do: Rayman 2, CvS2).
 
         jit_ccalls=on       <- on/off, DEBUG probe. Counts every C function the
                                 dynarec still calls out to and prints a [CC]
@@ -1250,6 +1263,7 @@ extern "C" int g_ta_profile_preset;
 extern "C" int g_frame_prof_preset;
 extern int g_disc_bulk_preset;
 extern int g_cable_preset;
+extern int g_flash_broadcast_preset;
 extern int g_disc_census_preset;
 extern int g_gdrom_delay;
 extern "C" int g_blockcopy_preset;
@@ -1395,6 +1409,7 @@ struct GamePreset
     int frame_prof;
     int disc_bulk;
     int cable;
+    int flash_broadcast;
     int disc_census;
     int gdrom_delay;
     int blockcopy;
@@ -1522,6 +1537,25 @@ static int parse_pcw_list(const char* v)
 {
     if (key_eq(v, "nozwrite") || key_eq(v, "no_zwrite") || strcmp(v, "2") == 0) return 2;
     if (key_eq(v, "blend")) return 1;
+    return parse_bool(v);   // on/off/1/0/true/false/yes/no
+}
+
+// mmucr_fix: 0 off, 1 bits, 2 full. Spelled out rather than left to atoi():
+// it shipped as atoi() first and cfg lines saying `mmucr_fix=on` -- meaning
+// "needed to launch" -- were silently read as 0. on = 1, the level those games
+// were set to everywhere else.
+static int parse_mmucr_fix(const char* v)
+{
+    if (key_eq(v, "full") || strcmp(v, "2") == 0) return 2;
+    if (key_eq(v, "bits")) return 1;
+    return parse_bool(v);   // on/off/1/0/true/false/yes/no
+}
+
+// flash_broadcast: 0 off, 1 disc, 2 ntsc. `on` means the hardware-tested disc rule.
+static int parse_flash_broadcast(const char* v)
+{
+    if (key_eq(v, "ntsc") || strcmp(v, "2") == 0) return 2;
+    if (key_eq(v, "disc")) return 1;
     return parse_bool(v);   // on/off/1/0/true/false/yes/no
 }
 
@@ -1879,8 +1913,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "jit_ici"))        p->jit_ici        = atoi(val);
     else if (key_eq(key, "jit_link_guard")) p->jit_link_guard = parse_bool(val);
     else if (key_eq(key, "dma_fix"))        p->dma_fix        = parse_bool(val);
-    // NUMERIC: 0 off, 1 bits, 2 full. `mmucr_fix=on` would read as 0.
-    else if (key_eq(key, "mmucr_fix"))      p->mmucr_fix      = atoi(val);
+    else if (key_eq(key, "mmucr_fix"))      p->mmucr_fix      = parse_mmucr_fix(val);
     else if (key_eq(key, "fastmem"))        p->fastmem        = parse_bool(val);
     else if (key_eq(key, "bcache"))         p->bcache         = parse_bool(val);
     else if (key_eq(key, "dyn_ic"))         p->dyn_ic         = atoi(val);
@@ -1904,6 +1937,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "disc_bulk"))      p->disc_bulk      = parse_bool(val);
     // NUMERIC: 0 composite, 1 RGB SCART, 2 VGA. `cable=on` would read as 0.
     else if (key_eq(key, "cable"))          p->cable          = atoi(val);
+    else if (key_eq(key, "flash_broadcast")) p->flash_broadcast = parse_flash_broadcast(val);
     else if (key_eq(key, "disc_census"))    p->disc_census    = parse_bool(val);
     // NUMERIC: KB/s the GD-ROM DMA may move. 0 = off, 1800 = a real drive.
     else if (key_eq(key, "gdrom_delay"))    p->gdrom_delay    = atoi(val);
@@ -2026,6 +2060,7 @@ static void preset_clear(GamePreset* cur)
     cur->frame_prof = -1;
     cur->disc_bulk  = -1;
     cur->cable      = -1;
+    cur->flash_broadcast = -1;
     cur->disc_census = -1;
     cur->gdrom_delay = -1;
     cur->blockcopy    = -1;
@@ -2176,6 +2211,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->frame_prof     >= 0) { g_frame_prof_preset     = p->frame_prof;     printf("  frame_prof     -> %d\n", p->frame_prof);     }
     if (p->disc_bulk      >= 0) { g_disc_bulk_preset      = p->disc_bulk;      printf("  disc_bulk      -> %d\n", p->disc_bulk);      }
     if (p->cable          >= 0) { g_cable_preset          = p->cable;          printf("  cable          -> %d\n", p->cable);          }
+    if (p->flash_broadcast >= 0) { g_flash_broadcast_preset = p->flash_broadcast; printf("  flash_broadcast -> %d\n", p->flash_broadcast); }
     if (p->disc_census    >= 0) { g_disc_census_preset    = p->disc_census;    printf("  disc_census    -> %d\n", p->disc_census);    }
     if (p->gdrom_delay    >= 0) { g_gdrom_delay           = p->gdrom_delay;    printf("  gdrom_delay    -> %d\n", p->gdrom_delay);    }
     if (p->blockcopy      >= 0) { g_blockcopy_preset      = p->blockcopy;      printf("  blockcopy      -> %d\n", p->blockcopy);      }

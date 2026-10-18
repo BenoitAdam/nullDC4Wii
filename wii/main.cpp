@@ -1234,6 +1234,26 @@ extern "C" {
   int get_cable_preset() { return g_cable_preset; }
 }
 
+// FLASH_BROADCAST - the broadcast byte in the flash's factory partition.
+// Games that support both 50 and 60 Hz pick one from that byte ('0' NTSC,
+// '1' PAL), so a PAL dc_flash.bin gives a 50 Hz guest on composite/RGB -- the
+// cadence problem CABLE=VGA works around (see above). Flycast's fixUpDCFlash()
+// rewrites the byte at every boot; we never did. dc/dc.cpp now sets it right
+// after the flash loads and puts the flash's own byte back before it is saved.
+// flycastPS3 other_fix.md 1.3: with DISC, Rayman 2 went 24.99 -> 29.98 fps and
+// CvS2 ran at 59.95 Hz on a PAL flash (PS3 hardware, 2026-10-13); 10 of 23 games
+// had stayed at 50 Hz there. Wii-untested.
+//   0 = OFF  (legacy, the flash's own byte)
+//   1 = DISC (NTSC if the disc's IP.BIN lists J or U, PAL if only E; GDIs always
+//             read NTSC, the GDI reader patches their area to "JUE")
+//   2 = NTSC (always '0', Flycast's default; not hardware-tested)
+// Log proof: one "[FLASH] broadcast ..." line per boot.
+int g_flash_broadcast_preset = 0;
+
+extern "C" {
+  int get_flash_broadcast_preset() { return g_flash_broadcast_preset; }
+}
+
 extern "C" {
   int get_disc_bulk_preset() { return g_disc_bulk_preset; }
 }
@@ -2515,6 +2535,7 @@ void checkBiosFiles()
 #define OPT_ARM7_STR_ALIGN 118 // Page 4 (AUDIO), under ARM7 BATCH
 #define OPT_CDI_HDR_FIX  119 // Page 5 (CORE), under GDROM DELAY
 #define OPT_CDDA_PAUSE_FIX 120 // Page 4 (AUDIO), under CDDA MUSIC
+#define OPT_FLASH_BROADCAST 121 // Page 5 (CORE), under CDI HEADER FIX
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2627,7 +2648,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_SH4_CLOCK,
   OPT_DISC_BULK,
   OPT_GDROM_DELAY,
-  OPT_CDI_HDR_FIX
+  OPT_CDI_HDR_FIX,
+  OPT_FLASH_BROADCAST
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -3513,6 +3535,16 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CDIRIP RULE)  >]"); break;
     }
     printf(" V2/V3 .cdi images load");
+    printf("\n");
+
+    // --- Row: FLASH_BROADCAST - flash broadcast byte per disc (dc/dc.cpp) ---
+    printf("%s FLASH BROADCAST: ", (selectedRow == OPT_FLASH_BROADCAST) ? ">" : " ");
+    switch (g_flash_broadcast_preset) {
+      case 0: printf("[< OFF (FLASH VALUE) >]"); break;
+      case 1: printf("[< DISC (IP.BIN)     >]"); break;
+      case 2: printf("[< NTSC (ALWAYS)     >]"); break;
+    }
+    printf(" PAL flash: 60Hz for NTSC discs");
     printf("\n\n");
 
     printOptionsFooter();
@@ -4053,6 +4085,7 @@ bool displayOptionsMenu()
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
         case OPT_CDI_HDR_FIX:    g_cdi_hdr_fix_preset     = (g_cdi_hdr_fix_preset     + 1) % 2; break;
         case OPT_CDDA_PAUSE_FIX: g_cdda_pause_fix_preset  = (g_cdda_pause_fix_preset  + 1) % 2; break;
+        case OPT_FLASH_BROADCAST: g_flash_broadcast_preset = (g_flash_broadcast_preset + 2) % 3; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
                                                  (g_gdrom_delay == 1800) ? 0     :
                                                  (g_gdrom_delay == 3600) ? 1800  :
@@ -4187,6 +4220,7 @@ bool displayOptionsMenu()
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
         case OPT_CDI_HDR_FIX:    g_cdi_hdr_fix_preset     = (g_cdi_hdr_fix_preset     + 1) % 2; break;
         case OPT_CDDA_PAUSE_FIX: g_cdda_pause_fix_preset  = (g_cdda_pause_fix_preset  + 1) % 2; break;
+        case OPT_FLASH_BROADCAST: g_flash_broadcast_preset = (g_flash_broadcast_preset + 1) % 3; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
                                                  (g_gdrom_delay == 1800) ? 3600  :
                                                  (g_gdrom_delay == 3600) ? 7200  :
@@ -5195,6 +5229,8 @@ int main(int argc, wchar *argv[])
     printf("CDDA Music     : %s\n", g_cdda_preset ? "ON (CD MUSIC)" : "OFF (LEGACY)");
     printf("CDDA Pause Fix : %s\n", g_cdda_pause_fix_preset ? "ON (KEEP POS)" : "OFF (TO FAD 150)");
     printf("CDI Header Fix : %s\n", g_cdi_hdr_fix_preset ? "ON (CDIRIP RULE)" : "OFF (LEGACY)");
+    printf("Flash Broadcast: %s\n", g_flash_broadcast_preset == 2 ? "NTSC (ALWAYS)" :
+                                    g_flash_broadcast_preset == 1 ? "DISC (IP.BIN)" : "OFF (FLASH VALUE)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
     printf("BG Polygon     : %s\n", g_bg_poly_preset ? "ON (CORRECT)" : "OFF (FASTER)");

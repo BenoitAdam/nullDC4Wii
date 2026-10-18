@@ -195,7 +195,9 @@ void mem_Term()
 	sh4_internal_reg_Term();
 	sh4_area0_Term();
 
-	// Persist flash (NVRAM) back to disk
+	// Persist flash (NVRAM) back to disk -- with its own broadcast byte, not
+	// the one FLASH_BROADCAST set for this disc.
+	dc_flash_restore_broadcast();
 	char* temp_path = GetEmuPath("data/");
 	strcat(temp_path, "dc_flash_wb.bin");
 	SaveSh4FlashromToFile(temp_path);
