@@ -708,6 +708,13 @@
                                resumed from the value saved at the last exit.
                                Also fixes the DST correction (+1 h, was +24 h).
                                Default on.
+        idle_kamui=on       <- on/off, the Kamui2 vsync wait loop (CvS2, Rez,
+                               Ikaruga, Quake III, Rayman 2, ...) ends its
+                               timeslice after one turn instead of spinning
+                               ~13 turns of pure waiting per slice. Matched by
+                               its exact code; emulated time per slice is
+                               unchanged. Default on. Read when code is
+                               COMPILED, so set it before launching.
         inf_vtx=on          <- on/off, a TA vertex with 1/W = +inf (W = 0, x/y
                                NaN) is cut out of its strip instead of being
                                sent to GX: Soul Calibur's spikes and garbage
@@ -1383,6 +1390,7 @@ extern int g_spg_fix_preset;
 extern int g_ta_guard_preset;
 extern int g_gdrom_spinup_preset;
 extern int g_rtc_host_preset;
+extern int g_idle_kamui_preset;
 extern int g_inf_vtx_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
@@ -1545,6 +1553,7 @@ struct GamePreset
     int ta_guard;
     int gdrom_spinup;
     int rtc_host;
+    int idle_kamui;
     int inf_vtx;
     int sched;
     int tex_wrap_guard;
@@ -2090,6 +2099,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "ta_guard"))       p->ta_guard       = parse_bool(val);
     else if (key_eq(key, "gdrom_spinup"))   p->gdrom_spinup   = parse_bool(val);
     else if (key_eq(key, "rtc_host"))       p->rtc_host       = parse_bool(val);
+    else if (key_eq(key, "idle_kamui"))     p->idle_kamui     = parse_bool(val);
     else if (key_eq(key, "inf_vtx"))        p->inf_vtx        = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
@@ -2228,6 +2238,7 @@ static void preset_clear(GamePreset* cur)
     cur->ta_guard = -1;
     cur->gdrom_spinup = -1;
     cur->rtc_host = -1;
+    cur->idle_kamui = -1;
     cur->inf_vtx = -1;
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
@@ -2395,6 +2406,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->ta_guard       >= 0) { g_ta_guard_preset       = p->ta_guard;       printf("  ta_guard       -> %d\n", p->ta_guard);       }
     if (p->gdrom_spinup   >= 0) { g_gdrom_spinup_preset   = p->gdrom_spinup;   printf("  gdrom_spinup   -> %d\n", p->gdrom_spinup);   }
     if (p->rtc_host       >= 0) { g_rtc_host_preset       = p->rtc_host;       printf("  rtc_host       -> %d\n", p->rtc_host);       }
+    if (p->idle_kamui     >= 0) { g_idle_kamui_preset     = p->idle_kamui;     printf("  idle_kamui     -> %d\n", p->idle_kamui);     }
     if (p->inf_vtx        >= 0) { g_inf_vtx_preset        = p->inf_vtx;        printf("  inf_vtx        -> %d\n", p->inf_vtx);        }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }

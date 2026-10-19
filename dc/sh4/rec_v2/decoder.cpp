@@ -42,10 +42,60 @@ void DecodedBlock::Setup(u32 rpc)
 
 	BranchBlock=0xFFFFFFFF;
 	NextBlock=0xFFFFFFFF;
+	idle_hash=0;
 
 	BlockType=BET_SCL_Intr;
 	oplist.clear();
 }
+
+// ----------------------------------------------------------------------------
+// IDLE_KAMUI preset (wii/main.cpp; flycastPS3 other_fix.md 2.1 / P89).
+// Kamui2's vsync wait loop:
+//     do { hook(7); [hook(12);] count--; } while (vbl == old && count);
+//   4D0B E407     jsr @r13 / mov #7,r4      hook(7)
+//   63F2 6232 72FF 2322                     count--  (a store: no pure-loop skip)
+//   53F1 6232 32E0 8B03                     bf out if vbl changed
+//   61F2 6312 2338 8BF1                     loop while count != 0
+// The x30 idle rule still lets it run ~13 turns a slice. Matched here as the
+// 4-opcode block that closes the loop (the fall-through of the "bf +3"),
+// reading BACKWARDS from that block's last word: the first read is the block's
+// own bf, and its target is exactly the form's first word, so every read stays
+// inside the loop it branches to. A whole loop, never "jsr; mov #7,r4" alone
+// (CvS2 has 53 of those), and not Reicast's half-block hashes (one matched
+// plain function returns). Word 0 = length.
+// ----------------------------------------------------------------------------
+#define IDLE_KAMUI_MAX 16
+static const u16 idle_kamui[][IDLE_KAMUI_MAX + 1] = {
+	// Hook 7: CvS2, Spider-Man, Project Justice, Power Stone 2, Donald Duck, Rayman 2, Re-Volt, Ecco, DOA2.
+	{ 14, 0x4D0B, 0xE407, 0x63F2, 0x6232, 0x72FF, 0x2322, 0x53F1, 0x6232, 0x32E0, 0x8B03,
+	  0x61F2, 0x6312, 0x2338, 0x8BF1 },
+	// Hooks 7 and 12: Ikaruga, Rez, Border Down, Sonic Shuffle.
+	{ 16, 0x4E0B, 0xE407, 0x4E0B, 0xE40C, 0x63F2, 0x6232, 0x72FF, 0x2322, 0x53F1, 0x6232, 0x32D0, 0x8B03,
+	  0x61F2, 0x6312, 0x2338, 0x8BEF },
+	// Hooks 7 and 12, other registers: Quake III Arena, Phantasy Star Online Ver. 2.
+	{ 16, 0x4E0B, 0xE407, 0x4E0B, 0xE40C, 0x62F2, 0x6322, 0x73FF, 0x2232, 0x52F1, 0x6322, 0x33D0, 0x8B03,
+	  0x61F2, 0x6312, 0x2338, 0x8BEF },
+};
+#define IDLE_KAMUI_FORMS (sizeof(idle_kamui) / sizeof(idle_kamui[0]))
+
+// The form whose loop this 4-opcode block closes, or -1.
+static int idle_kamui_form(u32 addr, u32 opcodes)
+{
+	if (opcodes != 4)
+		return -1;
+	for (u32 f = 0; f < IDLE_KAMUI_FORMS; f++)
+	{
+		const u32 n = idle_kamui[f][0];
+		u32 i = n;
+		while (i > 0 && ReadMem16(addr + 6 - (n - i) * 2) == idle_kamui[f][i])
+			i--;
+		if (i == 0)
+			return (int)f;
+	}
+	return -1;
+}
+
+extern "C" int get_idle_kamui_preset();
 
 DecodedBlock block;
 struct
@@ -1478,6 +1528,28 @@ _end:
 		}
 		//make sure we don't use wayy-too-many cycles ;p
 		block.cycles=min(block.cycles,max_cycles);
+	}
+
+	// IDLE_KAMUI: the tail of a known vsync wait loop ends the timeslice after
+	// one turn (the backend loads r29 = 0 after this block's cycle check).
+	block.idle_hash = 0;
+	if (get_idle_kamui_preset())
+	{
+		const int form = idle_kamui_form(block.start, block.opcodes);
+		if (form >= 0)
+		{
+			block.idle_hash = 1;
+			// One line per newly compiled match, bounded: proves the rule fires
+			// and gives the tail address to compare with the PS3's vectors
+			// (CvS2 8C21A2EE, Ikaruga 8C0370D2, Rez 8C046052, Quake III 8C0CB69E).
+			static u32 s_idle_kamui_log = 0;
+			if (s_idle_kamui_log < 16)
+			{
+				s_idle_kamui_log++;
+				printf("[IDLE] Kamui vsync wait form %d at %08X\n", form, block.start);
+				fflush(stdout);
+			}
+		}
 	}
 
 	static int cc=0;

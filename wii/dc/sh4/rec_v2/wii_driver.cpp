@@ -403,6 +403,15 @@ void ngen_Begin(DecodedBlock* block,bool force_checks)
 
 	jdst->MarkLabel();
 
+	// IDLE_KAMUI / wait-loop rules (decoder.cpp idle_hash): AFTER the cycle
+	// check above, so this block itself still runs (before it, the block's own
+	// exit to the update path would be lost). r29 = (1 - idle_hash) * timeslice:
+	// 0 ends the slice at the next block's check; a negative value is a debt of
+	// that many further slices. Emulated time still advances a full slice per
+	// UpdateSystem, so a wait loop just reaches its event in fewer host turns.
+	if (block->idle_hash)
+		ppc_li(ppc_cycles, (u32)((1 - (s32)block->idle_hash) * sh4_GetTimeslice()));
+
 	// No GPR reload here: pinned regs (r14..r28) hold the authoritative SH4 GPR
 	// values continuously across blocks, so there is nothing to re-read. They are
 	// loaded once in the mainloop prologue and only resynced with memory around
