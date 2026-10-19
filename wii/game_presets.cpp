@@ -877,6 +877,11 @@
                                 distance haze back instead of hard geometry that
                                 pops in. Costs 4 bytes/vertex plus a TEV stage on
                                 fogged polygons only.
+        fog_index=on        <- on/off, the fog table is indexed with
+                                FOG_DENSITY / W (the PVR's 1/W depth, as Flycast)
+                                instead of W * FOG_DENSITY, which ran the wrong
+                                way with distance. Only matters with fog=on.
+                                Default on.
         fixed_depth=1       <- 0/1/2, fixed depth projection (see gxRend.cpp
                                 FIXED_DEPTH_*()). 0 (default, legacy) tracks the
                                 scene's min/max depth on every TA vertex to fit
@@ -1295,6 +1300,7 @@ extern int g_special_layout_preset;
 extern int g_mipmap_preset;
 extern int g_seam_fix_preset;
 extern int g_fog_preset;
+extern int g_fog_index_preset;
 extern int g_yuv_twiddle_fix_preset;
 extern int g_yuv_stride_preset;
 extern int g_fixed_depth_preset;
@@ -1454,6 +1460,7 @@ struct GamePreset
     int mipmap;
     int seam_fix;
     int fog;
+    int fog_index;
     int yuv_twiddle_fix;
     int yuv_stride;
     int fixed_depth;
@@ -1993,6 +2000,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "mipmap"))         p->mipmap         = parse_mipmap(val);
     else if (key_eq(key, "seam_fix"))       p->seam_fix       = parse_bool(val);
     else if (key_eq(key, "fog"))            p->fog            = parse_bool(val);
+    else if (key_eq(key, "fog_index"))      p->fog_index      = parse_bool(val);
     else if (key_eq(key, "yuv_stride"))     p->yuv_stride     = parse_yuv_stride(val);
     else if (key_eq(key, "yuv_twiddle_fix")) p->yuv_twiddle_fix = parse_bool(val);
     else if (key_eq(key, "fixed_depth"))    p->fixed_depth    = atoi(val);
@@ -2133,6 +2141,7 @@ static void preset_clear(GamePreset* cur)
     cur->mipmap = -1;
     cur->seam_fix = -1;
     cur->fog = -1;
+    cur->fog_index = -1;
     cur->yuv_twiddle_fix = -1;
     cur->yuv_stride = -1;
     cur->fixed_depth = -1;
@@ -2289,6 +2298,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->mipmap         >= 0) { g_mipmap_preset        = p->mipmap;          printf("  mipmap         -> %d\n", p->mipmap);         }
     if (p->seam_fix       >= 0) { g_seam_fix_preset      = p->seam_fix;        printf("  seam_fix       -> %d\n", p->seam_fix);       }
     if (p->fog            >= 0) { g_fog_preset           = p->fog;             printf("  fog            -> %d\n", p->fog);            }
+    if (p->fog_index      >= 0) { g_fog_index_preset     = p->fog_index;       printf("  fog_index      -> %d\n", p->fog_index);      }
     if (p->yuv_stride     >= 0) { g_yuv_stride_preset   = p->yuv_stride;      printf("  yuv_stride     -> %d\n", p->yuv_stride);     }
     if (p->yuv_twiddle_fix >= 0) { g_yuv_twiddle_fix_preset = p->yuv_twiddle_fix; printf("  yuv_twiddle_fix -> %d\n", p->yuv_twiddle_fix); }
     if (p->fixed_depth    >= 0) { g_fixed_depth_preset   = p->fixed_depth;     printf("  fixed_depth    -> %d\n", p->fixed_depth);    }

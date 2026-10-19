@@ -874,6 +874,8 @@ extern "C" int get_seam_fix_preset();
 // so it is a per-game opt-in like every other renderer preset here.
 extern "C" int get_fog_preset();
 #define FOG() (get_fog_preset() == 1)
+// FOG_INDEX (wii/main.cpp): fog table indexed by density/W, see FogTableLookup().
+extern "C" int get_fog_index_preset();
 
 // Translucent depth sort
 extern "C" int get_trans_sort_preset();
@@ -2805,6 +2807,7 @@ void UpdateDepthPlanes()
 
 // Decoded once per render from the PVR fog registers.
 static float s_fog_density  = 0.0f; // FOG_DENSITY as a plain float
+static bool  s_fog_inv_w    = true; // FOG_INDEX: index the table with density/W (cached per render)
 static u32   s_fog_col_ram  = 0;    // FOG_COL_RAM,  0x00RRGGBB (LUT modes)
 static u32   s_fog_col_vert = 0;    // FOG_COL_VERT, 0x00RRGGBB (per-vertex mode)
 
@@ -2829,6 +2832,7 @@ static void FogFrameSetup()
     else { union { u32 i; float f; } u2; u2.i = (u32)be << 23; p2 = u2.f; }
 
     s_fog_density  = (float)mant * (1.0f / 128.0f) * p2;
+    s_fog_inv_w    = get_fog_index_preset() != 0;
     s_fog_col_ram  = FOG_COL_RAM  & 0x00FFFFFFu;
     s_fog_col_vert = FOG_COL_VERT & 0x00FFFFFFu;
 }
@@ -2848,7 +2852,15 @@ static void FogFrameSetup()
 // leftover mantissa bits interpolate between them.
 //
 // W here is this file's depth convention (see vtx_min_Z/vtx_max_Z): the real
-// eye-space W, larger = farther, so a larger index means more fog.
+// eye-space W, larger = farther.
+//
+// FOG_INDEX (flycastPS3 other_fix.md 4.1): the PVR -- whose per-pixel depth is
+// 1/W -- indexes the table with FOG_DENSITY * (1/W), as Flycast's shader does
+// (vtx_uv.z = vpos.z * FOG_DENSITY, vpos.z = 1/W). With W in hand that is
+// density / W, so a FARTHER vertex gets a SMALLER index; the game's table is
+// laid out for that. The legacy W * density ran the other way and, at a
+// typical density, put nearly every vertex in the last entry. W = 0 (1/W =
+// +inf, see INF_VTX) clamps to the last entry rather than dividing by zero.
 //
 // If a Wii test shows the ramp running the wrong way WITHIN each step (banded
 // or sawtooth fog rather than smooth), the two bytes of an entry are the pair
@@ -2856,7 +2868,8 @@ static void FogFrameSetup()
 // clear instead, the suspect is FogFrameSetup()'s FOG_DENSITY decode, not this.
 static INLINE u32 FogTableLookup(float W)
 {
-    float z = W * s_fog_density;
+    float z = s_fog_inv_w ? ((W > 0.0f) ? s_fog_density / W : 255.999f)
+                          : W * s_fog_density;
     // Written as !(z > 1.0f) so NaN lands in the clamp too — same reasoning as
     // vert_base()'s depth guard: every comparison against NaN is false, so a
     // "<"-shaped test would let NaN through and index the table with garbage.

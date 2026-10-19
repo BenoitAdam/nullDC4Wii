@@ -425,6 +425,20 @@ extern "C" {
   int get_fog_preset() { return g_fog_preset; }
 }
 
+// FOG_INDEX - how the FOG preset indexes the PVR fog table (gxRend.cpp
+// FogTableLookup; flycastPS3 other_fix.md 4.1). The PVR's per-pixel depth is
+// 1/W, and it indexes the table with FOG_DENSITY * (1/W) -- Flycast does the
+// same. The FOG code used W * FOG_DENSITY, so the index ran the wrong way with
+// distance and, at a game's real density, nearly every vertex fell into the
+// last entry. On = density / W. Only matters with FOG on (a per-game preset).
+// The PS3 ran this rule in Ecco the Dolphin ("everything looked right").
+// Wii-untested. 0=off (legacy W*density), 1=on (default).
+int g_fog_index_preset = 1;
+
+extern "C" {
+  int get_fog_index_preset() { return g_fog_index_preset; }
+}
+
 int g_fixed_depth_preset = 0; // 0=off (per-vertex min/max W tracking, legacy), 1=wide fixed planes [0.0001..100000] (safe, coarse Z), 2=tight fixed planes [0.1..25000] (finer Z, extreme near/far geometry clips)
 
 int g_legacy_depth_preset = 0; // 0=off, 1=reproduce the 1bb8c27 depth pipeline verbatim: fixed planes NEAR=0.001/FAR=10000*1.001, vert_base 1/W clamp at 0.001 (not 0.0001), and no per-vertex tracking or margin/HUD vertex fixups. Overrides fixed_depth. Buggy Heat: logo + VMU screen + gameplay were all correct there.
@@ -2780,6 +2794,7 @@ void checkBiosFiles()
 #define OPT_TA_GUARD    133  // Page 2 (GRAPHICS), under PCW LISTTYPE
 #define OPT_GDROM_SPINUP 134 // Page 5 (CORE), under SPG TIMING FIX
 #define OPT_INF_VTX     135  // Page 2 (GRAPHICS), under TA GUARD
+#define OPT_FOG_INDEX   136  // Page 2 (GRAPHICS), under FOG
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2838,6 +2853,7 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_DECAL_ALPHA,
   OPT_SEAM_FIX,
   OPT_FOG,
+  OPT_FOG_INDEX,
   OPT_BG_POLY,
   OPT_RGB565_OPAQUE_ALPHA,
   OPT_JOJO_FIX,
@@ -3392,6 +3408,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (PER POLY)     >]"); break;
     }
     printf(" distance haze (racers/outdoors)");
+    printf("\n");
+
+    // --- Row: FOG_INDEX - fog table indexed by density/W (gxRend.cpp FogTableLookup) ---
+    printf("%s FOG INDEX FIX  : ", (selectedRow == OPT_FOG_INDEX) ? ">" : " ");
+    switch (g_fog_index_preset) {
+      case 0: printf("[< OFF (W*DENSITY)   >]"); break;
+      case 1: printf("[< ON (DENSITY/W)    >]"); break;
+    }
+    printf(" fog table by 1/W, as the PVR");
     printf("\n");
 
     // --- Row: Background polygon rendering ---
@@ -4482,6 +4507,7 @@ bool displayOptionsMenu()
         case OPT_TA_GUARD:       g_ta_guard_preset        = (g_ta_guard_preset        + 1) % 2; break;
         case OPT_GDROM_SPINUP:   g_gdrom_spinup_preset    = (g_gdrom_spinup_preset    + 1) % 2; break;
         case OPT_INF_VTX:        g_inf_vtx_preset         = (g_inf_vtx_preset         + 1) % 2; break;
+        case OPT_FOG_INDEX:      g_fog_index_preset       = (g_fog_index_preset       + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
                                                  (g_gdrom_delay == 1800) ? 0     :
                                                  (g_gdrom_delay == 3600) ? 1800  :
@@ -4631,6 +4657,7 @@ bool displayOptionsMenu()
         case OPT_TA_GUARD:       g_ta_guard_preset        = (g_ta_guard_preset        + 1) % 2; break;
         case OPT_GDROM_SPINUP:   g_gdrom_spinup_preset    = (g_gdrom_spinup_preset    + 1) % 2; break;
         case OPT_INF_VTX:        g_inf_vtx_preset         = (g_inf_vtx_preset         + 1) % 2; break;
+        case OPT_FOG_INDEX:      g_fog_index_preset       = (g_fog_index_preset       + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
                                                  (g_gdrom_delay == 1800) ? 3600  :
                                                  (g_gdrom_delay == 3600) ? 7200  :
@@ -5656,6 +5683,7 @@ int main(int argc, wchar *argv[])
     printf("TA Guard       : %s\n", g_ta_guard_preset ? "ON (SKIP RECORD)" : "OFF (DIE)");
     printf("GDROM Spinup   : %s\n", g_gdrom_spinup_preset ? "ON (BUSY 3 SEC)" : "OFF (NODISC)");
     printf("Inf Vertex Drop: %s\n", g_inf_vtx_preset ? "ON (SPLIT STRIP)" : "OFF (NAN TO GX)");
+    printf("Fog Index Fix  : %s\n", g_fog_index_preset ? "ON (DENSITY/W)" : "OFF (W*DENSITY)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
     printf("ADPCM Loop Fix : %s\n", g_adpcm_loop_preset ? "ON (KEEP STATE)" : "OFF (RESET/LAP)");
