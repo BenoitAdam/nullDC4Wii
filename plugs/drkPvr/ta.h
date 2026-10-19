@@ -1,6 +1,14 @@
 #pragma once
 #include "drkPvr.h"
 #include "spg.h"	// spg_SchedListEndIrq (render_delay preset)
+
+// TA_GUARD preset (wii/main.cpp; flycastPS3 other_fix.md 3.5, Flycast ta_vtx.cpp):
+// a bad parameter record is skipped (32 bytes) instead of die() -- a for(;;)
+// hang on the Wii -- or a call through a wild function pointer. Only read on
+// those bad records, never per vertex.
+extern "C" int get_ta_guard_preset();
+#define TA_GUARD_FIX() (get_ta_guard_preset() != 0)
+
 #define params PVRPARAMS
 #define __forceinline 
 namespace TASplitter
@@ -351,7 +359,10 @@ public:
 					//32B
 				case ParamType_Object_List_Set:
 					{
-						die("ParamType_Object_List_Set");
+						// TA_GUARD: unsupported list type (a NAOMI-only record in
+						// Flycast's experience) -- skip it, as Flycast does.
+						if (!TA_GUARD_FIX())
+							die("ParamType_Object_List_Set");
 						//*couh* ignore it :p
 						data+=SZ32;
 					}
@@ -378,6 +389,17 @@ public:
 						{
 
 							u32 uid=ta_type_lut[data->pcw.obj_ctrl];
+
+							// TA_GUARD (Flycast INVALID_TYPE): Volume=1 with Col_Type=1
+							// has no polygon type -- poly_data_type_id() gives 0xFFFFFFFF,
+							// so pdid = ppid = 255 index 5-entry tables and the next line
+							// would call through a wild pointer. Skip the record.
+							if (uid==0xFFFFFFFF && TA_GUARD_FIX())
+							{
+								data+=SZ32;
+								break;
+							}
+
 							u32 psz=uid>>30;
 							u32 pdid=(u8)(uid);
 							u32 ppid=(u8)(uid>>8);
@@ -445,7 +467,11 @@ public:
 				case 3:
 				case 6:
 					{
-						die("Unhadled parameter");
+						// TA_GUARD: reserved parameter types (garbage or stale data
+						// in the TA stream). Skip the 32-byte record; Flycast throws
+						// and drops the rest of the batch instead.
+						if (!TA_GUARD_FIX())
+							die("Unhadled parameter");
 						data+=SZ32;
 					}
 					break;

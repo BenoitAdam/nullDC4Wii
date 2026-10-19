@@ -695,6 +695,11 @@
                                SPG_HBLANK_INT (mode 0 compare line, mode 2 every
                                line; it fired only at vblank start), and
                                SPG_VBLANK_INT resets to 0x00150104. Default on.
+        ta_guard=on         <- on/off, a bad tile-accelerator record (list-set
+                               type, reserved types 3/6, a polygon header with
+                               no valid type) is skipped. off (legacy): die(),
+                               a hang, or a call through a wild pointer.
+                               Default on.
         tex_wrap_guard=on   <- on/off, stops the persistent texture arena from
                                 recycling bytes the GPU is still sampling this
                                 frame (texture corruption when the cache fills).
@@ -1356,6 +1361,7 @@ extern int g_gdrom_stat_fix_preset;
 extern int g_gdrom_hang_fix_preset;
 extern int g_toc_fix_preset;
 extern int g_spg_fix_preset;
+extern int g_ta_guard_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
 extern int g_tex_clamp_fix_preset;
@@ -1513,6 +1519,7 @@ struct GamePreset
     int gdrom_hang_fix;
     int toc_fix;
     int spg_fix;
+    int ta_guard;
     int sched;
     int tex_wrap_guard;
     int tex_clamp_fix;
@@ -2053,6 +2060,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "gdrom_hang_fix")) p->gdrom_hang_fix = parse_bool(val);
     else if (key_eq(key, "toc_fix"))        p->toc_fix        = parse_bool(val);
     else if (key_eq(key, "spg_fix"))        p->spg_fix        = parse_bool(val);
+    else if (key_eq(key, "ta_guard"))       p->ta_guard       = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
     else if (key_eq(key, "tex_clamp_fix"))  p->tex_clamp_fix  = parse_bool(val);
@@ -2186,6 +2194,7 @@ static void preset_clear(GamePreset* cur)
     cur->gdrom_hang_fix = -1;
     cur->toc_fix = -1;
     cur->spg_fix = -1;
+    cur->ta_guard = -1;
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
     cur->tex_clamp_fix  = -1;
@@ -2348,6 +2357,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->gdrom_hang_fix >= 0) { g_gdrom_hang_fix_preset = p->gdrom_hang_fix; printf("  gdrom_hang_fix -> %d\n", p->gdrom_hang_fix); }
     if (p->toc_fix        >= 0) { g_toc_fix_preset        = p->toc_fix;        printf("  toc_fix        -> %d\n", p->toc_fix);        }
     if (p->spg_fix        >= 0) { g_spg_fix_preset        = p->spg_fix;        printf("  spg_fix        -> %d\n", p->spg_fix);        }
+    if (p->ta_guard       >= 0) { g_ta_guard_preset       = p->ta_guard;       printf("  ta_guard       -> %d\n", p->ta_guard);       }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }
     if (p->tex_clamp_fix  >= 0) { g_tex_clamp_fix_preset  = p->tex_clamp_fix;  printf("  tex_clamp_fix  -> %d\n", p->tex_clamp_fix);  }
