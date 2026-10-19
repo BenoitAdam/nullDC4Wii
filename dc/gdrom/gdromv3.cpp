@@ -44,8 +44,13 @@ extern "C" int get_gdrom_delay();
 
 static u32 s_gd_budget = 0;	// bytes the drive may still move right now
 
+static void gdrom_spinup_tick(u32 cycles);	// GDROM_SPINUP, next to gd_setdisc()
+
 void gdrom_CreditCycles(u32 cycles)
 {
+	// GDROM_SPINUP: the same emulated-clock tick runs the no-disc spin-up timer.
+	gdrom_spinup_tick(cycles);
+
 	const int kbps = get_gdrom_delay();
 	if (kbps <= 0)
 	{
@@ -451,6 +456,23 @@ void gd_set_state(gd_states state)
 }
 
 
+// GDROM_SPINUP (wii/main.cpp; flycastPS3 other_fix.md 3.6): a real drive with no
+// disc reports BUSY while it spins up after a reset, then NODISC. The BIOS plays
+// its swirl intro only if its first drive check sees a status below 6 (BUSY is
+// 0, NODISC 7), so with NODISC straight away it skips the intro.
+extern "C" int get_gdrom_spinup_preset();
+#define GD_SPINUP_SECONDS 3
+static s64 s_gd_spinup_cycles = 0;
+
+static void gdrom_spinup_tick(u32 cycles)
+{
+	if (s_gd_spinup_cycles <= 0)
+		return;
+	s_gd_spinup_cycles -= cycles;
+	if (s_gd_spinup_cycles <= 0 && gd_disk_type == NoDisk && SecNumber.Status == GD_BUSY)
+		SecNumber.Status = GD_NODISC;
+}
+
 void gd_setdisc()
 {
 	// CDDA_STATE_FIX (Flycast): a disc change or drive reset stops the audio.
@@ -465,7 +487,8 @@ void gd_setdisc()
 	switch(gd_disk_type)
 	{
 	case NoDisk:
-		SecNumber.Status = GD_NODISC;
+		// GDROM_SPINUP: still spinning up after a reset -> BUSY, see gdrom_reg_Reset().
+		SecNumber.Status = (get_gdrom_spinup_preset() && s_gd_spinup_cycles > 0) ? GD_BUSY : GD_NODISC;
 		//GDStatus.BSY=0;
 		//GDStatus.DRDY=1;
 		break;
@@ -1688,5 +1711,14 @@ void gdrom_reg_Term()
 void gdrom_reg_Reset(bool Manual)
 {
 	//huh?
+	// GDROM_SPINUP: start the spin-up; only a no-disc drive shows it (BUSY).
+	if (get_gdrom_spinup_preset())
+	{
+		s_gd_spinup_cycles = (s64)SH4_CLOCK_EFF * GD_SPINUP_SECONDS;
+		if (gd_disk_type == NoDisk)
+			SecNumber.Status = GD_BUSY;
+	}
+	else
+		s_gd_spinup_cycles = 0;
 }
 
