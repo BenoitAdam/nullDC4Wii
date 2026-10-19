@@ -1448,6 +1448,22 @@ extern "C" {
   int get_gdrom_spinup_preset() { return g_gdrom_spinup_preset; }
 }
 
+// INF_VTX - drop TA vertices with 1/W = +inf (plugs/drkPvr/gxRend.cpp;
+// flycastPS3 other_fix.md 3.7, Flycast is_vertex_inf). vert_base() turned them
+// into W = 0 and x/y = inf*0 = NaN, and they were submitted to GX as part of
+// their strip: Soul Calibur's opaque list drew spikes / garbage triangles. With
+// this on, a strip holding such a vertex is drawn as the runs of 3+ finite
+// vertices around it (an odd-start run repeats its first vertex to keep the
+// winding; the vertex format and attribute order never change). Cost: one
+// compare per decoded vertex; the render loop checks strips only on frames
+// that had such a vertex. The PS3's 2^20 cap on 1/W is NOT ported (it cut
+// Re-Volt's menu). Wii-untested. 0=off (legacy), 1=on (default).
+int g_inf_vtx_preset = 1;
+
+extern "C" {
+  int get_inf_vtx_preset() { return g_inf_vtx_preset; }
+}
+
 extern "C" {
   int get_disc_bulk_preset() { return g_disc_bulk_preset; }
 }
@@ -2763,6 +2779,7 @@ void checkBiosFiles()
 #define OPT_SPG_FIX     132  // Page 5 (CORE), under GDROM TOC FIX
 #define OPT_TA_GUARD    133  // Page 2 (GRAPHICS), under PCW LISTTYPE
 #define OPT_GDROM_SPINUP 134 // Page 5 (CORE), under SPG TIMING FIX
+#define OPT_INF_VTX     135  // Page 2 (GRAPHICS), under TA GUARD
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2817,6 +2834,7 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_TEX_ALPHA,
   OPT_PCW_LIST,
   OPT_TA_GUARD,
+  OPT_INF_VTX,
   OPT_DECAL_ALPHA,
   OPT_SEAM_FIX,
   OPT_FOG,
@@ -3338,6 +3356,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (SKIP RECORD)  >]"); break;
     }
     printf(" bad TA data skipped, no hang");
+    printf("\n");
+
+    // --- Row: INF_VTX - cut 1/W=+inf vertices out of strips (gxRend.cpp) ---
+    printf("%s INF VERTEX DROP: ", (selectedRow == OPT_INF_VTX) ? ">" : " ");
+    switch (g_inf_vtx_preset) {
+      case 0: printf("[< OFF (NAN TO GX)   >]"); break;
+      case 1: printf("[< ON (SPLIT STRIP)  >]"); break;
+    }
+    printf(" Soul Calibur spikes/garbage");
     printf("\n");
 
     // --- Row: Decal Alpha Fix ---
@@ -4454,6 +4481,7 @@ bool displayOptionsMenu()
         case OPT_SPG_FIX:        g_spg_fix_preset         = (g_spg_fix_preset         + 1) % 2; break;
         case OPT_TA_GUARD:       g_ta_guard_preset        = (g_ta_guard_preset        + 1) % 2; break;
         case OPT_GDROM_SPINUP:   g_gdrom_spinup_preset    = (g_gdrom_spinup_preset    + 1) % 2; break;
+        case OPT_INF_VTX:        g_inf_vtx_preset         = (g_inf_vtx_preset         + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
                                                  (g_gdrom_delay == 1800) ? 0     :
                                                  (g_gdrom_delay == 3600) ? 1800  :
@@ -4602,6 +4630,7 @@ bool displayOptionsMenu()
         case OPT_SPG_FIX:        g_spg_fix_preset         = (g_spg_fix_preset         + 1) % 2; break;
         case OPT_TA_GUARD:       g_ta_guard_preset        = (g_ta_guard_preset        + 1) % 2; break;
         case OPT_GDROM_SPINUP:   g_gdrom_spinup_preset    = (g_gdrom_spinup_preset    + 1) % 2; break;
+        case OPT_INF_VTX:        g_inf_vtx_preset         = (g_inf_vtx_preset         + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
                                                  (g_gdrom_delay == 1800) ? 3600  :
                                                  (g_gdrom_delay == 3600) ? 7200  :
@@ -5626,6 +5655,7 @@ int main(int argc, wchar *argv[])
     printf("SPG Timing Fix : %s\n", g_spg_fix_preset ? "ON (FLYCAST)" : "OFF (LEGACY)");
     printf("TA Guard       : %s\n", g_ta_guard_preset ? "ON (SKIP RECORD)" : "OFF (DIE)");
     printf("GDROM Spinup   : %s\n", g_gdrom_spinup_preset ? "ON (BUSY 3 SEC)" : "OFF (NODISC)");
+    printf("Inf Vertex Drop: %s\n", g_inf_vtx_preset ? "ON (SPLIT STRIP)" : "OFF (NAN TO GX)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
     printf("ADPCM Loop Fix : %s\n", g_adpcm_loop_preset ? "ON (KEEP STATE)" : "OFF (RESET/LAP)");

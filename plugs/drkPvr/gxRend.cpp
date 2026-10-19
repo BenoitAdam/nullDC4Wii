@@ -935,6 +935,14 @@ extern "C" int get_tex_wrap_guard_preset();
 extern "C" int get_tex_clamp_fix_preset();
 #define TEX_CLAMP_FIX() (get_tex_clamp_fix_preset())
 
+// INF_VTX (wii/main.cpp; flycastPS3 other_fix.md 3.7, Flycast is_vertex_inf):
+// a TA vertex with 1/W = +inf comes out of vert_base() with W = 0 and x/y =
+// inf*0 = NaN, and used to go to GX as such (Soul Calibur's opaque list:
+// spikes and garbage triangles). Those vertices are dropped and the strip is
+// cut around them. Cached once per frame in reset_vtx_state().
+extern "C" int get_inf_vtx_preset();
+#define INF_VTX_FIX() (get_inf_vtx_preset())
+
 // ── STRIP_DEDUP: skip the work a strip repeats from the strip before it ─────
 // A game that draws many copies of ONE model -- ChuChu Rocket's mouse mania is
 // the case this was built for, hundreds of identical mice -- submits one
@@ -2699,6 +2707,8 @@ void strip_dedup_dump(double tdiff)
 }
 
 bool  g_tex_clamp_fix_cached   = false; // same idea, for TEX_CLAMP_FIX(): read per texture bind
+bool  g_inf_vtx_cached         = false; // INF_VTX_FIX(), read once per frame
+bool  g_inf_vtx_seen           = false; // vert_base() made a W = 0 (1/W = +inf) vertex this frame
 float g_vert_z_clamp           = 0.0001f; // vert_base 1/W floor: 0.0001 normally,
                                         // 0.001 under LEGACY_DEPTH (1bb8c27).
                                         // A per-frame global rather than a
@@ -3073,6 +3083,8 @@ void reset_vtx_state()
   g_split_screen_cached     = SPLIT_SCREEN();
   g_legacy_depth_cached     = LEGACY_DEPTH();
   g_tex_clamp_fix_cached    = TEX_CLAMP_FIX();
+  g_inf_vtx_cached          = INF_VTX_FIX() != 0;
+  g_inf_vtx_seen            = false;
   g_strip_dedup_cached      = STRIP_DEDUP();
   // tex_frame_reset() above just dropped every slot this key described, and the
   // frame's opening GX state is not what the last frame's final strip left
@@ -8655,7 +8667,9 @@ void DoRender()
   // NOCLIP: disable XF clipping so real hardware matches Dolphin — polys with
   // depth outside the near/far range get their Z clamped instead of vanishing.
   // Safe here because W is always > 0 (vert_base clamps 1/W to >= 0.0001) so
-  // no poly ever crosses w=0, and X/Y stay in DC screen space so the
+  // no poly ever crosses w=0 -- EXCEPT 1/W = +inf, which gives W = 0 and NaN
+  // x/y (Soul Calibur); INF_VTX cuts those vertices out before GX sees them --
+  // and X/Y stay in DC screen space so the
   // rasterizer guard band + scissor still handle off-screen geometry.
   //
   // GX_SetClipMode() is NOT a cheap register poke: it makes the XF unit flush
@@ -10409,6 +10423,59 @@ void DoRender()
         // ordinary path keeps its branch-free inner loop.
         const bool fog_lut = (strip_fog_mode == 0 || strip_fog_mode == 3);
 
+        // INF_VTX: only on a frame where vert_base() produced a W = 0 vertex
+        // (1/W = +inf, x/y NaN) is a strip checked for one. Normal frames pay
+        // nothing here.
+        bool inf_split = false;
+        if (g_inf_vtx_cached && g_inf_vtx_seen)
+        {
+          for (int i = 0; i < count; i++)
+            if (!(drawVTX[i].z > 0.0f)) { inf_split = true; break; }
+        }
+
+        if (inf_split)
+        {
+          // Draw the runs of finite vertices between the infinite ones, each as
+          // its own strip of 3+ (Flycast drops such vertices; the PS3 cut rule).
+          // Per-vertex attributes are exactly the ones the path below sends, in
+          // the same order -- the VCD does not change. A run that starts at an
+          // odd index repeats its first vertex: the degenerate first triangle
+          // keeps every later one on its original winding for culling. A run
+          // never needs more vertices than the strip it came from.
+          auto emit = [&](const Vertex& v)
+          {
+            GX_Position3f32(v.x, v.y, -v.z);
+            GX_Color1u32(HOST_TO_LE32(v.col | alpha_or));
+            if (emit_clr1)
+            {
+              if (fog_lut)
+                GX_Color1u32(HOST_TO_LE32((v.spc & 0x00FFFFFFu) | (FogTableLookup(v.z) << 24)));
+              else
+                GX_Color1u32(HOST_TO_LE32(v.spc));
+            }
+            GX_TexCoord2f32(v.u * su + ou, v.v * sv + ov);
+          };
+          int i = 0;
+          while (i < count)
+          {
+            while (i < count && !(drawVTX[i].z > 0.0f)) i++;
+            const int s = i;
+            while (i < count && drawVTX[i].z > 0.0f) i++;
+            const int n = i - s;
+            if (n < 3)
+              continue;
+            const int dup = s & 1;
+            GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, n + dup);
+            if (dup)
+              emit(drawVTX[s]);
+            for (int k = s; k < i; k++)
+              emit(drawVTX[k]);
+            GX_End();
+          }
+          drawVTX += count;
+        }
+        else
+        {
         GX_Begin(GX_TRIANGLESTRIP, GX_VTXFMT0, count);
         if (emit_clr1)
         {
@@ -10448,6 +10515,7 @@ void DoRender()
           drawVTX++;
         }
         GX_End();
+        } // INF_VTX: end of the normal (uncut) path
       }
 
       // hud_pass: undo the per-strip ALWAYS / no-write override so the next
@@ -12574,6 +12642,11 @@ struct VertexDecoder
 #define vert_base(dst, _x, _y, _z) /*VertexCount++;*/         \
   float _safe_z = (_z >= g_vert_z_clamp) ? _z : g_vert_z_clamp; \
   float W = 1.0f / _safe_z;                                   \
+  /* INF_VTX: NaN/negative 1/W were clamped above, so W is 0 */\
+  /* only for 1/W = +inf. Flag the frame; the strip loop cuts */\
+  /* such vertices out (it scans only flagged frames). */     \
+  if (!(W > 0.0f))                                            \
+    g_inf_vtx_seen = true;                                    \
   curVTX[dst].x = VTX_TFX(_x) * W;                           \
   curVTX[dst].y = VTX_TFY(_y) * W;                           \
   if (!g_fixed_depth_cached)                                  \

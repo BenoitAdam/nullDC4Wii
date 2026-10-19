@@ -703,6 +703,11 @@
         gdrom_spinup=on     <- on/off, with no disc the drive reports BUSY for 3
                                emulated seconds after a reset, then NODISC, so
                                the BIOS plays its swirl intro. Default on.
+        inf_vtx=on          <- on/off, a TA vertex with 1/W = +inf (W = 0, x/y
+                               NaN) is cut out of its strip instead of being
+                               sent to GX: Soul Calibur's spikes and garbage
+                               triangles. The finite runs around it are drawn
+                               as their own strips. Default on.
         tex_wrap_guard=on   <- on/off, stops the persistent texture arena from
                                 recycling bytes the GPU is still sampling this
                                 frame (texture corruption when the cache fills).
@@ -1366,6 +1371,7 @@ extern int g_toc_fix_preset;
 extern int g_spg_fix_preset;
 extern int g_ta_guard_preset;
 extern int g_gdrom_spinup_preset;
+extern int g_inf_vtx_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
 extern int g_tex_clamp_fix_preset;
@@ -1525,6 +1531,7 @@ struct GamePreset
     int spg_fix;
     int ta_guard;
     int gdrom_spinup;
+    int inf_vtx;
     int sched;
     int tex_wrap_guard;
     int tex_clamp_fix;
@@ -2067,6 +2074,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "spg_fix"))        p->spg_fix        = parse_bool(val);
     else if (key_eq(key, "ta_guard"))       p->ta_guard       = parse_bool(val);
     else if (key_eq(key, "gdrom_spinup"))   p->gdrom_spinup   = parse_bool(val);
+    else if (key_eq(key, "inf_vtx"))        p->inf_vtx        = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
     else if (key_eq(key, "tex_clamp_fix"))  p->tex_clamp_fix  = parse_bool(val);
@@ -2202,6 +2210,7 @@ static void preset_clear(GamePreset* cur)
     cur->spg_fix = -1;
     cur->ta_guard = -1;
     cur->gdrom_spinup = -1;
+    cur->inf_vtx = -1;
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
     cur->tex_clamp_fix  = -1;
@@ -2366,6 +2375,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->spg_fix        >= 0) { g_spg_fix_preset        = p->spg_fix;        printf("  spg_fix        -> %d\n", p->spg_fix);        }
     if (p->ta_guard       >= 0) { g_ta_guard_preset       = p->ta_guard;       printf("  ta_guard       -> %d\n", p->ta_guard);       }
     if (p->gdrom_spinup   >= 0) { g_gdrom_spinup_preset   = p->gdrom_spinup;   printf("  gdrom_spinup   -> %d\n", p->gdrom_spinup);   }
+    if (p->inf_vtx        >= 0) { g_inf_vtx_preset        = p->inf_vtx;        printf("  inf_vtx        -> %d\n", p->inf_vtx);        }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }
     if (p->tex_clamp_fix  >= 0) { g_tex_clamp_fix_preset  = p->tex_clamp_fix;  printf("  tex_clamp_fix  -> %d\n", p->tex_clamp_fix);  }
