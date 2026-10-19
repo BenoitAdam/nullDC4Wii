@@ -681,6 +681,14 @@
                                length, GET_TOC/SET_MODE length, DRVSEL/COMMAND
                                writes, GD-DMA length 0 or longer than its read,
                                2340-byte sectors. Default on.
+        toc_fix=on          <- on/off, the TOC the BIOS and games read: ADR 1
+                               on every real track (GDI/MDS stored 0), a data
+                               lead-out entry (CTRL 4, ADR 1), the GDI's
+                               single-density lead-out from track 2's file size
+                               (not a fixed 13085), and the GDI session table
+                               (session 2 starts at track 3; a typo wrote it
+                               into session 1). Default on. Read when the disc
+                               is opened / the TOC is built.
         tex_wrap_guard=on   <- on/off, stops the persistent texture arena from
                                 recycling bytes the GPU is still sampling this
                                 frame (texture corruption when the cache fills).
@@ -1340,6 +1348,7 @@ extern int g_div32_fix_preset;
 extern int g_interp_fix_preset;
 extern int g_gdrom_stat_fix_preset;
 extern int g_gdrom_hang_fix_preset;
+extern int g_toc_fix_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
 extern int g_tex_clamp_fix_preset;
@@ -1495,6 +1504,7 @@ struct GamePreset
     int interp_fix;
     int gdrom_stat_fix;
     int gdrom_hang_fix;
+    int toc_fix;
     int sched;
     int tex_wrap_guard;
     int tex_clamp_fix;
@@ -2033,6 +2043,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "interp_fix"))     p->interp_fix     = parse_bool(val);
     else if (key_eq(key, "gdrom_stat_fix")) p->gdrom_stat_fix = parse_bool(val);
     else if (key_eq(key, "gdrom_hang_fix")) p->gdrom_hang_fix = parse_bool(val);
+    else if (key_eq(key, "toc_fix"))        p->toc_fix        = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
     else if (key_eq(key, "tex_clamp_fix"))  p->tex_clamp_fix  = parse_bool(val);
@@ -2164,6 +2175,7 @@ static void preset_clear(GamePreset* cur)
     cur->interp_fix   = -1;
     cur->gdrom_stat_fix = -1;
     cur->gdrom_hang_fix = -1;
+    cur->toc_fix = -1;
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
     cur->tex_clamp_fix  = -1;
@@ -2324,6 +2336,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->interp_fix     >= 0) { g_interp_fix_preset     = p->interp_fix;     printf("  interp_fix     -> %d\n", p->interp_fix);     }
     if (p->gdrom_stat_fix >= 0) { g_gdrom_stat_fix_preset = p->gdrom_stat_fix; printf("  gdrom_stat_fix -> %d\n", p->gdrom_stat_fix); }
     if (p->gdrom_hang_fix >= 0) { g_gdrom_hang_fix_preset = p->gdrom_hang_fix; printf("  gdrom_hang_fix -> %d\n", p->gdrom_hang_fix); }
+    if (p->toc_fix        >= 0) { g_toc_fix_preset        = p->toc_fix;        printf("  toc_fix        -> %d\n", p->toc_fix);        }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }
     if (p->tex_clamp_fix  >= 0) { g_tex_clamp_fix_preset  = p->tex_clamp_fix;  printf("  tex_clamp_fix  -> %d\n", p->tex_clamp_fix);  }

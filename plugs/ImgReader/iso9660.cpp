@@ -5,6 +5,11 @@
 // This is defined in main.cpp
 extern "C" int get_debug_loop();
 extern "C" int get_disc_bulk_preset();   // DISC BULK READ, see below
+extern "C" int get_toc_fix_preset();     // TOC_FIX (wii/main.cpp), see load_gdi
+
+// TOC_FIX: the single-density area's lead-out = track 2's last FAD + 1, measured
+// from its file at load (Flycast gdi.cpp). 13085 is the legacy fixed value.
+static u32 gdi_sd_leadout = 13085;
 
 // DISC census counters (defined in ImgReader.cpp). Say which reader is live
 // and, when a run is NOT coalesced, which of the five guards rejected it.
@@ -216,7 +221,7 @@ void iso_DriveGetTocInfo(TocInfo* toc,DiskArea area)
 	memcpy(toc,&gdi_toc,sizeof(TocInfo));
 	if(area==SingleDensity)
 	{
-		toc->LeadOut.FAD=13085;
+		toc->LeadOut.FAD=get_toc_fix_preset() ? gdi_sd_leadout : 13085;
 		toc->FistTrack=1;
 		toc->LastTrack=2;
 
@@ -313,6 +318,21 @@ bool load_gdi(char* file_)
 
 	gdi_toc.LastTrack=iso_tc;
 
+	// TOC_FIX (Flycast gdi.cpp): track 2's end from its file size, for the
+	// single-density lead-out. Measured whatever the preset; only read with it on.
+	gdi_sd_leadout = 13085;
+	if (iso_tc >= 2 && iso_tracks[1].f && iso_tracks[1].SectorSize)
+	{
+		fseek(iso_tracks[1].f, 0, SEEK_END);
+		const long fsz = ftell(iso_tracks[1].f);
+		if (fsz > (long)iso_tracks[1].offset)
+			gdi_sd_leadout = gdi_toc.tracks[1].FAD +
+			                 (u32)(fsz - iso_tracks[1].offset) / iso_tracks[1].SectorSize;
+		printf("GDI : single-density lead-out %u (legacy 13085)\n", gdi_sd_leadout);
+	}
+
+	const bool toc_fix = get_toc_fix_preset() != 0;
+
 	gdi_ses.SessionCount=2;
 	//session 1 : start @ track 1, and its fad
 	gdi_ses.SessionStart[0]=1;
@@ -320,7 +340,9 @@ bool load_gdi(char* file_)
 
 
 	//session 2 : start @ track 3, and its fad
-	gdi_ses.SessionStart[0]=3;
+	// TOC_FIX: this line wrote [0] -- session 1 then started at track 3 and
+	// session 2 kept the 0xFF fill. Flycast: 1 and 3.
+	gdi_ses.SessionStart[toc_fix ? 1 : 0]=3;
 	gdi_ses.SessionFAD[1]=gdi_toc.tracks[2].FAD;
 	gdi_ses.SessionsEndFAD=549300;
 

@@ -6,6 +6,7 @@
 #include "os_base.h"
 
 extern "C" int get_gdrom_hang_fix_preset();   // wii/main.cpp, GDROM_HANG_FIX (ConvertSector 2340)
+extern "C" int get_toc_fix_preset();          // wii/main.cpp, TOC_FIX (ConvToc)
 
 u32 NullDriveDiscType;
 DriveIF* CurrDrive;
@@ -239,8 +240,34 @@ u32 CreateTrackInfo_se(u32 ctrl,u32 addr,u32 tracknum)
 	return *(u32*)p;
 }
 
+// TOC_FIX: a TOC slot that holds a real track (the readers fill unused ones with
+// 0xFFFFFFF / 0xFFFFFFFF sentinels, and the real FADs end below 549300).
+static inline bool toc_real(const TocTrackInfo& t) { return t.FAD < 0x01000000; }
+
 void ConvToc(u32* to,TocInfo* from)
 {
+	if (get_toc_fix_preset() && from->FistTrack >= 1 && from->FistTrack <= 99 &&
+	    from->LastTrack >= from->FistTrack && from->LastTrack <= 99 &&
+	    toc_real(from->tracks[from->FistTrack-1]))
+	{
+		// TOC_FIX (Flycast libGDR_GetToc, flycastPS3 3.3d): every entry is
+		// sub-Q mode 1 (ADR = 1) -- the readers pass their own ADR through and
+		// GDI/MDS store 0 -- and the lead-out is a data entry (CTRL 4, ADR 1);
+		// CDI/MDS gave it CTRL 0 ADR 0. Unused slots keep their 0xFF fill.
+		const TocTrackInfo& ft = from->tracks[from->FistTrack-1];
+		const TocTrackInfo& lt = from->tracks[from->LastTrack-1];
+		to[99] =CreateTrackInfo_se(ft.Control & 0xF, 1, from->FistTrack);
+		to[100]=CreateTrackInfo_se(lt.Control & 0xF, 1, from->LastTrack);
+		to[101]=CreateTrackInfo(4, 1, from->LeadOut.FAD);
+		for (int i=0;i<99;i++)
+		{
+			const TocTrackInfo& t = from->tracks[i];
+			to[i] = toc_real(t) ? CreateTrackInfo(t.Control & 0xF, 1, t.FAD)
+			                    : CreateTrackInfo(t.Control, t.Addr, t.FAD);
+		}
+		return;
+	}
+
 	to[99]=CreateTrackInfo_se(from->tracks[from->FistTrack-1].Control,from->tracks[from->FistTrack-1].Addr,from->FistTrack);
 	to[100]=CreateTrackInfo_se(from->tracks[from->LastTrack-1].Control,from->tracks[from->LastTrack-1].Addr,from->LastTrack);
 	to[101]=CreateTrackInfo(from->LeadOut.Control,from->LeadOut.Addr,from->LeadOut.FAD);
