@@ -97,6 +97,41 @@ static int idle_kamui_form(u32 addr, u32 opcodes)
 
 extern "C" int get_idle_kamui_preset();
 
+// ----------------------------------------------------------------------------
+// IDLE_SHINOBI preset (wii/main.cpp; flycastPS3 other_fix.md 2.2 / P94).
+// The Shinobi library's idle fiber walks a 16-slot task table forever:
+//     for (;;) for (i = 0; i < 16; i++) if (task[i].ready) task[i].fn(...);
+// Its blocks store, so no pure-loop rule skips it. Matched as the 4-opcode
+// test block that the for-init jumps to once per walk:
+//     E310 51F1 3133 8BE1   mov #16,r3 / mov.l @(4,r15),r1 / cmp/ge r3,r1 / bf
+// plus the 26 words from the bf target (word 0) up to it. Read BACKWARDS from
+// the block's own bf, whose target is word 0, so every read stays in the loop.
+// Words 12-13 are the table address (a mov.l @(disp,pc) literal) and differ
+// per game. The block gets idle_hash = 16: a debt of 15 slices, paid one slice
+// per block entry, and dropped by the next dispatched interrupt (mainloop in
+// wii_driver.cpp), which is what makes a task ready.
+// ----------------------------------------------------------------------------
+#define IDLE_TASK_WORDS 30
+#define IDLE_TASK_TABLE 12
+static const u16 idle_task_loop[IDLE_TASK_WORDS] = {
+	0x51F1, 0x4108, 0x4100, 0xD304, 0x313C, 0x1F12, 0x6212, 0x2228, 0x8B04, 0xA00C, 0x0009, 0x0000, 0x0000, 0x0000,
+	0x53F2, 0x6232, 0x54F2, 0x5441, 0x420B, 0x0009, 0x63F2, 0x230B, 0x2F32, 0x52F1, 0x7201, 0x1F21,
+	0xE310, 0x51F1, 0x3133, 0x8BE1 };
+
+// True when this 4-opcode block is the task loop's test.
+static bool idle_task_rule(u32 addr, u32 opcodes)
+{
+	if (opcodes != 4)
+		return false;
+	for (u32 i = IDLE_TASK_WORDS; i-- > 0;)
+		if ((i < IDLE_TASK_TABLE || i > IDLE_TASK_TABLE + 1) &&
+		    ReadMem16(addr + 8 - (IDLE_TASK_WORDS - i) * 2) != idle_task_loop[i])
+			return false;
+	return true;
+}
+
+extern "C" int get_idle_shinobi_preset();
+
 DecodedBlock block;
 struct
 {
@@ -1549,6 +1584,24 @@ _end:
 				printf("[IDLE] Kamui vsync wait form %d at %08X\n", form, block.start);
 				fflush(stdout);
 			}
+		}
+	}
+
+	// IDLE_SHINOBI: the test block of the Shinobi idle fiber's task walk
+	// leaves a debt of 15 slices (r29 = -15 * timeslice after its check),
+	// dropped by the next interrupt (wii_driver.cpp mainloop).
+	if (!block.idle_hash && get_idle_shinobi_preset() &&
+	    idle_task_rule(block.start, block.opcodes))
+	{
+		block.idle_hash = 16;
+		// Same bounded log; PS3 vectors: Garou 8C015E70, Sonic Shuffle
+		// 8C0158A0, Border Down 8C04838C.
+		static u32 s_idle_task_log = 0;
+		if (s_idle_task_log < 16)
+		{
+			s_idle_task_log++;
+			printf("[IDLE] Shinobi task loop at %08X\n", block.start);
+			fflush(stdout);
 		}
 	}
 
