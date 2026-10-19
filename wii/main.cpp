@@ -1253,6 +1253,22 @@ extern "C" {
   int get_cdda_pause_fix_preset() { return g_cdda_pause_fix_preset; }
 }
 
+// CDDA_STATE_FIX - Flycast's CD-DA state machine (dc/gdrom/gdromv3.cpp;
+// flycastPS3 other_fix.md 3.3c). The drive kept a single "playing" flag, so:
+// a play ended only on an exact == to its end FAD; the end set STANDBY;
+// CD_PLAY 7 (resume) played whatever the state and re-read the repeat count;
+// a data read, a disc change or a drive reset left the CD audio running; and
+// GET_SCD reported a paused play as "no audio status". With this on the drive
+// keeps NOINFO / PLAYING / PAUSED / TERMINATED: a seek pauses, CD_PLAY 7
+// resumes only a pause, a data read stops the audio, the end is >= and reads
+// "ended normally", end FAD 0 = the end of the disc. The forced DSC bit in the
+// status register is NOT changed. Wii-untested. 0=off (legacy), 1=on (default).
+int g_cdda_state_fix_preset = 1;
+
+extern "C" {
+  int get_cdda_state_fix_preset() { return g_cdda_state_fix_preset; }
+}
+
 // DISC_BULK - serve a run of GD-ROM sectors with ONE fseek + fread instead of
 // one per sector (plugs/ImgReader/iso9660.cpp iso_ReadRun).
 //
@@ -2681,6 +2697,7 @@ void checkBiosFiles()
 #define OPT_INTERP_FIX  127  // Page 5 (CORE), under FLASH BROADCAST
 #define OPT_GDROM_STAT_FIX 128 // Page 5 (CORE), under SH4 INTERP FIX
 #define OPT_GDROM_HANG_FIX 129 // Page 5 (CORE), under GDROM STAT FIX
+#define OPT_CDDA_STATE_FIX 130 // Page 4 (AUDIO), under CDDA PAUSE FIX
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2774,6 +2791,7 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_AUDIO_DRC,
   OPT_CDDA,
   OPT_CDDA_PAUSE_FIX,
+  OPT_CDDA_STATE_FIX,
   OPT_MUTE_PCM16,
   OPT_AICA_FAST,
   OPT_ADPCM_LOOP,
@@ -3537,6 +3555,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (KEEP POS)     >]"); break;
     }
     printf(" music resumes after a pause");
+    printf("\n");
+
+    // --- Row: CDDA_STATE_FIX - Flycast CD-DA play/pause/end/read rules (gdromv3.cpp) ---
+    printf("%s CDDA STATE FIX : ", (selectedRow == OPT_CDDA_STATE_FIX) ? ">" : " ");
+    switch (g_cdda_state_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FLYCAST)      >]"); break;
+    }
+    printf(" play/pause/end/read rules");
     printf("\n");
 
     // --- Row: Mute 16-bit PCM channels (ChuChu Rocket SFX workaround) ---
@@ -4313,6 +4340,7 @@ bool displayOptionsMenu()
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
         case OPT_CDI_HDR_FIX:    g_cdi_hdr_fix_preset     = (g_cdi_hdr_fix_preset     + 1) % 2; break;
         case OPT_CDDA_PAUSE_FIX: g_cdda_pause_fix_preset  = (g_cdda_pause_fix_preset  + 1) % 2; break;
+        case OPT_CDDA_STATE_FIX: g_cdda_state_fix_preset  = (g_cdda_state_fix_preset  + 1) % 2; break;
         case OPT_FLASH_BROADCAST: g_flash_broadcast_preset = (g_flash_broadcast_preset + 2) % 3; break;
         case OPT_INTERP_FIX:     g_interp_fix_preset      = (g_interp_fix_preset      + 1) % 2; break;
         case OPT_GDROM_STAT_FIX: g_gdrom_stat_fix_preset  = (g_gdrom_stat_fix_preset  + 1) % 2; break;
@@ -4456,6 +4484,7 @@ bool displayOptionsMenu()
         case OPT_DISC_BULK:      g_disc_bulk_preset       = (g_disc_bulk_preset       + 1) % 2; break;
         case OPT_CDI_HDR_FIX:    g_cdi_hdr_fix_preset     = (g_cdi_hdr_fix_preset     + 1) % 2; break;
         case OPT_CDDA_PAUSE_FIX: g_cdda_pause_fix_preset  = (g_cdda_pause_fix_preset  + 1) % 2; break;
+        case OPT_CDDA_STATE_FIX: g_cdda_state_fix_preset  = (g_cdda_state_fix_preset  + 1) % 2; break;
         case OPT_FLASH_BROADCAST: g_flash_broadcast_preset = (g_flash_broadcast_preset + 1) % 3; break;
         case OPT_INTERP_FIX:     g_interp_fix_preset      = (g_interp_fix_preset      + 1) % 2; break;
         case OPT_GDROM_STAT_FIX: g_gdrom_stat_fix_preset  = (g_gdrom_stat_fix_preset  + 1) % 2; break;
@@ -5473,6 +5502,7 @@ int main(int argc, wchar *argv[])
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("CDDA Music     : %s\n", g_cdda_preset ? "ON (CD MUSIC)" : "OFF (LEGACY)");
     printf("CDDA Pause Fix : %s\n", g_cdda_pause_fix_preset ? "ON (KEEP POS)" : "OFF (TO FAD 150)");
+    printf("CDDA State Fix : %s\n", g_cdda_state_fix_preset ? "ON (FLYCAST)" : "OFF (LEGACY)");
     printf("CDI Header Fix : %s\n", g_cdi_hdr_fix_preset ? "ON (CDIRIP RULE)" : "OFF (LEGACY)");
     printf("Flash Broadcast: %s\n", g_flash_broadcast_preset == 2 ? "NTSC (ALWAYS)" :
                                     g_flash_broadcast_preset == 1 ? "DISC (IP.BIN)" : "OFF (FLASH VALUE)");

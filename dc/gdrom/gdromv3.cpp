@@ -78,6 +78,7 @@ extern "C" int get_debug_gdrom();
 extern "C" int get_cdda_pause_fix_preset();   // wii/main.cpp, CDDA_PAUSE_FIX
 extern "C" int get_gdrom_stat_fix_preset();   // wii/main.cpp, GDROM_STAT_FIX
 extern "C" int get_gdrom_hang_fix_preset();   // wii/main.cpp, GDROM_HANG_FIX
+extern "C" int get_cdda_state_fix_preset();   // wii/main.cpp, CDDA_STATE_FIX
 
 enum gd_states
 {
@@ -169,9 +170,14 @@ struct
 	u8 command;
 } ata_cmd;
 
+// CDDA_STATE_FIX: Flycast's four audio states. `playing` stays the "audio is
+// being output" flag every reader uses, kept equal to (status == CDDA_PLAYING).
+enum { CDDA_NOINFO = 0, CDDA_PLAYING, CDDA_PAUSED, CDDA_TERMINATED };
+
 struct
 {
 	bool playing;
+	u8   status;	// CDDA_STATE_FIX, see the enum above
 	u32 repeats;
 	union
 	{
@@ -194,6 +200,13 @@ static bool s_cdda_pos_valid = false;
 
 static u32 gd_report_fad()
 {
+	// CDDA_STATE_FIX: Flycast's exact rule, now that a paused state exists.
+	if (get_cdda_state_fix_preset())
+	{
+		if (cdda.status == CDDA_PLAYING || cdda.status == CDDA_PAUSED)
+			return cdda.CurrAddr.FAD;
+		return read_params.start_sector ? read_params.start_sector - 1 : 150;
+	}
 	if (s_cdda_pos_valid || cdda.playing)
 		return cdda.CurrAddr.FAD;
 	return read_params.start_sector ? read_params.start_sector - 1 : 150;
@@ -250,13 +263,23 @@ void FASTCALL gdrom_get_cdda(s16* sector)
 	{
 		libGDR_ReadSector((u8*)sector,cdda.CurrAddr.FAD,1,2352);
 		cdda.CurrAddr.FAD++;
-		if (cdda.CurrAddr.FAD==cdda.EndAddr.FAD)
+		// CDDA_STATE_FIX (Flycast libCore_CDDA_Sector): end on >=, so a play whose
+		// end lies behind its position still stops; the drive then PAUSEs and the
+		// audio status reads "ended normally" (GET_SCD 0x13).
+		const bool state_fix = get_cdda_state_fix_preset() != 0;
+		if (state_fix ? cdda.CurrAddr.FAD>=cdda.EndAddr.FAD : cdda.CurrAddr.FAD==cdda.EndAddr.FAD)
 		{
 			if (cdda.repeats==0)
 			{
 				//stop
 				cdda.playing=false;
-				SecNumber.Status=GD_STANDBY;
+				if (state_fix)
+				{
+					cdda.status=CDDA_TERMINATED;
+					SecNumber.Status=GD_PAUSE;
+				}
+				else
+					SecNumber.Status=GD_STANDBY;
 			}
 			else
 			{
@@ -430,6 +453,13 @@ void gd_set_state(gd_states state)
 
 void gd_setdisc()
 {
+	// CDDA_STATE_FIX (Flycast): a disc change or drive reset stops the audio.
+	if (get_cdda_state_fix_preset())
+	{
+		cdda.status = CDDA_NOINFO;
+		cdda.playing = false;
+	}
+
 	gd_disk_type = (DiscType)libGDR_GetDiscType();
 
 	switch(gd_disk_type)
@@ -723,6 +753,17 @@ void gd_process_spi_cmd()
 			// GDROM_STAT_FIX: a data read; REQ_STAT/GET_SCD report it from now on.
 			s_cdda_pos_valid = false;
 
+			// CDDA_STATE_FIX (Flycast SPI_CD_READ): the drive cannot play audio
+			// and read data at once -- a data read ends the CD-DA. The legacy
+			// code kept mixing audio sectors in while the game loaded.
+			if (get_cdda_state_fix_preset())
+			{
+				if (cdda.playing)
+					SecNumber.Status = GD_PAUSE;
+				cdda.playing = false;
+				cdda.status = CDDA_NOINFO;
+			}
+
 			read_params.start_sector=start_sector;
 			read_params.remaining_sectors=sector_count;
 			read_params.sector_type = sector_type;//yeah i know , not realy many types supported ...
@@ -905,6 +946,57 @@ void gd_process_spi_cmd()
 			if (get_debug_gdrom()) printf("GDROM: Unhandled Sega SPI frame: SPI_CD_PLAY\n");
 			//cdda.CurrAddr.FAD=60000;
 
+			if (get_cdda_state_fix_preset())
+			{
+				// CDDA_STATE_FIX (Flycast SPI_CD_PLAY). The legacy code below plays
+				// whatever the state, and reads the repeat count on a resume too.
+				const u32 ptype = packet_cmd.data_8[1] & 7;
+				if (ptype == 1 || ptype == 2)
+				{
+					const bool msf = ptype == 2;
+					cdda.CurrAddr.FAD = cdda.StartAddr.FAD = GetFAD(&packet_cmd.data_8[2], msf);
+					cdda.EndAddr.FAD = GetFAD(&packet_cmd.data_8[8], msf);
+					if (cdda.EndAddr.FAD == 0)
+					{
+						// End 0 = the last sector of the disc.
+						u8 ses_inf[6] = { 0 };
+						libGDR_GetSessionInfo(ses_inf, 0);
+						cdda.EndAddr.FAD = (ses_inf[3] << 16) | (ses_inf[4] << 8) | ses_inf[5];
+					}
+					cdda.repeats = packet_cmd.data_8[6] & 0xF;
+					cdda.status = CDDA_PLAYING;
+					cdda.playing = true;
+					SecNumber.Status = GD_PLAY;
+					GDStatus.DSC = 1;
+					s_cdda_pos_valid = true;
+				}
+				else if (ptype == 7)
+				{
+					// Resume only a PAUSED play, unless it already ran past its end.
+					if (cdda.status == CDDA_PAUSED)
+					{
+						if (cdda.CurrAddr.FAD > cdda.EndAddr.FAD)
+						{
+							cdda.status = CDDA_TERMINATED;
+							cdda.playing = false;
+							SecNumber.Status = GD_STANDBY;
+						}
+						else
+						{
+							cdda.status = CDDA_PLAYING;
+							cdda.playing = true;
+							SecNumber.Status = GD_PLAY;
+						}
+					}
+				}
+				else
+				{
+					die("SPI_CD_PLAY: unknown parameter");
+				}
+				gd_set_state(gds_procpacketdone);
+				break;
+			}
+
 			cdda.playing=true;
 			SecNumber.Status=GD_PLAY;
 			s_cdda_pos_valid=true;   // GDROM_STAT_FIX: report the CD-DA head
@@ -948,6 +1040,11 @@ void gd_process_spi_cmd()
 			if (get_debug_gdrom()) printf("GDROM: Unhandled Sega SPI frame: SPI_CD_SEEK\n");
 
 			SecNumber.Status=GD_PAUSE;
+			// CDDA_STATE_FIX (Flycast): a seek pauses a playing CD-DA (a later
+			// CD_PLAY 7 resumes it); any other state is left as it was.
+			const bool state_fix = get_cdda_state_fix_preset() != 0;
+			if (state_fix && cdda.status == CDDA_PLAYING)
+				cdda.status = CDDA_PAUSED;
 			cdda.playing=false;
 
 			u32 param_type=packet_cmd.data_8[1]&0x7;
@@ -967,6 +1064,8 @@ void gd_process_spi_cmd()
 				//stop audio , goto home
 				SecNumber.Status=GD_STANDBY;
 				cdda.StartAddr.FAD=cdda.CurrAddr.FAD=150;
+				if (state_fix)
+					cdda.status=CDDA_NOINFO;
 				GDStatus.DSC=1;	//we did the seek xD lol
 			}
 			else if (param_type==4)
@@ -986,6 +1085,8 @@ void gd_process_spi_cmd()
 					cdda.playing = 0;
 					SecNumber.Status = GD_STANDBY;  // STANDBY = audio playback ended/stopped
 					GDStatus.DSC=1;
+					if (state_fix)
+						cdda.status = CDDA_NOINFO;   // this legacy "pause" is a stop
 				}
 			}
 			else
@@ -1050,6 +1151,20 @@ void gd_process_spi_cmd()
 					subc_info[1]=0x11;//11h	Audio playback in progress
 				else
 					subc_info[1]=0x15;//15h	No audio status information
+			}
+
+			// CDDA_STATE_FIX (Flycast gd_get_subcode): the audio status comes from
+			// the CD-DA state, not the drive status -- a paused play reads 12h
+			// (the code above said 15h "no information" for it).
+			if (get_cdda_state_fix_preset())
+			{
+				switch (cdda.status)
+				{
+				case CDDA_PLAYING:    subc_info[1]=0x11; break;	// playback in progress
+				case CDDA_PAUSED:     subc_info[1]=0x12; break;	// playback paused
+				case CDDA_TERMINATED: subc_info[1]=0x13; break;	// playback ended normally
+				default:              subc_info[1]=0x15; break;	// no audio status information
+				}
 			}
 
 			if (format==0)
