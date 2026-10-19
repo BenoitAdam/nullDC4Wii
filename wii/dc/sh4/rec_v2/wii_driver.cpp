@@ -407,8 +407,10 @@ void ngen_Begin(DecodedBlock* block,bool force_checks)
 	// check above, so this block itself still runs (before it, the block's own
 	// exit to the update path would be lost). r29 = (1 - idle_hash) * timeslice:
 	// 0 ends the slice at the next block's check; a negative value is a debt of
-	// that many further slices. Emulated time still advances a full slice per
-	// UpdateSystem, so a wait loop just reaches its event in fewer host turns.
+	// that many further slices (IDLE_SHINOBI: 16 -> 15, dropped by the next
+	// dispatched interrupt in the mainloop). Emulated time still advances a
+	// full slice per UpdateSystem, so a wait loop just reaches its event in
+	// fewer host turns.
 	if (block->idle_hash)
 		ppc_li(ppc_cycles, (u32)((1 - (s32)block->idle_hash) * sh4_GetTimeslice()));
 
@@ -4893,6 +4895,22 @@ void ngen_mainloop()
 				reg_flush_all();
 				ppc_call(UpdateSystem_handle_event);
 				reg_reload_all();
+
+				// IDLE_SHINOBI (decoder.cpp idle_task_rule; other_fix.md 2.2):
+				// a dispatched interrupt drops what is left of a wait-loop
+				// debt, so the task it made ready runs at once. r29 is still
+				// negative here (after the add above) only while such a debt
+				// is being paid -- no other path drives it below -max_cycles
+				// -- so this is a no-op without one, and is emitted always
+				// (the mainloop is emitted once; the decoder is the gate).
+				// The PS3 loads 0 here; on this layout the slice is already
+				// added above, so 0 would leave one more empty slice before
+				// the handler runs. A fresh slice is the no-debt state.
+				ppc_cmpi(ppc_cr0,ppc_cycles,0,0);
+				ppc_label* paid=ppc_CreateLabel();
+				ppc_bcx(BO_FALSE,BI_CR0_LT,0,0,0);	// bge paid
+				ppc_li(ppc_cycles,jit_timeslice);
+				paid->MarkLabel();
 			}
 			no_intr->MarkLabel();
 			ppc_sh_load(ppc_next_pc,reg_nextpc);

@@ -38,9 +38,11 @@ public:
 	u32 cycles;
 	u32 opcodes;
 	u32 sh4_code_size;	//bytes of SH4 source consumed, for the block-check guard
-	u8  idle_hash;		//IDLE_KAMUI: >0 = a known wait-loop tail; the backend
-				//loads r29 with (1 - idle_hash) * timeslice after the
-				//block's cycle check (decoder.cpp idle_kamui_form)
+	u8  idle_hash;		//IDLE_KAMUI / IDLE_SHINOBI: >0 = a known wait-loop
+				//block; the backend loads r29 with (1 - idle_hash) *
+				//timeslice after the block's cycle check: 1 ends the
+				//slice (Kamui), 16 = a 15-slice debt that the next
+				//interrupt drops (Shinobi; decoder.cpp idle_task_rule)
 
 	u32 BranchBlock;	//STATIC_*,COND_*: jump target
 	u32 NextBlock;		//*_CALL,COND_*: next block (by position)

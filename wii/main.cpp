@@ -1498,6 +1498,28 @@ extern "C" {
   int get_idle_kamui_preset() { return g_idle_kamui_preset; }
 }
 
+// IDLE_SHINOBI - the Shinobi library's idle task walk leaves a 15-slice debt
+// that the next interrupt drops (dc/sh4/rec_v2/decoder.cpp idle_task_rule +
+// wii_driver.cpp ngen_Begin and the mainloop's interrupt branch; flycastPS3
+// other_fix.md 2.2 / P94). The idle fiber walks a 16-slot task table forever
+// and stores every turn, so no pure-loop rule skips it. Matched at compile
+// time as the walk's exact 4-opcode test block (mov #16,r3 / mov.l
+// @(4,r15),r1 / cmp/ge / bf) plus the 26 words from its bf target, table
+// address free. That block loads r29 = -15 * timeslice after its own cycle
+// check: each next block entry pays one slice (emulated time still moves a
+// full slice per UpdateSystem), until the debt is paid or a dispatched
+// interrupt -- the only thing that makes a task ready -- drops it.
+// PS3 hardware 2026-10-16: Garou fights 2.2-2.4K vertices 86-100% -> 100%
+// (60 fps), 3.0-3.4K 80-86% -> 100%; Border Down 12K+ 99.3%, Sonic Shuffle
+// 99.6%. Without the interrupt drop only 3 slices were safe (Border Down
+// 77-104%). Logs "[IDLE] Shinobi task loop at ADDR" (first 16 matches). Read
+// when a block is COMPILED. Wii-untested. 0=off (legacy), 1=on (default).
+int g_idle_shinobi_preset = 1;
+
+extern "C" {
+  int get_idle_shinobi_preset() { return g_idle_shinobi_preset; }
+}
+
 // INF_VTX - drop TA vertices with 1/W = +inf (plugs/drkPvr/gxRend.cpp;
 // flycastPS3 other_fix.md 3.7, Flycast is_vertex_inf). vert_base() turned them
 // into W = 0 and x/y = inf*0 = NaN, and they were submitted to GX as part of
@@ -2833,6 +2855,7 @@ void checkBiosFiles()
 #define OPT_FOG_INDEX   136  // Page 2 (GRAPHICS), under FOG
 #define OPT_RTC_HOST    137  // Page 5 (CORE), under GDROM SPINUP
 #define OPT_IDLE_KAMUI  138  // Page 5 (CORE), under RTC FROM HOST
+#define OPT_IDLE_SHINOBI 139 // Page 5 (CORE), under IDLE KAMUI
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2962,7 +2985,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_SPG_FIX,
   OPT_GDROM_SPINUP,
   OPT_RTC_HOST,
-  OPT_IDLE_KAMUI
+  OPT_IDLE_KAMUI,
+  OPT_IDLE_SHINOBI
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -4003,6 +4027,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (1 TURN/SLICE) >]"); break;
     }
     printf(" vsync wait: Ikaruga/Rez/CvS2");
+    printf("\n");
+
+    // --- Row: IDLE_SHINOBI - Shinobi idle task walk: 15-slice debt (decoder.cpp) ---
+    printf("%s IDLE SHINOBI   : ", (selectedRow == OPT_IDLE_SHINOBI) ? ">" : " ");
+    switch (g_idle_shinobi_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEBT TIL IRQ) >]"); break;
+    }
+    printf(" task loop: Garou/Border Down");
     printf("\n\n");
 
     printOptionsFooter();
@@ -4568,6 +4601,7 @@ bool displayOptionsMenu()
         case OPT_FOG_INDEX:      g_fog_index_preset       = (g_fog_index_preset       + 1) % 2; break;
         case OPT_RTC_HOST:       g_rtc_host_preset        = (g_rtc_host_preset        + 1) % 2; break;
         case OPT_IDLE_KAMUI:     g_idle_kamui_preset      = (g_idle_kamui_preset      + 1) % 2; break;
+        case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
                                                  (g_gdrom_delay == 1800) ? 0     :
                                                  (g_gdrom_delay == 3600) ? 1800  :
@@ -4720,6 +4754,7 @@ bool displayOptionsMenu()
         case OPT_FOG_INDEX:      g_fog_index_preset       = (g_fog_index_preset       + 1) % 2; break;
         case OPT_RTC_HOST:       g_rtc_host_preset        = (g_rtc_host_preset        + 1) % 2; break;
         case OPT_IDLE_KAMUI:     g_idle_kamui_preset      = (g_idle_kamui_preset      + 1) % 2; break;
+        case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
                                                  (g_gdrom_delay == 1800) ? 3600  :
                                                  (g_gdrom_delay == 3600) ? 7200  :
@@ -5748,6 +5783,7 @@ int main(int argc, wchar *argv[])
     printf("Fog Index Fix  : %s\n", g_fog_index_preset ? "ON (DENSITY/W)" : "OFF (W*DENSITY)");
     printf("RTC From Host  : %s\n", g_rtc_host_preset ? "ON (WII CLOCK)" : "OFF (SAVED VALUE)");
     printf("Idle Kamui     : %s\n", g_idle_kamui_preset ? "ON (1 TURN/SLICE)" : "OFF (LEGACY)");
+    printf("Idle Shinobi   : %s\n", g_idle_shinobi_preset ? "ON (DEBT TIL IRQ)" : "OFF (LEGACY)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
     printf("ADPCM Loop Fix : %s\n", g_adpcm_loop_preset ? "ON (KEEP STATE)" : "OFF (RESET/LAP)");
