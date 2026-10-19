@@ -12,6 +12,7 @@
 
 // PVR X-scaler preset (see wii/game_presets.h, wii/main.cpp).
 extern "C" int get_x_scaler_preset();
+extern "C" int get_spg_fix_preset();   // SPG_FIX (wii/main.cpp), see Regs_Reset
 
 u8 regs[RegSize];
 
@@ -151,7 +152,9 @@ void Regs_Reset(bool Manual)
 	REVISION            = 0x00000011;
 	SOFTRESET           = 0x00000007;
 	SPG_HBLANK_INT.full = 0x031D0000;
-	SPG_VBLANK_INT.full = 0x01500104;
+	// SPG_FIX (Flycast pvr_regs.cpp): reset value 0x00150104 -- the legacy one
+	// is SPG_VBLANK's (below), copied here. The BIOS rewrites it anyway.
+	SPG_VBLANK_INT.full = get_spg_fix_preset() ? 0x00150104 : 0x01500104;
 	FPU_PARAM_CFG       = 0x0007DF77;
 	HALF_OFFSET         = 0x00000007;
 	ISP_FEED_CFG        = 0x00402000;

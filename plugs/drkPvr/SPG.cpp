@@ -20,6 +20,7 @@ extern "C" int get_x_scaler_preset();
 
 // Hardware-like HOLLY IRQ delays (see wii/game_presets.h, wii/main.cpp).
 extern "C" int get_render_delay_preset();
+extern "C" int get_spg_fix_preset();   // SPG_FIX (wii/main.cpp), see libPvr_UpdatePvr
 #define RENDER_DELAY() (get_render_delay_preset() != 0)
 
 // IFB_PROBE breakdown (wii/dc/sh4/rec_v2/wii_driver.cpp). Self-quiets when the
@@ -314,8 +315,26 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
         if (SPG_VBLANK.vbend == spg_CurrentScanline)
             spg_InVblank = 0;
 
-        // Interlaced field toggle
-        SPG_STATUS.fieldnum = SPG_CONTROL.interlace ? (~SPG_STATUS.fieldnum & 1) : 0;
+        // SPG_FIX (Flycast spg.cpp, flycastPS3 other_fix.md 3.4): the field bit
+        // toggles once per frame, at line 0 -- legacy flipped it every line --
+        // and the HBlank IRQ follows SPG_HBLANK_INT: mode 0 at the compare
+        // line, mode 2 on every line, mode 1 not emulated (as Flycast). Legacy
+        // raised it only at vblank start (below), whatever the register said.
+        const bool spg_fix = get_spg_fix_preset() != 0;
+        if (spg_fix)
+        {
+            if (spg_CurrentScanline == 0)
+                SPG_STATUS.fieldnum = SPG_CONTROL.interlace ? (~SPG_STATUS.fieldnum & 1) : 0;
+
+            const u32 hmode = SPG_HBLANK_INT.hblank_int_mode;
+            if (hmode == 2 || (hmode == 0 && SPG_HBLANK_INT.line_comp_val == spg_CurrentScanline))
+                params.RaiseInterrupt(holly_HBLank);
+        }
+        else
+        {
+            // Interlaced field toggle
+            SPG_STATUS.fieldnum = SPG_CONTROL.interlace ? (~SPG_STATUS.fieldnum & 1) : 0;
+        }
 
         SPG_STATUS.vsync   = spg_InVblank;
         SPG_STATUS.scanline = spg_CurrentScanline;
@@ -327,7 +346,9 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
             spg_VblankCountTotal++;
 
             // Note: holly_HBLank is actually VBlank on real HW — HBlank not yet emulated
-            params.RaiseInterrupt(holly_HBLank);
+            // (SPG_FIX raises the real HBlank IRQ per SPG_HBLANK_INT above instead.)
+            if (!spg_fix)
+                params.RaiseInterrupt(holly_HBLank);
 
             rend_vblank();
 
