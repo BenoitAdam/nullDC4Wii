@@ -24,6 +24,7 @@ __settings settings;
 // options-menu override for settings.emulator.AudioBuffers.
 extern "C" int get_audio_buffers_preset();
 extern "C" int get_cable_preset();          // CABLE TYPE, see LoadSettings()
+extern "C" int get_rtc_host_preset();       // RTC_HOST, see LoadSettings()
 
 // Defined in wii/main.cpp — options-menu preset selecting the SH4 core
 // back-end (0=Interpreter, 1=Dynarec, default).
@@ -283,7 +284,14 @@ void LoadSettings()
 		case 0:  settings.dreamcast.cable = DC_CABLE_COMPOSITE; break;
 		default: break;   // leave whatever nullDC.cfg asked for
 	}
-	settings.dreamcast.RTC=cfgLoadInt("nullDC","Dreamcast.RTC",GetRTC_now());
+	// RTC_HOST (wii/main.cpp; flycastPS3 other_fix.md 4.2, Flycast aica_if.cpp):
+	// the Dreamcast clock starts from the Wii's clock at every boot. Legacy
+	// resumed from the value SaveSettings() last stored, so the BIOS date and
+	// time drifted from real time by however long the console was off.
+	if (get_rtc_host_preset())
+		settings.dreamcast.RTC=GetRTC_now();
+	else
+		settings.dreamcast.RTC=cfgLoadInt("nullDC","Dreamcast.RTC",GetRTC_now());
 
 	settings.emulator.AutoStart=cfgLoadInt("nullDC","Emulator.AutoStart",0)!=0;
 	settings.emulator.NoConsole=cfgLoadInt("nullDC","Emulator.NoConsole",0)!=0;

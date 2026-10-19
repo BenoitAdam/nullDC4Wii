@@ -1462,6 +1462,19 @@ extern "C" {
   int get_gdrom_spinup_preset() { return g_gdrom_spinup_preset; }
 }
 
+// RTC_HOST - the Dreamcast clock (nullDC.cpp LoadSettings, dc/aica/aica_if.cpp
+// GetRTC_now; flycastPS3 other_fix.md 4.2, Flycast). Legacy restored the clock
+// from the value saved in nullDC.cfg at the last exit, so the DC date/time lost
+// however long the Wii was off. On: it is set from the Wii's clock at every
+// boot, as Flycast does. Also fixes GetRTC_now()'s daylight-saving correction
+// (+24 h -> +1 h; normally inert on the Wii, which has no time-zone data).
+// 0=off (legacy saved value), 1=on (default).
+int g_rtc_host_preset = 1;
+
+extern "C" {
+  int get_rtc_host_preset() { return g_rtc_host_preset; }
+}
+
 // INF_VTX - drop TA vertices with 1/W = +inf (plugs/drkPvr/gxRend.cpp;
 // flycastPS3 other_fix.md 3.7, Flycast is_vertex_inf). vert_base() turned them
 // into W = 0 and x/y = inf*0 = NaN, and they were submitted to GX as part of
@@ -2795,6 +2808,7 @@ void checkBiosFiles()
 #define OPT_GDROM_SPINUP 134 // Page 5 (CORE), under SPG TIMING FIX
 #define OPT_INF_VTX     135  // Page 2 (GRAPHICS), under TA GUARD
 #define OPT_FOG_INDEX   136  // Page 2 (GRAPHICS), under FOG
+#define OPT_RTC_HOST    137  // Page 5 (CORE), under GDROM SPINUP
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2922,7 +2936,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_GDROM_HANG_FIX,
   OPT_TOC_FIX,
   OPT_SPG_FIX,
-  OPT_GDROM_SPINUP
+  OPT_GDROM_SPINUP,
+  OPT_RTC_HOST
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -3945,6 +3960,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (BUSY 3 SEC)   >]"); break;
     }
     printf(" no disc: BIOS swirl intro plays");
+    printf("\n");
+
+    // --- Row: RTC_HOST - DC clock from the Wii clock at every boot (nullDC.cpp) ---
+    printf("%s RTC FROM HOST  : ", (selectedRow == OPT_RTC_HOST) ? ">" : " ");
+    switch (g_rtc_host_preset) {
+      case 0: printf("[< OFF (SAVED VALUE) >]"); break;
+      case 1: printf("[< ON (WII CLOCK)    >]"); break;
+    }
+    printf(" DC clock = Wii clock each boot");
     printf("\n\n");
 
     printOptionsFooter();
@@ -4508,6 +4532,7 @@ bool displayOptionsMenu()
         case OPT_GDROM_SPINUP:   g_gdrom_spinup_preset    = (g_gdrom_spinup_preset    + 1) % 2; break;
         case OPT_INF_VTX:        g_inf_vtx_preset         = (g_inf_vtx_preset         + 1) % 2; break;
         case OPT_FOG_INDEX:      g_fog_index_preset       = (g_fog_index_preset       + 1) % 2; break;
+        case OPT_RTC_HOST:       g_rtc_host_preset        = (g_rtc_host_preset        + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
                                                  (g_gdrom_delay == 1800) ? 0     :
                                                  (g_gdrom_delay == 3600) ? 1800  :
@@ -4658,6 +4683,7 @@ bool displayOptionsMenu()
         case OPT_GDROM_SPINUP:   g_gdrom_spinup_preset    = (g_gdrom_spinup_preset    + 1) % 2; break;
         case OPT_INF_VTX:        g_inf_vtx_preset         = (g_inf_vtx_preset         + 1) % 2; break;
         case OPT_FOG_INDEX:      g_fog_index_preset       = (g_fog_index_preset       + 1) % 2; break;
+        case OPT_RTC_HOST:       g_rtc_host_preset        = (g_rtc_host_preset        + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
                                                  (g_gdrom_delay == 1800) ? 3600  :
                                                  (g_gdrom_delay == 3600) ? 7200  :
@@ -5684,6 +5710,7 @@ int main(int argc, wchar *argv[])
     printf("GDROM Spinup   : %s\n", g_gdrom_spinup_preset ? "ON (BUSY 3 SEC)" : "OFF (NODISC)");
     printf("Inf Vertex Drop: %s\n", g_inf_vtx_preset ? "ON (SPLIT STRIP)" : "OFF (NAN TO GX)");
     printf("Fog Index Fix  : %s\n", g_fog_index_preset ? "ON (DENSITY/W)" : "OFF (W*DENSITY)");
+    printf("RTC From Host  : %s\n", g_rtc_host_preset ? "ON (WII CLOCK)" : "OFF (SAVED VALUE)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
     printf("ADPCM Loop Fix : %s\n", g_adpcm_loop_preset ? "ON (KEEP STATE)" : "OFF (RESET/LAP)");

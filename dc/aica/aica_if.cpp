@@ -15,6 +15,9 @@ extern "C" int get_dma_fix_preset();
 // aica_dma_complete() / Write_SB_ADST() / Read_SB_ADST().
 extern "C" int get_aica_race_preset();
 
+// RTC_HOST preset (wii/main.cpp): GetRTC_now()'s DST correction is one hour.
+extern "C" int get_rtc_host_preset();
+
 // SCHED preset (wii/main.cpp): route the AICA G2-DMA end IRQ through the unified
 // deadline scheduler (in true order relative to the ch2/PVR/GD-ROM completions)
 // instead of the standalone aica_dma_delay_cycles countdown in UpdateAicaDma().
@@ -67,8 +70,12 @@ u32 GetRTC_now()
 #else
     localtime_r(&now, &local_now);
 #endif
+    // RTC_HOST: daylight saving moves the wall clock by ONE hour. ref above is
+    // built with tm_isdst = 0 (standard time), so +1 h whenever now is in DST,
+    // in either hemisphere. Legacy added a whole day. (On the Wii newlib has no
+    // time-zone data, so tm_isdst is normally 0 and this does not fire.)
     if (local_now.tm_isdst > 0)
-        delta += 24 * 3600;
+        delta += get_rtc_host_preset() ? 3600 : 24 * 3600;
 
     return (u32)(DC_EPOCH_OFFSET + (u32)delta);
 }
