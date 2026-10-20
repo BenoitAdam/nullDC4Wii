@@ -1520,6 +1520,27 @@ extern "C" {
   int get_idle_shinobi_preset() { return g_idle_shinobi_preset; }
 }
 
+// IDLE_X3 - per-game idle-rule level (dc/sh4/rec_v2/decoder.cpp cycle tricks;
+// flycastPS3 other_fix.md 2.3 / P71). The x30 rule bills every small
+// read-only conditional block (< 6 ops, no store/FPU) 30x, which also catches
+// work blocks (loop tails, null checks): the game then gets fewer SH4 ops per
+// emulated second and drops frames in EMULATED time while SPEED reads 100%.
+// ON = Reicast's "x3 backward": x3, and only for a bf or a backward bt; the
+// x10 self-loop, syscall x5 and IP.BIN x15 bills are unchanged. Costs ~x1.5
+// SH4 host time, so it only helps a game below its frame rate with host time
+// to spare -- judge by frames per emulated second (fps x 100 / SPEED%).
+// PS3 hardware: Sonic Adventure 28.65 -> 29.69 fps, a PSO 20 fps scene -> 30,
+// Jet Grind Radio 24.6 -> 29.96, Donald Duck 11-19 -> 29-30; WORSE: Looney
+// Tunes 60.9%, Ecco, Quake III 78% -> 42%, Tomb Raider TLR 99% -> 37%. So a
+// per-game choice: default OFF; the candidates carry a commented line in
+// game_presets.cfg. Read when a block is COMPILED. Wii-untested.
+// 0=off (x30, legacy, default), 1=on (x3 backward).
+int g_idle_x3_preset = 0;
+
+extern "C" {
+  int get_idle_x3_preset() { return g_idle_x3_preset; }
+}
+
 // INF_VTX - drop TA vertices with 1/W = +inf (plugs/drkPvr/gxRend.cpp;
 // flycastPS3 other_fix.md 3.7, Flycast is_vertex_inf). vert_base() turned them
 // into W = 0 and x/y = inf*0 = NaN, and they were submitted to GX as part of
@@ -2856,6 +2877,7 @@ void checkBiosFiles()
 #define OPT_RTC_HOST    137  // Page 5 (CORE), under GDROM SPINUP
 #define OPT_IDLE_KAMUI  138  // Page 5 (CORE), under RTC FROM HOST
 #define OPT_IDLE_SHINOBI 139 // Page 5 (CORE), under IDLE KAMUI
+#define OPT_IDLE_X3     140  // Page 5 (CORE), under IDLE SHINOBI
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -2986,7 +3008,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_GDROM_SPINUP,
   OPT_RTC_HOST,
   OPT_IDLE_KAMUI,
-  OPT_IDLE_SHINOBI
+  OPT_IDLE_SHINOBI,
+  OPT_IDLE_X3
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -4036,6 +4059,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (DEBT TIL IRQ) >]"); break;
     }
     printf(" task loop: Garou/Border Down");
+    printf("\n");
+
+    // --- Row: IDLE_X3 - per-game idle-rule level: x30 / x3 backward (decoder.cpp) ---
+    printf("%s IDLE X3 BACK   : ", (selectedRow == OPT_IDLE_X3) ? ">" : " ");
+    switch (g_idle_x3_preset) {
+      case 0: printf("[< OFF (X30, LEGACY) >]"); break;
+      case 1: printf("[< ON (X3 BACKWARD)  >]"); break;
+    }
+    printf(" per game: JSR/Donald Duck");
     printf("\n\n");
 
     printOptionsFooter();
@@ -4602,6 +4634,7 @@ bool displayOptionsMenu()
         case OPT_RTC_HOST:       g_rtc_host_preset        = (g_rtc_host_preset        + 1) % 2; break;
         case OPT_IDLE_KAMUI:     g_idle_kamui_preset      = (g_idle_kamui_preset      + 1) % 2; break;
         case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
+        case OPT_IDLE_X3:        g_idle_x3_preset         = (g_idle_x3_preset         + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
                                                  (g_gdrom_delay == 1800) ? 0     :
                                                  (g_gdrom_delay == 3600) ? 1800  :
@@ -4755,6 +4788,7 @@ bool displayOptionsMenu()
         case OPT_RTC_HOST:       g_rtc_host_preset        = (g_rtc_host_preset        + 1) % 2; break;
         case OPT_IDLE_KAMUI:     g_idle_kamui_preset      = (g_idle_kamui_preset      + 1) % 2; break;
         case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
+        case OPT_IDLE_X3:        g_idle_x3_preset         = (g_idle_x3_preset         + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
                                                  (g_gdrom_delay == 1800) ? 3600  :
                                                  (g_gdrom_delay == 3600) ? 7200  :
@@ -5784,6 +5818,7 @@ int main(int argc, wchar *argv[])
     printf("RTC From Host  : %s\n", g_rtc_host_preset ? "ON (WII CLOCK)" : "OFF (SAVED VALUE)");
     printf("Idle Kamui     : %s\n", g_idle_kamui_preset ? "ON (1 TURN/SLICE)" : "OFF (LEGACY)");
     printf("Idle Shinobi   : %s\n", g_idle_shinobi_preset ? "ON (DEBT TIL IRQ)" : "OFF (LEGACY)");
+    printf("Idle X3 Back   : %s\n", g_idle_x3_preset ? "ON (X3 BACKWARD)" : "OFF (X30, LEGACY)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
     printf("ADPCM Loop Fix : %s\n", g_adpcm_loop_preset ? "ON (KEEP STATE)" : "OFF (RESET/LAP)");

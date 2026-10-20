@@ -131,6 +131,7 @@ static bool idle_task_rule(u32 addr, u32 opcodes)
 }
 
 extern "C" int get_idle_shinobi_preset();
+extern "C" int get_idle_x3_preset();
 
 DecodedBlock block;
 struct
@@ -1537,7 +1538,16 @@ _end:
 		{
 			if (block.BlockType==BET_Cond_0 || block.BlockType==BET_Cond_1)
 			{
-				block.cycles*=30;
+				// IDLE_X3 (per game; other_fix.md 2.3 / P71): x30 also bills
+				// small work blocks (loop tails, null checks), so a game can
+				// drop frames in EMULATED time while SPEED reads 100%.
+				// Reicast's x3, only for bf or a backward bt, bills them closer
+				// to real; it costs ~x1.5 SH4 host time, so it only pays for a
+				// game below its frame rate with host time to spare.
+				if (!get_idle_x3_preset())
+					block.cycles*=30;
+				else if (block.BlockType==BET_Cond_0 || block.BranchBlock<=block.start)
+					block.cycles*=3;
 			}
 
 			if (block.BranchBlock==block.start)

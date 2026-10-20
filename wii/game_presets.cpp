@@ -722,6 +722,16 @@
                                all slice long. Matched by its exact code.
                                Default on. Read when code is COMPILED, so set
                                it before launching.
+        idle_x3=on          <- on/off, PER GAME. The idle-loop rule bills a
+                               small read-only conditional block x3 (only a bf
+                               or a backward bt) instead of x30, so work blocks
+                               the x30 rule over-billed get their time back.
+                               Costs ~x1.5 SH4 host time: helps a game below
+                               its frame rate with time to spare (PS3: Jet
+                               Grind Radio, Donald Duck, PSO, Sonic Adventure),
+                               hurts others (Quake III, Tomb Raider, Looney
+                               Tunes, Ecco). Default off. Read when code is
+                               COMPILED, so set it before launching.
         inf_vtx=on          <- on/off, a TA vertex with 1/W = +inf (W = 0, x/y
                                NaN) is cut out of its strip instead of being
                                sent to GX: Soul Calibur's spikes and garbage
@@ -1399,6 +1409,7 @@ extern int g_gdrom_spinup_preset;
 extern int g_rtc_host_preset;
 extern int g_idle_kamui_preset;
 extern int g_idle_shinobi_preset;
+extern int g_idle_x3_preset;
 extern int g_inf_vtx_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
@@ -1563,6 +1574,7 @@ struct GamePreset
     int rtc_host;
     int idle_kamui;
     int idle_shinobi;
+    int idle_x3;
     int inf_vtx;
     int sched;
     int tex_wrap_guard;
@@ -2110,6 +2122,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "rtc_host"))       p->rtc_host       = parse_bool(val);
     else if (key_eq(key, "idle_kamui"))     p->idle_kamui     = parse_bool(val);
     else if (key_eq(key, "idle_shinobi"))   p->idle_shinobi   = parse_bool(val);
+    else if (key_eq(key, "idle_x3"))        p->idle_x3        = parse_bool(val);
     else if (key_eq(key, "inf_vtx"))        p->inf_vtx        = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
@@ -2250,6 +2263,7 @@ static void preset_clear(GamePreset* cur)
     cur->rtc_host = -1;
     cur->idle_kamui = -1;
     cur->idle_shinobi = -1;
+    cur->idle_x3 = -1;
     cur->inf_vtx = -1;
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
@@ -2419,6 +2433,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->rtc_host       >= 0) { g_rtc_host_preset       = p->rtc_host;       printf("  rtc_host       -> %d\n", p->rtc_host);       }
     if (p->idle_kamui     >= 0) { g_idle_kamui_preset     = p->idle_kamui;     printf("  idle_kamui     -> %d\n", p->idle_kamui);     }
     if (p->idle_shinobi   >= 0) { g_idle_shinobi_preset   = p->idle_shinobi;   printf("  idle_shinobi   -> %d\n", p->idle_shinobi);   }
+    if (p->idle_x3        >= 0) { g_idle_x3_preset        = p->idle_x3;        printf("  idle_x3        -> %d\n", p->idle_x3);        }
     if (p->inf_vtx        >= 0) { g_inf_vtx_preset        = p->inf_vtx;        printf("  inf_vtx        -> %d\n", p->inf_vtx);        }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }
