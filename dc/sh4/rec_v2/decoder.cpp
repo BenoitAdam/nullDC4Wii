@@ -131,7 +131,10 @@ static bool idle_task_rule(u32 addr, u32 opcodes)
 }
 
 extern "C" int get_idle_shinobi_preset();
+<<<<<<< HEAD
 extern "C" int get_idle_x3_preset();
+=======
+>>>>>>> bd60db37e0fc741d8aed13ec0e545f97a5019f52
 
 DecodedBlock block;
 struct
