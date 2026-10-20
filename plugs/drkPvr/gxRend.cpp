@@ -1078,9 +1078,17 @@ extern "C" int get_render_to_texture_preset();
 //     only its own geometry.
 #define RTT_CARRY_OVERLAY() (get_render_to_texture_preset() == 2)
 
-// Hardware-like HOLLY IRQ delays (list-complete + staggered render-done, see SPG.cpp)
+// Render-done timing (see SPG.cpp): 0 = legacy single burst after VtxCnt*15
+// (min 50k) cycles, 1 = hardware-like staggered ISP/TSP/Video at 800k/850k/900k,
+// 2 = FLYCAST (flycastPS3 other_fix.md 2.4, Flycast spg.cpp scheduleRenderDone):
+// one burst after min(450000 + 100 x TA bytes, 1500000) cycles. Read once per
+// render in StartRender().
 extern "C" int get_render_delay_preset();
-#define RENDER_DELAY() (get_render_delay_preset() != 0)
+
+// RENDER_DELAY=FLYCAST: a TA_LIST_INIT since the last StartRender. Without one
+// the render re-walks a list that was already rendered -- Flycast finds no TA
+// context for it and raises render-done after 4096 cycles.
+static bool s_rd_list_init = false;
 
 // Split-screen multiplayer. The Dreamcast offers TWO ways to confine a player's
 // camera to its half of the screen and games pick either one, so this preset
@@ -12117,7 +12125,8 @@ void StartRender()
   scene_dump_pass(); // same rule: must run BEFORE any path below returns
 #endif
 
-  if (RENDER_DELAY())
+  const int rd_mode = get_render_delay_preset();
+  if (rd_mode == 1)
   {
     // Hardware-like staggered render-done IRQs: ISP, TSP, then Video
     // (originaldave_'s values — fixes games that pace off render-done,
@@ -12130,12 +12139,35 @@ void StartRender()
     render_vd_pending_cycles  = 900000;
     render_end_pending_cycles = 0;
   }
+  else if (rd_mode == 2)
+  {
+    // FLYCAST: the single burst (all three render-done IRQs, as Flycast's
+    // rend_end_render), min(450000 + 100 x TA bytes, 1500000) cycles out;
+    // 4096 when no TA_LIST_INIT came since the last render. The TA byte
+    // count is an estimate, 32 per vertex and 32 per strip, taken from what
+    // the decoder built: counting the real bytes would cost the store-queue
+    // path (one call per 32-byte block) a load/add/store each, and the cap
+    // is reached at ~10.5 KB (~330 vertices) anyway, so only light frames
+    // see the difference.
+    s32 rd = 4096;
+    if (s_rd_list_init)
+    {
+      const u32 ta_bytes = 32u * (VtxCnt + (u32)(curLST - lists));
+      rd = (ta_bytes >= (1500000u - 450000u) / 100u) ? 1500000
+                                                    : 450000 + (s32)ta_bytes * 100;
+    }
+    render_isp_pending_cycles = 0;
+    render_tsp_pending_cycles = 0;
+    render_vd_pending_cycles  = 0;
+    render_end_pending_cycles = rd;
+  }
   else
   {
     render_end_pending_cycles = VtxCnt * 15;
     if (render_end_pending_cycles < 50000)
       render_end_pending_cycles = 50000;
   }
+  s_rd_list_init = false;
 
   // NOTE on frame-skip: the ShouldSkipFrame() checks below must come AFTER
   // render_end_pending_cycles is set so the game's timing loop receives the
@@ -13245,6 +13277,7 @@ void ListCont()
 void ListInit()
 {
   TileAccel.ListInit();
+  s_rd_list_init = true;   // RENDER_DELAY=FLYCAST: new TA data for the next render
 }
 
 // Soft Reset

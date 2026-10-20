@@ -527,7 +527,13 @@ extern "C" {
   int get_speed_limiter_preset() { return g_speed_limiter_preset; }
 }
 
-int g_render_delay_preset = 0; // 0=off (legacy: instant list-complete IRQs, render-done after VtxCnt*15 min 50k cycles, all 3 at once), 1=on (hardware-like: list-complete +200 cycles, render-done ISP/TSP/Video staggered at 800k/850k/900k cycles — MvC2 "130% speed but 7 FPS")
+// 0=off (legacy: instant list-complete IRQs, render-done after VtxCnt*15 min 50k cycles, all 3 at once),
+// 1=on (hardware-like: list-complete +200 cycles, render-done ISP/TSP/Video staggered at 800k/850k/900k cycles — MvC2 "130% speed but 7 FPS"),
+// 2=FLYCAST (default; flycastPS3 other_fix.md 2.4, Flycast spg.cpp scheduleRenderDone: instant list-complete IRQs,
+//   all 3 render-done IRQs after min(450000 + 100 x TA bytes, 1500000) cycles, 4096 with no TA_LIST_INIT since the
+//   last render; TA bytes estimated from vertices + strips in gxRend.cpp StartRender). Meant to make the per-game
+//   render_delay=on lines unneeded (the PS3 notes say so for CvS2); per-game lines still override it. Wii-untested.
+int g_render_delay_preset = 2;
 
 extern "C" {
   int get_render_delay_preset() { return g_render_delay_preset; }
@@ -3958,6 +3964,7 @@ bool displayOptionsMenu()
     switch (g_render_delay_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (HW-LIKE)      >]"); break;
+      case 2: printf("[< FLYCAST (TA SIZE) >]"); break;
     }
     printf(" ON for MvC2 and CvSNK");
     printf("\n");
@@ -4663,7 +4670,7 @@ bool displayOptionsMenu()
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 2) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 2) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 4) % 5; break;
-        case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
+        case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 2) % 3; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 2) % 3; break;
         case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 5) % 6; break;
@@ -4819,7 +4826,7 @@ bool displayOptionsMenu()
         case OPT_ISP_DEPTH_FUNC: g_isp_depth_func_preset = (g_isp_depth_func_preset + 1) % 3; break;
         case OPT_ISP_CULL:       g_isp_cull_preset       = (g_isp_cull_preset       + 1) % 3; break;
         case OPT_AUTOSORT:       g_autosort_preset       = (g_autosort_preset       + 1) % 5; break;
-        case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 2; break;
+        case OPT_RENDER_DELAY:   g_render_delay_preset   = (g_render_delay_preset   + 1) % 3; break;
         case OPT_SHOW_FPS:       g_show_fps_overlay       = (g_show_fps_overlay       + 1) % 2; break;
         case OPT_ARM7_SPEED:     g_arm7_speed_preset      = (g_arm7_speed_preset      + 1) % 3; break;
         case OPT_ARM7_JIT:       g_arm7_jit_preset        = (g_arm7_jit_preset        + 1) % 6; break;
@@ -5737,7 +5744,8 @@ int main(int argc, wchar *argv[])
     printf("Jojo Fix       : %s\n", g_jojo_fix_preset ? "YES" : "NO");
     printf("VQ as CMPR     : %s\n", g_vq_cmpr_preset ? "YES" : "NO");
     printf("Speed Limiter  : %s\n", g_speed_limiter_preset ? "ON (cap 100%)" : "OFF (uncapped)");
-    printf("Render Delay   : %s\n", g_render_delay_preset ? "ON (HW-LIKE)" : "OFF (LEGACY)");
+    printf("Render Delay   : %s\n", g_render_delay_preset == 2 ? "FLYCAST (TA SIZE)" :
+                                  g_render_delay_preset ? "ON (HW-LIKE)" : "OFF (LEGACY)");
     printf("Show FPS       : %s\n", g_show_fps_overlay ? "ON" : "OFF");
     printf("ARM7 Speed     : ");
     switch (g_arm7_speed_preset) {

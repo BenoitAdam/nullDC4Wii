@@ -104,18 +104,22 @@
                                 on=sleeps the difference each vblank so speed never
                                   exceeds 100% (never penalizes frames already at
                                   or below 100%; see plugs/drkPvr/SPG.cpp).
-        render_delay=on     <- on/off, hardware-like HOLLY IRQ delays (see
+        render_delay=on     <- off/on/flycast, HOLLY IRQ timing (see
                                 plugs/drkPvr/SPG.cpp RENDER_DELAY()). Games
                                 that pace their main loop off the TA
                                 list-complete / render-done interrupts break
                                 when those fire (nearly) instantly: emulation
                                 speed reads >100% while the game renders only
                                 a few frames per second (Marvel vs Capcom 2).
-                                on delays each list-complete IRQ by 200 SH4
-                                cycles and staggers render-done ISP/TSP/Video
-                                at 800k/850k/900k cycles after STARTRENDER;
-                                off (default, legacy) keeps instant list IRQs
-                                and the single render-done burst.
+                                on (or hw) delays each list-complete IRQ by
+                                200 SH4 cycles and staggers render-done
+                                ISP/TSP/Video at 800k/850k/900k cycles after
+                                STARTRENDER. flycast (default; Flycast's rule,
+                                other_fix.md 2.4): instant list IRQs, all
+                                three render-done IRQs after 450000 + 100 per
+                                TA byte, at most 1500000 cycles. off (legacy):
+                                instant list IRQs and one render-done burst
+                                after VtxCnt*15 (min 50000) cycles.
         arm7_speed=1        <- 0/1/2, ARM7 sound-CPU speed divider stage:
                                 effective clock = ~10 MHz >> stage (see
                                 plugs/vbaARM/arm_aica.cpp). The AICA driver
@@ -1728,6 +1732,14 @@ static int parse_mmucr_fix(const char* v)
     return parse_bool(v);   // on/off/1/0/true/false/yes/no
 }
 
+// render_delay: 0 off, 1 on/hw (hardware-like stagger), 2 flycast (TA-size burst).
+static int parse_render_delay(const char* v)
+{
+    if (key_eq(v, "flycast") || strcmp(v, "2") == 0) return 2;
+    if (key_eq(v, "hw")) return 1;
+    return parse_bool(v);   // on/off/1/0/true/false/yes/no
+}
+
 // flash_broadcast: 0 off, 1 disc, 2 ntsc. `on` means the hardware-tested disc rule.
 static int parse_flash_broadcast(const char* v)
 {
@@ -2032,7 +2044,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "vq_cmpr"))    p->vq_cmpr    = parse_bool(val);
     else if (key_eq(key, "decal_alpha")) p->decal_alpha = parse_bool(val);
     else if (key_eq(key, "speed_limiter")) p->speed_limiter = parse_bool(val);
-    else if (key_eq(key, "render_delay"))  p->render_delay  = parse_bool(val);
+    else if (key_eq(key, "render_delay"))  p->render_delay  = parse_render_delay(val);
     else if (key_eq(key, "vertex_color")) p->vertex_color = parse_bool(val);
     else if (key_eq(key, "players"))    p->players    = parse_players(val);
     else if (key_eq(key, "controller")) p->controller = parse_controller(val);

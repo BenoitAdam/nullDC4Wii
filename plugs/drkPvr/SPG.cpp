@@ -21,7 +21,10 @@ extern "C" int get_x_scaler_preset();
 // Hardware-like HOLLY IRQ delays (see wii/game_presets.h, wii/main.cpp).
 extern "C" int get_render_delay_preset();
 extern "C" int get_spg_fix_preset();   // SPG_FIX (wii/main.cpp), see libPvr_UpdatePvr
-#define RENDER_DELAY() (get_render_delay_preset() != 0)
+// Mode 1 (HW-LIKE) only: it delays list-complete IRQs and staggers render-done.
+// Mode 2 (FLYCAST) raises list-complete at once, as Flycast does, and only
+// moves the single render-done burst (armed in gxRend.cpp StartRender).
+#define RENDER_DELAY() (get_render_delay_preset() == 1)
 
 // IFB_PROBE breakdown (wii/dc/sh4/rec_v2/wii_driver.cpp). Self-quiets when the
 // preset is off; piggybacks on the once-a-second stats block below so it gets
@@ -143,7 +146,9 @@ s32 render_end_pending_cycles = 0;
 //     STARTRENDER (staggered, like real HW raises them in that order)
 // Values come from originaldave_'s emulator (holly.cpp), where they fixed the
 // low-FPS games without hurting others. Preset off = legacy instant list IRQs
-// and the single VtxCnt*15 (min 50000) render-done burst below.
+// and the single VtxCnt*15 (min 50000) render-done burst below. Preset 2
+// (FLYCAST) = instant list IRQs and that single burst after
+// min(450000 + 100 x TA bytes, 1500000) cycles (gxRend.cpp StartRender).
 
 static const HollyInterruptID s_ListEndIrqID[5] =
 {
@@ -487,7 +492,8 @@ void FASTCALL libPvr_UpdatePvr(u32 cycles)
         }
     }
 
-    // Deferred render completion interrupt (legacy path, RENDER_DELAY() off)
+    // Deferred render completion interrupt: one burst (legacy, and the
+    // RENDER_DELAY=FLYCAST mode, which only arms it with another count)
     if (render_end_pending_cycles > 0)
     {
         render_end_pending_cycles -= (s32)cycles;
