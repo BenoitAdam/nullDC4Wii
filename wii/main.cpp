@@ -1541,6 +1541,24 @@ extern "C" {
   int get_idle_x3_preset() { return g_idle_x3_preset; }
 }
 
+// FLASH_CHIP - the Dreamcast flash behaves as its chip (dc/mem/sh4_area0.cpp;
+// Flycast DCFlashChip). The BIOS writes the flash through AMD command
+// sequences: unlock AA/55, then A0 + one byte to program, 80/AA/55 + 10 or 30
+// to erase the chip or a sector, 90 for the chip ID. A program can only clear
+// bits, an erase sets 0xFF, and the factory partition (0x1A000) is
+// write-protected. Legacy stored every write as plain RAM: the command bytes
+// landed in the data (0x5555/0x2AAA), a program could set bits again, and a
+// sector erase wrote 0x30 into the sector instead of clearing it. Harmless as
+// long as the flash is reloaded from file at every boot, which is why this
+// comes before saving the flash at exit (other_fix.md Part 6 side note).
+// Logs "[FLASH] ..." for erases and unexpected writes (first 16).
+// Wii-untested. 0=off (legacy plain RAM), 1=on (chip commands, default).
+int g_flash_chip_preset = 1;
+
+extern "C" {
+  int get_flash_chip_preset() { return g_flash_chip_preset; }
+}
+
 // INF_VTX - drop TA vertices with 1/W = +inf (plugs/drkPvr/gxRend.cpp;
 // flycastPS3 other_fix.md 3.7, Flycast is_vertex_inf). vert_base() turned them
 // into W = 0 and x/y = inf*0 = NaN, and they were submitted to GX as part of
@@ -2878,6 +2896,7 @@ void checkBiosFiles()
 #define OPT_IDLE_KAMUI  138  // Page 5 (CORE), under RTC FROM HOST
 #define OPT_IDLE_SHINOBI 139 // Page 5 (CORE), under IDLE KAMUI
 #define OPT_IDLE_X3     140  // Page 5 (CORE), under IDLE SHINOBI
+#define OPT_FLASH_CHIP  141  // Page 6 (EXPERIMENTAL), under EXIT FIX
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3021,6 +3040,7 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_MMUCR_FIX,
   OPT_SCHED,
   OPT_EXIT_FIX,
+  OPT_FLASH_CHIP,
   OPT_TRANS_ZWRITE,
   OPT_HOKUTO_HACK,
   OPT_PUYO_HACK,
@@ -4137,6 +4157,15 @@ bool displayOptionsMenu()
     printf(" Fixes black screen on exit");
     printf("\n");
 
+    // --- Row: FLASH_CHIP - flash program/erase command state machine (sh4_area0.cpp) ---
+    printf("%s FLASH CHIP     : ", (selectedRow == OPT_FLASH_CHIP) ? ">" : " ");
+    switch (g_flash_chip_preset) {
+      case 0: printf("[< OFF (PLAIN RAM)   >]"); break;
+      case 1: printf("[< ON (AMD COMMANDS) >]"); break;
+    }
+    printf(" BIOS flash program/erase");
+    printf("\n");
+
     // --- Row: Translucent-list depth write ---
     printf("%s TRANS ZWRITE   : ", (selectedRow == OPT_TRANS_ZWRITE) ? ">" : " ");
     switch (g_trans_zwrite_preset) {
@@ -4635,6 +4664,7 @@ bool displayOptionsMenu()
         case OPT_IDLE_KAMUI:     g_idle_kamui_preset      = (g_idle_kamui_preset      + 1) % 2; break;
         case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
         case OPT_IDLE_X3:        g_idle_x3_preset         = (g_idle_x3_preset         + 1) % 2; break;
+        case OPT_FLASH_CHIP:     g_flash_chip_preset      = (g_flash_chip_preset      + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
                                                  (g_gdrom_delay == 1800) ? 0     :
                                                  (g_gdrom_delay == 3600) ? 1800  :
@@ -4789,6 +4819,7 @@ bool displayOptionsMenu()
         case OPT_IDLE_KAMUI:     g_idle_kamui_preset      = (g_idle_kamui_preset      + 1) % 2; break;
         case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
         case OPT_IDLE_X3:        g_idle_x3_preset         = (g_idle_x3_preset         + 1) % 2; break;
+        case OPT_FLASH_CHIP:     g_flash_chip_preset      = (g_flash_chip_preset      + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
                                                  (g_gdrom_delay == 1800) ? 3600  :
                                                  (g_gdrom_delay == 3600) ? 7200  :
@@ -5819,6 +5850,7 @@ int main(int argc, wchar *argv[])
     printf("Idle Kamui     : %s\n", g_idle_kamui_preset ? "ON (1 TURN/SLICE)" : "OFF (LEGACY)");
     printf("Idle Shinobi   : %s\n", g_idle_shinobi_preset ? "ON (DEBT TIL IRQ)" : "OFF (LEGACY)");
     printf("Idle X3 Back   : %s\n", g_idle_x3_preset ? "ON (X3 BACKWARD)" : "OFF (X30, LEGACY)");
+    printf("Flash Chip     : %s\n", g_flash_chip_preset ? "ON (AMD COMMANDS)" : "OFF (PLAIN RAM)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
     printf("ADPCM Loop Fix : %s\n", g_adpcm_loop_preset ? "ON (KEEP STATE)" : "OFF (RESET/LAP)");

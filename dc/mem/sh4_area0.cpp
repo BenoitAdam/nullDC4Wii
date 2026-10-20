@@ -56,6 +56,159 @@ static inline void WriteMemArr(u8* arr, u32 offset, T data)
 }
 
 //=============================================================================
+// FLASH_CHIP preset (wii/main.cpp; Flycast DCFlashChip, hw/flashrom/flashrom.cpp)
+//=============================================================================
+// The flash is an AMD-style chip: the BIOS unlocks it with command bytes
+// (AA @x555, 55 @x2AA/x2AAA, then A0 program / 80..10 chip erase / 80..30
+// sector erase / 90 ID mode), a byte program can only clear bits, an erase
+// sets 0xFF, and the factory partition (0x1A000-0x1BFFF) is write-protected.
+// Legacy stored every write as plain RAM: the command bytes landed in the
+// data, a program could set bits again, and a sector erase wrote 0x30 into
+// the sector's first byte instead of erasing it. Harmless while the flash is
+// reloaded from file at every boot; not once it is saved back. Same state
+// machine as Flycast, byte writes only (Flycast drops wider ones too).
+extern "C" int get_flash_chip_preset();
+
+enum FlashState { FS_Normal, FS_ReadAMDID1, FS_ReadAMDID2, FS_ByteProgram,
+                  FS_EraseAMD1, FS_EraseAMD2, FS_EraseAMD3, FS_SelectMode };
+static FlashState s_flash_state = FS_Normal;
+
+// Bounded: unexpected sequences and erases (both rare) go to /ndclog.txt.
+static void flash_chip_log(const char* what, u32 addr, u32 val)
+{
+	static u32 s_count = 0;
+	if (s_count >= 16)
+		return;
+	s_count++;
+	printf("[FLASH] %s @ %05X: %02X\n", what, addr, val);
+	fflush(stdout);
+}
+
+static void flash_chip_write(u32 addr, u32 val, u32 sz)
+{
+	addr &= FLASH_SIZE - 1;
+	if (sz != 1)
+	{
+		flash_chip_log("non-byte write dropped", addr, val);
+		return;
+	}
+	val &= 0xFF;
+
+	switch (s_flash_state)
+	{
+	case FS_Normal:
+		if (val == 0xAA && ((addr & 0xFFF) == 0x555 || (addr & 0xFFF) == 0xAAA))
+			s_flash_state = FS_ReadAMDID1;
+		else if (val != 0xF0 && val != 0xFF)   // F0/FF = reset, already normal
+			flash_chip_log("write outside a command dropped", addr, val);
+		break;
+
+	case FS_ReadAMDID1:
+		if (val == 0x55 && ((addr & 0xFFFF) == 0x02AA || (addr & 0xFFFF) == 0x2AAA || (addr & 0xFFF) == 0x555))
+			s_flash_state = FS_ReadAMDID2;
+		else
+		{
+			if (val != 0xF0)
+				flash_chip_log("unexpected unlock 2", addr, val);
+			s_flash_state = FS_Normal;
+		}
+		break;
+
+	case FS_ReadAMDID2:
+		if (val == 0x80 && ((addr & 0xFFFF) == 0x0555 || (addr & 0xFFFF) == 0x5555 || (addr & 0xFFF) == 0xAAA))
+			s_flash_state = FS_EraseAMD1;
+		else if (val == 0xA0 && ((addr & 0xFFFF) == 0x0555 || (addr & 0xFFFF) == 0x5555 || (addr & 0xFFF) == 0xAAA))
+			s_flash_state = FS_ByteProgram;
+		else if (val == 0x90 && (addr & 0xFFFF) == 0x5555)
+			s_flash_state = FS_SelectMode;
+		else
+		{
+			if (val != 0xF0)
+				flash_chip_log("unexpected command", addr, val);
+			s_flash_state = FS_Normal;
+		}
+		break;
+
+	case FS_ByteProgram:
+		if ((addr & 0x1E000) != 0x1A000)       // factory partition is protected
+			flash_b[addr] &= (u8)val;
+		s_flash_state = FS_Normal;
+		break;
+
+	case FS_EraseAMD1:
+		if (val == 0xAA && ((addr & 0xFFF) == 0x555 || (addr & 0xFFF) == 0xAAA))
+			s_flash_state = FS_EraseAMD2;
+		else
+		{
+			if (val != 0xF0)
+				flash_chip_log("unexpected erase unlock 1", addr, val);
+			s_flash_state = FS_Normal;
+		}
+		break;
+
+	case FS_EraseAMD2:
+		if (val == 0x55 && ((addr & 0xFFFF) == 0x02AA || (addr & 0xFFFF) == 0x2AAA || (addr & 0xFFF) == 0x555))
+			s_flash_state = FS_EraseAMD3;
+		else
+		{
+			if (val != 0xF0)
+				flash_chip_log("unexpected erase unlock 2", addr, val);
+			s_flash_state = FS_Normal;
+		}
+		break;
+
+	case FS_EraseAMD3:
+		if (val == 0x10 && ((addr & 0xFFF) == 0x555 || (addr & 0xFFF) == 0xAAA))
+		{
+			// chip erase: everything but the factory partition
+			u8 save[0x2000];
+			memcpy(save, &flash_b[0x1A000], 0x2000);
+			memset(&flash_b[0], 0xFF, FLASH_SIZE);
+			memcpy(&flash_b[0x1A000], save, 0x2000);
+			flash_chip_log("chip erase", addr, val);
+		}
+		else if (val == 0x30)
+		{
+			// sector erase; SA3 (factory) is protected
+			u32 start = 0, len = 0;
+			switch (addr & ~0x1FFF)
+			{
+			case 0x00000: start = 0x00000; len = 0x10000; break;   // SA0
+			case 0x10000: start = 0x10000; len = 0x8000;  break;   // SA1
+			case 0x18000: start = 0x18000; len = 0x2000;  break;   // SA2
+			case 0x1C000: start = 0x1C000; len = 0x4000;  break;   // SA4
+			default: break;                                         // SA3 / mid-sector
+			}
+			if (len)
+				memset(&flash_b[start], 0xFF, len);
+			flash_chip_log(len ? "sector erase" : "sector erase ignored", addr, val);
+		}
+		else if (val != 0xF0)
+			flash_chip_log("unexpected erase command", addr, val);
+		s_flash_state = FS_Normal;
+		break;
+
+	default:
+		s_flash_state = FS_Normal;
+		break;
+	}
+}
+
+// ID mode: the first byte read returns the chip's ID, then the chip is back to
+// normal (Flycast DCFlashChip::Read8). A wider read gets data above it.
+static u8 flash_chip_read_id(u32 addr)
+{
+	s_flash_state = FS_Normal;
+	switch (addr & 0x43)
+	{
+	case 0:  return 4;                                     // manufacturer
+	case 1:  return 0xB0;                                  // device
+	case 2:  return (addr & 0x1E000) == 0x1A000;           // sector protected?
+	default: return 0;
+	}
+}
+
+//=============================================================================
 // Unified read handler (templated on access size)
 //=============================================================================
 template<u32 sz, class T, u32 b_start, u32 b_end>
@@ -75,6 +228,13 @@ T FASTCALL ReadMem_area0(u32 addr)
 	// --- Flash Memory: 0x200000 - 0x21FFFF (pages 0x20-0x21) ---
 	if (base >= 0x20 && base <= 0x21)
 	{
+		// FLASH_CHIP: only its command sequence can enter ID mode.
+		if (s_flash_state == FS_SelectMode)
+		{
+			const u32 off = (addr - 0x00200000) & (FLASH_SIZE - 1);
+			const T rv = ReadMemArr<sz, T>(flash_b.data, addr - 0x00200000);
+			return (T)((rv & ~(T)0xFF) | flash_chip_read_id(off));
+		}
 		return ReadMemArr<sz, T>(flash_b.data, addr - 0x00200000);
 	}
 
@@ -177,8 +337,13 @@ void FASTCALL WriteMem_area0(u32 addr, T data)
 	// --- Flash Memory: 0x200000 - 0x21FFFF ---
 	if (base >= 0x20 && base <= 0x21)
 	{
-		// Flash writes are logged; on real hardware flash has erase/program
-		// cycles but for emulation we allow direct writes.
+		// FLASH_CHIP on: the chip's command state machine (above). Off
+		// (legacy): every write is stored as plain RAM.
+		if (get_flash_chip_preset())
+		{
+			flash_chip_write(addr - 0x00200000, (u32)data, sz);
+			return;
+		}
 		WriteMemArr<sz, T>(flash_b.data, addr - 0x00200000, data);
 		return;
 	}
@@ -277,6 +442,7 @@ void sh4_area0_Init()
 
 void sh4_area0_Reset(bool Manual)
 {
+	s_flash_state = FS_Normal;   // FLASH_CHIP: a reset leaves any command
 	sb_Reset(Manual);
 }
 
