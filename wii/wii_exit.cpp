@@ -81,6 +81,10 @@ extern "C" void gxRend_ExitQuiesce(void);
 // closes any device libsicksaxis still has open. No-op when never inited.
 extern "C" void SS_Term(void);
 
+// FLASH_SAVE (dc/dc.cpp): writes the BIOS flash back to data/dc_flash_wb.bin
+// when a guest write changed it this session. Logs its own outcome.
+extern "C" void dc_flash_save_at_exit(void);
+
 // ---------------------------------------------------------------------------
 // Loader-stub watchdog (EXIT FIX >= 2)
 // ---------------------------------------------------------------------------
@@ -160,6 +164,12 @@ void WiiExitToLoader(void)
   if (s_exiting)
     for (;;) usleep(10 * 1000); // park; the first caller owns the teardown
   s_exiting = true;
+
+  // FLASH_SAVE: first, in every EXIT FIX mode (mem_Term(), the only other
+  // writer, is never reached on this path), and before the watchdog is armed
+  // so a slow SD write cannot trip it. The file system is still healthy here;
+  // VMU saves are written from this same thread during play.
+  dc_flash_save_at_exit();
 
   if (get_exit_fix_preset() == 0)
   {

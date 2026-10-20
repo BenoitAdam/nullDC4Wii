@@ -738,6 +738,12 @@
                                protected, and the command bytes are no longer
                                stored as data. off (legacy): every write was
                                plain RAM. Default on.
+        flash_save=on       <- on/off, the BIOS flash is written back to
+                               data/dc_flash_wb.bin at exit when the session
+                               changed it (BIOS settings, a game's flash data).
+                               Needs flash_chip=on. Delete dc_flash_wb.bin to
+                               go back to dc_flash.bin, which is never written.
+                               off (legacy): never saved. Default on.
         inf_vtx=on          <- on/off, a TA vertex with 1/W = +inf (W = 0, x/y
                                NaN) is cut out of its strip instead of being
                                sent to GX: Soul Calibur's spikes and garbage
@@ -1417,6 +1423,7 @@ extern int g_idle_kamui_preset;
 extern int g_idle_shinobi_preset;
 extern int g_idle_x3_preset;
 extern int g_flash_chip_preset;
+extern int g_flash_save_preset;
 extern int g_inf_vtx_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
@@ -1583,6 +1590,7 @@ struct GamePreset
     int idle_shinobi;
     int idle_x3;
     int flash_chip;
+    int flash_save;
     int inf_vtx;
     int sched;
     int tex_wrap_guard;
@@ -2132,6 +2140,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "idle_shinobi"))   p->idle_shinobi   = parse_bool(val);
     else if (key_eq(key, "idle_x3"))        p->idle_x3        = parse_bool(val);
     else if (key_eq(key, "flash_chip"))     p->flash_chip     = parse_bool(val);
+    else if (key_eq(key, "flash_save"))     p->flash_save     = parse_bool(val);
     else if (key_eq(key, "inf_vtx"))        p->inf_vtx        = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
@@ -2274,6 +2283,7 @@ static void preset_clear(GamePreset* cur)
     cur->idle_shinobi = -1;
     cur->idle_x3 = -1;
     cur->flash_chip = -1;
+    cur->flash_save = -1;
     cur->inf_vtx = -1;
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
@@ -2445,6 +2455,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->idle_shinobi   >= 0) { g_idle_shinobi_preset   = p->idle_shinobi;   printf("  idle_shinobi   -> %d\n", p->idle_shinobi);   }
     if (p->idle_x3        >= 0) { g_idle_x3_preset        = p->idle_x3;        printf("  idle_x3        -> %d\n", p->idle_x3);        }
     if (p->flash_chip     >= 0) { g_flash_chip_preset     = p->flash_chip;     printf("  flash_chip     -> %d\n", p->flash_chip);     }
+    if (p->flash_save     >= 0) { g_flash_save_preset     = p->flash_save;     printf("  flash_save     -> %d\n", p->flash_save);     }
     if (p->inf_vtx        >= 0) { g_inf_vtx_preset        = p->inf_vtx;        printf("  inf_vtx        -> %d\n", p->inf_vtx);        }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }

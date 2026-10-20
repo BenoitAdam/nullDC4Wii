@@ -8,6 +8,7 @@
 extern VArray2   mem_b;    // Main system RAM  (16 MB)
 extern Array<u8> bios_b;  // BIOS ROM         (2 MB)
 extern Array<u8> flash_b; // Flash / NVRAM    (128 KB)
+extern bool flash_b_dirty; // FLASH_SAVE: a guest write changed flash_b since it was loaded
 
 // ---------------------------------------------------------------------------
 // Calling convention

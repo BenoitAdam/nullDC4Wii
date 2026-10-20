@@ -459,6 +459,67 @@ void dc_flash_restore_broadcast()
 	s_bc_patched = false;
 }
 
+// ---------------------------------------------------------------------------
+// FLASH_SAVE (flycastPS3 other_fix.md Part 6 side note). mem_Term() saves the
+// flash to data/dc_flash_wb.bin, but on the Wii it is never reached: every
+// exit is WiiExitToLoader() -> exit(0). So BIOS settings changed in a session
+// (language, sound, a game's flash data) were lost at the next boot. Called
+// from WiiExitToLoader(). Writes only when a flash file was loaded (a blank
+// flash must never shadow dc_flash.bin), a guest write changed it, and
+// FLASH_CHIP is on (plain-RAM writes would persist the command bytes). It
+// writes a temporary file first and renames it, so a failed write leaves the
+// previous dc_flash_wb.bin (or none) instead of a truncated one. dc_flash.bin
+// itself is never written: deleting dc_flash_wb.bin goes back to it.
+// ---------------------------------------------------------------------------
+extern "C" int get_flash_save_preset();   // wii/main.cpp
+extern "C" int get_flash_chip_preset();   // wii/main.cpp
+static bool s_flash_loaded = false;       // LoadBiosFiles found a flash file
+
+extern "C" void dc_flash_save_at_exit(void)
+{
+	if (!get_flash_save_preset())
+		return;
+	if (!s_flash_loaded || !flash_b_dirty)
+	{
+		printf("[FLASH] save at exit: %s, nothing written\n",
+		       !s_flash_loaded ? "no flash file was loaded" : "flash unchanged");
+		fflush(stdout);
+		return;
+	}
+	if (!get_flash_chip_preset())
+	{
+		printf("[FLASH] save at exit: skipped, FLASH CHIP is off\n");
+		fflush(stdout);
+		return;
+	}
+
+	dc_flash_restore_broadcast();
+	char* base = GetEmuPath("data/");
+	char* tmp  = BuildFilePath(base, "dc_flash_wb.tmp");
+	char* dst  = BuildFilePath(base, "dc_flash_wb.bin");
+	if (tmp && dst && SaveSh4FlashromToFile(tmp))
+	{
+		// rename() over an existing file is not guaranteed on the SD's FAT
+		// driver: on failure, drop the old file and rename again.
+		bool ok = rename(tmp, dst) == 0;
+		if (!ok)
+		{
+			remove(dst);
+			ok = rename(tmp, dst) == 0;
+		}
+		if (ok)
+			printf("[FLASH] save at exit: dc_flash_wb.bin written\n");
+		else
+			printf("[FLASH] save at exit: rename failed, the new flash is in dc_flash_wb.tmp\n");
+	}
+	else
+		printf("[FLASH] save at exit: write failed, dc_flash_wb.bin left as it was\n");
+	fflush(stdout);
+	free(tmp);
+	free(dst);
+	free(base);
+}
+
 void LoadBiosFiles()
 {
 	printf("Loading BIOS files...\n");
@@ -489,6 +550,7 @@ void LoadBiosFiles()
 	}
 
 	// Try to load saved flash first, fallback to default
+	s_flash_loaded = false;
 	char* flash_path = BuildFilePath(base_path, "dc_flash_wb.bin");
 	if (flash_path)
 	{
@@ -496,6 +558,7 @@ void LoadBiosFiles()
 		{
 			printf("Loaded dc_flash_wb.bin (writeback)\n");
 			any_loaded = true;
+			s_flash_loaded = true;
 		}
 		else
 		{
@@ -509,6 +572,7 @@ void LoadBiosFiles()
 				{
 					printf("Loaded dc_flash.bin\n");
 					any_loaded = true;
+					s_flash_loaded = true;
 				}
 				else
 				{
@@ -523,6 +587,9 @@ void LoadBiosFiles()
 	// FLASH_BROADCAST: the disc is already open (libGDR_Init runs in
 	// plugins_Init, before the first reset), so its IP.BIN can be read here.
 	dc_flash_set_broadcast();
+	// FLASH_SAVE: the flash now matches its file (the broadcast patch is
+	// host-side and is undone before a save, so it does not count).
+	flash_b_dirty = false;
 
 	// Load syscalls
 	char* syscalls_path = BuildFilePath(base_path, "syscalls.bin");

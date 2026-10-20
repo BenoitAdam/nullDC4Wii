@@ -19,6 +19,7 @@
 VArray2  mem_b;      // Main system RAM  (16 MB)
 Array<u8> bios_b;   // BIOS ROM         (2 MB)
 Array<u8> flash_b;  // Flash / NVRAM    (128 KB)
+bool flash_b_dirty = false;  // FLASH_SAVE (dc.cpp dc_flash_save_at_exit); cleared by LoadBiosFiles
 
 // ---------------------------------------------------------------------------
 // Forward declarations

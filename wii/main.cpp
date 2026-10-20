@@ -1559,6 +1559,23 @@ extern "C" {
   int get_flash_chip_preset() { return g_flash_chip_preset; }
 }
 
+// FLASH_SAVE - the BIOS flash is written back at exit (dc/dc.cpp
+// dc_flash_save_at_exit, called first thing in wii/wii_exit.cpp
+// WiiExitToLoader; flycastPS3 other_fix.md Part 6 side note). mem_Term(), the
+// only writer, is never reached on the Wii (every exit is exit(0)), so
+// settings changed in the BIOS or by a game were gone at the next boot. Saves
+// data/dc_flash_wb.bin (loaded in preference to dc_flash.bin) only when a
+// flash file was loaded, a guest write changed it this session, and
+// FLASH_CHIP is on; through a temporary file + rename, with the disc's
+// broadcast byte (FLASH_BROADCAST) undone first. Never touches dc_flash.bin:
+// deleting dc_flash_wb.bin goes back to it. Logs "[FLASH] save at exit: ...".
+// Wii-untested. 0=off (legacy, never saved), 1=on (default).
+int g_flash_save_preset = 1;
+
+extern "C" {
+  int get_flash_save_preset() { return g_flash_save_preset; }
+}
+
 // INF_VTX - drop TA vertices with 1/W = +inf (plugs/drkPvr/gxRend.cpp;
 // flycastPS3 other_fix.md 3.7, Flycast is_vertex_inf). vert_base() turned them
 // into W = 0 and x/y = inf*0 = NaN, and they were submitted to GX as part of
@@ -2897,6 +2914,7 @@ void checkBiosFiles()
 #define OPT_IDLE_SHINOBI 139 // Page 5 (CORE), under IDLE KAMUI
 #define OPT_IDLE_X3     140  // Page 5 (CORE), under IDLE SHINOBI
 #define OPT_FLASH_CHIP  141  // Page 6 (EXPERIMENTAL), under EXIT FIX
+#define OPT_FLASH_SAVE  142  // Page 6 (EXPERIMENTAL), under FLASH CHIP
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3041,6 +3059,7 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_SCHED,
   OPT_EXIT_FIX,
   OPT_FLASH_CHIP,
+  OPT_FLASH_SAVE,
   OPT_TRANS_ZWRITE,
   OPT_HOKUTO_HACK,
   OPT_PUYO_HACK,
@@ -4166,6 +4185,15 @@ bool displayOptionsMenu()
     printf(" BIOS flash program/erase");
     printf("\n");
 
+    // --- Row: FLASH_SAVE - write the flash back at exit if it changed (dc.cpp) ---
+    printf("%s FLASH SAVE     : ", (selectedRow == OPT_FLASH_SAVE) ? ">" : " ");
+    switch (g_flash_save_preset) {
+      case 0: printf("[< OFF (NEVER SAVED) >]"); break;
+      case 1: printf("[< ON (AT EXIT)      >]"); break;
+    }
+    printf(" keep BIOS settings (needs CHIP)");
+    printf("\n");
+
     // --- Row: Translucent-list depth write ---
     printf("%s TRANS ZWRITE   : ", (selectedRow == OPT_TRANS_ZWRITE) ? ">" : " ");
     switch (g_trans_zwrite_preset) {
@@ -4665,6 +4693,7 @@ bool displayOptionsMenu()
         case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
         case OPT_IDLE_X3:        g_idle_x3_preset         = (g_idle_x3_preset         + 1) % 2; break;
         case OPT_FLASH_CHIP:     g_flash_chip_preset      = (g_flash_chip_preset      + 1) % 2; break;
+        case OPT_FLASH_SAVE:     g_flash_save_preset      = (g_flash_save_preset      + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
                                                  (g_gdrom_delay == 1800) ? 0     :
                                                  (g_gdrom_delay == 3600) ? 1800  :
@@ -4820,6 +4849,7 @@ bool displayOptionsMenu()
         case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
         case OPT_IDLE_X3:        g_idle_x3_preset         = (g_idle_x3_preset         + 1) % 2; break;
         case OPT_FLASH_CHIP:     g_flash_chip_preset      = (g_flash_chip_preset      + 1) % 2; break;
+        case OPT_FLASH_SAVE:     g_flash_save_preset      = (g_flash_save_preset      + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
                                                  (g_gdrom_delay == 1800) ? 3600  :
                                                  (g_gdrom_delay == 3600) ? 7200  :
@@ -5851,6 +5881,7 @@ int main(int argc, wchar *argv[])
     printf("Idle Shinobi   : %s\n", g_idle_shinobi_preset ? "ON (DEBT TIL IRQ)" : "OFF (LEGACY)");
     printf("Idle X3 Back   : %s\n", g_idle_x3_preset ? "ON (X3 BACKWARD)" : "OFF (X30, LEGACY)");
     printf("Flash Chip     : %s\n", g_flash_chip_preset ? "ON (AMD COMMANDS)" : "OFF (PLAIN RAM)");
+    printf("Flash Save     : %s\n", g_flash_save_preset ? "ON (AT EXIT)" : "OFF (NEVER SAVED)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
     printf("ADPCM Loop Fix : %s\n", g_adpcm_loop_preset ? "ON (KEEP STATE)" : "OFF (RESET/LAP)");

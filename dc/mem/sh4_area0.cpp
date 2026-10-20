@@ -131,7 +131,14 @@ static void flash_chip_write(u32 addr, u32 val, u32 sz)
 
 	case FS_ByteProgram:
 		if ((addr & 0x1E000) != 0x1A000)       // factory partition is protected
-			flash_b[addr] &= (u8)val;
+		{
+			const u8 nv = flash_b[addr] & (u8)val;
+			if (nv != flash_b[addr])
+			{
+				flash_b[addr] = nv;
+				flash_b_dirty = true;          // FLASH_SAVE
+			}
+		}
 		s_flash_state = FS_Normal;
 		break;
 
@@ -165,6 +172,7 @@ static void flash_chip_write(u32 addr, u32 val, u32 sz)
 			memcpy(save, &flash_b[0x1A000], 0x2000);
 			memset(&flash_b[0], 0xFF, FLASH_SIZE);
 			memcpy(&flash_b[0x1A000], save, 0x2000);
+			flash_b_dirty = true;              // FLASH_SAVE
 			flash_chip_log("chip erase", addr, val);
 		}
 		else if (val == 0x30)
@@ -180,7 +188,10 @@ static void flash_chip_write(u32 addr, u32 val, u32 sz)
 			default: break;                                         // SA3 / mid-sector
 			}
 			if (len)
+			{
 				memset(&flash_b[start], 0xFF, len);
+				flash_b_dirty = true;          // FLASH_SAVE
+			}
 			flash_chip_log(len ? "sector erase" : "sector erase ignored", addr, val);
 		}
 		else if (val != 0xF0)
@@ -345,6 +356,7 @@ void FASTCALL WriteMem_area0(u32 addr, T data)
 			return;
 		}
 		WriteMemArr<sz, T>(flash_b.data, addr - 0x00200000, data);
+		flash_b_dirty = true;   // FLASH_SAVE (it saves only with FLASH_CHIP on)
 		return;
 	}
 
