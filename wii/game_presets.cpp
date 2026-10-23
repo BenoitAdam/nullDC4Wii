@@ -594,7 +594,7 @@
                                 3600 is a good start. Default OFF; A/B it and
                                 watch for a game that times out.
 
-        cable=2             <- NUMERIC (0/1/2), what video cable the emulated
+        cable=2             <- (0|1|2 or composite|rgb|vga; alias cable_type), what video cable the emulated
                                 Dreamcast believes is attached. 0 = composite
                                 (legacy default), 1 = RGB SCART, 2 = VGA.
 
@@ -1960,6 +1960,17 @@ static int parse_addr_list(const char* v, int* out, int max)
 // only ever the "key absent from this section" sentinel. So this field uses
 // -2 for absent (see preset_clear / preset_apply_fields) and this parser
 // returns -1 for the explicit "default"/"auto"/"saved" keyword.
+// cable / cable_type: 0 composite, 1 RGB SCART, 2 VGA — digits or names.
+static int parse_cable(const char* v)
+{
+    if (key_eq(v, "composite") || key_eq(v, "cvbs")) return 0;
+    if (key_eq(v, "rgb") || key_eq(v, "scart"))      return 1;
+    if (key_eq(v, "vga"))                            return 2;
+    if (v[0] >= '0' && v[0] <= '2' && !v[1])         return v[0] - '0';
+    printf("[game_presets] Unknown cable value: '%s'\n", v);
+    return -1;
+}
+
 static int parse_audio_buffers(const char* v)
 {
     if (key_eq(v, "default") || key_eq(v, "auto") || key_eq(v, "saved")) return -1;
@@ -2130,8 +2141,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     // `frame_prof=on` would atoi() to 0 and silently disable it.
     else if (key_eq(key, "frame_prof"))     p->frame_prof     = atoi(val);
     else if (key_eq(key, "disc_bulk"))      p->disc_bulk      = parse_bool(val);
-    // NUMERIC: 0 composite, 1 RGB SCART, 2 VGA. `cable=on` would read as 0.
-    else if (key_eq(key, "cable"))          p->cable          = atoi(val);
+    // 0 composite, 1 RGB SCART, 2 VGA; digits or composite/rgb/vga. Unknown -> -1 (unset).
+    else if (key_eq(key, "cable") || key_eq(key, "cable_type")) p->cable = parse_cable(val);
     else if (key_eq(key, "flash_broadcast")) p->flash_broadcast = parse_flash_broadcast(val);
     else if (key_eq(key, "disc_census"))    p->disc_census    = parse_bool(val);
     // NUMERIC: KB/s the GD-ROM DMA may move. 0 = off, 1800 = a real drive.
