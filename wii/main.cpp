@@ -3145,6 +3145,17 @@ static int opt_step_row(int selectedRow, int page, int dir)
   return rows[idx];
 }
 
+// Menu colors: libogc console ANSI escapes (ogc/console.h, via gccore.h).
+// Escapes take no columns, so they don't count toward the 77-char row-wrap
+// budget. A/B follow the GameCube pad (A green, B red); every other button
+// name is yellow. Each macro closes with CONSOLE_RESET so the color never
+// bleeds into the rest of the line.
+#define MENU_BTN_A(s)  CONSOLE_GREEN  s CONSOLE_RESET
+#define MENU_BTN_B(s)  CONSOLE_RED    s CONSOLE_RESET
+#define MENU_BTN(s)    CONSOLE_YELLOW s CONSOLE_RESET
+#define MENU_TITLE(s)  CONSOLE_CYAN   s CONSOLE_RESET
+#define MENU_CURSOR    CONSOLE_YELLOW ">" CONSOLE_RESET
+
 // Short titles shown in the page banner ("-- TITLE (PAGE n/6) --").
 static const char *opt_page_title(int page)
 {
@@ -3170,7 +3181,8 @@ static void printOptionsFooter(void)
 {
   int cols, rows;
   CON_GetMetrics(&cols, &rows);
-  printf("\033[%d;1H1-Y: Previous | 2+X: Next | alpha 0.800", rows);
+  printf("\033[%d;1H" MENU_BTN("1-Y") ": Previous | " MENU_BTN("2+X")
+         ": Next | alpha 0.800", rows);
 }
 
 bool displayOptionsMenu()
@@ -3201,7 +3213,7 @@ bool displayOptionsMenu()
 
     // --- Row 0: Launch ---
     printf("%s LAUNCH GAME\n",
-           (selectedRow == OPT_LAUNCH) ? ">" : " ");
+           (selectedRow == OPT_LAUNCH) ? MENU_CURSOR : " ");
 
     // --- Row 1: Game name (display only) ---
     {
@@ -3220,11 +3232,11 @@ bool displayOptionsMenu()
 
     printf("\n");
 
-    printf("    -- %s (PAGE %d/%d) --\n\n", opt_page_title(optionsPage), optionsPage + 1, OPT_PAGE_COUNT);
+    printf("    " MENU_TITLE("-- %s (PAGE %d/%d) --") "\n\n", opt_page_title(optionsPage), optionsPage + 1, OPT_PAGE_COUNT);
 
     if (optionsPage == 0) {
     // --- Row: Ratio ---
-    printf("%s RATIO          : ", (selectedRow == OPT_RATIO) ? ">" : " ");
+    printf("%s RATIO          : ", (selectedRow == OPT_RATIO) ? MENU_CURSOR : " ");
     switch (g_ratio_preset) {
       case 0: printf("[< ORIGINAL          >]"); break;
       case 1: printf("[< FULLSCREEN        >]"); break;
@@ -3233,7 +3245,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Speed Limiter ---
-    printf("%s SPEED LIMITER  : ", (selectedRow == OPT_SPEED_LIMIT) ? ">" : " ");
+    printf("%s SPEED LIMITER  : ", (selectedRow == OPT_SPEED_LIMIT) ? MENU_CURSOR : " ");
     switch (g_speed_limiter_preset) {
       case 0: printf("[< OFF (UNCAPPED)    >]"); break;
       case 1: printf("[< ON (CAP 100%%)     >]"); break;
@@ -3242,7 +3254,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: CABLE - what cable the guest thinks is attached ---
-    printf("%s CABLE TYPE     : ", (selectedRow == OPT_CABLE) ? ">" : " ");
+    printf("%s CABLE TYPE     : ", (selectedRow == OPT_CABLE) ? MENU_CURSOR : " ");
     switch (g_cable_preset) {
       case 0: printf("[< COMPOSITE (FLASH) >]"); break;
       case 1: printf("[< RGB SCART (FLASH) >]"); break;
@@ -3252,7 +3264,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Gameplay FPS overlay ---
-    printf("%s SHOW FPS       : ", (selectedRow == OPT_SHOW_FPS) ? ">" : " ");
+    printf("%s SHOW FPS       : ", (selectedRow == OPT_SHOW_FPS) ? MENU_CURSOR : " ");
     switch (g_show_fps_overlay) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON                >]"); break;
@@ -3261,7 +3273,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Graphics ---
-    printf("%s GRAPHICS       : ", (selectedRow == OPT_GRAPHICS) ? ">" : " ");
+    printf("%s GRAPHICS       : ", (selectedRow == OPT_GRAPHICS) ? MENU_CURSOR : " ");
     switch (g_graphism_preset) {
       case 0: printf("[< LOW (GX_NEAR)     >]"); break;
       case 1: printf("[< NORMAL (GX_LINEAR)>]"); break;
@@ -3270,7 +3282,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: GX texture-LOD extras (biasclamp + edgelod) ---
-    printf("%s GX             : ", (selectedRow == OPT_GX) ? ">" : " ");
+    printf("%s GX             : ", (selectedRow == OPT_GX) ? MENU_CURSOR : " ");
     switch (g_gx_preset) {
       case 0: printf("[< GX_DISABLE        >]"); break;
       case 1: printf("[< GX_ENABLE         >]"); break;
@@ -3279,7 +3291,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Texture LOD bias ---
-    printf("%s LOD BIAS       : ", (selectedRow == OPT_LOD_BIAS) ? ">" : " ");
+    printf("%s LOD BIAS       : ", (selectedRow == OPT_LOD_BIAS) ? MENU_CURSOR : " ");
     switch (g_lod_bias_preset) {
       case 0: printf("[< -1.00             >]"); break;
       case 1: printf("[< -0.75             >]"); break;
@@ -3291,7 +3303,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Anisotropic filtering ---
-    printf("%s ANISOTROPIC    : ", (selectedRow == OPT_ANISO) ? ">" : " ");
+    printf("%s ANISOTROPIC    : ", (selectedRow == OPT_ANISO) ? MENU_CURSOR : " ");
     switch (g_aniso_preset) {
       case 0: printf("[< 0X (OFF)          >]"); break;
       case 1: printf("[< 2X                >]"); break;
@@ -3301,7 +3313,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Texture Cache ---
-    printf("%s TEXTURE CACHE  : ", (selectedRow == OPT_TEX_CACHE) ? ">" : " ");
+    printf("%s TEXTURE CACHE  : ", (selectedRow == OPT_TEX_CACHE) ? MENU_CURSOR : " ");
     switch (g_texture_cache_preset) {
       case 0: printf("[< VERY FAST         >]"); break;
       case 6: printf("[< VERY FAST+        >]"); break;
@@ -3313,7 +3325,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: VQ as CMPR ---
-    printf("%s VQ AS CMPR     : ", (selectedRow == OPT_VQ_CMPR) ? ">" : " ");
+    printf("%s VQ AS CMPR     : ", (selectedRow == OPT_VQ_CMPR) ? MENU_CURSOR : " ");
     switch (g_vq_cmpr_preset) {
       case 0: printf("[< OFF (DEFAULT)     >]"); break;
       case 1: printf("[< ON                >]"); break;
@@ -3322,7 +3334,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: TEX CLAMP FIX - per-polygon wrap mode on cached textures ---
-    printf("%s TEX CLAMP FIX  : ", (selectedRow == OPT_TEX_CLAMP_FIX) ? ">" : " ");
+    printf("%s TEX CLAMP FIX  : ", (selectedRow == OPT_TEX_CLAMP_FIX) ? MENU_CURSOR : " ");
     switch (g_tex_clamp_fix_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (PER POLYGON)  >]"); break;
@@ -3331,7 +3343,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Frameskipping ---
-    printf("%s FRAMESKIPPING  : ", (selectedRow == OPT_FRAMESKIP) ? ">" : " ");
+    printf("%s FRAMESKIPPING  : ", (selectedRow == OPT_FRAMESKIP) ? MENU_CURSOR : " ");
     switch (g_frameskip_preset) {
       case 0: printf("[< 0 (DEFAULT)       >]"); break;
       case 1: printf("[< 1                 >]"); break;
@@ -3342,7 +3354,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: 2D Framebuffer ---
-    printf("%s 2D FRAMEBUFFER : ", (selectedRow == OPT_FRAMEBUFFER_2D) ? ">" : " ");
+    printf("%s 2D FRAMEBUFFER : ", (selectedRow == OPT_FRAMEBUFFER_2D) ? MENU_CURSOR : " ");
     switch (g_framebuffer_2d) {
       case 0: printf("[< NO                >]"); break;
       case 1: printf("[< YES               >]"); break;
@@ -3351,7 +3363,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Advanced Alpha ---
-    printf("%s ADVANCED ALPHA : ", (selectedRow == OPT_ADV_ALPHA) ? ">" : " ");
+    printf("%s ADVANCED ALPHA : ", (selectedRow == OPT_ADV_ALPHA) ? MENU_CURSOR : " ");
     switch (g_advanced_alpha_preset) {
       case 0: printf("[< NO                >]"); break;
       case 1: printf("[< YES (DEFAULT)     >]"); break;
@@ -3359,7 +3371,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Blend Mode ---
-    printf("%s > BLEND MODE   : ", (selectedRow == OPT_BLEND_MODE) ? ">" : " ");
+    printf("%s > BLEND MODE   : ", (selectedRow == OPT_BLEND_MODE) ? MENU_CURSOR : " ");
     switch (g_blend_mode_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
@@ -3368,7 +3380,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Blend FPS Boost ---
-    printf("%s >> FPS BOOST   : ", (selectedRow == OPT_BLEND_FPS_BOOST) ? ">" : " ");
+    printf("%s >> FPS BOOST   : ", (selectedRow == OPT_BLEND_FPS_BOOST) ? MENU_CURSOR : " ");
     switch (g_blend_fps_boost_preset) {
       case 0: printf("[< OFF (CORRECT)     >]"); break;
       case 1: printf("[< ON (FASTER)       >]"); break;
@@ -3377,7 +3389,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Punch-Through ---
-    printf("%s PUNCH THROUGH  : ", (selectedRow == OPT_PUNCH_THROUGH) ? ">" : " ");
+    printf("%s PUNCH THROUGH  : ", (selectedRow == OPT_PUNCH_THROUGH) ? MENU_CURSOR : " ");
     switch (g_punch_through_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
@@ -3386,7 +3398,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Translucent depth sort ---
-    printf("%s TRANS SORT     : ", (selectedRow == OPT_TRANS_SORT) ? ">" : " ");
+    printf("%s TRANS SORT     : ", (selectedRow == OPT_TRANS_SORT) ? MENU_CURSOR : " ");
     switch (g_trans_sort_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
@@ -3395,7 +3407,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Render to texture ---
-    printf("%s RENDER TO TEX  : ", (selectedRow == OPT_RENDER_TO_TEXTURE) ? ">" : " ");
+    printf("%s RENDER TO TEX  : ", (selectedRow == OPT_RENDER_TO_TEXTURE) ? MENU_CURSOR : " ");
     switch (g_render_to_texture_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
@@ -3406,7 +3418,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Split-screen multiplayer ---
-    printf("%s SPLIT SCREEN   : ", (selectedRow == OPT_SPLIT_SCREEN) ? ">" : " ");
+    printf("%s SPLIT SCREEN   : ", (selectedRow == OPT_SPLIT_SCREEN) ? MENU_CURSOR : " ");
     switch (g_split_screen_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< TILE CLIP (1 PASS)>]"); break;
@@ -3421,7 +3433,7 @@ bool displayOptionsMenu()
 
     if (optionsPage == 1) {
     // --- Row: FMV Format ---
-    printf("%s FMV FORMAT     : ", (selectedRow == OPT_FMV_FORMAT) ? ">" : " ");
+    printf("%s FMV FORMAT     : ", (selectedRow == OPT_FMV_FORMAT) ? MENU_CURSOR : " ");
     switch (g_fmv_format_preset) {
       case 0: printf("[< CMPR (DXT1)       >]"); break;
       case 1: printf("[< RGBA8             >]"); break;
@@ -3432,7 +3444,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: YUV422 source pitch ---
-    printf("%s YUV STRIDE     : ", (selectedRow == OPT_YUV_STRIDE) ? ">" : " ");
+    printf("%s YUV STRIDE     : ", (selectedRow == OPT_YUV_STRIDE) ? MENU_CURSOR : " ");
     switch (g_yuv_stride_preset) {
       case 0: printf("[< OFF (DECLARED)    >]"); break;
       case 1: printf("[< AUTO (FMV ONLY)   >]"); break;
@@ -3443,7 +3455,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Twiddled YUV422 texture decode fix ---
-    printf("%s YUV TWIDDLE FIX: ", (selectedRow == OPT_YUV_TWIDDLE_FIX) ? ">" : " ");
+    printf("%s YUV TWIDDLE FIX: ", (selectedRow == OPT_YUV_TWIDDLE_FIX) ? MENU_CURSOR : " ");
     switch (g_yuv_twiddle_fix_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
@@ -3452,7 +3464,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Intensity Color Fix ---
-    printf("%s VERTEX COLOR   : ", (selectedRow == OPT_VERTEX_COLOR) ? ">" : " ");
+    printf("%s VERTEX COLOR   : ", (selectedRow == OPT_VERTEX_COLOR) ? MENU_CURSOR : " ");
     switch (g_vertex_color_preset) {
       case 0: printf("[< OFF (GRAY SCALE)  >]"); break;
       case 1: printf("[< ON                >]"); break;
@@ -3461,7 +3473,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Sprite base colour ---
-    printf("%s SPRITE COLOR   : ", (selectedRow == OPT_SPRITE_COLOR) ? ">" : " ");
+    printf("%s SPRITE COLOR   : ", (selectedRow == OPT_SPRITE_COLOR) ? MENU_CURSOR : " ");
     switch (g_sprite_color_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (DEFAULT)      >]"); break;
@@ -3470,7 +3482,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Vertex alpha on ARGB1555 ---
-    printf("%s VTX ALPHA      : ", (selectedRow == OPT_VTX_ALPHA) ? ">" : " ");
+    printf("%s VTX ALPHA      : ", (selectedRow == OPT_VTX_ALPHA) ? MENU_CURSOR : " ");
     switch (g_vtx_alpha_preset) {
       case 0: printf("[< OFF (FORCE OPAQUE)>]"); break;
       case 1: printf("[< ON (USE TSP.UseA) >]"); break;
@@ -3479,7 +3491,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: TSP.IgnoreTexAlpha ---
-    printf("%s TEX ALPHA      : ", (selectedRow == OPT_TEX_ALPHA) ? ">" : " ");
+    printf("%s TEX ALPHA      : ", (selectedRow == OPT_TEX_ALPHA) ? MENU_CURSOR : " ");
     switch (g_tex_alpha_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (IgnoreTexA)   >]"); break;
@@ -3488,7 +3500,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: honour PCW.ListType for the blend state ---
-    printf("%s PCW LISTTYPE   : ", (selectedRow == OPT_PCW_LIST) ? ">" : " ");
+    printf("%s PCW LISTTYPE   : ", (selectedRow == OPT_PCW_LIST) ? MENU_CURSOR : " ");
     switch (g_pcw_list_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< BLEND             >]"); break;
@@ -3498,7 +3510,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: TA_GUARD - skip bad TA records instead of die()/wild call (ta.h) ---
-    printf("%s TA GUARD       : ", (selectedRow == OPT_TA_GUARD) ? ">" : " ");
+    printf("%s TA GUARD       : ", (selectedRow == OPT_TA_GUARD) ? MENU_CURSOR : " ");
     switch (g_ta_guard_preset) {
       case 0: printf("[< OFF (DIE)         >]"); break;
       case 1: printf("[< ON (SKIP RECORD)  >]"); break;
@@ -3507,7 +3519,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: INF_VTX - cut 1/W=+inf vertices out of strips (gxRend.cpp) ---
-    printf("%s INF VERTEX DROP: ", (selectedRow == OPT_INF_VTX) ? ">" : " ");
+    printf("%s INF VERTEX DROP: ", (selectedRow == OPT_INF_VTX) ? MENU_CURSOR : " ");
     switch (g_inf_vtx_preset) {
       case 0: printf("[< OFF (NAN TO GX)   >]"); break;
       case 1: printf("[< ON (SPLIT STRIP)  >]"); break;
@@ -3516,7 +3528,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Decal Alpha Fix ---
-    printf("%s DECAL ALPHA    : ", (selectedRow == OPT_DECAL_ALPHA) ? ">" : " ");
+    printf("%s DECAL ALPHA    : ", (selectedRow == OPT_DECAL_ALPHA) ? MENU_CURSOR : " ");
     switch (g_decal_alpha_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
@@ -3525,7 +3537,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: 2D sprite seam fix (half-texel inset) ---
-    printf("%s SEAM FIX       : ", (selectedRow == OPT_SEAM_FIX) ? ">" : " ");
+    printf("%s SEAM FIX       : ", (selectedRow == OPT_SEAM_FIX) ? MENU_CURSOR : " ");
     switch (g_seam_fix_preset) {
       case 0: printf("[< OFF (A BIT FASTER)>]"); break;
       case 1: printf("[< ON (DEFAULT)      >]"); break;
@@ -3534,7 +3546,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: PVR fog ---
-    printf("%s FOG            : ", (selectedRow == OPT_FOG) ? ">" : " ");
+    printf("%s FOG            : ", (selectedRow == OPT_FOG) ? MENU_CURSOR : " ");
     switch (g_fog_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (PER POLY)     >]"); break;
@@ -3543,7 +3555,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: FOG_INDEX - fog table indexed by density/W (gxRend.cpp FogTableLookup) ---
-    printf("%s FOG INDEX FIX  : ", (selectedRow == OPT_FOG_INDEX) ? ">" : " ");
+    printf("%s FOG INDEX FIX  : ", (selectedRow == OPT_FOG_INDEX) ? MENU_CURSOR : " ");
     switch (g_fog_index_preset) {
       case 0: printf("[< OFF (W*DENSITY)   >]"); break;
       case 1: printf("[< ON (DENSITY/W)    >]"); break;
@@ -3552,7 +3564,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Background polygon rendering ---
-    printf("%s BG POLYGON     : ", (selectedRow == OPT_BG_POLY) ? ">" : " ");
+    printf("%s BG POLYGON     : ", (selectedRow == OPT_BG_POLY) ? MENU_CURSOR : " ");
     switch (g_bg_poly_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
@@ -3561,7 +3573,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: RGB565 Opaque Alpha ---
-    printf("%s RGB565 ALPHA   : ", (selectedRow == OPT_RGB565_OPAQUE_ALPHA) ? ">" : " ");
+    printf("%s RGB565 ALPHA   : ", (selectedRow == OPT_RGB565_OPAQUE_ALPHA) ? MENU_CURSOR : " ");
     switch (g_rgb565_opaque_alpha_preset) {
       case 0: printf("[< OFF (FMT0 ONLY)   >]"); break;
       case 1: printf("[< ON (FMT0+FMT1)    >]"); break;
@@ -3570,7 +3582,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Jojo Fix ---
-    printf("%s JOJO FIX       : ", (selectedRow == OPT_JOJO_FIX) ? ">" : " ");
+    printf("%s JOJO FIX       : ", (selectedRow == OPT_JOJO_FIX) ? MENU_CURSOR : " ");
     switch (g_jojo_fix_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (DEFAULT)      >]"); break;
@@ -3579,7 +3591,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Offset (specular) color ---
-    printf("%s OFFSET COLOR   : ", (selectedRow == OPT_OFFSET_COLOR) ? ">" : " ");
+    printf("%s OFFSET COLOR   : ", (selectedRow == OPT_OFFSET_COLOR) ? MENU_CURSOR : " ");
     switch (g_offset_color_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (CORRECT)      >]"); break;
@@ -3588,7 +3600,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: 4BPP ---
-    printf("%s 4BPP MODE      : ", (selectedRow == OPT_4BPP) ? ">" : " ");
+    printf("%s 4BPP MODE      : ", (selectedRow == OPT_4BPP) ? MENU_CURSOR : " ");
     switch (g_4bpp_preset) {
       case 0: printf("[< I4 STUB           >]"); break;
       case 1: printf("[< 4BPP OPTIMIZED    >]"); break;
@@ -3599,7 +3611,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: 8BPP ---
-    printf("%s 8BPP MODE      : ", (selectedRow == OPT_8BPP) ? ">" : " ");
+    printf("%s 8BPP MODE      : ", (selectedRow == OPT_8BPP) ? MENU_CURSOR : " ");
     switch (g_8bpp_preset) {
       case 0: printf("[< I8 STUB           >]"); break;
       case 1: printf("[< 8BPP OPTIMIZED    >]"); break;
@@ -3614,13 +3626,13 @@ bool displayOptionsMenu()
 
     if (optionsPage == 2) {
     // --- Row: legacy (1bb8c27) depth pipeline ---
-    printf("%s LEGACY DEPTH   : ", (selectedRow == OPT_LEGACY_DEPTH) ? ">" : " ");
+    printf("%s LEGACY DEPTH   : ", (selectedRow == OPT_LEGACY_DEPTH) ? MENU_CURSOR : " ");
     printf(g_legacy_depth_preset ? "[< ON                >]" : "[< OFF               >]");
     printf(" Overrides FIXED DEPTH");
     printf("\n");
 
     // --- Row: Depth clip behaviour ---
-    printf("%s DEPTH CLIP     : ", (selectedRow == OPT_DEPTH_CLIP) ? ">" : " ");
+    printf("%s DEPTH CLIP     : ", (selectedRow == OPT_DEPTH_CLIP) ? MENU_CURSOR : " ");
     switch (g_depth_clip_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< NEAR MARGIN (WII) >]"); break;
@@ -3630,7 +3642,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Fixed depth projection ---
-    printf("%s FIXED DEPTH    : ", (selectedRow == OPT_FIXED_DEPTH) ? ">" : " ");
+    printf("%s FIXED DEPTH    : ", (selectedRow == OPT_FIXED_DEPTH) ? MENU_CURSOR : " ");
     switch (g_fixed_depth_preset) {
       case 0: printf("[< OFF (DYNAMIC)     >]"); break;
       case 1: printf("[< WIDE (BUGGY)      >]"); break;
@@ -3640,7 +3652,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: HUD pass (rescue HUD clipped by fixed_depth=tight) ---
-    printf("%s HUD PASS       : ", (selectedRow == OPT_HUD_PASS) ? ">" : " ");
+    printf("%s HUD PASS       : ", (selectedRow == OPT_HUD_PASS) ? MENU_CURSOR : " ");
     switch (g_hud_pass_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< OVERLAY (NO ZW)   >]"); break;
@@ -3650,7 +3662,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Sub-pass depth-only Z clear ---
-    printf("%s SUBPASS ZCLEAR : ", (selectedRow == OPT_SUBPASS_ZCLEAR) ? ">" : " ");
+    printf("%s SUBPASS ZCLEAR : ", (selectedRow == OPT_SUBPASS_ZCLEAR) ? MENU_CURSOR : " ");
     switch (g_subpass_zclear_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON                >]"); break;
@@ -3659,7 +3671,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: PPZ Write ---
-    printf("%s PPZ_WRITE      : ", (selectedRow == OPT_PPZ_WRITE) ? ">" : " ");
+    printf("%s PPZ_WRITE      : ", (selectedRow == OPT_PPZ_WRITE) ? MENU_CURSOR : " ");
     switch (g_ppz_write_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (DEFAULT)      >]"); break;
@@ -3668,7 +3680,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Per-poly ISP depth compare (isp.DepthMode) ---
-    printf("%s ISP DEPTH FUNC : ", (selectedRow == OPT_ISP_DEPTH_FUNC) ? ">" : " ");
+    printf("%s ISP DEPTH FUNC : ", (selectedRow == OPT_ISP_DEPTH_FUNC) ? MENU_CURSOR : " ");
     switch (g_isp_depth_func_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (OPAQUE/PT)    >]"); break;
@@ -3678,7 +3690,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Per-poly ISP backface cull (isp.CullMode) ---
-    printf("%s ISP CULL       : ", (selectedRow == OPT_ISP_CULL) ? ">" : " ");
+    printf("%s ISP CULL       : ", (selectedRow == OPT_ISP_CULL) ? MENU_CURSOR : " ");
     switch (g_isp_cull_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON                >]"); break;
@@ -3688,7 +3700,7 @@ bool displayOptionsMenu()
     printf("\n\n");
 
     // --- Row: Per-pixel autosort (depth peeling) ---
-    printf("%s AUTOSORT       : ", (selectedRow == OPT_AUTOSORT) ? ">" : " ");
+    printf("%s AUTOSORT       : ", (selectedRow == OPT_AUTOSORT) ? MENU_CURSOR : " ");
     if (g_autosort_preset <= 0)
       printf("[< OFF (LEGACY)      >]");
     else
@@ -3697,7 +3709,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Layer Sort (layer-tiered translucent sort) ---
-    printf("%s LAYER SORT     : ", (selectedRow == OPT_LAYER_SORT) ? ">" : " ");
+    printf("%s LAYER SORT     : ", (selectedRow == OPT_LAYER_SORT) ? MENU_CURSOR : " ");
     switch (g_layer_sort_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (TR TIER SORT) >]"); break;
@@ -3706,7 +3718,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: PVR list-type render order (OP before TR, whatever the TA order) ---
-    printf("%s LIST ORDER     : ", (selectedRow == OPT_LIST_ORDER) ? ">" : " ");
+    printf("%s LIST ORDER     : ", (selectedRow == OPT_LIST_ORDER) ? MENU_CURSOR : " ");
     switch (g_list_order_preset) {
       case 0: printf("[< OFF (TA ORDER)    >]"); break;
       case 1: printf("[< ON (OPAQUE FIRST) >]"); break;
@@ -3717,7 +3729,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: PVR horizontal X-Scaler ---
-    printf("%s X SCALER       : ", (selectedRow == OPT_X_SCALER) ? ">" : " ");
+    printf("%s X SCALER       : ", (selectedRow == OPT_X_SCALER) ? MENU_CURSOR : " ");
     switch (g_x_scaler_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (DEFAULT)      >]"); break;
@@ -3726,7 +3738,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: PVR vertical Y-Scaler (SCALER_CTL.vscalefactor) ---
-    printf("%s Y SCALER       : ", (selectedRow == OPT_Y_SCALER) ? ">" : " ");
+    printf("%s Y SCALER       : ", (selectedRow == OPT_Y_SCALER) ? MENU_CURSOR : " ");
     switch (g_y_scaler_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (VSCALEFACTOR) >]"); break;
@@ -3735,7 +3747,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: PVR horizontal H-Scaler (VO_CONTROL.pixel_double) ---
-    printf("%s H SCALER       : ", (selectedRow == OPT_H_SCALER) ? ">" : " ");
+    printf("%s H SCALER       : ", (selectedRow == OPT_H_SCALER) ? MENU_CURSOR : " ");
     switch (g_h_scaler_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (PIXEL DOUBLE) >]"); break;
@@ -3744,7 +3756,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Forced canvas width (240p scenes) ---
-    printf("%s CANVAS WIDTH   : ", (selectedRow == OPT_CANVAS_WIDTH) ? ">" : " ");
+    printf("%s CANVAS WIDTH   : ", (selectedRow == OPT_CANVAS_WIDTH) ? MENU_CURSOR : " ");
     if (g_canvas_width_preset <= 0)
       printf("[< OFF (640, LEGACY) >]");
     else
@@ -3753,7 +3765,7 @@ bool displayOptionsMenu()
     printf("\n\n");
 
     // --- Row: Native polygon offset (Z-texture bias, PT list) ---
-    printf("%s POLY OFFSET    : ", (selectedRow == OPT_POLY_OFFSET) ? ">" : " ");
+    printf("%s POLY OFFSET    : ", (selectedRow == OPT_POLY_OFFSET) ? MENU_CURSOR : " ");
     switch (g_poly_offset_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< TIER 1            >]"); break;
@@ -3768,7 +3780,7 @@ bool displayOptionsMenu()
 
     if (optionsPage == 3) {
     // --- Row: Audio queue pacing (settings.emulator.AudioBuffers) ---
-    printf("%s AUDIO BUFFERS  : ", (selectedRow == OPT_AUDIO_BUFFERS) ? ">" : " ");
+    printf("%s AUDIO BUFFERS  : ", (selectedRow == OPT_AUDIO_BUFFERS) ? MENU_CURSOR : " ");
     switch (g_audio_buffers_preset) {
       case -1: printf("[< DEFAULT (SAVED)   >]"); break;
       case  0: printf("[< 0 (FREE RUN)      >]"); break;
@@ -3781,7 +3793,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Audio block size (wii/wii_audio.cpp, samples per ASND buffer) ---
-    printf("%s AUDIO BLOCK    : ", (selectedRow == OPT_AUDIO_BLOCK) ? ">" : " ");
+    printf("%s AUDIO BLOCK    : ", (selectedRow == OPT_AUDIO_BLOCK) ? MENU_CURSOR : " ");
     switch (g_audio_block_preset) {
       case 0: printf("[< 1024 (23MS, 109%%) >]"); break;
       case 1: printf("[< 1536 (35MS, 163%%) >]"); break;
@@ -3791,7 +3803,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Dynamic rate control (wii/wii_audio.cpp pitch trim) ---
-    printf("%s AUDIO DRC      : ", (selectedRow == OPT_AUDIO_DRC) ? ">" : " ");
+    printf("%s AUDIO DRC      : ", (selectedRow == OPT_AUDIO_DRC) ? MENU_CURSOR : " ");
     switch (g_audio_drc_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< GENTLE (+-1%%)     >]"); break;
@@ -3802,7 +3814,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: CDDA music (GD-ROM CD audio tracks) ---
-    printf("%s CDDA MUSIC     : ", (selectedRow == OPT_CDDA) ? ">" : " ");
+    printf("%s CDDA MUSIC     : ", (selectedRow == OPT_CDDA) ? MENU_CURSOR : " ");
     switch (g_cdda_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (CD MUSIC)     >]"); break;
@@ -3811,7 +3823,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: CDDA_PAUSE_FIX - CD audio pause keeps its position (gdromv3.cpp) ---
-    printf("%s CDDA PAUSE FIX : ", (selectedRow == OPT_CDDA_PAUSE_FIX) ? ">" : " ");
+    printf("%s CDDA PAUSE FIX : ", (selectedRow == OPT_CDDA_PAUSE_FIX) ? MENU_CURSOR : " ");
     switch (g_cdda_pause_fix_preset) {
       case 0: printf("[< OFF (TO FAD 150)  >]"); break;
       case 1: printf("[< ON (KEEP POS)     >]"); break;
@@ -3820,7 +3832,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: CDDA_STATE_FIX - Flycast CD-DA play/pause/end/read rules (gdromv3.cpp) ---
-    printf("%s CDDA STATE FIX : ", (selectedRow == OPT_CDDA_STATE_FIX) ? ">" : " ");
+    printf("%s CDDA STATE FIX : ", (selectedRow == OPT_CDDA_STATE_FIX) ? MENU_CURSOR : " ");
     switch (g_cdda_state_fix_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FLYCAST)      >]"); break;
@@ -3829,7 +3841,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Mute 16-bit PCM channels (ChuChu Rocket SFX workaround) ---
-    printf("%s MUTE 16BIT PCM : ", (selectedRow == OPT_MUTE_PCM16) ? ">" : " ");
+    printf("%s MUTE 16BIT PCM : ", (selectedRow == OPT_MUTE_PCM16) ? MENU_CURSOR : " ");
     switch (g_mute_pcm16_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (SILENCE 16B)  >]"); break;
@@ -3838,7 +3850,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: AICA fast mixer (plugs/nullAICA/sgc_if.cpp GenerateAllFast) ---
-    printf("%s AICA FAST      : ", (selectedRow == OPT_AICA_FAST) ? ">" : " ");
+    printf("%s AICA FAST      : ", (selectedRow == OPT_AICA_FAST) ? MENU_CURSOR : " ");
     switch (g_aica_fast_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FASTER)       >]"); break;
@@ -3847,7 +3859,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: ADPCM_LOOP - looped ADPCM keeps its LSA decoder state (sgc_if.cpp) ---
-    printf("%s ADPCM LOOP FIX : ", (selectedRow == OPT_ADPCM_LOOP) ? ">" : " ");
+    printf("%s ADPCM LOOP FIX : ", (selectedRow == OPT_ADPCM_LOOP) ? MENU_CURSOR : " ");
     switch (g_adpcm_loop_preset) {
       case 0: printf("[< OFF (RESET/LAP)   >]"); break;
       case 1: printf("[< ON (KEEP STATE)   >]"); break;
@@ -3856,7 +3868,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: ARM7 sound-CPU speed divider (plugs/vbaARM/arm_aica.cpp) ---
-    printf("%s ARM7 SPEED     : ", (selectedRow == OPT_ARM7_SPEED) ? ">" : " ");
+    printf("%s ARM7 SPEED     : ", (selectedRow == OPT_ARM7_SPEED) ? MENU_CURSOR : " ");
     switch (g_arm7_speed_preset) {
       case 0: printf("[< 10MHZ (DEFAULT)   >]"); break;
       case 1: printf("[< 5MHZ (FASTER)     >]"); break;
@@ -3866,7 +3878,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: ARM7 JIT (plugs/vbaARM/arm7_jit.cpp) ---
-    printf("%s ARM7 JIT       : ", (selectedRow == OPT_ARM7_JIT) ? ">" : " ");
+    printf("%s ARM7 JIT       : ", (selectedRow == OPT_ARM7_JIT) ? MENU_CURSOR : " ");
     switch (g_arm7_jit_preset) {
       case 0: printf("[< OFF (INTERPRETER) >]"); break;
       case 1: printf("[< ON (BASIC)        >]"); break;
@@ -3879,7 +3891,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: ARM7 slice batching (plugs/vbaARM/arm_aica.cpp) ---
-    printf("%s ARM7 BATCH     : ", (selectedRow == OPT_ARM7_BATCH) ? ">" : " ");
+    printf("%s ARM7 BATCH     : ", (selectedRow == OPT_ARM7_BATCH) ? MENU_CURSOR : " ");
     switch (g_arm7_batch_preset) {
       case 2:  printf("[< 2 (BATCHED)       >]"); break;
       case 4:  printf("[< 4 (BATCHED)       >]"); break;
@@ -3891,7 +3903,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: ARM7 unaligned STR writes the aligned word (plugs/vbaARM/arm_mem.cpp) ---
-    printf("%s ARM7 STR ALIGN : ", (selectedRow == OPT_ARM7_STR_ALIGN) ? ">" : " ");
+    printf("%s ARM7 STR ALIGN : ", (selectedRow == OPT_ARM7_STR_ALIGN) ? MENU_CURSOR : " ");
     switch (g_arm7_str_align_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (ALIGNED WORD) >]"); break;
@@ -3900,7 +3912,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: ARM7_RESET_FIX - ARM7 reset enters SVC, clears the FIQ latch (arm7.cpp) ---
-    printf("%s ARM7 RESET FIX : ", (selectedRow == OPT_ARM7_RESET_FIX) ? ">" : " ");
+    printf("%s ARM7 RESET FIX : ", (selectedRow == OPT_ARM7_RESET_FIX) ? MENU_CURSOR : " ");
     switch (g_arm7_reset_fix_preset) {
       case 0: printf("[< OFF (SYSTEM MODE) >]"); break;
       case 1: printf("[< ON (SVC + LATCH)  >]"); break;
@@ -3909,7 +3921,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: AICA_RACE - Flycast G2-DMA / AICA IRQ timing rules (aica_if.cpp, aica.cpp) ---
-    printf("%s AICA RACE FIX  : ", (selectedRow == OPT_AICA_RACE) ? ">" : " ");
+    printf("%s AICA RACE FIX  : ", (selectedRow == OPT_AICA_RACE) ? MENU_CURSOR : " ");
     switch (g_aica_race_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FLYCAST)      >]"); break;
@@ -3918,7 +3930,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: AICA_CA_CLAMP - game workaround, CA read clamped below LEA (sgc_if.cpp) ---
-    printf("%s AICA CA CLAMP  : ", (selectedRow == OPT_AICA_CA_CLAMP) ? ">" : " ");
+    printf("%s AICA CA CLAMP  : ", (selectedRow == OPT_AICA_CA_CLAMP) ? MENU_CURSOR : " ");
     switch (g_aica_ca_clamp_preset) {
       case 0: printf("[< OFF (REAL HW)     >]"); break;
       case 1: printf("[< ON (LEA-3)        >]"); break;
@@ -3931,7 +3943,7 @@ bool displayOptionsMenu()
 
     if (optionsPage == 4) {
     // --- Row: Accuracy (interpreter / scheduler timing) ---
-    printf("%s ACCURACY INT   : ", (selectedRow == OPT_ACCURACY_INT) ? ">" : " ");
+    printf("%s ACCURACY INT   : ", (selectedRow == OPT_ACCURACY_INT) ? MENU_CURSOR : " ");
     switch (g_accuracy_int_preset) {
       case 0: printf("[< FAST (DEFAULT)    >]"); break;
       case 1: printf("[< BALANCED          >]"); break;
@@ -3941,7 +3953,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Accuracy (FPU FIPR/FTRV precision) ---
-    printf("%s ACCURACY FPU   : ", (selectedRow == OPT_ACCURACY_FPU) ? ">" : " ");
+    printf("%s ACCURACY FPU   : ", (selectedRow == OPT_ACCURACY_FPU) ? MENU_CURSOR : " ");
     switch (g_accuracy_fpu_preset) {
       case 0: printf("[< FAST (DEFAULT)    >]"); break;
       case 1: printf("[< BALANCED          >]"); break;
@@ -3951,7 +3963,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Async render (CPU/GPU overlap) ---
-    printf("%s ASYNC RENDER   : ", (selectedRow == OPT_ASYNC_RENDER) ? ">" : " ");
+    printf("%s ASYNC RENDER   : ", (selectedRow == OPT_ASYNC_RENDER) ? MENU_CURSOR : " ");
     switch (g_async_render_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FASTER)       >]"); break;
@@ -3960,7 +3972,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Hardware-like render/list IRQ delays ---
-    printf("%s RENDER DELAY   : ", (selectedRow == OPT_RENDER_DELAY) ? ">" : " ");
+    printf("%s RENDER DELAY   : ", (selectedRow == OPT_RENDER_DELAY) ? MENU_CURSOR : " ");
     switch (g_render_delay_preset) {
       case 0: printf("[< OFF (FASTER)      >]"); break;
       case 1: printf("[< ON (HW-LIKE)      >]"); break;
@@ -3970,7 +3982,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: TMEM texture cache ---
-    printf("%s TMEM CACHE     : ", (selectedRow == OPT_TMEM_CACHE) ? ">" : " ");
+    printf("%s TMEM CACHE     : ", (selectedRow == OPT_TMEM_CACHE) ? MENU_CURSOR : " ");
     switch (g_tmem_cache_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FASTER?)      >]"); break;
@@ -3979,7 +3991,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: SH4 underclock (effective CPU clock; see plugin_types.h) ---
-    printf("%s SH4 CLOCK      : ", (selectedRow == OPT_SH4_CLOCK) ? ">" : " ");
+    printf("%s SH4 CLOCK      : ", (selectedRow == OPT_SH4_CLOCK) ? MENU_CURSOR : " ");
     if (g_sh4_clock_preset >= 200)
       printf("[< 200MHZ (FULL)     >]");
     else
@@ -3988,7 +4000,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: DISC_BULK - one fseek+fread per RUN of sectors, not per sector ---
-    printf("%s DISC BULK READ : ", (selectedRow == OPT_DISC_BULK) ? ">" : " ");
+    printf("%s DISC BULK READ : ", (selectedRow == OPT_DISC_BULK) ? MENU_CURSOR : " ");
     switch (g_disc_bulk_preset) {
       case 0: printf("[< OFF (PER SECTOR)  >]"); break;
       case 1: printf("[< ON (BULK, GDI/ISO)>]"); break;
@@ -3998,7 +4010,7 @@ bool displayOptionsMenu()
 
     // --- Row: GDROM_DELAY - pace the drive so a stage load arrives over
     //     many frames instead of freezing one (dc/gdrom/gdromv3.cpp) ---
-    printf("%s GDROM DELAY    : ", (selectedRow == OPT_GDROM_DELAY) ? ">" : " ");
+    printf("%s GDROM DELAY    : ", (selectedRow == OPT_GDROM_DELAY) ? MENU_CURSOR : " ");
     switch (g_gdrom_delay) {
       case 0:    printf("[< OFF (INSTANT)     >]"); break;
       case 1800: printf("[< 1800 KB/S (REAL)  >]"); break;
@@ -4008,7 +4020,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: CDI_HDR_FIX - V2/V3 DiscJuggler header offset (cdi.cpp) ---
-    printf("%s CDI HEADER FIX : ", (selectedRow == OPT_CDI_HDR_FIX) ? ">" : " ");
+    printf("%s CDI HEADER FIX : ", (selectedRow == OPT_CDI_HDR_FIX) ? MENU_CURSOR : " ");
     switch (g_cdi_hdr_fix_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (CDIRIP RULE)  >]"); break;
@@ -4017,7 +4029,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: FLASH_BROADCAST - flash broadcast byte per disc (dc/dc.cpp) ---
-    printf("%s FLASH BROADCAST: ", (selectedRow == OPT_FLASH_BROADCAST) ? ">" : " ");
+    printf("%s FLASH BROADCAST: ", (selectedRow == OPT_FLASH_BROADCAST) ? MENU_CURSOR : " ");
     switch (g_flash_broadcast_preset) {
       case 0: printf("[< OFF (FLASH VALUE) >]"); break;
       case 1: printf("[< DISC (IP.BIN)     >]"); break;
@@ -4027,7 +4039,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: INTERP_FIX - SH4 interpreter div1/addv/subv/mul.l/mac (sh4_cpu.cpp) ---
-    printf("%s SH4 INTERP FIX : ", (selectedRow == OPT_INTERP_FIX) ? ">" : " ");
+    printf("%s SH4 INTERP FIX : ", (selectedRow == OPT_INTERP_FIX) ? MENU_CURSOR : " ");
     switch (g_interp_fix_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (MANUAL OPS)   >]"); break;
@@ -4036,7 +4048,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: GDROM_STAT_FIX - REQ_STAT / GET_SCD position reports (gdromv3.cpp) ---
-    printf("%s GDROM STAT FIX : ", (selectedRow == OPT_GDROM_STAT_FIX) ? ">" : " ");
+    printf("%s GDROM STAT FIX : ", (selectedRow == OPT_GDROM_STAT_FIX) ? MENU_CURSOR : " ");
     switch (g_gdrom_stat_fix_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FAD+TRACK)    >]"); break;
@@ -4045,7 +4057,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: GDROM_HANG_FIX - rare drive commands abort instead of die() (gdromv3.cpp) ---
-    printf("%s GDROM HANG FIX : ", (selectedRow == OPT_GDROM_HANG_FIX) ? ">" : " ");
+    printf("%s GDROM HANG FIX : ", (selectedRow == OPT_GDROM_HANG_FIX) ? MENU_CURSOR : " ");
     switch (g_gdrom_hang_fix_preset) {
       case 0: printf("[< OFF (DIE/VERIFY)  >]"); break;
       case 1: printf("[< ON (ABORT/CLAMP)  >]"); break;
@@ -4054,7 +4066,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: TOC_FIX - TOC ADR / lead-out / GDI track 2 + sessions (ImgReader) ---
-    printf("%s GDROM TOC FIX  : ", (selectedRow == OPT_TOC_FIX) ? ">" : " ");
+    printf("%s GDROM TOC FIX  : ", (selectedRow == OPT_TOC_FIX) ? MENU_CURSOR : " ");
     switch (g_toc_fix_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (ADR1+LEADOUT) >]"); break;
@@ -4063,7 +4075,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: SPG_FIX - field bit / HBlank IRQ modes / VBLANK_INT reset (SPG.cpp) ---
-    printf("%s SPG TIMING FIX : ", (selectedRow == OPT_SPG_FIX) ? ">" : " ");
+    printf("%s SPG TIMING FIX : ", (selectedRow == OPT_SPG_FIX) ? MENU_CURSOR : " ");
     switch (g_spg_fix_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FLYCAST)      >]"); break;
@@ -4072,7 +4084,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: GDROM_SPINUP - no-disc drive BUSY 3 s after reset (gdromv3.cpp) ---
-    printf("%s GDROM SPINUP   : ", (selectedRow == OPT_GDROM_SPINUP) ? ">" : " ");
+    printf("%s GDROM SPINUP   : ", (selectedRow == OPT_GDROM_SPINUP) ? MENU_CURSOR : " ");
     switch (g_gdrom_spinup_preset) {
       case 0: printf("[< OFF (NODISC)      >]"); break;
       case 1: printf("[< ON (BUSY 3 SEC)   >]"); break;
@@ -4081,7 +4093,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: RTC_HOST - DC clock from the Wii clock at every boot (nullDC.cpp) ---
-    printf("%s RTC FROM HOST  : ", (selectedRow == OPT_RTC_HOST) ? ">" : " ");
+    printf("%s RTC FROM HOST  : ", (selectedRow == OPT_RTC_HOST) ? MENU_CURSOR : " ");
     switch (g_rtc_host_preset) {
       case 0: printf("[< OFF (SAVED VALUE) >]"); break;
       case 1: printf("[< ON (WII CLOCK)    >]"); break;
@@ -4090,7 +4102,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: IDLE_KAMUI - Kamui vsync wait loop: 1 turn per slice (decoder.cpp) ---
-    printf("%s IDLE KAMUI     : ", (selectedRow == OPT_IDLE_KAMUI) ? ">" : " ");
+    printf("%s IDLE KAMUI     : ", (selectedRow == OPT_IDLE_KAMUI) ? MENU_CURSOR : " ");
     switch (g_idle_kamui_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (1 TURN/SLICE) >]"); break;
@@ -4099,7 +4111,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: IDLE_SHINOBI - Shinobi idle task walk: 15-slice debt (decoder.cpp) ---
-    printf("%s IDLE SHINOBI   : ", (selectedRow == OPT_IDLE_SHINOBI) ? ">" : " ");
+    printf("%s IDLE SHINOBI   : ", (selectedRow == OPT_IDLE_SHINOBI) ? MENU_CURSOR : " ");
     switch (g_idle_shinobi_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (DEBT TIL IRQ) >]"); break;
@@ -4108,7 +4120,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: IDLE_X3 - per-game idle-rule level: x30 / x3 backward (decoder.cpp) ---
-    printf("%s IDLE X3 BACK   : ", (selectedRow == OPT_IDLE_X3) ? ">" : " ");
+    printf("%s IDLE X3 BACK   : ", (selectedRow == OPT_IDLE_X3) ? MENU_CURSOR : " ");
     switch (g_idle_x3_preset) {
       case 0: printf("[< OFF (X30, LEGACY) >]"); break;
       case 1: printf("[< ON (X3 BACKWARD)  >]"); break;
@@ -4121,7 +4133,7 @@ bool displayOptionsMenu()
 
     if (optionsPage == 5) {
     // --- Row: Mipmap generation ---
-    printf("%s MIPMAPS        : ", (selectedRow == OPT_MIPMAP) ? ">" : " ");
+    printf("%s MIPMAPS        : ", (selectedRow == OPT_MIPMAP) ? MENU_CURSOR : " ");
     switch (g_mipmap_preset) {
       case 0: printf("[< OFF (FASTEST)     >]"); break;
       case 1: printf("[< FAST              >]"); break;
@@ -4131,7 +4143,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: TEX WRAP GUARD - no mid-frame recycling of live arena bytes ---
-    printf("%s TEX WRAP GUARD : ", (selectedRow == OPT_TEX_WRAP_GUARD) ? ">" : " ");
+    printf("%s TEX WRAP GUARD : ", (selectedRow == OPT_TEX_WRAP_GUARD) ? MENU_CURSOR : " ");
     switch (g_tex_wrap_guard_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (SAFE WRAP)    >]"); break;
@@ -4140,7 +4152,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
-    printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? ">" : " ");
+    printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? MENU_CURSOR : " ");
     switch (g_dma_fix_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (DEFAULT)      >]"); break;
@@ -4149,7 +4161,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: MMUCR_FIX - MMU control register at its real bits (ccn.h) ---
-    printf("%s MMUCR FIX      : ", (selectedRow == OPT_MMUCR_FIX) ? ">" : " ");
+    printf("%s MMUCR FIX      : ", (selectedRow == OPT_MMUCR_FIX) ? MENU_CURSOR : " ");
     switch (g_mmucr_fix_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< BITS (AT/TI/URC)  >]"); break;
@@ -4159,7 +4171,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: SCHED - unified cycle-deadline event scheduler ---
-    printf("%s SCHED (ORDER)  : ", (selectedRow == OPT_SCHED) ? ">" : " ");
+    printf("%s SCHED (ORDER)  : ", (selectedRow == OPT_SCHED) ? MENU_CURSOR : " ");
     switch (g_sched_preset) {
       case 0: printf("[< OFF (CASCADE)     >]"); break;
       case 1: printf("[< ON (DEADLINE)     >]"); break;
@@ -4173,7 +4185,7 @@ bool displayOptionsMenu()
     // intermittent black-screen hang on the way back to the loader.
     // HOST POLL additionally tests the combo off the emulated scanline
     // counter, so a game that stopped polling Maple can still be exited.
-    printf("%s EXIT FIX       : ", (selectedRow == OPT_EXIT_FIX) ? ">" : " ");
+    printf("%s EXIT FIX       : ", (selectedRow == OPT_EXIT_FIX) ? MENU_CURSOR : " ");
     switch (g_exit_fix_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< SAFE SHUTDOWN     >]"); break;
@@ -4184,7 +4196,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: FLASH_CHIP - flash program/erase command state machine (sh4_area0.cpp) ---
-    printf("%s FLASH CHIP     : ", (selectedRow == OPT_FLASH_CHIP) ? ">" : " ");
+    printf("%s FLASH CHIP     : ", (selectedRow == OPT_FLASH_CHIP) ? MENU_CURSOR : " ");
     switch (g_flash_chip_preset) {
       case 0: printf("[< OFF (PLAIN RAM)   >]"); break;
       case 1: printf("[< ON (AMD COMMANDS) >]"); break;
@@ -4193,7 +4205,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: FLASH_SAVE - write the flash back at exit if it changed (dc.cpp) ---
-    printf("%s FLASH SAVE     : ", (selectedRow == OPT_FLASH_SAVE) ? ">" : " ");
+    printf("%s FLASH SAVE     : ", (selectedRow == OPT_FLASH_SAVE) ? MENU_CURSOR : " ");
     switch (g_flash_save_preset) {
       case 0: printf("[< OFF (NEVER SAVED) >]"); break;
       case 1: printf("[< ON (AT EXIT)      >]"); break;
@@ -4202,7 +4214,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Translucent-list depth write ---
-    printf("%s TRANS ZWRITE   : ", (selectedRow == OPT_TRANS_ZWRITE) ? ">" : " ");
+    printf("%s TRANS ZWRITE   : ", (selectedRow == OPT_TRANS_ZWRITE) ? MENU_CURSOR : " ");
     switch (g_trans_zwrite_preset) {
       case 0: printf("[< OFF (NO OCCLUDE)  >]"); break;
       case 1: printf("[< ON (DEFAULT)      >]"); break;
@@ -4211,7 +4223,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Hokuto Hack (HnK debris VRAM addresses, needs LAYER SORT on page 3) ---
-    printf("%s HOKUTO HACK    : ", (selectedRow == OPT_HOKUTO_HACK) ? ">" : " ");
+    printf("%s HOKUTO HACK    : ", (selectedRow == OPT_HOKUTO_HACK) ? MENU_CURSOR : " ");
     switch (g_hokuto_hack_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (RAM hack)     >]"); break;
@@ -4225,7 +4237,7 @@ bool displayOptionsMenu()
     // them: the gameplay playfields (puyos go dim behind the grid) and the
     // intro/main screen background (fading UI/logo pieces get buried under
     // it). This sorts both textures back behind everything else at their tier.
-    printf("%s PUYO HACK      : ", (selectedRow == OPT_PUYO_HACK) ? ">" : " ");
+    printf("%s PUYO HACK      : ", (selectedRow == OPT_PUYO_HACK) ? MENU_CURSOR : " ");
     switch (g_puyo_hack_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (RAM hack)     >]"); break;
@@ -4234,7 +4246,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Dino Crisis inventory preview icon redecode hack (gxRend.cpp DINO_CRISIS_INVENTORY_HACK) ---
-    printf("%s REGINA HACK    : ", (selectedRow == OPT_DINO_CRISIS_INVENTORY_HACK) ? ">" : " ");
+    printf("%s REGINA HACK    : ", (selectedRow == OPT_DINO_CRISIS_INVENTORY_HACK) ? MENU_CURSOR : " ");
     switch (g_dino_crisis_inventory_hack_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (RAM hack)     >]"); break;
@@ -4243,7 +4255,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: DYNAREC - SH4 core back-end (Dynarec vs Interpreter) ---
-    printf("%s SH4 CORE       : ", (selectedRow == OPT_DYNAREC) ? ">" : " ");
+    printf("%s SH4 CORE       : ", (selectedRow == OPT_DYNAREC) ? MENU_CURSOR : " ");
     switch (g_dynarec_preset) {
       case 0: printf("[< INTERPRETER       >]"); break;
       case 1: printf("[< DYNAREC (DEFAULT) >]"); break;
@@ -4252,7 +4264,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: skip one texture's strips (bisection aid, address from the cfg) ---
-    printf("%s SKIP TEXTURE   : ", (selectedRow == OPT_DEBUG_SKIP_TEX) ? ">" : " ");
+    printf("%s SKIP TEXTURE   : ", (selectedRow == OPT_DEBUG_SKIP_TEX) ? MENU_CURSOR : " ");
     if (g_debug_skip_tex)
       printf("[< SKIP %06X      >]", (unsigned)g_debug_skip_tex);
     else if (g_debug_skip_tex_saved)
@@ -4267,7 +4279,7 @@ bool displayOptionsMenu()
 
     if (optionsPage == 6) {
     // --- Row: JIT_SBP - Stale Block Protection (dc/sh4/rec_v2/driver.cpp) ---
-    printf("%s JIT SBP        : ", (selectedRow == OPT_JIT_SBP) ? ">" : " ");
+    printf("%s JIT SBP        : ", (selectedRow == OPT_JIT_SBP) ? MENU_CURSOR : " ");
     switch (g_jit_sbp_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< KNOWN (DEFAULT)   >]"); break;
@@ -4277,7 +4289,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_ICI - guest I-cache invalidate handling (dc/sh4/ccn.cpp) ---
-    printf("%s JIT ICI        : ", (selectedRow == OPT_JIT_ICI) ? ">" : " ");
+    printf("%s JIT ICI        : ", (selectedRow == OPT_JIT_ICI) ? MENU_CURSOR : " ");
     switch (g_jit_ici_preset) {
       case 0: printf("[< CLEAR ALL (DEFLT) >]"); break;
       case 1: printf("[< IGNORE (NEEDS SBP)>]"); break;
@@ -4287,7 +4299,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_LINK_GUARD - static link only into a live exit site ---
-    printf("%s JIT LINK GUARD : ", (selectedRow == OPT_JIT_LINK_GUARD) ? ">" : " ");
+    printf("%s JIT LINK GUARD : ", (selectedRow == OPT_JIT_LINK_GUARD) ? MENU_CURSOR : " ");
     switch (g_jit_link_guard_preset) {
       case 0: printf("[< OFF (LOG ONLY)    >]"); break;
       case 1: printf("[< ON (SKIP STALE)   >]"); break;
@@ -4296,7 +4308,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: FASTMEM - PPC-MMU branchless JIT memory access ---
-    printf("%s FASTMEM        : ", (selectedRow == OPT_FASTMEM) ? ">" : " ");
+    printf("%s FASTMEM        : ", (selectedRow == OPT_FASTMEM) ? MENU_CURSOR : " ");
     switch (g_fastmem_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FASTER)       >]"); break;
@@ -4305,7 +4317,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: BCACHE - flat dynamic-branch dispatch cache ---
-    printf("%s JIT BCACHE     : ", (selectedRow == OPT_BCACHE) ? ">" : " ");
+    printf("%s JIT BCACHE     : ", (selectedRow == OPT_BCACHE) ? MENU_CURSOR : " ");
     switch (g_bcache_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FLAT)         >]"); break;
@@ -4314,7 +4326,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: DYN_IC - per-site inline cache on dynamic exits ---
-    printf("%s JIT DYN IC     : ", (selectedRow == OPT_DYN_IC) ? ">" : " ");
+    printf("%s JIT DYN IC     : ", (selectedRow == OPT_DYN_IC) ? MENU_CURSOR : " ");
     switch (g_dyn_ic_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (JSR/JMP)      >]"); break;
@@ -4324,7 +4336,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: FPU_PIN - pin fr[0..15] to PPC f14..f29 ---
-    printf("%s FPU PIN        : ", (selectedRow == OPT_FPU_PIN) ? ">" : " ");
+    printf("%s FPU PIN        : ", (selectedRow == OPT_FPU_PIN) ? MENU_CURSOR : " ");
     switch (g_fpu_pin_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (EXPERIMENTAL) >]"); break;
@@ -4333,7 +4345,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_ALIGN - 32-byte-align block entries ---
-    printf("%s JIT ALIGN      : ", (selectedRow == OPT_JIT_ALIGN) ? ">" : " ");
+    printf("%s JIT ALIGN      : ", (selectedRow == OPT_JIT_ALIGN) ? MENU_CURSOR : " ");
     switch (g_jit_align_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (32B LINES)    >]"); break;
@@ -4342,7 +4354,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: IFB_FLUSH - narrow the shop_ifb register bracket ---
-    printf("%s JIT IFB FLUSH  : ", (selectedRow == OPT_IFB_FLUSH) ? ">" : " ");
+    printf("%s JIT IFB FLUSH  : ", (selectedRow == OPT_IFB_FLUSH) ? MENU_CURSOR : " ");
     switch (g_ifb_flush_preset) {
       case 0: printf("[< OFF (FULL SPILL)  >]"); break;
       case 1: printf("[< ON (SELECTIVE +1%%)>]"); break;
@@ -4351,7 +4363,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_NEWOPS - dynarec 8 opcodes that always fell back ---
-    printf("%s JIT NEW OPS    : ", (selectedRow == OPT_JIT_NEWOPS) ? ">" : " ");
+    printf("%s JIT NEW OPS    : ", (selectedRow == OPT_JIT_NEWOPS) ? MENU_CURSOR : " ");
     switch (g_jit_newops_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (9 OPS JITTED) >]"); break;
@@ -4360,7 +4372,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_TFWD - forward T to its branch instead of reloading it ---
-    printf("%s JIT T-FORWARD  : ", (selectedRow == OPT_JIT_TFWD) ? ">" : " ");
+    printf("%s JIT T-FORWARD  : ", (selectedRow == OPT_JIT_TFWD) ? MENU_CURSOR : " ");
     switch (g_jit_tfwd_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (NO RELOAD +4%%)>]"); break;
@@ -4369,7 +4381,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_FMOV - Phase B direct float access on the fastmem path ---
-    printf("%s JIT FMOV DIRECT: ", (selectedRow == OPT_JIT_FMOV) ? ">" : " ");
+    printf("%s JIT FMOV DIRECT: ", (selectedRow == OPT_JIT_FMOV) ? MENU_CURSOR : " ");
     switch (g_jit_fmov_preset) {
       case 0: printf("[< OFF (GPR BOUNCE)  >]"); break;
       case 1: printf("[< ON (LFS/STFS +10%%)>]"); break;
@@ -4378,7 +4390,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_CARRY - dynarec the carry/overflow arithmetic ---
-    printf("%s JIT CARRY OPS  : ", (selectedRow == OPT_JIT_CARRY) ? ">" : " ");
+    printf("%s JIT CARRY OPS  : ", (selectedRow == OPT_JIT_CARRY) ? MENU_CURSOR : " ");
     switch (g_jit_carry_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (10 OPS JITTED)>]"); break;
@@ -4387,7 +4399,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_MAC - dynarec mac.l / mac.w ---
-    printf("%s JIT MAC OPS    : ", (selectedRow == OPT_JIT_MAC) ? ">" : " ");
+    printf("%s JIT MAC OPS    : ", (selectedRow == OPT_JIT_MAC) ? MENU_CURSOR : " ");
     switch (g_jit_mac_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FASTMEM READS)>]"); break;
@@ -4396,7 +4408,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_FSCHG - skip UpdateFPSCR() on the SZ-only fschg ---
-    printf("%s JIT FSCHG FAST : ", (selectedRow == OPT_JIT_FSCHG) ? ">" : " ");
+    printf("%s JIT FSCHG FAST : ", (selectedRow == OPT_JIT_FSCHG) ? MENU_CURSOR : " ");
     switch (g_jit_fschg_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (SZ-ONLY PATH) >]"); break;
@@ -4405,7 +4417,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_CR0 - conditional exit branches on CR0 directly ---
-    printf("%s JIT CR0 BRANCH : ", (selectedRow == OPT_JIT_CR0) ? ">" : " ");
+    printf("%s JIT CR0 BRANCH : ", (selectedRow == OPT_JIT_CR0) ? MENU_CURSOR : " ");
     switch (g_jit_cr0_preset) {
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (NO MFCR)      >]"); break;
@@ -4414,7 +4426,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: BLOCKCOPY - bulk block transfers instead of per-word ---
-    printf("%s BLOCK COPY     : ", (selectedRow == OPT_BLOCKCOPY) ? ">" : " ");
+    printf("%s BLOCK COPY     : ", (selectedRow == OPT_BLOCKCOPY) ? MENU_CURSOR : " ");
     switch (g_blockcopy_preset) {
       case 0: printf("[< OFF (PER-WORD)    >]"); break;
       case 1: printf("[< ON (BULK COPY+2%%)>]"); break;
@@ -4423,7 +4435,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_FSQRT - inline sqrt instead of the libm call ---
-    printf("%s JIT FSQRT      : ", (selectedRow == OPT_JIT_FSQRT) ? ">" : " ");
+    printf("%s JIT FSQRT      : ", (selectedRow == OPT_JIT_FSQRT) ? MENU_CURSOR : " ");
     switch (g_jit_fsqrt_preset) {
       case 0: printf("[< OFF (LIBM)        >]"); break;
       case 1: printf("[< ON (INLINE NR+4%%?)>]"); break;
@@ -4432,7 +4444,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_FIPR - fipr/ftrv summed in double, rounded once ---
-    printf("%s JIT FIPR DP    : ", (selectedRow == OPT_JIT_FIPR) ? ">" : " ");
+    printf("%s JIT FIPR DP    : ", (selectedRow == OPT_JIT_FIPR) ? MENU_CURSOR : " ");
     switch (g_jit_fipr_preset) {
       case 0: printf("[< OFF (SINGLE)      >]"); break;
       case 1: printf("[< ON (DOUBLE SUM)   >]"); break;
@@ -4441,7 +4453,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: DIV32_FIX - matched divide as 64/32 one's complement (decoder.cpp) ---
-    printf("%s JIT DIV32 FIX  : ", (selectedRow == OPT_DIV32_FIX) ? ">" : " ");
+    printf("%s JIT DIV32 FIX  : ", (selectedRow == OPT_DIV32_FIX) ? MENU_CURSOR : " ");
     switch (g_div32_fix_preset) {
       case 0: printf("[< OFF (32/32)       >]"); break;
       case 1: printf("[< ON (64/32 EXACT)  >]"); break;
@@ -4457,7 +4469,7 @@ bool displayOptionsMenu()
     // Answers "is 2D FRAMEBUFFER (page 1) worth turning on for this game?" —
     // it logs the bit-24 render passes that preset would act on, WITHOUT
     // needing the preset itself to be on. Nothing in the log = it can't help.
-    printf("%s DBG FB2D LOG   : ", (selectedRow == OPT_DEBUG_FB2D) ? ">" : " ");
+    printf("%s DBG FB2D LOG   : ", (selectedRow == OPT_DEBUG_FB2D) ? MENU_CURSOR : " ");
     switch (g_debug_fb2d) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (LOG PASSES)   >]"); break;
@@ -4465,7 +4477,7 @@ bool displayOptionsMenu()
     printf(" 2D FRAMEBUFFER candidate -> log");
     printf("\n");
 
-    printf("%s DEBUG MESSAGE  : ", (selectedRow == OPT_DEBUG_MESSAGE) ? ">" : " ");
+    printf("%s DEBUG MESSAGE  : ", (selectedRow == OPT_DEBUG_MESSAGE) ? MENU_CURSOR : " ");
     switch (g_debug_message) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (VERBOSE)      >]"); break;
@@ -4473,7 +4485,7 @@ bool displayOptionsMenu()
     printf(" renderer trace ([PATH], [FB]...)");
     printf("\n");
 
-    printf("%s DEBUG LOOP     : ", (selectedRow == OPT_DEBUG_LOOP) ? ">" : " ");
+    printf("%s DEBUG LOOP     : ", (selectedRow == OPT_DEBUG_LOOP) ? MENU_CURSOR : " ");
     switch (g_debug_loop) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (VERY SLOW)    >]"); break;
@@ -4481,7 +4493,7 @@ bool displayOptionsMenu()
     printf(" per-loop CPU/GDROM/IO trace");
     printf("\n");
 
-    printf("%s DEBUG GDROM    : ", (selectedRow == OPT_DEBUG_GDROM) ? ">" : " ");
+    printf("%s DEBUG GDROM    : ", (selectedRow == OPT_DEBUG_GDROM) ? MENU_CURSOR : " ");
     switch (g_debug_gdrom) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (SPI CMDS)     >]"); break;
@@ -4490,7 +4502,7 @@ bool displayOptionsMenu()
     printf("\n\n");
 
     // --- Row: IFB_PROBE - count interpreter fallbacks per opcode ---
-    printf("%s JIT IFB PROBE  : ", (selectedRow == OPT_IFB_PROBE) ? ">" : " ");
+    printf("%s JIT IFB PROBE  : ", (selectedRow == OPT_IFB_PROBE) ? MENU_CURSOR : " ");
     switch (g_ifb_probe_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (LOGS [IFB])   >]"); break;
@@ -4499,7 +4511,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_HOTBLOCKS - per-block execution counts + codegen dump ---
-    printf("%s JIT HOTBLOCKS  : ", (selectedRow == OPT_JIT_HOTBLOCKS) ? ">" : " ");
+    printf("%s JIT HOTBLOCKS  : ", (selectedRow == OPT_JIT_HOTBLOCKS) ? MENU_CURSOR : " ");
     switch (g_hotblocks_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (LOGS [HOT])   >]"); break;
@@ -4508,7 +4520,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: JIT_CCALLS - census of remaining C call-outs ---
-    printf("%s JIT CCALL      : ", (selectedRow == OPT_JIT_CCALLS) ? ">" : " ");
+    printf("%s JIT CCALL      : ", (selectedRow == OPT_JIT_CCALLS) ? MENU_CURSOR : " ");
     switch (g_jit_ccalls_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (LOGS [CC])    >]"); break;
@@ -4517,7 +4529,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: TA_PROFILE - measure the TA decoder's share of wall time ---
-    printf("%s TA PROFILE     : ", (selectedRow == OPT_TA_PROFILE) ? ">" : " ");
+    printf("%s TA PROFILE     : ", (selectedRow == OPT_TA_PROFILE) ? MENU_CURSOR : " ");
     switch (g_ta_profile_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (STATS ta:)    >]"); break;
@@ -4526,7 +4538,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: STRIP DEDUP - per-strip render census (+ a dead skip mode) ---
-    printf("%s STRIP DEDUP    : ", (selectedRow == OPT_STRIP_DEDUP) ? ">" : " ");
+    printf("%s STRIP DEDUP    : ", (selectedRow == OPT_STRIP_DEDUP) ? MENU_CURSOR : " ");
     switch (g_strip_dedup_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< CENSUS (LOG ONLY) >]"); break;
@@ -4536,7 +4548,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: Audio sink counters (wii/wii_audio.cpp) ---
-    printf("%s AUDIO STATS    : ", (selectedRow == OPT_AUDIO_STATS) ? ">" : " ");
+    printf("%s AUDIO STATS    : ", (selectedRow == OPT_AUDIO_STATS) ? MENU_CURSOR : " ");
     switch (g_audio_stats_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (1 LINE/SEC)   >]"); break;
@@ -4545,7 +4557,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: FRAME_PROF - per-frame p50/p95/p99 + the tail breakdown ---
-    printf("%s FRAME PROF     : ", (selectedRow == OPT_FRAME_PROF) ? ">" : " ");
+    printf("%s FRAME PROF     : ", (selectedRow == OPT_FRAME_PROF) ? MENU_CURSOR : " ");
     switch (g_frame_prof_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (LOGS [FPROF]) >]"); break;
@@ -4555,7 +4567,7 @@ bool displayOptionsMenu()
     printf("\n");
 
     // --- Row: DISC_CENSUS - GD-ROM read shape, and whether bulk fires ---
-    printf("%s DISC CENSUS    : ", (selectedRow == OPT_DISC_CENSUS) ? ">" : " ");
+    printf("%s DISC CENSUS    : ", (selectedRow == OPT_DISC_CENSUS) ? MENU_CURSOR : " ");
     switch (g_disc_census_preset) {
       case 0: printf("[< OFF               >]"); break;
       case 1: printf("[< ON (LOGS [DISC])  >]"); break;
@@ -4978,7 +4990,7 @@ bool displayWinCEWarning()
   {
     printf("\033[2J\033[H");
 
-    printf("    -- WINDOWS CE WARNING --\n\n");
+    printf("    " MENU_TITLE("-- WINDOWS CE WARNING --") "\n\n");
     {
       const char *gameName = strrchr(selectedFilePath, '/');
       gameName = (gameName != NULL) ? gameName + 1 : selectedFilePath;
@@ -4986,7 +4998,8 @@ bool displayWinCEWarning()
     }
     printf("This is a WinCE game, it's not supported yet by NullDC4Wii\n");
     printf("(and probably never will).\n\n");
-    printf("Press A to launch Anyway, B to return to file selection.\n");
+    printf("Press " MENU_BTN_A("A") " to launch Anyway, " MENU_BTN_B("B")
+           " to return to file selection.\n");
 
     WPAD_ScanPads();
     PAD_ScanPads();
@@ -5133,8 +5146,9 @@ bool displayControlsMenu()
     printf("\033[2J\033[H");
 
     // --- Row 0: Launch ---
-    printf("%s LAUNCH GAME      (A: Launch | B: Back)\n",
-           (selectedRow == CTRL_LAUNCH) ? ">" : " ");
+    printf("%s LAUNCH GAME      (" MENU_BTN_A("A") ": Launch | "
+           MENU_BTN_B("B") ": Back)\n",
+           (selectedRow == CTRL_LAUNCH) ? MENU_CURSOR : " ");
 
     // --- Row 1: Game name (display only) ---
     {
@@ -5143,7 +5157,7 @@ bool displayControlsMenu()
       printf("    %.60s\n", gameName);
     }
 
-    printf("\n    -- CONTROLS --\n\n");
+    printf("\n    " MENU_TITLE("-- CONTROLS --") "\n\n");
 
     // --- Rows 2-5: Players ---
     for (int p = 0; p < 4; p++)
@@ -5151,11 +5165,11 @@ bool displayControlsMenu()
       int row = CTRL_PLAYER1 + p;
       const char *label = ctrl_player_mode_label(g_player_mode[p]);
       printf("%s PLAYER %d        : [< %-20s >]\n",
-             (selectedRow == row) ? ">" : " ", p + 1, label);
+             (selectedRow == row) ? MENU_CURSOR : " ", p + 1, label);
     }
 
     // --- Row 6: Controller ---
-    printf("%s CONTROLLER      : ", (selectedRow == CTRL_TYPE) ? ">" : " ");
+    printf("%s CONTROLLER      : ", (selectedRow == CTRL_TYPE) ? MENU_CURSOR : " ");
     switch (g_controller_type) {
       case 0: printf("[< STANDARD          >]"); break;
       case 1: printf("[< LIGHT GUN         >]"); break;
@@ -5174,7 +5188,7 @@ bool displayControlsMenu()
 
     // --- Row 7: Special controller layout ---
     printf("%s SPECIAL LAYOUT  : [< %-20s >]",
-           (selectedRow == CTRL_SPECIAL_LAYOUT) ? ">" : " ",
+           (selectedRow == CTRL_SPECIAL_LAYOUT) ? MENU_CURSOR : " ",
            kSpecialLayoutNames[g_special_layout_preset]);
     // USER CFG falls back to the normal mapping when user_controls.cfg was
     // never found, which from the player's seat looks exactly like "the file
@@ -5297,8 +5311,10 @@ static void printFileBrowserFooter(int page, int totalPages)
   printf("Storage: %s\n", (g_storage_source == STORAGE_SD)
     ? "[SD CARD]  (2: Switch to USB)"
     : "[USB]      (2: Switch to SD)");
-  printf("A: Select | B: Back | 1: BIOS | (-) + (+): Exit\n");
-  printf("INGAME: Press (-) and (+) simultaneously to Exit\n");
+  printf(MENU_BTN_A("A") ": Select | " MENU_BTN_B("B") ": Back | "
+         MENU_BTN("1") ": BIOS | " MENU_BTN("(-) + (+)") ": Exit\n");
+  printf("INGAME: Press " MENU_BTN("(-)") " and " MENU_BTN("(+)")
+         " simultaneously to Exit\n");
 }
 
 int displayMenuAndSelectFile()
@@ -5322,7 +5338,7 @@ int displayMenuAndSelectFile()
     if (endIndex > fileCount) endIndex = fileCount;
 
     for (int i = startIndex; i < endIndex; i++)
-      printf(i == selectedIndex ? "> %s\n" : "  %s\n", fileList[i].name);
+      printf(i == selectedIndex ? MENU_CURSOR " %s\n" : "  %s\n", fileList[i].name);
 
     printFileBrowserFooter(currentPage, totalPages);
 
@@ -5546,7 +5562,7 @@ int main(int argc, wchar *argv[])
     int arm7_failures = arm_RunSelfTests();
     if (arm7_failures != 0)
     {
-      printf("\nARM7DI SELF-TEST FAILED (%d). Press HOME to exit.\n", arm7_failures);
+      printf("\nARM7DI SELF-TEST FAILED (%d). Press " MENU_BTN("HOME") " to exit.\n", arm7_failures);
       while (true)
       {
         WPAD_ScanPads();
