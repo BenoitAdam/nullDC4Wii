@@ -99,6 +99,17 @@ extern "C" void dc_flash_save_at_exit(void);
 // that happens while interrupts are still enabled - which covers all three
 // spin groups listed above (SYS_ResetSystem only clears MSR[EE] later, after
 // __IOS_ShutdownSubsystems).
+//
+// It is armed only AFTER our own WPAD_Shutdown() has returned, never before:
+// WPAD_Shutdown() saves the Wiimote guest list to SYSCONF on the NAND
+// (CONF_SetPadGuestDevices + CONF_SaveChanges, checked in libwiiuse wpad.o),
+// and that is the only NAND write on the whole exit path - a jump to the stub
+// must never land in the middle of it. Nothing after that point writes the
+// NAND: the second WPAD_Shutdown() that SYS_ResetSystem runs through
+// __wpad_onreset skips the save because the first call already cleared
+// __wpads_inited, and libogc's system.o only reads CONF. The price: a hang
+// inside our own Bluetooth shutdown is no longer rescued - the log then ends
+// on "[EXIT] dropping Bluetooth" and the power button is the way out.
 
 #define HBC_STUB_ADDR   0x80001800
 #define HBC_STUB_MAGIC0 0x53545542  // 'STUB'
@@ -214,17 +225,20 @@ void WiiExitToLoader(void)
   step("flushing log");
   fflush(NULL);
 
-  // 6. Last resort, armed before the two riskiest calls below.
-  if (get_exit_fix_preset() >= 2)
-    arm_exit_watchdog();
-
-  // 7. Bluetooth. libogc's __wpad_onreset does exactly this from inside
+  // 6. Bluetooth. libogc's __wpad_onreset does exactly this from inside
   //    SYS_ResetSystem; doing it here means it happens with the DSP, the GP
-  //    and the emulation already stopped instead of racing them.
+  //    and the emulation already stopped instead of racing them. This is also
+  //    where the Wiimote list is written to SYSCONF (NAND), which is why the
+  //    watchdog is not armed yet.
   step("dropping Bluetooth");
   for (int chan = 0; chan < 4; chan++)
     WPAD_Flush(chan);
   WPAD_Shutdown();
+
+  // 7. Last resort for exit() below, armed only now that the SYSCONF write
+  //    above has finished (see the watchdog notes at the top of this file).
+  if (get_exit_fix_preset() >= 2)
+    arm_exit_watchdog();
 
   step("exit(0)");
   fflush(NULL);
