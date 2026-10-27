@@ -184,13 +184,19 @@ int g_texture_cache_preset = 2;
 //     and the cache sentinel is written at the un-mipped address so mipmapped
 //     textures really do cache.
 //     See the CACHE_VERY_FAST_PLUS block in plugs/drkPvr/gxRend.cpp)
+// 7 = NORMAL+ (NORMAL's persistent cache, but a texture re-decodes when ANY
+//     VRAM page under it was written since its decode, not only its first
+//     word - fixes sprite atlases updated tile by tile, SF3 3rd Strike /
+//     Guilty Gear, without QUALITY's decode-everything-every-frame cost.
+//     See the CACHE_NORMAL_PLUS block in plugs/drkPvr/gxRend.cpp)
 
 // Menu cycle order for OPT_TEX_CACHE. Not 0..N-1: VERY FAST+ is preset value 6
 // (4/5 are the debug-only EXTRA modes, unreachable from the menu) but belongs
 // between VERY FAST and FAST in the UI, where it sits on the speed/safety
-// ladder. Saved configs keep working because the stored value is the preset
-// number, not an index into this table.
-static const int kTexCacheCycle[] = { 0, 6, 1, 2, 3 };
+// ladder; NORMAL+ (7) likewise sits between NORMAL and QUALITY. Saved configs
+// keep working because the stored value is the preset number, not an index
+// into this table.
+static const int kTexCacheCycle[] = { 0, 6, 1, 2, 7, 3 };
 #define TEX_CACHE_CYCLE_N ((int)(sizeof(kTexCacheCycle)/sizeof(kTexCacheCycle[0])))
 
 // Step the tex-cache preset by +1 / -1 along kTexCacheCycle. A value not in the
@@ -3319,6 +3325,7 @@ bool displayOptionsMenu()
       case 6: printf("[< VERY FAST+        >]"); break;
       case 1: printf("[< FAST              >]"); break;
       case 2: printf("[< NORMAL (DEFAULT)  >]"); break;
+      case 7: printf("[< NORMAL+           >]"); break;
       case 3: printf("[< QUALITY (SLOW)    >]"); break;
     }
     printf(" Can have huge FPS impact");
@@ -5739,6 +5746,7 @@ int main(int argc, wchar *argv[])
       case 6: printf("VERY FAST+\n"); break;
       case 1: printf("FAST\n");      break;
       case 2: printf("NORMAL (DEFAULT)\n");    break;
+      case 7: printf("NORMAL+\n");   break;
       case 3: printf("QUALITY\n");   break;
     }
     printf("4BPP Mode      : ");

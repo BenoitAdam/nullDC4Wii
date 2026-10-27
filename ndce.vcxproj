@@ -350,6 +350,7 @@
     <ClInclude Include="dc\pvr\pvr_if.h" />
     <ClInclude Include="dc\pvr\pvr_sb_regs.h" />
     <ClInclude Include="dc\pvr\pvrLock.h" />
+    <ClInclude Include="dc\pvr\vram_track.h" />
     <ClInclude Include="dc\aica\aica_if.h" />
     <ClInclude Include="dc\mem\_vmem.h" />
     <ClInclude Include="dc\mem\sh4_mem.h" />

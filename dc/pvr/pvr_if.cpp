@@ -240,7 +240,13 @@ INLINE void YUV_ConvertMacroBlock()
                 YUV_putpixel2(x, y, *(u32*)yuyv);
             }
         }
-        
+
+        // normal_plus: the 16 rows just written, as one span (it also covers
+        // the bytes between rows, which belong to neighbouring macroblocks -
+        // over-marking only costs a re-decode, never a stale texture).
+        vram_wmark_range(YUV_dest + (YUV_x_curr + YUV_y_curr * YUV_x_size) * 2,
+                         ((YUV_MACROBLOCK_SIZE - 1) * YUV_x_size + YUV_MACROBLOCK_SIZE) * 2);
+
         // Advance to next macroblock position
         YUV_x_curr += YUV_MACROBLOCK_SIZE;
         if (YUV_x_curr >= YUV_x_size) {
@@ -368,12 +374,37 @@ void FASTCALL pvr_write_area1_16(u32 addr, u16 data)
 {
     addr = vramlock_ConvOffset32toOffset64(addr);
     *host_ptr_xor((u16*)&vram[addr]) = data;
+    vram_wmark(addr);
 }
 
 void FASTCALL pvr_write_area1_32(u32 addr, u32 data)
 {
     addr = vramlock_ConvOffset32toOffset64(addr);
     *(u32*)&vram[addr] = data;
+    vram_wmark(addr);
+}
+
+//------------------------------------------------------------------------------
+// VRAM Write Tracking (tex_cache=normal_plus) - see vram_track.h
+//------------------------------------------------------------------------------
+
+u32  vram_wstamp[VRAM_WPAGES];         // 16 KB
+u32  vram_wstamp_coarse[VRAM_WCOARSE]; // 512 B
+u32  vram_wepoch = 1;  // 0 is "never": a fresh cache slot (wepoch 0) is always dirty
+bool vram_wtrack = false;
+
+void vram_wmark_range(u32 off64, u32 len)
+{
+    if (!vram_wtrack || !len)
+        return;
+    const u32 e  = vram_wepoch;
+    const u32 p1 = (off64 + len - 1) >> VRAM_WPAGE_SHIFT;
+    for (u32 p = off64 >> VRAM_WPAGE_SHIFT; p <= p1; p++)
+    {
+        const u32 pm = p & (VRAM_WPAGES - 1);
+        vram_wstamp[pm] = e;
+        vram_wstamp_coarse[pm >> (VRAM_WCOARSE_SHIFT - VRAM_WPAGE_SHIFT)] = e;
+    }
 }
 
 //------------------------------------------------------------------------------

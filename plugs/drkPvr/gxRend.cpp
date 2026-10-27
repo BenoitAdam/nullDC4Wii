@@ -258,6 +258,49 @@ extern "C" int get_texture_cache_preset();
 #define CACHE_EXTRA()       (get_texture_cache_preset() == 4) // Perfect Result (to the cost of FPS) — For Debug only
 #define CACHE_EXTRA_DEBUG() (get_texture_cache_preset() == 5) // Pure bump allocation, always re-decode — For Debug only
 #define CACHE_VERY_FAST_PLUS() (get_texture_cache_preset() == 6) // VERY_FAST slots, sized fallback, content-validated
+#define CACHE_NORMAL_PLUS()    (get_texture_cache_preset() == 7) // NORMAL arena, validated by VRAM page write stamps
+
+// CACHE_NORMAL_PLUS sits between NORMAL and QUALITY.
+//
+// NORMAL (and FAST, VERY_FAST, VERY_FAST_PLUS) decide a cached texture is still
+// good by looking at ONE word of it: the 0xDEADBEEF sentinel written over its
+// first word after the decode (VQ: the first codebook word ^ the first index
+// byte). The game rewriting that word is the only change they can see. A game
+// that uploads into the MIDDLE of a texture is invisible to them, and 2D
+// fighters do exactly that: their sprite pages are atlases the game refills
+// tile by tile with the current animation frame, and the first tile is rarely
+// the one that changed. The cache keeps drawing last frame's tiles beside this
+// frame's - characters "move like a puzzle" (Street Fighter III 3rd Strike,
+// Guilty Gear X). QUALITY is immune only because it re-decodes every texture
+// it binds, every frame, which is also why it is slow.
+//
+// NORMAL_PLUS keeps NORMAL's persistent arena (so a static texture is decoded
+// once, not once per frame) and replaces the one-word check with the real
+// question - "was any byte this texture is decoded from written since it was
+// decoded?":
+//
+//  1. Every VRAM write path the emulator owns stamps the 2 KB page it lands on
+//     with the current render epoch (dc/pvr/vram_track.h): the 32-bit area
+//     handlers, store-queue and DMA block copies into either area, the TA
+//     direct-texture path, the YUV converter, and our own RTT copy-back.
+//     DoRender() advances the epoch once per render.
+//  2. A texture records the epoch it was decoded at. A bind re-decodes it when
+//     any page under its source span (codebook, mip chain and all - see
+//     tex_src_span()) carries a stamp >= that epoch. Two-level stamps keep this
+//     at one or two loads for a texture nothing touched, and it runs once per
+//     texture per render (wcheck), not once per bind.
+//  3. The one path no hook sees: SH4 stores straight into the direct-mapped
+//     64-bit area (JIT, interpreter and FASTMEM all write vram.data with no
+//     handler). An 8-probe content fingerprint over the span backstops it -
+//     much wider than NORMAL's one word, and the DEBUG MESSAGE audit below
+//     counts whatever still slips past it (stale= in the [TEXC] line).
+//  4. NO sentinel is written. Once a texture can be re-decoded because a
+//     neighbouring tile changed, a sentinel left over its first word would be
+//     decoded as two garbage texels; and nothing needs it any more.
+//
+// It also takes VERY_FAST_PLUS fix 1 (stride surfaces sized for the 512-wide
+// decode, so they cannot overrun a neighbour in the persistent arena). NORMAL
+// itself is left exactly as it was, for the presets tuned against it.
 
 // CACHE_VERY_FAST_PLUS sits between VERY_FAST and FAST.
 //
@@ -318,7 +361,7 @@ extern "C" int get_texture_cache_preset();
 //
 // FAST and NORMAL are deliberately left exactly as they were, so the game
 // presets tuned against them keep the behaviour they were tested with.
-#define CACHE_NORMAL_FAMILY() (CACHE_NORMAL() || CACHE_VERY_FAST_PLUS())
+#define CACHE_NORMAL_FAMILY() (CACHE_NORMAL() || CACHE_VERY_FAST_PLUS() || CACHE_NORMAL_PLUS())
 
 // Per Polygon Z Write
 extern "C" int get_ppz_write_preset();
@@ -1299,6 +1342,10 @@ static INLINE void fp_GX_WaitDrawDone() { FP_T0(t); GX_WaitDrawDone(); FP_ACC(gx
 // that block sits above every #include, so u32 does not exist yet up there.
 extern "C" int yuv_conv_lookup(u32 addr, u32 *out_w, u32 *out_h);
 
+// CACHE_NORMAL_PLUS: VRAM page write stamps, kept by dc/ (see the macro block
+// at the top of this file).
+#include "dc/pvr/vram_track.h"
+
 using namespace TASplitter;
 
 u8 *vram_buffer;
@@ -1845,13 +1892,20 @@ static void logo_dump_decoded(const char *what);
 struct TextureCacheDesc
 {
   GXTexObj  tex;
-  GXTlutObj pal;
+  // CACHE_NORMAL_PLUS bookkeeping. These three words were a `GXTlutObj pal`
+  // that nothing ever read or wrote (TLUTs load from the ring in
+  // SetTextureParams), so the struct keeps its 64 bytes and skimp_slot()'s
+  // address-derived layout does not move by a byte.
+  u32  wepoch;          // vram_wepoch of the render that decoded this slot
+  u32  wcheck;          // vram_wepoch of the last render that found it clean
+  u32  waudit;          // DEBUG_MESSAGE(): hash of the whole source at decode (0 = none)
   u32  addr;            // orig_tex_addr this slot holds (0 = empty)
   bool has_pal;
-  u32  vq_codebook_w0;  // VQ fingerprint (cb_w0 ^ idx_w0)
+  u32  vq_codebook_w0;  // VQ fingerprint (cb_w0 ^ idx_w0); NORMAL_PLUS: tex_src_fingerprint()
   u32  slot_size;       // bump allocator: total bytes of this allocation
   u32  shape_key;       // CACHE_FAST/CACHE_NORMAL: non-address TCW/TSP bits (format/scan/stride/mip/size)
 };
+static_assert(sizeof(TextureCacheDesc) == 64, "skimp_slot() layout depends on this size");
 
 // -- CACHE_VERY_FAST: direct nullDC4Wii slot -------------------------------------
 // Slot position = vram_buffer[tex_addr * 2] - O(1), no lookup.
@@ -2007,6 +2061,8 @@ static u32 g_texc_m_stride = 0; // dynamic stride surface, contents changed
 static u32 g_texc_m_new    = 0; // slot is not holding this address (first use / evicted)
 static u32 g_texc_m_sent   = 0; // sentinel gone: the game overwrote the texture
 static u32 g_texc_m_shape  = 0; // shape_key or VQ fingerprint mismatch
+static u32 g_texc_m_dirty  = 0; // NORMAL_PLUS: a VRAM page under the texture was written
+static u32 g_texc_stale    = 0; // NORMAL_PLUS audit: a HIT whose source had changed anyway
 static u32 g_texc_wraps    = 0; // persistent arena filled and discarded every entry
 static u32 g_texc_mapfull  = 0; // 2048-slot map full: texture cannot be cached at all
 static u32 g_texc_arena    = 0; // PLUS binds that did not fit their skimp slot
@@ -2366,17 +2422,18 @@ static void tex_frame_reset()
   if (DEBUG_MESSAGE() && ++g_texc_frames >= 60)
   {
     u32 cached_pct = g_texc_binds ? (100u * (g_texc_binds - g_texc_decodes)) / g_texc_binds : 0u;
-    printf("[TEXC] p%d %uf binds=%u dec=%u (%u%% cached, %u/frame) miss: stride=%u new=%u sent=%u shape=%u | wraps=%u mapfull=%u arena=%u(vq=%u pal=%u oth=%u) allocs=%u allocKB=%u plusarena=%u wrapskip=%u drains=%u\n",
+    printf("[TEXC] p%d %uf binds=%u dec=%u (%u%% cached, %u/frame) miss: stride=%u new=%u sent=%u shape=%u dirty=%u | stale=%u wraps=%u mapfull=%u arena=%u(vq=%u pal=%u oth=%u) allocs=%u allocKB=%u plusarena=%u wrapskip=%u drains=%u\n",
            get_texture_cache_preset(), g_texc_frames, g_texc_binds, g_texc_decodes,
            cached_pct, g_texc_decodes / g_texc_frames,
-           g_texc_m_stride, g_texc_m_new, g_texc_m_sent, g_texc_m_shape,
-           g_texc_wraps, g_texc_mapfull, g_texc_arena,
+           g_texc_m_stride, g_texc_m_new, g_texc_m_sent, g_texc_m_shape, g_texc_m_dirty,
+           g_texc_stale, g_texc_wraps, g_texc_mapfull, g_texc_arena,
            g_texc_a_vq, g_texc_a_pal, g_texc_a_oth,
            g_texc_allocs, g_texc_alloc_kb, s_plus_arena_ok ? 1u : 0u, g_texc_wrapskip,
            g_texc_drains);
     fflush(stdout); // log is freopen'd to SD; without this the tail is lost
     g_texc_frames = g_texc_binds = g_texc_decodes = 0;
     g_texc_m_stride = g_texc_m_new = g_texc_m_sent = g_texc_m_shape = 0;
+    g_texc_m_dirty = g_texc_stale = 0;
     g_texc_wraps = g_texc_mapfull = g_texc_arena = g_texc_wrapskip = g_texc_drains = 0;
     g_texc_a_vq = g_texc_a_pal = g_texc_a_oth = 0;
     g_texc_allocs = g_texc_alloc_kb = 0;
@@ -4731,6 +4788,89 @@ static void tev_stage0_alpha_mode(int mode, int tev_op)
   }
 }
 
+// ── CACHE_NORMAL_PLUS helpers (see the macro block at the top of the file) ───
+
+// How many VRAM bytes, from the TCW address, the decoder can read for this
+// texture: codebook and smaller mip levels included, since a game updating
+// those changes what is drawn just as much. Errs large on purpose - a byte too
+// many costs at worst a re-decode when a neighbour is written, a byte too few
+// misses a real update. `w`/`h` are the DECLARED size (before the decode
+// switch rewrites them).
+static INLINE u32 tex_src_span(const PolyParam *mod, u32 w, u32 h, u32 base)
+{
+  const u32  n   = mod->tsp.TexU + 3;          // log2(w): mip table index
+  const bool mip = mod->tcw.NO_PAL.MipMapped;
+  const u32  pf  = mod->tcw.NO_PAL.PixelFmt;
+  if (mip)
+    h = w;                                     // every mip path squares the texture
+  if (mod->tcw.NO_PAL.VQ_Comp)
+    return (mip ? VQMipPoint[n] : 2048u) + (w * h) / 4u;   // codebook + 2bpp indices
+  if (pf == 5)
+    return (mip ? OtherMipPoint[n] / 2u : 0u) + (w * h) / 2u;
+  if (pf == 6)
+    return (mip ? OtherMipPoint[n] : 0u) + w * h;
+  // Stride-selected scan order: rows sit at the source pitch, not at w (pf 5/6
+  // excluded above - those bits are PalSelect on a palettised TCW).
+  if (mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder)
+  {
+    u32 pitch = stride_fp_pitch(mod, w, h, base);
+    return (pitch > w ? pitch : w) * h * 2u;
+  }
+  // 16bpp twiddled/scan and YUV422 (an FMV's converter pitch is <= w).
+  return (mip ? OtherMipPoint[n] * 2u : 0u) + w * h * 2u;
+}
+
+// True when any 2 KB page of [base, base+span) has been written at or after
+// `epoch`, i.e. since the render that decoded the texture.
+static INLINE bool tex_vram_dirty(u32 base, u32 span, u32 epoch)
+{
+  u32 last = base + span - 1;
+  if (last >= VRAM_SIZE)
+    last = VRAM_SIZE - 1;          // the decoders do not wrap either
+  const u32 pfirst = base >> VRAM_WPAGE_SHIFT;
+  const u32 plast  = last >> VRAM_WPAGE_SHIFT;
+  for (u32 c = base >> VRAM_WCOARSE_SHIFT; c <= (last >> VRAM_WCOARSE_SHIFT); c++)
+  {
+    if (vram_wstamp_coarse[c] < epoch)
+      continue;                    // nothing in these 64 KB since the decode
+    u32 p0 = c << (VRAM_WCOARSE_SHIFT - VRAM_WPAGE_SHIFT);
+    u32 p1 = p0 + (1u << (VRAM_WCOARSE_SHIFT - VRAM_WPAGE_SHIFT)) - 1;
+    if (p0 < pfirst) p0 = pfirst;
+    if (p1 > plast)  p1 = plast;
+    for (u32 p = p0; p <= p1; p++)
+      if (vram_wstamp[p] >= epoch)
+        return true;
+  }
+  return false;
+}
+
+// 8 words spread across the source span: the backstop for SH4 stores into the
+// direct-mapped 64-bit area, which no stamp sees. Probe 0 is the first word,
+// so this sees everything NORMAL's sentinel saw, and seven more places.
+static INLINE u32 tex_src_fingerprint(u32 base, u32 span)
+{
+  u32 step = span >> 3;
+  u32 fp   = span;
+  for (u32 i = 0; i < 8u; i++)
+    fp = fp * 31u + *(u32*)&params.vram[(base + step * i) & (VRAM_MASK & ~3u)];
+  return fp;
+}
+
+// DEBUG_MESSAGE() audit only: every word of the source. A HIT whose hash moved
+// is a write that both the stamps and the fingerprint missed - the [TEXC]
+// line's stale= count, and the number that says whether this mode is airtight
+// for a given game. Never run with DEBUG MESSAGE off: it reads the whole span.
+static u32 tex_src_hash(u32 base, u32 span)
+{
+  u32 end = base + span;
+  if (end > VRAM_SIZE)
+    end = VRAM_SIZE;
+  u32 h = span | 1u;               // never 0: 0 means "not audited"
+  for (u32 a = base & ~3u; a + 4u <= end; a += 4u)
+    h = h * 31u + *(u32*)&params.vram[a];
+  return h ? h : 1u;
+}
+
 static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 {
   // STRIP_DEDUP() mode 2: this strip asks for exactly what is already loaded.
@@ -4819,8 +4959,9 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     // moves the stride to Plannar's source pitch, so the DESTINATION is the
     // declared w x h and 512 would only over-reserve. The slot must still be
     // 512-wide for every other mode, where norm_text() does rewrite w.
+    // CACHE_NORMAL_PLUS takes the same fix: its arena is just as persistent.
     u32 eff_w = w;
-    if (CACHE_VERY_FAST_PLUS() && w < 512 && !STRIDE_TEXCTL()
+    if ((CACHE_VERY_FAST_PLUS() || CACHE_NORMAL_PLUS()) && w < 512 && !STRIDE_TEXCTL()
         && mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder
         && mod->tcw.NO_PAL.PixelFmt != 5 && mod->tcw.NO_PAL.PixelFmt != 6)
       eff_w = 512;
@@ -4912,6 +5053,14 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   u32 *pixel_buf   = nullptr;
   TextureCacheDesc *pbuff = nullptr;
   bool already_decoded_this_frame = false;
+
+  // CACHE_NORMAL_PLUS: the VRAM range this texture is decoded from, taken
+  // while w/h are still the declared size. 0 (and unused) under every other
+  // preset. np_dirty / np_fpmiss only feed the miss attribution.
+  const bool np      = CACHE_NORMAL_PLUS();
+  const u32  np_span = np ? tex_src_span(mod, w, h, orig_tex_addr) : 0u;
+  bool np_dirty  = false;
+  bool np_fpmiss = false;
 
   if (CACHE_VERY_FAST() || plus_skimp)
   {
@@ -5212,13 +5361,38 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   }
   else if (CACHE_NORMAL_FAMILY())
   {
+    if (np)
+    {
+      // CACHE_NORMAL_PLUS: same slot and shape test as NORMAL (VQ included,
+      // which NORMAL skips), then the content test - at most once per texture
+      // per render, since nothing can write VRAM while a render decodes:
+      // page stamps first (every hooked write path, one or two loads when
+      // nothing moved), then the 8-probe fingerprint for SH4 stores straight
+      // into the 64-bit area. No sentinel is read or written.
+      cache_valid = (pbuff->addr == tex_addr)
+                  && (pbuff->shape_key == tex_shape_key(mod, pixel_fmt));
+      if (cache_valid && pbuff->wcheck != vram_wepoch)
+      {
+        np_dirty  = tex_vram_dirty(orig_tex_addr, np_span, pbuff->wepoch);
+        np_fpmiss = !np_dirty
+                  && pbuff->vq_codebook_w0 != tex_src_fingerprint(orig_tex_addr, np_span);
+        cache_valid = !np_dirty && !np_fpmiss;
+        if (cache_valid)
+        {
+          pbuff->wcheck = vram_wepoch;
+          if (DEBUG_MESSAGE() && pbuff->waudit
+              && pbuff->waudit != tex_src_hash(orig_tex_addr, np_span))
+            g_texc_stale++; // measured, deliberately NOT acted on - see tex_src_hash()
+        }
+      }
+    }
     // VQ: the codebook lives at tex_addr itself, so the VERY_FAST trick of
     // stomping tex_addr with the sentinel would corrupt codebook entry 0,
     // and watching only the codebook misses index-only updates (animated
     // VQ textures reusing the same palette). Use the same non-destructive
     // codebook+index fingerprint as below instead — a couple of extra word
     // reads, still O(1), no VRAM writes for VQ.
-    if (is_vq)
+    else if (is_vq)
     {
       u32 idx_addr = (orig_tex_addr + 2048) & VRAM_MASK;
       if (mod->tcw.NO_PAL.MipMapped)
@@ -5320,7 +5494,9 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       if (stride_dyn)                                  g_texc_m_stride++;
       else if (pbuff->addr != tex_addr && pbuff->addr != orig_tex_addr)
                                                        g_texc_m_new++;
-      else if (!is_vq && *ptex_skmp != 0xDEADBEEF)     g_texc_m_sent++;
+      else if (np_dirty)                               g_texc_m_dirty++;
+      else if (np_fpmiss)                              g_texc_m_sent++; // NORMAL_PLUS: changed, seen by content
+      else if (!np && !is_vq && *ptex_skmp != 0xDEADBEEF) g_texc_m_sent++;
       else                                             g_texc_m_shape++;
     }
     u32 *dst = dst_base;
@@ -5349,6 +5525,17 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
       // height here — the decode switch below is what rewrites w/h.
       if (CACHE_VERY_FAST_PLUS() && stride_dyn)
         pbuff->vq_codebook_w0 = stride_fingerprint(orig_tex_addr, h, stride_fp_pitch(mod, w, h, orig_tex_addr));
+    }
+    // CACHE_NORMAL_PLUS: the shape for every format (VQ too), the content
+    // fingerprint in place of the VQ one, and the render epoch the page stamps
+    // will be compared against. Taken before the decode runs, which is safe:
+    // nothing writes VRAM until this render is over.
+    if (np)
+    {
+      pbuff->shape_key      = tex_shape_key(mod, pixel_fmt);
+      pbuff->vq_codebook_w0 = tex_src_fingerprint(orig_tex_addr, np_span);
+      pbuff->wepoch = pbuff->wcheck = vram_wepoch;
+      pbuff->waudit = DEBUG_MESSAGE() ? tex_src_hash(orig_tex_addr, np_span) : 0u;
     }
 
     if(DEBUG_MESSAGE()) {
@@ -6335,6 +6522,12 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
         u32 *ptex_fast = (u32*)&params.vram[tex_addr];
         *ptex_fast = 0xDEADBEEF;
       }
+    }
+    else if (np)
+    {
+      // CACHE_NORMAL_PLUS writes no sentinel: page stamps + fingerprint do its
+      // job, and a re-decode triggered by a neighbouring tile would otherwise
+      // decode the sentinel itself as two garbage texels.
     }
     else if (!is_vq)
     {
@@ -8024,6 +8217,10 @@ static void rtt_copy_efb_to_vram()
         *(u32 *)&params.vram[(line + x * 2) & VRAM_MASK] = ((u32)p1 << 16) | p0;
       }
     }
+    // CACHE_NORMAL_PLUS: a texture sampling this target must re-decode next
+    // render. Stamped with this render's epoch, i.e. newer than anything the
+    // render decoded.
+    vram_wmark_range(base, (s_rtt_h - 1) * stride + s_rtt_w * 2);
 #if RTT_DEBUG_LOG
     if (rtt_probe)
     {
@@ -8074,6 +8271,18 @@ void DoRender()
   // VIDEO flip before anything else — texture decode below re-writes bump
   // slots the GPU may still be sampling. No-op when nothing is pending.
   gx_sync_pending();
+
+  // CACHE_NORMAL_PLUS: one epoch per render - the guest cannot write VRAM while
+  // this render decodes, so every write between two renders shares a stamp.
+  // Tracking only runs under this preset; when it switches on, writes made
+  // before it were never stamped, so nothing cached across that gap is trusted.
+  {
+    const bool track = CACHE_NORMAL_PLUS();
+    if (track && !vram_wtrack)
+      fast_cache_reset();
+    vram_wtrack = track;
+    vram_wepoch++;
+  }
 
   /* commented to help prevent FIFO */
   /*

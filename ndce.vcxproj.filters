@@ -584,6 +584,9 @@
     <ClInclude Include="dc\pvr\pvrLock.h">
       <Filter>generic\dc\pvr</Filter>
     </ClInclude>
+    <ClInclude Include="dc\pvr\vram_track.h">
+      <Filter>generic\dc\pvr</Filter>
+    </ClInclude>
     <ClInclude Include="dc\aica\aica_if.h">
       <Filter>generic\dc\aica</Filter>
     </ClInclude>

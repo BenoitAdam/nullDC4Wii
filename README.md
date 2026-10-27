@@ -275,6 +275,7 @@ Requires MIPMAP set to FAST or TRILINEAR (Page 6) - does nothing while mipmaps a
 | **VERY_FAST+** | very_fast's address-derived slots, but oversized textures route into a properly-sized arena instead of overrunning the next slot (3 targeted fixes - stride surfaces, stride sizing, mip sentinel). Try this first when very_fast is the only fast option but shows corruption | Max FPS, safer than VERY_FAST |
 | **FAST** | Best performance/accuracy in most case  | Almost Max FPS |
 | **NORMAL (default)** | Display mostly correctly | Good FPS |
+| **NORMAL+** | NORMAL's cache, but a texture is re-decoded when any VRAM byte it is built from was written, not only its first word. For games that refill sprite atlases tile by tile (characters that "move like a puzzle": Street Fighter III 3rd Strike, Guilty Gear X) | Between NORMAL and QUALITY |
 | **QUALITY (SLOW)** | Best accuracy. Display correctly | Mid FPS |
 
 Can have huge FPS impact, try to have the lowest parameter.

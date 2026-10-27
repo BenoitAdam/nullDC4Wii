@@ -243,11 +243,17 @@ static void blockcopy_announce()
 // memmove, not memcpy, throughout: these are guest-to-guest transfers whose
 // source can itself be a pointer into the RAM image (pvr_sb_regs.cpp hands us
 // GetMemPtr(src, len)), so the ranges are not guaranteed to be disjoint.
+//
+// Every helper below opens with vram_wmark_block() (tex_cache=normal_plus, see
+// dc/pvr/vram_track.h): the 64-bit VRAM area is direct-mapped, so neither the
+// memmove nor the per-word fallback passes a handler that could note the write.
+// One untaken branch when the preset is off.
 
 void MEMCALL WriteMemBlock_nommu_dma(u32 dst, u32 src, u32 size)
 {
 	// Word-at-a-time DMA copy through the normal memory accessors
 	verify((size & 3) == 0);   // must be 4-byte aligned
+	vram_wmark_block(dst, size);
 	if (g_blockcopy_preset)
 	{
 		u8* d = _vmem_GetBlockPtr(dst, size);
@@ -266,6 +272,7 @@ void MEMCALL WriteMemBlock_nommu_dma(u32 dst, u32 src, u32 size)
 void MEMCALL WriteMemBlock_nommu_ptr(u32 dst, u32* src, u32 size)
 {
 	verify((size & 3) == 0);
+	vram_wmark_block(dst, size);
 	if (g_blockcopy_preset)
 	{
 		u8* d = _vmem_GetBlockPtr(dst, size);
@@ -291,6 +298,7 @@ void MEMCALL WriteMemBlock_nommu_ptr(u32 dst, u32* src, u32 size)
 void MEMCALL WriteMemBlock_nommu_ptr_le32(u32 dst, u32* src, u32 size)
 {
 	verify((size & 3) == 0);
+	vram_wmark_block(dst, size);
 	if (g_blockcopy_preset)
 	{
 		u8* d = _vmem_GetBlockPtr(dst, size);
@@ -311,6 +319,7 @@ void MEMCALL WriteMemBlock_nommu_ptr_le32(u32 dst, u32* src, u32 size)
 void MEMCALL WriteMemBlock_ptr(u32 addr, u32* data, u32 size)
 {
 	verify((size & 3) == 0);
+	vram_wmark_block(addr, size);
 	if (g_blockcopy_preset)
 	{
 		u8* d = _vmem_GetBlockPtr(addr, size);

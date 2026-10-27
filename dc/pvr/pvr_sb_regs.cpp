@@ -7,6 +7,7 @@
 #include "pvr_sb_regs.h"
 #include "plugins/plugin_manager.h"
 #include "dc/sh4/sh4_sched.h"   // SCHED preset: deadline-ordered PVR-DMA completion
+#include "vram_track.h"         // tex_cache=normal_plus: stamp PVR-DMA writes
 
 extern "C" int get_dma_fix_preset();
 
@@ -177,6 +178,10 @@ static void do_pvr_dma()
 	else
 	{
 		// System RAM -> PVR
+		// tex_cache=normal_plus: the word-by-word fallback below stores straight
+		// into a direct-mapped 64-bit VRAM target, so stamp it here (the block
+		// path stamps again inside WriteMemBlock_nommu_ptr - harmless).
+		vram_wmark_block(dst, len);
 		// Optimized block write when possible
 		u32* src_ptr = (u32*)GetMemPtr(src, len);
 		if (src_ptr != NULL)

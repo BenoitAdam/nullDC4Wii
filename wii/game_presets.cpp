@@ -1882,6 +1882,8 @@ static int parse_tex_cache(const char* v)
     if (key_eq(v, "very_fast+"))     return 6; // accepted spelling of the same preset
     if (key_eq(v, "fast"))      return 1;
     if (key_eq(v, "normal"))    return 2;
+    if (key_eq(v, "normal_plus")) return 7; // normal + VRAM page write stamps
+    if (key_eq(v, "normal+"))     return 7; // accepted spelling of the same preset
     if (key_eq(v, "quality"))   return 3;
     printf("[game_presets] Unknown tex_cache value: '%s'\n", v);
     return -1;
