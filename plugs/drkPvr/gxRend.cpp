@@ -215,6 +215,15 @@ extern "C" int get_8bpp_preset();
 extern "C" int get_jojo_fix_preset();
 #define JOJO_FIX() (get_jojo_fix_preset() != 0)
 
+// CI4/CI8 palettes (TLUTs) come from a per-render converted copy of the whole
+// palette RAM instead of a 16-slot staging ring. The GP reads a TLUT from
+// memory only when it reaches the load in the FIFO; once the CPU runs more than
+// 16 palette changes ahead (any game that stops being CPU-bound - SF3 3rd
+// Strike under tex_cache=normal_plus), the ring is rewritten under it and
+// draws pick up another draw's colours. See tlut_mirror_get().
+extern "C" int get_tlut_fix_preset();
+#define TLUT_FIX() (get_tlut_fix_preset() != 0)
+
 // VQ textures decoded to GX_TF_CMPR (DXT1) instead of 16bpp — see
 // texture_VQ_CMPR(). 4 bits/texel instead of 16, which is what lets a VQ
 // texture fit its address-derived cache slot instead of needing the overflow
@@ -4871,6 +4880,57 @@ static u32 tex_src_hash(u32 base, u32 span)
   return h ? h : 1u;
 }
 
+// One PVR palette RAM entry -> GX TLUT entry, per PAL_RAM_CTRL format
+// (0=ARGB1555 1=RGB565 2=ARGB4444 3=ARGB8888).
+static INLINE u16 pal_to_tlut(u32 pe, u32 pal_fmt)
+{
+  switch (pal_fmt)
+  {
+    case 1:  return (u16)(pe & 0xFFFF);                      // RGB565  -> RGB565
+    case 2:  return ABGR4444((u16)(pe & 0xFFFF));            // ARGB4444-> RGB5A3
+    case 3:  {                                               // ARGB8888-> RGB5A3
+      u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
+      return (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
+    }
+    default: return ABGR1555((u16)(pe & 0xFFFF));            // ARGB1555-> RGB5A3
+  }
+}
+
+// TLUT_FIX(): the whole PVR palette RAM (1024 entries) in GX TLUT format. Bank
+// b = entries 16b..16b+15 = exactly one 32-byte cache line. A bank is
+// converted the first time a render binds it and is then left alone for the
+// rest of that render, so every GX_LoadTlut queued during a render reads bytes
+// that cannot change before the GP gets to them. The next rewrite happens in
+// the next DoRender(), which opens after gx_sync_pending() / the previous
+// render's closing GX_DrawDone() let the GP finish. Unchanged banks are not
+// rewritten at all.
+static u16 ATTRIBUTE_ALIGN(32) s_tlut_mirror[1024];
+static u32 s_tlut_mirror_epoch[64];   // vram_wepoch the bank was last converted in
+static bool g_tlut_fix_cached = false; // TLUT_FIX(), read once per render in DoRender()
+
+static u16 *tlut_mirror_get(u32 pal_base, u32 n_entries, u32 pal_fmt)
+{
+  const u32 b1 = (pal_base + n_entries) >> 4;
+  for (u32 b = pal_base >> 4; b < b1; b++)
+  {
+    if (s_tlut_mirror_epoch[b] == vram_wepoch)
+      continue;
+    // First conversion ever: the zeros already there were never flushed.
+    bool changed = (s_tlut_mirror_epoch[b] == 0);
+    s_tlut_mirror_epoch[b] = vram_wepoch;
+    const u32 *src = PALETTE_RAM + (b << 4);
+    u16 *dst = &s_tlut_mirror[b << 4];
+    for (u32 i = 0; i < 16; i++)
+    {
+      u16 px = pal_to_tlut(src[i], pal_fmt);
+      if (dst[i] != px) { dst[i] = px; changed = true; }
+    }
+    if (changed)
+      DCFlushRange(dst, 32);
+  }
+  return &s_tlut_mirror[pal_base];
+}
+
 static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 {
   // STRIP_DEDUP() mode 2: this strip asks for exactly what is already loaded.
@@ -5192,6 +5252,10 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   // previous load, making two palettized textures drawn back-to-back
   // intermittently share the second palette. 16 slots (512B each, 8KB total)
   // keeps every buffer untouched long enough for the FIFO to drain.
+  // ...as long as the CPU never gets more than 16 palette changes ahead of the
+  // GP, which stops holding once a game is no longer CPU-bound (SF3 3rd Strike
+  // under normal_plus: characters flicker through other draws' colours).
+  // TLUT_FIX() replaces the ring with tlut_mirror_get(); the ring is the OFF path.
   #define TLUT_RING_SLOTS 16
   static u16 ATTRIBUTE_ALIGN(32) s_tlut_ring[TLUT_RING_SLOTS][256];
   static u32 s_tlut_ring_idx = 0;
@@ -5233,7 +5297,21 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
     // the TLUT unconditionally on every textured-and-palettized draw.
     bool need_reupload = true;
     static u32 s_last_tlut_checksum = 0xFFFFFFFFu;
-    if (JOJO_FIX())
+    static u32 s_tlut_last_key   = 0;
+    static u32 s_tlut_last_epoch = 0;
+    if (g_tlut_fix_cached)
+    {
+      // TLUT_FIX(): the mirror cannot change inside a render, so binding the
+      // palette TLUT0 was last loaded with, in this same render, has nothing
+      // to load. Stands in for the JOJO_FIX checksum below without walking
+      // up to 256 entries on every bind.
+      const u32 key = pal_base | (n_entries << 12) | (pal_fmt << 24);
+      need_reupload = !(s_tlut_last_epoch == vram_wepoch && s_tlut_last_key == key);
+      s_tlut_last_epoch = vram_wepoch;
+      s_tlut_last_key   = key;
+      s_last_tlut_checksum = 0xFFFFFFFFu; // JOJO's record no longer describes TLUT0
+    }
+    else if (JOJO_FIX())
     {
       u32 checksum = pal_fmt ^ (n_entries << 16) ^ pal_base;
       for (u32 i = 0; i < n_entries; i++)
@@ -5244,31 +5322,22 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
 
     if (need_reupload)
     {
-      // Each 256-entry row is 512 bytes, a multiple of 32, so every slot in
-      // the 32-byte-aligned ring is itself 32-byte aligned (required by both
-      // DCFlushRange and GX_InitTlutObj).
-      u16 *tlut = s_tlut_ring[s_tlut_ring_idx];
-      s_tlut_ring_idx = (s_tlut_ring_idx + 1) & (TLUT_RING_SLOTS - 1);
-
-      for (u32 i = 0; i < n_entries; i++)
+      u16 *tlut;
+      if (g_tlut_fix_cached)
+        tlut = tlut_mirror_get(pal_base, n_entries, pal_fmt);
+      else
       {
-        u32 pe = pal[i];
-        u16 px;
-        switch (pal_fmt)
-        {
-          case 1:  px = (u16)(pe & 0xFFFF); break;                   // RGB565  -> RGB565
-          case 2:  px = ABGR4444((u16)(pe & 0xFFFF)); break;         // ARGB4444-> RGB5A3
-          case 3:  {                                                  // ARGB8888-> RGB5A3
-            u8 a=(pe>>24)&0xFF, r=(pe>>16)&0xFF, g=(pe>>8)&0xFF, b=pe&0xFF;
-            px = (u16)(((a>>5)<<12)|((r>>4)<<8)|((g>>4)<<4)|(b>>4));
-            break;
-          }
-          default: px = ABGR1555((u16)(pe & 0xFFFF)); break;         // ARGB1555-> RGB5A3
-        }
-        tlut[i] = px;
-      }
+        // Each 256-entry row is 512 bytes, a multiple of 32, so every slot in
+        // the 32-byte-aligned ring is itself 32-byte aligned (required by both
+        // DCFlushRange and GX_InitTlutObj).
+        tlut = s_tlut_ring[s_tlut_ring_idx];
+        s_tlut_ring_idx = (s_tlut_ring_idx + 1) & (TLUT_RING_SLOTS - 1);
 
-      DCFlushRange(tlut, n_entries * sizeof(u16));
+        for (u32 i = 0; i < n_entries; i++)
+          tlut[i] = pal_to_tlut(pal[i], pal_fmt);
+
+        DCFlushRange(tlut, n_entries * sizeof(u16));
+      }
       GXTlutObj tlut_obj;
       GX_InitTlutObj(&tlut_obj, tlut, gx_tlut_fmt, (u16)n_entries);
       GX_LoadTlut(&tlut_obj, GX_TLUT0);
@@ -8283,6 +8352,9 @@ void DoRender()
     vram_wtrack = track;
     vram_wepoch++;
   }
+  // TLUT_FIX(): read once per render, never mid-render - the palette mirror's
+  // "unchanged inside a render" promise is tied to the epoch just advanced.
+  g_tlut_fix_cached = TLUT_FIX();
 
   /* commented to help prevent FIFO */
   /*

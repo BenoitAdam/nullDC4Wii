@@ -777,6 +777,12 @@ int g_tex_wrap_guard_preset = 0;
 // polygon that decoded it). 1 = on: every bind applies its own polygon's TSP
 // wrap mode. See SetTextureParams() in gxRend.cpp.
 int g_tex_clamp_fix_preset = 0;
+// 0 = off (legacy: CI4/CI8 palettes staged in a 16-slot ring the GPU reads
+// later - overwritten under it once the CPU runs far enough ahead, so
+// characters flicker through other draws' colours, SF3 3rd Strike at full
+// speed). 1 = on (default): a per-render copy of the palette RAM that never
+// changes while the GPU can still read it. See tlut_mirror_get() in gxRend.cpp.
+int g_tlut_fix_preset = 1;
 
 // STRIP_DEDUP: skip the texture bind a strip repeats from the strip before it.
 // Built for ChuChu Rocket's mouse mania -- hundreds of copies of one mouse
@@ -796,6 +802,7 @@ extern "C" {
   int get_tex_wrap_guard_preset() { return g_tex_wrap_guard_preset; }
   int get_strip_dedup_preset() { return g_strip_dedup_preset; }
   int get_tex_clamp_fix_preset() { return g_tex_clamp_fix_preset; }
+  int get_tlut_fix_preset() { return g_tlut_fix_preset; }
 }
 
 // FASTMEM — PPC-MMU fastmem for the SH4 dynarec (wii/wii_fastmem.cpp +
@@ -2927,6 +2934,7 @@ void checkBiosFiles()
 #define OPT_IDLE_X3     140  // Page 5 (CORE), under IDLE SHINOBI
 #define OPT_FLASH_CHIP  141  // Page 6 (EXPERIMENTAL), under EXIT FIX
 #define OPT_FLASH_SAVE  142  // Page 6 (EXPERIMENTAL), under FLASH CHIP
+#define OPT_TLUT_FIX    143  // Page 6 (EXPERIMENTAL), under TEX WRAP GUARD
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3066,6 +3074,7 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_LAUNCH,
   OPT_MIPMAP,
   OPT_TEX_WRAP_GUARD,
+  OPT_TLUT_FIX,
   OPT_DMA_FIX,
   OPT_MMUCR_FIX,
   OPT_SCHED,
@@ -4158,6 +4167,15 @@ bool displayOptionsMenu()
     printf(" stop tex corruption in full cache");
     printf("\n");
 
+    // --- Row: TLUT FIX - CI4/CI8 palettes from a per-render copy, not a ring ---
+    printf("%s TLUT FIX       : ", (selectedRow == OPT_TLUT_FIX) ? MENU_CURSOR : " ");
+    switch (g_tlut_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" fixes CI4/CI8 color flicker");
+    printf("\n");
+
     // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
     printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? MENU_CURSOR : " ");
     switch (g_dma_fix_preset) {
@@ -4757,6 +4775,7 @@ bool displayOptionsMenu()
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
+        case OPT_TLUT_FIX:       g_tlut_fix_preset        = (g_tlut_fix_preset        + 1) % 2; break;
         case OPT_TEX_CLAMP_FIX:  g_tex_clamp_fix_preset   = (g_tex_clamp_fix_preset   + 1) % 2; break;
         case OPT_STRIP_DEDUP:    g_strip_dedup_preset     = (g_strip_dedup_preset     + 2) % 3; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
@@ -4913,6 +4932,7 @@ bool displayOptionsMenu()
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
+        case OPT_TLUT_FIX:       g_tlut_fix_preset        = (g_tlut_fix_preset        + 1) % 2; break;
         case OPT_TEX_CLAMP_FIX:  g_tex_clamp_fix_preset   = (g_tex_clamp_fix_preset   + 1) % 2; break;
         case OPT_STRIP_DEDUP:    g_strip_dedup_preset     = (g_strip_dedup_preset     + 1) % 3; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
@@ -5825,6 +5845,7 @@ int main(int argc, wchar *argv[])
     printf("JIT Div32 Fix  : %s\n", g_div32_fix_preset ? "ON (64/32 EXACT)" : "OFF (32/32)");
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Tex wrap guard : %s\n", g_tex_wrap_guard_preset ? "ON (SAFE WRAP)" : "OFF (LEGACY)");
+    printf("TLUT fix       : %s\n", g_tlut_fix_preset ? "ON (PER-RENDER COPY)" : "OFF (RING)");
     printf("Strip dedup    : %s\n", g_strip_dedup_preset == 2 ? "SKIP REPEATED" :
                                     g_strip_dedup_preset == 1 ? "CENSUS (LOG ONLY)" : "OFF (LEGACY)");
     printf("Tex clamp fix  : %s\n", g_tex_clamp_fix_preset ? "ON (PER POLYGON)" : "OFF (LEGACY)");

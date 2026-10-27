@@ -761,7 +761,12 @@
                                 (clamp/flip) of the polygon drawing it, not of
                                 the first polygon that decoded it. Fixes tiled
                                 surfaces streaking to infinity (JSR floor).
-        strip_dedup=1       <- 0/1/2 (NUMBER, not on/off). Skip the texture
+        tlut_fix=on         <- on/off, CI4/CI8 palettes come from a per-render
+                                copy of palette RAM instead of a 16-slot ring
+                                the GPU can be handed back overwritten. Fixes
+                                characters flickering through wrong colors at
+                                full speed (SF3 3rd Strike). Default on.
+        strip_dedup=1      <- 0/1/2 (NUMBER, not on/off). Skip the texture
                                 bind a strip repeats from the strip before it.
                                 A game drawing many copies of one model submits
                                 one polygon header per copy, all carrying the
@@ -1432,6 +1437,7 @@ extern int g_inf_vtx_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
 extern int g_tex_clamp_fix_preset;
+extern int g_tlut_fix_preset;
 extern int g_strip_dedup_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -1599,6 +1605,7 @@ struct GamePreset
     int sched;
     int tex_wrap_guard;
     int tex_clamp_fix;
+    int tlut_fix;
     int strip_dedup;
     int debug_fb2d;
     int debug_message;
@@ -2170,6 +2177,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
     else if (key_eq(key, "tex_clamp_fix"))  p->tex_clamp_fix  = parse_bool(val);
+    else if (key_eq(key, "tlut_fix"))       p->tlut_fix       = parse_bool(val);
     else if (key_eq(key, "strip_dedup"))    p->strip_dedup    = atoi(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
@@ -2313,6 +2321,7 @@ static void preset_clear(GamePreset* cur)
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
     cur->tex_clamp_fix  = -1;
+    cur->tlut_fix       = -1;
     cur->strip_dedup    = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
@@ -2485,6 +2494,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }
     if (p->tex_clamp_fix  >= 0) { g_tex_clamp_fix_preset  = p->tex_clamp_fix;  printf("  tex_clamp_fix  -> %d\n", p->tex_clamp_fix);  }
+    if (p->tlut_fix       >= 0) { g_tlut_fix_preset       = p->tlut_fix;       printf("  tlut_fix       -> %d\n", p->tlut_fix);       }
     if (p->strip_dedup    >= 0) { g_strip_dedup_preset    = p->strip_dedup;    printf("  strip_dedup    -> %d\n", p->strip_dedup);    }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }
