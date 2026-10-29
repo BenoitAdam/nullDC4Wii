@@ -47,16 +47,16 @@
 #include <math.h>	// sqrtf — fsqrt/fsrra native call targets
 #include <stdlib.h>	// malloc — JIT_HOTBLOCKS lazily allocates its block table
 #include "dc/sh4/sh4_opcode_list.h"
-#include "dc\sh4\sh4_interpreter.h"	// sh4_GetTimeslice — preset-latched timeslice
+#include "dc/sh4/sh4_interpreter.h"	// sh4_GetTimeslice — preset-latched timeslice
 
-#include "dc\sh4\sh4_registers.h"
-#include "dc\sh4\ccn.h"
-#include "dc\sh4\rec_v2\ngen.h"
-#include "dc\mem\sh4_mem.h"
-#include "dc\mem\sh4_internal_reg.h"	// sq_both — fastmem SQ trampoline fast path
+#include "dc/sh4/sh4_registers.h"
+#include "dc/sh4/ccn.h"
+#include "dc/sh4/rec_v2/ngen.h"
+#include "dc/mem/sh4_mem.h"
+#include "dc/mem/sh4_internal_reg.h"	// sq_both — fastmem SQ trampoline fast path
 #include "dc/sh4/rec_v2/ccall_census.h"	// C call-out census (JIT_CCALLS preset)
-#include "wii\wii_fastmem.h"		// PPC-MMU fastmem (FASTMEM preset)
-#include "emitter\PPCEmit\ppc_emitter.h"
+#include "wii/wii_fastmem.h"		// PPC-MMU fastmem (FASTMEM preset)
+#include "emitter/PPCEmit/ppc_emitter.h"
 
 // wii_driver.cpp defines its own higher-level wrappers for these names.
 // Undefine any macros from ppc_emitter.h that would clash with the
