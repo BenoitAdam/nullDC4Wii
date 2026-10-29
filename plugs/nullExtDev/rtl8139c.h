@@ -6,6 +6,12 @@
 
 #pragma once
 
+/* RTL8139 MII and interrupt bits used by the guest-facing hardware model. */
+#define RT_INT_LINK_CHANGE 0x0020
+#define RT_MII_AN_START    0x0200
+#define RT_MII_AN_ENABLE   0x1000
+#define RT_MII_RESET       0x8000
+
 
 typedef u8 uint8_t;
 typedef u16 uint16_t;
