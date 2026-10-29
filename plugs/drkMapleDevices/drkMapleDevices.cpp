@@ -166,17 +166,21 @@ static void MapButtons(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButt
     }
     else
     {
-        // Face buttons - A/B/X/Y (legacy/default mapping)
-        if (wiiButtons & WPAD_BUTTON_A || gcButtons & PAD_BUTTON_A)
+        // Face buttons use physical position, not Nintendo's printed labels.
+        // Dreamcast: A=bottom, B=right, X=left, Y=top.
+        // GameCube:   B=bottom, A=right, Y=left, X=top.
+        // Keep Wiimote 1/2 on Y/X; Classic Controller / Pro already uses
+        // the same physical-position mapping above.
+        if (wiiButtons & WPAD_BUTTON_A || gcButtons & PAD_BUTTON_B)
             kcode[port] &= ~key_CONT_A;
 
-        if (wiiButtons & WPAD_BUTTON_B || gcButtons & PAD_BUTTON_B)
+        if (wiiButtons & WPAD_BUTTON_B || gcButtons & PAD_BUTTON_A)
             kcode[port] &= ~key_CONT_B;
 
-        if (wiiButtons & WPAD_BUTTON_1 || gcButtons & PAD_BUTTON_Y)
+        if (wiiButtons & WPAD_BUTTON_1 || gcButtons & PAD_BUTTON_X)
             kcode[port] &= ~key_CONT_Y;
 
-        if (wiiButtons & WPAD_BUTTON_2 || gcButtons & PAD_BUTTON_X)
+        if (wiiButtons & WPAD_BUTTON_2 || gcButtons & PAD_BUTTON_Y)
             kcode[port] &= ~key_CONT_X;
     }
 
