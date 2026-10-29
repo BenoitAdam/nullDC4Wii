@@ -57,6 +57,8 @@ static VLANClientState s_vlanClient = {};
 static bool s_clientReady = false;
 static u8 s_pendingFrame[kMaxFrame];
 static u16 s_pendingFrameLength = 0;
+static void (*s_updateCallback)(void) = nullptr;
+static u32 s_updateTimerCycles = 0;
 
 static u32 ReadLittleEndian(const u8* bytes, u32 size)
 {
@@ -294,6 +296,16 @@ void cpu_physical_memory_read(u32 address, void* buffer, u32 size)
         memcpy((u8*)buffer + first, s_ram, size - first);
 }
 
+void SetUpdateCallback(void (*callback)(void), u32 milliseconds)
+{
+    if (callback == nullptr || s_updateCallback != nullptr)
+        return;
+
+    s_updateCallback = callback;
+    /* Avoid 32-bit overflow: 200 MHz / 1000 * milliseconds. */
+    s_updateTimerCycles = (SH4_CLOCK / 1000) * milliseconds;
+}
+
 void BBA_Init(ext_device_init_params* params)
 {
     if (params != nullptr)
@@ -450,6 +462,21 @@ void BBA_WriteMem(u32 address, u32 data, u32 size)
 
 void BBA_Update(u32 cycles)
 {
+    if (s_updateCallback != nullptr)
+    {
+        if (cycles >= s_updateTimerCycles)
+        {
+            void (*callback)(void) = s_updateCallback;
+            s_updateCallback = nullptr;
+            s_updateTimerCycles = 0;
+            callback();
+        }
+        else
+        {
+            s_updateTimerCycles -= cycles;
+        }
+    }
+
     if (!s_initialized)
         return;
 
