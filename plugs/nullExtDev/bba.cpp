@@ -355,7 +355,7 @@ u32 BBA_ReadMem(u32 address, u32 size)
     if (address >= 0x1400 && address < 0x1410)
     {
         static const char chipId[] = "GAPSPCI_BRIDGE_2";
-        return ReadLittleEndian((const u8*)chipId + (address & 0x0f), size);
+        return ReadCircular((const u8*)chipId, 16, address & 0x0f, size);
     }
 
     if ((address & kRamBaseMask) == kRamBase)
