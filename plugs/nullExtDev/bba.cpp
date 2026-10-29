@@ -47,6 +47,7 @@ static ext_device_init_params s_params = {};
 static bool s_hasParams = false;
 static bool s_initialized = false;
 static bool s_irqPending = false;
+static int s_loggedNetStatus = -1;
 static u8 s_ram[kRamSize];
 static u8 s_regs[kGapsRegsSize];
 static u32 s_dmaOffset = 0;
@@ -479,6 +480,18 @@ void BBA_Update(u32 cycles)
 
     if (!s_initialized)
         return;
+
+    const int netStatus = DCNet_GetStatus();
+    if (netStatus != s_loggedNetStatus)
+    {
+        char message[160];
+        DCNet_CopyLastError(message, sizeof(message));
+        const char* state = netStatus == DCNET_STATUS_STARTING ? "starting" :
+                            netStatus == DCNET_STATUS_CONNECTED ? "connected" :
+                            netStatus == DCNET_STATUS_FAILED ? "failed" : "stopped";
+        printf("[DCNet] %s: %s\n", state, message);
+        s_loggedNetStatus = netStatus;
+    }
 
     s_pollCycles += cycles;
     if (s_pollCycles < kPollIntervalCycles)
