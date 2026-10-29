@@ -49,7 +49,6 @@ static bool s_initialized = false;
 static bool s_irqPending = false;
 static u8 s_ram[kRamSize];
 static u8 s_regs[kGapsRegsSize];
-static u32 s_dmaBase = kRamBase;
 static u32 s_dmaOffset = 0;
 static u32 s_pollCycles = 0;
 static PCIDevice* s_pciDevice = nullptr;
@@ -117,7 +116,6 @@ static void EnsureInitialized()
     memset(s_regs, 0, sizeof(s_regs));
     memcpy(s_regs, "GAPSPCI_BRIDGE_2", 16);
     memcpy(&s_regs[0x1c], "SEGA", 4);
-    s_dmaBase = kRamBase;
     s_dmaOffset = 0;
     s_irqPending = false;
     s_pollCycles = 0;
@@ -310,7 +308,6 @@ void BBA_Reset(bool manual)
     (void)manual;
     if (s_initialized && s_rtlState != nullptr)
         rtl8139_resete(s_rtlState);
-    s_dmaBase = kRamBase;
     s_dmaOffset = 0;
     s_pollCycles = 0;
     s_pendingFrameLength = 0;
@@ -360,9 +357,7 @@ u32 BBA_ReadMem(u32 address, u32 size)
 
     if ((address & kRamBaseMask) == kRamBase)
     {
-        u32 offset = address & kRamMask;
-        if (address & 0x8000)
-            offset = (offset + s_dmaOffset) & kRamMask;
+        const u32 offset = address & kRamMask;
         return ReadCircular(s_ram, kRamSize, offset, size);
     }
 
@@ -388,8 +383,7 @@ u32 BBA_ReadMem(u32 address, u32 size)
 
     if (address >= 0x1800 && (address & kRamBaseMask) == 0x848000)
     {
-        const u32 dmaStart = s_dmaBase >= kRamBase ? s_dmaBase - kRamBase : 0;
-        const u32 offset = (dmaStart + (address & kRamMask)) & kRamMask;
+        const u32 offset = (s_dmaOffset + (address & kRamMask)) & kRamMask;
         return ReadCircular(s_ram, kRamSize, offset, size);
     }
 
@@ -411,9 +405,7 @@ void BBA_WriteMem(u32 address, u32 data, u32 size)
 
     if ((address & kRamBaseMask) == kRamBase)
     {
-        u32 offset = address & kRamMask;
-        if (address & 0x8000)
-            offset = (offset + s_dmaOffset) & kRamMask;
+        const u32 offset = address & kRamMask;
         WriteCircular(s_ram, kRamSize, offset, data, size);
         return;
     }
@@ -429,8 +421,6 @@ void BBA_WriteMem(u32 address, u32 data, u32 size)
             printf("[BBA] GAPS reset\n");
             rtl8139_resete(s_rtlState);
         }
-        else if (offset == kDmaBase)
-            s_dmaBase = data & 0x00ffffffU;
         else if (offset == kDmaOffset)
             s_dmaOffset = data & kRamMask;
         return;
@@ -453,8 +443,7 @@ void BBA_WriteMem(u32 address, u32 data, u32 size)
 
     if (address >= 0x1800 && (address & kRamBaseMask) == 0x848000)
     {
-        const u32 dmaStart = s_dmaBase >= kRamBase ? s_dmaBase - kRamBase : 0;
-        const u32 offset = (dmaStart + (address & kRamMask)) & kRamMask;
+        const u32 offset = (s_dmaOffset + (address & kRamMask)) & kRamMask;
         WriteCircular(s_ram, kRamSize, offset, data, size);
     }
 }
