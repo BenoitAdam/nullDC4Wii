@@ -38,7 +38,6 @@ static const u32 kRtlRegs = 0x1700;
 static const u32 kRtlRegsSize = 0x100;
 static const u32 kIntEnable = 0x14;
 static const u32 kReset = 0x18;
-static const u32 kDmaBase = 0x28;
 static const u32 kDmaOffset = 0x2c;
 static const u32 kMaxFrame = 1514;
 static const u32 kPollIntervalCycles = 200000;
@@ -303,8 +302,8 @@ void SetUpdateCallback(void (*callback)(void), u32 milliseconds)
         return;
 
     s_updateCallback = callback;
-    /* Avoid 32-bit overflow: 200 MHz / 1000 * milliseconds. */
-    s_updateTimerCycles = (SH4_CLOCK / 1000) * milliseconds;
+    /* Avoid 32-bit overflow and honor the active Dreamcast clock preset. */
+    s_updateTimerCycles = (SH4_CLOCK_EFF / 1000) * milliseconds;
 }
 
 void BBA_Init(ext_device_init_params* params)
@@ -319,6 +318,8 @@ void BBA_Init(ext_device_init_params* params)
 void BBA_Reset(bool manual)
 {
     (void)manual;
+    s_updateCallback = nullptr;
+    s_updateTimerCycles = 0;
     if (s_initialized && s_rtlState != nullptr)
         rtl8139_resete(s_rtlState);
     s_dmaOffset = 0;
@@ -345,6 +346,9 @@ void BBA_Term(void)
     s_pendingFrameLength = 0;
     s_irqPending = false;
     s_pollCycles = 0;
+    s_updateCallback = nullptr;
+    s_updateTimerCycles = 0;
+    s_loggedNetStatus = -1;
     memset(s_ram, 0, sizeof(s_ram));
     memset(s_regs, 0, sizeof(s_regs));
 }
