@@ -46,7 +46,7 @@
 #include <stddef.h>	// offsetof — used for jit_scratch context slot addressing
 #include <math.h>	// sqrtf — fsqrt/fsrra native call targets
 #include <stdlib.h>	// malloc — JIT_HOTBLOCKS lazily allocates its block table
-#include "dc\sh4\sh4_opcode_list.h"
+#include "dc/sh4/sh4_opcode_list.h"
 #include "dc\sh4\sh4_interpreter.h"	// sh4_GetTimeslice — preset-latched timeslice
 
 #include "dc\sh4\sh4_registers.h"
