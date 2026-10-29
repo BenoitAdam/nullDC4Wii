@@ -97,7 +97,7 @@ typedef void PCIConfigWriteFunc(PCIDevice *pci_dev,
  #define PCI_CLASS_DEVICE        0x0a    /* Device class */ 
  #define PCI_INTERRUPT_LINE      0x3c    /* 8 bits */ 
  #define PCI_INTERRUPT_PIN       0x3d    /* 8 bits */ 
-#define PCI_MIN_GNT             0x3e    /* 8 bits */ 
+ #define PCI_MIN_GNT             0x3e    /* 8 bits */ 
  #define PCI_MAX_LAT             0x3f    /* 8 bits */ 
   
  struct PCIDevice { 
