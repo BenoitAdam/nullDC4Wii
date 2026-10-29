@@ -217,7 +217,7 @@ void pci_register_io_region(PCIDevice* device, int region, uint32_t size,
 
     const u32 configOffset = region == PCI_ROM_SLOT ? 0x30 : 0x10 + (u32)region * 4;
     if (configOffset + 4 <= sizeof(device->config))
-        WriteLittleEndian(&device->config[configOffset], (u32)type, 4);
+        WriteCircular(device->config, sizeof(device->config), configOffset, (u32)type, 4);
 }
 
 uint32_t pci_default_read_config(PCIDevice* device, uint32_t address, int len)
@@ -369,7 +369,7 @@ u32 BBA_ReadMem(u32 address, u32 size)
     if (address >= kGapsRegs && address < kGapsRegs + kGapsRegsSize)
     {
         const u32 offset = address & (kGapsRegsSize - 1);
-        u32 value = ReadLittleEndian(&s_regs[offset], size);
+        u32 value = ReadCircular(s_regs, kGapsRegsSize, offset, size);
         if (offset == kReset)
             value &= 0xff;
         return value;
@@ -390,7 +390,7 @@ u32 BBA_ReadMem(u32 address, u32 size)
     {
         const u32 dmaStart = s_dmaBase >= kRamBase ? s_dmaBase - kRamBase : 0;
         const u32 offset = (dmaStart + (address & kRamMask)) & kRamMask;
-        return ReadLittleEndian(&s_ram[offset], size);
+        return ReadCircular(s_ram, kRamSize, offset, size);
     }
 
     return 0;
