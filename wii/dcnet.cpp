@@ -341,6 +341,14 @@ static bool DequeueTransmitFrame(Frame* frame)
     return ok;
 }
 
+static bool HasTransmitFrames()
+{
+    Lock();
+    const bool hasFrames = s_txQueue.count != 0;
+    Unlock();
+    return hasFrames;
+}
+
 static bool ReceiveAvailable(s32 socket, u8* stream, u32* used)
 {
     u8 incoming[2048];
@@ -449,7 +457,8 @@ static void* DCNetWorker(void*)
 
             timeval timeout;
             timeout.tv_sec = 0;
-            timeout.tv_usec = 20000;
+            /* Don't throttle outgoing game traffic behind the receive timeout. */
+            timeout.tv_usec = HasTransmitFrames() ? 0 : 20000;
 
             const s32 selected = net_select(socket + 1, &readSet,
                                             nullptr, nullptr, &timeout);
