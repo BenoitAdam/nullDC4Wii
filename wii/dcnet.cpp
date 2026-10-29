@@ -489,7 +489,7 @@ cleanup:
 
     if (StopRequested())
         SetStatus(DCNET_STATUS_STOPPED, "Not connected");
-    else if (s_status != DCNET_STATUS_FAILED)
+    else if (DCNet_GetStatus() != DCNET_STATUS_FAILED)
         SetStatus(DCNET_STATUS_FAILED, "DCNet worker stopped unexpectedly");
 
     return nullptr;
@@ -602,8 +602,9 @@ extern "C" bool DCNet_SendFrame(const u8* frame, u16 length)
         return false;
 
     Lock();
-    const bool ok = s_status == DCNET_STATUS_CONNECTED &&
-                    !s_stopRequested &&
+    const bool transportCanQueue = s_status == DCNET_STATUS_STARTING ||
+                                   s_status == DCNET_STATUS_CONNECTED;
+    const bool ok = transportCanQueue && !s_stopRequested &&
                     QueuePush(&s_txQueue, frame, length);
     Unlock();
     return ok;
