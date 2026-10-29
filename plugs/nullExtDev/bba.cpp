@@ -67,10 +67,18 @@ static u32 ReadLittleEndian(const u8* bytes, u32 size)
     return value;
 }
 
-static void WriteLittleEndian(u8* bytes, u32 value, u32 size)
+static u32 ReadCircular(const u8* bytes, u32 capacity, u32 offset, u32 size)
+{
+    u32 value = 0;
+    for (u32 i = 0; i < size && i < 4; i++)
+        value |= ((u32)bytes[(offset + i) % capacity]) << (i * 8);
+    return value;
+}
+
+static void WriteCircular(u8* bytes, u32 capacity, u32 offset, u32 value, u32 size)
 {
     for (u32 i = 0; i < size && i < 4; i++)
-        bytes[i] = (u8)(value >> (i * 8));
+        bytes[(offset + i) % capacity] = (u8)(value >> (i * 8));
 }
 
 static void UpdateInterrupt()
@@ -346,7 +354,7 @@ u32 BBA_ReadMem(u32 address, u32 size)
 
     if (address >= 0x1400 && address < 0x1410)
     {
-        const char chipId[16] = "GAPSPCI_BRIDGE_2";
+        static const char chipId[] = "GAPSPCI_BRIDGE_2";
         return ReadLittleEndian((const u8*)chipId + (address & 0x0f), size);
     }
 
@@ -355,7 +363,7 @@ u32 BBA_ReadMem(u32 address, u32 size)
         u32 offset = address & kRamMask;
         if (address & 0x8000)
             offset = (offset + s_dmaOffset) & kRamMask;
-        return ReadLittleEndian(&s_ram[offset], size);
+        return ReadCircular(s_ram, kRamSize, offset, size);
     }
 
     if (address >= kGapsRegs && address < kGapsRegs + kGapsRegsSize)
@@ -406,14 +414,14 @@ void BBA_WriteMem(u32 address, u32 data, u32 size)
         u32 offset = address & kRamMask;
         if (address & 0x8000)
             offset = (offset + s_dmaOffset) & kRamMask;
-        WriteLittleEndian(&s_ram[offset], data, size);
+        WriteCircular(s_ram, kRamSize, offset, data, size);
         return;
     }
 
     if (address >= kGapsRegs && address < kGapsRegs + kGapsRegsSize)
     {
         const u32 offset = address & (kGapsRegsSize - 1);
-        WriteLittleEndian(&s_regs[offset], data, size);
+        WriteCircular(s_regs, kGapsRegsSize, offset, data, size);
         if (offset == kIntEnable)
             UpdateInterrupt();
         else if (offset == kReset && (data & 1))
@@ -447,7 +455,7 @@ void BBA_WriteMem(u32 address, u32 data, u32 size)
     {
         const u32 dmaStart = s_dmaBase >= kRamBase ? s_dmaBase - kRamBase : 0;
         const u32 offset = (dmaStart + (address & kRamMask)) & kRamMask;
-        WriteLittleEndian(&s_ram[offset], data, size);
+        WriteCircular(s_ram, kRamSize, offset, data, size);
     }
 }
 
