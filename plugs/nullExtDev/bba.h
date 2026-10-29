@@ -11,6 +11,9 @@ u32 BBA_ReadMem(u32 addr, u32 size);
 void BBA_WriteMem(u32 addr, u32 data, u32 size);
 void BBA_Update(u32 cycles);
 
+/* Emulated millisecond timer used by the RTL8139 PHY/link model. */
+void SetUpdateCallback(void (*callback)(void), u32 milliseconds);
+
 /* Functions consumed by the RTL8139 model. */
 void cpu_physical_memory_write(u32 addr, const void* buffer, u32 size);
 void cpu_physical_memory_read(u32 addr, void* buffer, u32 size);
