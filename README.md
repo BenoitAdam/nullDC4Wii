@@ -1131,7 +1131,7 @@ See Compatiblity guide for hints depending of the games
 
 game_presets is a file that reads the file name and directly apply matching presets.
 
-game_presets.cfg needs to be in sd:/discs/
+game_presets.cfg needs to be in sd:/discs/ (or usb:/dreamcast/ if you use USB)
 
 With recent version, multiple file names are suppported :
 
