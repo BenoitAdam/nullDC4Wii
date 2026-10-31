@@ -1488,7 +1488,7 @@ extern "C" {
 // boot, as Flycast does. Also fixes GetRTC_now()'s daylight-saving correction
 // (+24 h -> +1 h; normally inert on the Wii, which has no time-zone data).
 // 0=off (legacy saved value), 1=on (default).
-int g_rtc_host_preset = 1;
+int g_rtc_host_preset = 0; // 0 for now, ask for clock change at every boot, I think 1 doesn't work for now
 
 extern "C" {
   int get_rtc_host_preset() { return g_rtc_host_preset; }
@@ -3320,7 +3320,7 @@ static void printOptionsFooter(void)
   int cols, rows;
   CON_GetMetrics(&cols, &rows);
   printf("\033[%d;1H" MENU_BTN("1-Y") ": Previous | " MENU_BTN("2+X")
-         ": Next | alpha 0.800", rows);
+         ": Next | alpha 0.801", rows);
 }
 
 bool displayOptionsMenu()
@@ -5475,7 +5475,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - alpha 0.800   ");
+    printf("\nNullDC4Wii - alpha 0.801   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");
