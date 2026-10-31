@@ -2741,3 +2741,45 @@ void game_presets_apply(const char* filepath)
     if (!stream_apply(lower, false))
         printf("[game_presets] No preset matched for: %s\n", filename);
 }
+
+// ---------------------------------------------------------------------------
+// Public: apply, preset chosen by name (command-line "-preset <name>")
+// ---------------------------------------------------------------------------
+
+void game_presets_apply_named(const char* filepath, const char* preset)
+{
+    // "auto" / nothing = the normal filename match.
+    if (!preset || !*preset || key_eq(preset, "auto"))
+    {
+        game_presets_apply(filepath);
+        return;
+    }
+
+    g_matched_preset_name[0] = '\0';
+    g_matched_preset_is_wiiu = false;
+
+    if (!s_cfg_path[0])
+        return;
+
+    // Same two passes as game_presets_apply(): [default] first, then the first
+    // section with a matching alias. Only the haystack differs -- the name the
+    // launcher gave us instead of the disc filename -- so "powerstone" lands on
+    // [powerstone] and "shenmue2" on [shenmue2] ahead of [shenmue], exactly as
+    // a file called that would.
+    char lower[MAX_KEYWORD_LEN];
+    strncpy(lower, preset, sizeof(lower) - 1);
+    lower[sizeof(lower) - 1] = '\0';
+    str_tolower_inplace(lower);
+
+    printf("[game_presets] Forced preset from command line: '%s'\n", lower);
+
+    stream_apply(NULL, true);
+
+    if (stream_apply(lower, false))
+        return;
+
+    // Unknown name: better to boot with the preset the filename would have
+    // picked than with bare defaults.
+    printf("[game_presets] No section named '%s' -- falling back to the filename\n", lower);
+    game_presets_apply(filepath);
+}

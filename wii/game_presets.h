@@ -33,6 +33,17 @@ void game_presets_load(const char* cfg_path);
 void game_presets_apply(const char* filepath);
 
 /**
+ * Same as game_presets_apply(), but the per-game section is picked by `preset`
+ * (the launcher's "-preset <name>") instead of by the disc filename: the name
+ * is matched against the [alias] groups exactly as a filename would be.
+ * NULL, "" or "auto" mean "no override" and behave like game_presets_apply().
+ * A name that matches no section falls back to the filename match.
+ * @param filepath Full path to the selected disc/elf image
+ * @param preset   Preset name, e.g. "powerstone"
+ */
+void game_presets_apply_named(const char* filepath, const char* preset);
+
+/**
  * Name of the last matched preset keyword (empty string if no match).
  * Displayed in the options menu under the game name.
  */

@@ -2096,6 +2096,95 @@ static bool parseLaunchPath()
   return true;
 }
 
+// ---- Command-line arguments, for launcher front-ends such as RiftWii:
+//        boot.dol -game sd:/roms/dreamcast/PowerStone.cdi -preset powerstone
+// -game   disc image to boot straight away (browser and both menus skipped)
+// -preset game_presets.cfg section to apply instead of the one the filename
+//         would pick; "auto" or absent keeps the filename match
+// Copied out of the loader's argv block as soon as the storage comes up: that
+// block sits in main memory the rest of boot is free to reuse.
+static char g_arg_game[512]  = "";
+static char g_arg_preset[64] = "";
+
+// "-name" or "--name", case-insensitive; name must be lowercase letters.
+static bool isArgOption(const char* a, const char* name)
+{
+  if (*a++ != '-') return false;
+  if (*a == '-') a++;
+  for (; *name; a++, name++)
+    if (((unsigned char)*a | 0x20) != (unsigned char)*name) return false;
+  return *a == '\0';
+}
+
+// Copies argv[i..] up to the next option into dst and returns the index it
+// stopped at. Several entries are rejoined with single spaces: a launcher that
+// splits its args template on whitespace turns "Power Stone.cdi" into two
+// entries, and this glues them back (harmless when the path arrived whole).
+// A value too long for dst is dropped entirely rather than truncated.
+static int collectArgValue(char* dst, size_t dstSize, int i, int argc, char** argv)
+{
+  bool   ok  = true;
+  size_t len = 0;
+  dst[0] = '\0';
+
+  for (; i < argc && argv[i]; i++)
+  {
+    if (isArgOption(argv[i], "game") || isArgOption(argv[i], "preset"))
+      break;
+    if (!ok)
+      continue;
+
+    size_t room = dstSize - len;
+    int    n    = snprintf(dst + len, room, "%s%s", len ? " " : "", argv[i]);
+    if (n < 0 || (size_t)n >= room)
+    {
+      ok     = false;
+      dst[0] = '\0';
+      continue;
+    }
+    len += (size_t)n;
+  }
+  return i;
+}
+
+// Launchers that build a command line string sometimes keep the quotes.
+static void stripArgQuotes(char* s)
+{
+  size_t n = strlen(s);
+  if (n >= 2 && s[0] == '"' && s[n - 1] == '"')
+  {
+    memmove(s, s + 1, n - 2);
+    s[n - 2] = '\0';
+  }
+}
+
+static void parseLaunchArgs()
+{
+  g_arg_game[0]   = '\0';
+  g_arg_preset[0] = '\0';
+
+  if (!__system_argv || __system_argv->argvMagic != ARGV_MAGIC)
+    return;
+  if (__system_argv->argc < 2 || !__system_argv->argv)
+    return;
+
+  char** av   = __system_argv->argv;
+  int    argc = __system_argv->argc;
+
+  for (int i = 1; i < argc && av[i]; )
+  {
+    if (isArgOption(av[i], "game"))
+      i = collectArgValue(g_arg_game, sizeof(g_arg_game), i + 1, argc, av);
+    else if (isArgOption(av[i], "preset"))
+      i = collectArgValue(g_arg_preset, sizeof(g_arg_preset), i + 1, argc, av);
+    else
+      i++;   // not ours: ignore
+  }
+
+  stripArgQuotes(g_arg_game);
+  stripArgQuotes(g_arg_preset);
+}
+
 // Picks the first candidate folder that actually exists, so the games folder
 // can be named either way round on either device. When none exist we keep
 // candidates[0] (the historical default) and the browser just shows
@@ -2192,6 +2281,7 @@ static void initStorage()
   fatInitDefault();
 
   parseLaunchPath();
+  parseLaunchArgs();
   const bool launchedFromUSB = (strncmp(g_launch_device, "usb", 3) == 0);
 
   // Talk to the volume we were actually launched from ("usb1" on a
@@ -2257,6 +2347,10 @@ static void initStorage()
                sdOK ? "mounted" : "not found",
                g_usb_mounted ? "mounted" : "not found", g_usb_root,
                g_app_dir[0] ? g_app_dir : "unknown (no argv from loader)");
+  if (g_arg_game[0] || g_arg_preset[0])
+    wii_boot_log("[boot] launch args: -game '%s' -preset '%s'\n",
+                 g_arg_game[0] ? g_arg_game : "(none)",
+                 g_arg_preset[0] ? g_arg_preset : "(none)");
 
   // Why this line exists: libfat's sector cache is
   // g_dvmDefaultCachePages(4) x g_dvmDefaultSectorsPerPage(64) x bytesPerSector,
@@ -2374,6 +2468,35 @@ static void loadUserControls()
   }
 
   printf("[user_controls] No file found in any known folder\n");
+}
+
+// Checks that the -game path names a file we can reach. A DOL started from SD
+// never mounted the USB drive, so a usb:/ path brings it up first. On failure
+// the reason goes to the screen and the log, and the caller drops back to the
+// normal file browser instead of leaving the user on a dead screen.
+static bool resolveArgGame()
+{
+  const char* why = NULL;
+
+  if (!strchr(g_arg_game, ':'))
+    why = "needs a full path with its device, like sd:/roms/dreamcast/game.cdi";
+  else if (strncmp(g_arg_game, "usb", 3) == 0 && !g_usb_mounted && !mountUSB(10000))
+    why = "USB drive could not be mounted";
+  else
+  {
+    struct stat st;
+    if (stat(g_arg_game, &st) != 0)
+      why = "file not found";
+    else if (S_ISDIR(st.st_mode))
+      why = "is a folder, not a disc image";
+  }
+
+  if (!why)
+    return true;
+
+  wii_boot_log("[boot] -game '%s': %s - opening the file browser\n", g_arg_game, why);
+  usleep(3000000);   // long enough to read before the browser clears the screen
+  return false;
 }
 
 // ============================================================================
@@ -5628,6 +5751,25 @@ int main(int argc, wchar *argv[])
   // ---------------------------------------------------------------------------
   {
     bool launchGame = false;
+    bool fromArgs   = false;
+
+    // Started by a launcher front-end (-game <disc> [-preset <name>]): the
+    // choice is already made, so skip the browser and both menus. The preset
+    // goes through the same game_presets.cfg sections as a browser pick; the
+    // controls menu's one side effect (player modes follow the player count)
+    // is done by hand. Anything that stops us -- bad path, B on the WinCE
+    // warning -- falls through to the browser below.
+    if (g_arg_game[0] && resolveArgGame())
+    {
+      strcpy(selectedFilePath, g_arg_game);   // both are char[512]
+      game_presets_apply_named(selectedFilePath, g_arg_preset);
+      ctrl_sync_player_mode_from_count();
+
+      if (g_wince_preset && !displayWinCEWarning())
+        selectedFilePath[0] = '\0';
+      else
+        launchGame = fromArgs = true;
+    }
 
     while (!launchGame)
     {
@@ -5672,6 +5814,9 @@ int main(int argc, wchar *argv[])
       printf("Selected file  : %s\n", selectedFilePath);
     else
       printf("Booting to BIOS (no disc)...\n");
+    if (fromArgs)
+      printf("Launched by    : command line (-preset %s)\n",
+             g_arg_preset[0] ? g_arg_preset : "auto");
 
     if (g_matched_preset_name[0] != '\0')
       printf("Game preset    : %c%s%c applied\n",
