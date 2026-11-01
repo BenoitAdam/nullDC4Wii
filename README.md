@@ -55,13 +55,13 @@ a fork from https://github.com/skmp/nullDCe
 
 ### Put BIOS file and game file
 
-#### Mandatory BIOS files in SD:/data/
+#### Mandatory BIOS files in SD:\apps\nulldc4wii\data\
 
 - dc_boot.bin  
 - dc_flash.bin  
 - fsca-table.bin (included)
 
-#### Optional BIOS files in SD:/data/
+#### Optional BIOS files in E:\apps\nulldc4wii\data\
 
 - dc_flash_wb.bin (this is the dc_flash but already saved)  
 - syscalls.bin (needed for elf/bin)
