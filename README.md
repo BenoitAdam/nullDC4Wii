@@ -15,7 +15,6 @@ a fork from https://github.com/skmp/nullDCe
 - Comment / Guides / Documentation (WiiBrew Wiki)
 - Test and report USB Keyboard on typing of the Dead
 
-
 ## Installation
 
 ### Put BIOS file and game file
@@ -26,18 +25,17 @@ a fork from https://github.com/skmp/nullDCe
 - dc_flash.bin  
 - fsca-table.bin (included)
 
-#### Optional BIOS files in E:\apps\nulldc4wii\data\
+#### Optional BIOS files in SD:\apps\nulldc4wii\data\
 
 - dc_flash_wb.bin (this is the dc_flash but already saved)  
 - syscalls.bin (needed for elf/bin)
 - IP.bin  (needed for elf/bin)
-
-dc_nvmem.bin  
-vmu_default.bin  
+- dc_nvmem.bin  
+- vmu_default.bin  
 
 #### Game file in SD:/discs/ or USB:/dreamcast/
 
-**Test with castlevania Resurrection and Sega Tetris to begin with**
+**Test with Castlevania Resurrection and Sega Tetris to begin with**
 
 Put your folders with GDI in this directory. CDI also works
 
@@ -184,9 +182,15 @@ For every available key, see the comments in `apps/discs/game_presets.cfg`. To f
 
 Make sure you have a good brand (Samsung, Kingston). Optimal card would be between 2Gb and 32Gb (more should work, we support SDXC), formated in FAT32 with 32kb cluster (16kb or 64kb could work). Try another SD card if that's not working
 
-### Games doesn't work
+### Games doesn't launch
 
-First, try on SD card with a know working game (Castlevania, Chuchu Rocket or Sega Tetris are best candidate). 
+First, try on SD card with a know working game (Castlevania, Chuchu Rocket or Sega Tetris are best candidate). Try other file (cdi/gdi) and other bios.
+
+### Games have poor Graphic/performance
+
+Be sure to rename your file according to game_presets.cfg. For example : bomberman.gdi for Bomberman. 
+
+<img width="754" height="93" alt="image" src="https://github.com/user-attachments/assets/9f59b4a4-c5ed-40e6-b5d5-46cea8b52350" />
 
 ### My USB key/HDD isn't recognized
 
@@ -198,7 +202,7 @@ It's reported working. Step 1 : go to bios. Step 2 : format VMU. Step 3 : exit p
 
 ### Why this emulator ?
 
-Because why not ? At first it was a POC (Proof Of Concept) but digging more and more, it seems somes games are achievable to 100% speed (in PAL50 mode). So yeah !
+Because why not ? At first it was a POC (Proof Of Concept) but digging more and more, it seems somes games are achievable to 100% speed. So yeah ! Some people only have a Wii as console, especially in South America, so I'm happy to give them more games to play with their friend !
 
 ### What games does work ?
 
