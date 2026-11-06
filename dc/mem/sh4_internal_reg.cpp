@@ -417,7 +417,8 @@ T FASTCALL ReadMem_area7(u32 addr)
 			return 0;
 		// EMUERROR2("Unknown read from Area7, addr=0x%x", addr);
 		// printf instead of EMUERROR because tiny freeze otherwise
-		printf("Unknown read from Area7, addr=0x%x\n", addr);
+		if (get_debug_loop()) // gated: Star Wars Arcade polls 0x1F100004 in a loop
+			printf("Unknown read from Area7, addr=0x%x\n", addr);
 		break;
 
 	case A7_REG_HASH(CCN_BASE_addr):
@@ -529,7 +530,10 @@ T FASTCALL ReadMem_area7(u32 addr)
 
 	// EMUERROR2("ReadMem_area7 not implemented, addr=0x%x", addr);
 	// printf instead of EMUERROR because tiny freeze otherwise
-	printf("ReadMem_area7 not implemented, addr=0x%x\n", addr);
+	// Gated like the write path: Star Wars Arcade polls 0x1F000084 (CCN, past
+	// the last implemented reg) every few instructions.
+	if (get_debug_loop())
+		printf("ReadMem_area7 not implemented, addr=0x%x\n", addr);
 	return 0;
 }
 
