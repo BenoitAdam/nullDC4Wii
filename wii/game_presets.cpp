@@ -753,6 +753,12 @@
                                sent to GX: Soul Calibur's spikes and garbage
                                triangles. The finite runs around it are drawn
                                as their own strips. Default on.
+        far_clamp=on        <- on/off, the depth floor for far vertices. off
+                               (legacy): 1/W is floored at 0.0001, so everything
+                               past W = 10000 lands on one depth and the far
+                               scenery is ordered by submission alone (Maximum
+                               Speed). on: floor 0.00001, W up to 100000.
+                               Ignored under legacy_depth. Default on.
         tex_wrap_guard=on   <- on/off, stops the persistent texture arena from
                                 recycling bytes the GPU is still sampling this
                                 frame (texture corruption when the cache fills).
@@ -1434,6 +1440,7 @@ extern int g_idle_x3_preset;
 extern int g_flash_chip_preset;
 extern int g_flash_save_preset;
 extern int g_inf_vtx_preset;
+extern int g_far_clamp_preset;
 extern int g_sched_preset;
 extern int g_tex_wrap_guard_preset;
 extern int g_tex_clamp_fix_preset;
@@ -1602,6 +1609,7 @@ struct GamePreset
     int flash_chip;
     int flash_save;
     int inf_vtx;
+    int far_clamp;
     int sched;
     int tex_wrap_guard;
     int tex_clamp_fix;
@@ -2174,6 +2182,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "flash_chip"))     p->flash_chip     = parse_bool(val);
     else if (key_eq(key, "flash_save"))     p->flash_save     = parse_bool(val);
     else if (key_eq(key, "inf_vtx"))        p->inf_vtx        = parse_bool(val);
+    else if (key_eq(key, "far_clamp"))      p->far_clamp      = parse_bool(val);
     else if (key_eq(key, "sched"))          p->sched          = parse_bool(val);
     else if (key_eq(key, "tex_wrap_guard")) p->tex_wrap_guard = parse_bool(val);
     else if (key_eq(key, "tex_clamp_fix"))  p->tex_clamp_fix  = parse_bool(val);
@@ -2318,6 +2327,7 @@ static void preset_clear(GamePreset* cur)
     cur->flash_chip = -1;
     cur->flash_save = -1;
     cur->inf_vtx = -1;
+    cur->far_clamp = -1;
     cur->sched = -1;
     cur->tex_wrap_guard = -1;
     cur->tex_clamp_fix  = -1;
@@ -2491,6 +2501,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->flash_chip     >= 0) { g_flash_chip_preset     = p->flash_chip;     printf("  flash_chip     -> %d\n", p->flash_chip);     }
     if (p->flash_save     >= 0) { g_flash_save_preset     = p->flash_save;     printf("  flash_save     -> %d\n", p->flash_save);     }
     if (p->inf_vtx        >= 0) { g_inf_vtx_preset        = p->inf_vtx;        printf("  inf_vtx        -> %d\n", p->inf_vtx);        }
+    if (p->far_clamp      >= 0) { g_far_clamp_preset      = p->far_clamp;      printf("  far_clamp      -> %d\n", p->far_clamp);      }
     if (p->sched          >= 0) { g_sched_preset          = p->sched;          printf("  sched          -> %d\n", p->sched);          }
     if (p->tex_wrap_guard >= 0) { g_tex_wrap_guard_preset = p->tex_wrap_guard; printf("  tex_wrap_guard -> %d\n", p->tex_wrap_guard); }
     if (p->tex_clamp_fix  >= 0) { g_tex_clamp_fix_preset  = p->tex_clamp_fix;  printf("  tex_clamp_fix  -> %d\n", p->tex_clamp_fix);  }

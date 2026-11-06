@@ -1611,6 +1611,22 @@ extern "C" {
   int get_inf_vtx_preset() { return g_inf_vtx_preset; }
 }
 
+// FAR_CLAMP - how far a vertex may sit before its depth stops changing
+// (plugs/drkPvr/gxRend.cpp vert_base / g_vert_z_clamp). The PVR hands the TA 1/W;
+// vert_base floors it at 0.0001, so every vertex farther than W = 10000 lands on
+// the SAME depth (x/y stay right, only Z saturates). Maximum Speed's [DEPTH]
+// census: 56-70% of the frame's vertices and strips sat on that floor, so the far
+// scenery has no depth ordering left and is decided by submission order alone.
+// With this on the floor is 0.00001 (W up to 100000, the same far plane
+// FIXED_DEPTH=wide uses, still inside DoRender's 128K sanity cap). Costs nothing
+// per vertex. Ignored under LEGACY_DEPTH (1bb8c27 clamps at 0.001).
+// Wii-untested. 0=off (legacy, W<=10000), 1=on (default).
+int g_far_clamp_preset = 1;
+
+extern "C" {
+  int get_far_clamp_preset() { return g_far_clamp_preset; }
+}
+
 extern "C" {
   int get_disc_bulk_preset() { return g_disc_bulk_preset; }
 }
@@ -3058,6 +3074,7 @@ void checkBiosFiles()
 #define OPT_FLASH_CHIP  141  // Page 6 (EXPERIMENTAL), under EXIT FIX
 #define OPT_FLASH_SAVE  142  // Page 6 (EXPERIMENTAL), under FLASH CHIP
 #define OPT_TLUT_FIX    143  // Page 6 (EXPERIMENTAL), under TEX WRAP GUARD
+#define OPT_FAR_CLAMP   144  // Page 3 (DEPTH & WIDTH), under FIXED DEPTH
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3131,6 +3148,7 @@ static const int OPT_PAGE2_ROWS[] = {
   OPT_LEGACY_DEPTH,
   OPT_DEPTH_CLIP,
   OPT_FIXED_DEPTH,
+  OPT_FAR_CLAMP,
   OPT_HUD_PASS,
   OPT_SUBPASS_ZCLEAR,
   OPT_PPZ_WRITE,
@@ -3788,6 +3806,13 @@ bool displayOptionsMenu()
       case 2: printf("[< TIGHT (Fix Z-Fght)>]"); break;
     }
     printf(" fixed near/far planes. Z-Fighting");
+    printf("\n");
+
+    // --- Row: FAR_CLAMP - depth floor for far vertices (gxRend.cpp) ---
+    // 77-col budget: cursor+label 18 + value 23 + this text must stay <= 36.
+    printf("%s FAR CLAMP      : ", (selectedRow == OPT_FAR_CLAMP) ? MENU_CURSOR : " ");
+    printf(g_far_clamp_preset ? "[< ON (W 100000)     >]" : "[< OFF (W 10000)     >]");
+    printf(" far scenery depth order");
     printf("\n");
 
     // --- Row: HUD pass (rescue HUD clipped by fixed_depth=tight) ---
@@ -4809,6 +4834,7 @@ bool displayOptionsMenu()
         case OPT_YUV_STRIDE: g_yuv_stride_preset = (g_yuv_stride_preset + 3) % 4; break;
         case OPT_YUV_TWIDDLE_FIX: g_yuv_twiddle_fix_preset = (g_yuv_twiddle_fix_preset + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 2) % 3; break;
+        case OPT_FAR_CLAMP:   g_far_clamp_preset     = (g_far_clamp_preset       + 1) % 2; break;
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 2) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
@@ -4966,6 +4992,7 @@ bool displayOptionsMenu()
         case OPT_YUV_STRIDE: g_yuv_stride_preset = (g_yuv_stride_preset + 1) % 4; break;
         case OPT_YUV_TWIDDLE_FIX: g_yuv_twiddle_fix_preset = (g_yuv_twiddle_fix_preset + 1) % 2; break;
         case OPT_FIXED_DEPTH: g_fixed_depth_preset   = (g_fixed_depth_preset     + 1) % 3; break;
+        case OPT_FAR_CLAMP:   g_far_clamp_preset     = (g_far_clamp_preset       + 1) % 2; break;
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 1) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
@@ -6043,6 +6070,7 @@ int main(int argc, wchar *argv[])
       case 1: printf("WIDE\n");          break;
       case 2: printf("TIGHT\n");         break;
     }
+    printf("Far Clamp      : %s\n", g_far_clamp_preset ? "ON (W 100000)" : "OFF (W 10000)");
     printf("Legacy Depth   : %s\n", g_legacy_depth_preset ? "ON" : "OFF (Default)");
     printf("Depth Clip     : ");
     switch (g_depth_clip_preset) {

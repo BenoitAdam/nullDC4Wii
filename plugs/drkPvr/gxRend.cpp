@@ -1006,6 +1006,13 @@ extern "C" int get_tex_clamp_fix_preset();
 extern "C" int get_inf_vtx_preset();
 #define INF_VTX_FIX() (get_inf_vtx_preset())
 
+// FAR_CLAMP (wii/main.cpp): vert_base() floors the PVR's 1/W at 0.0001, so every
+// vertex beyond W = 10000 shares one depth (Maximum Speed: 56-70% of a frame).
+// On: floor 0.00001 (W <= 100000, DoRender's 128K sanity cap still passes).
+// Applied through g_vert_z_clamp, refreshed once per frame in reset_vtx_state().
+extern "C" int get_far_clamp_preset();
+#define FAR_CLAMP() (get_far_clamp_preset())
+
 // ── STRIP_DEDUP: skip the work a strip repeats from the strip before it ─────
 // A game that draws many copies of ONE model -- ChuChu Rocket's mouse mania is
 // the case this was built for, hundreds of identical mice -- submits one
@@ -2794,7 +2801,9 @@ void strip_dedup_dump(double tdiff)
 bool  g_tex_clamp_fix_cached   = false; // same idea, for TEX_CLAMP_FIX(): read per texture bind
 bool  g_inf_vtx_cached         = false; // INF_VTX_FIX(), read once per frame
 bool  g_inf_vtx_seen           = false; // vert_base() made a W = 0 (1/W = +inf) vertex this frame
-float g_vert_z_clamp           = 0.0001f; // vert_base 1/W floor: 0.0001 normally,
+u32   g_dbg_vtx_ovf            = 0;     // [OVF]/[DEPTH] debug: times glob_param_bdc hit the 38K vertex cap and wiped the frame
+u32   g_dbg_z_lt4 = 0, g_dbg_z_lt5 = 0, g_dbg_z_zero = 0; // [DEPTH] debug: raw TA 1/W seen by vert_base (<1e-4, <1e-5, <=0/NaN) since the last [DEPTH] line
+float g_vert_z_clamp          = 0.0001f; // vert_base 1/W floor: 0.0001 normally,
                                         // 0.001 under LEGACY_DEPTH (1bb8c27).
                                         // A per-frame global rather than a
                                         // literal so the hot macro stays one
@@ -3189,7 +3198,8 @@ void reset_vtx_state()
   // 1bb8c27 tracked nothing per vertex, so legacy takes the "skip tracking" path
   // that FIXED_DEPTH_*() uses; DoRender() supplies the planes for both.
   g_fixed_depth_cached      = !FIXED_DEPTH_OFF() || g_legacy_depth_cached;
-  g_vert_z_clamp            = g_legacy_depth_cached ? 0.001f : 0.0001f;
+  g_vert_z_clamp            = g_legacy_depth_cached ? 0.001f
+                            : (FAR_CLAMP() ? 0.00001f : 0.0001f);
 }
 
 #define VTX_TFX(x) (x)
@@ -8715,7 +8725,12 @@ void DoRender()
       // Interpolate the raw 1/W register affinely (matches the hardware's
       // plane-equation approach), then apply vert_base()'s W pre-scale.
       float raw_z  = bg_lerp_f32(bgV[0].z, bgV[1].z, bgV[2].z, w0, w1, w2);
-      float safe_z = (raw_z >= 0.0001f) ? raw_z : 0.0001f;
+      // Same floor as vert_base() (FAR_CLAMP), but never above the old 0.0001:
+      // LEGACY_DEPTH's 0.001 never applied to the background quad. If the
+      // quad stayed at W = 10000 while the scene runs to 100000 it would sit in
+      // FRONT of the far scenery and hide it.
+      const float bg_floor = (g_vert_z_clamp < 0.0001f) ? g_vert_z_clamp : 0.0001f;
+      float safe_z = (raw_z >= bg_floor) ? raw_z : bg_floor;
       float W      = 1.0f / safe_z;
 
       if (!g_fixed_depth_cached)
@@ -8963,6 +8978,81 @@ void DoRender()
            (int)VTX_ALPHA_HONOR(), (int)IGNORE_TEX_ALPHA(),
            get_matched_preset_name());
 #endif
+
+  // [DEPTH] DEBUG census (2026-11-06, Maximum Speed: far scenery missing).
+  // Answers, per render: (1) how much of the frame sits at which W, (2) how many
+  // vertices are pinned at the 1/W clamp (their depth saturates; x/y stay right),
+  // (3) how many fall outside the
+  // projection's near/far planes (clipped on real Wii; Dolphin clamps), (4) how
+  // close the frame is to the vertex/strip buffers (the 38K cap wipes the frame,
+  // see [OVF]). Prints the first 6 renders, every 120th, and every 10th while
+  // the frame is over 30K vertices.
+  // OFF: found it. 56-70% of Maximum Speed's vertices sat on the 1/W floor
+  // (W = 10000), so the far scenery had no depth order -> FAR_CLAMP. The 38K
+  // cap never fired (ovf_total=0, frames hold 6-8K vertices). Safe to re-enable:
+  // flip if(0) back to if(1) here, in dbg_vtx_overflow(), in vert_base and in
+  // InitRenderer's ARMED line.
+  if (0)
+  {
+    static u32 s_dd_n = 0;
+    s_dd_n++;
+    const int dd_nv = (int)(curVTX - vertices);
+    if (s_dd_n <= 6 || (s_dd_n % 120) == 0 || (dd_nv > 30 * 1024 && (s_dd_n % 10) == 0))
+    {
+      static const float dd_edge[8] = { 1.f, 10.f, 100.f, 1000.f, 5000.f, 9990.f, 50000.f, 99990.f };
+      u32 hist[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }; // 0..8 = W buckets, 9 = non-finite / <= 0
+      u32 beyond_far = 0, before_near = 0, at_clamp = 0;
+      float wmin = 1e30f, wmax = 0.f;
+      const float clampW = 1.0f / g_vert_z_clamp;
+      for (const Vertex *v = vertices; v != curVTX; v++)
+      {
+        const float w = v->z;
+        if (!(w > 0.0f) || w > 1e29f) { hist[9]++; continue; }
+        int b = 0;
+        while (b < 8 && w >= dd_edge[b]) b++;
+        hist[b]++;
+        if (w >= clampW * 0.999f) at_clamp++;
+        if (w > vtx_max_Z) beyond_far++;
+        if (w < vtx_min_Z) before_near++;
+        if (w < wmin) wmin = w;
+        if (w > wmax) wmax = w;
+      }
+      u32 far_strips = 0, clamped_strips = 0;
+      {
+        const Vertex *sv = vertices;
+        for (const VertexList *l = lists; l != curLST; l++)
+        {
+          s32 c = l->count;
+          c &= 0x7FFF;
+          float mn = 1e30f;
+          for (s32 i = 0; i < c; i++)
+            if (sv[i].z < mn) mn = sv[i].z;
+          sv += c;
+          if (mn >= 1000.f) far_strips++;
+          if (mn >= clampW * 0.999f) clamped_strips++;
+        }
+      }
+      printf("[DEPTH] n=%u frame=%u bit24=%d nv=%d/%d strips=%d/%d params=%d | "
+             "near=%.5f far=%.2f p5=%.6f p6=%.6f clampW=%.0f | aa=%d(z16=%d) fixed_depth=%d legacy=%d depth_clip=%d | "
+             "W hist <1:%u <10:%u <100:%u <1k:%u <5k:%u <9990:%u <50k:%u <99990:%u >=99990:%u bad:%u | "
+             "Wmin=%.4f Wmax=%.2f beyond_far=%u before_near=%u at_clamp=%u | "
+             "strips minW>=1k:%u at_clamp:%u | raw 1/W since last line: <1e-4:%u <1e-5:%u zero/NaN:%u | far_clamp=%d | ovf_total=%u\n",
+             s_dd_n, (u32)FrameCount, ((FB_W_SOF1 & 0x1000000) != 0) ? 1 : 0,
+             dd_nv, (int)(sizeof(vertices) / sizeof(vertices[0])),
+             (int)(curLST - lists), (int)(sizeof(lists) / sizeof(lists[0])),
+             (int)(curMod - listModes),
+             vtx_min_Z, vtx_max_Z, p5, p6, clampW,
+             (int)rmode->aa, (int)(rmode->aa != 0), get_fixed_depth_preset(),
+             (int)LEGACY_DEPTH(), get_depth_clip_preset(),
+             hist[0], hist[1], hist[2], hist[3], hist[4], hist[5], hist[6], hist[7], hist[8], hist[9],
+             wmin, wmax, beyond_far, before_near, at_clamp,
+             far_strips, clamped_strips,
+             g_dbg_z_lt4, g_dbg_z_lt5, g_dbg_z_zero, (int)FAR_CLAMP(), g_dbg_vtx_ovf);
+      g_dbg_z_lt4 = g_dbg_z_lt5 = g_dbg_z_zero = 0;
+      fflush(stdout);
+    }
+  }
+
   // The projection matrix maps DC screen-space coords to GX clip space.
   // X aspect ratio is NOT corrected here — DC vertices are already in screen
   // space (x=[0..640]) and z is 1/W (depth), so a perspective matrix would
@@ -12891,10 +12981,39 @@ struct VertexDecoder
     return ((u32)B << 16) | ((u32)G << 8) | (u32)R;
   }
 
+  // [OVF] DEBUG (2026-11-06, Maximum Speed: far scenery missing). The 38K
+  // vertex cap below calls reset_vtx_state(), which DISCARDS every strip already
+  // collected for the frame (and the dynamic near/far range with it); whatever
+  // the game submits afterwards is all that gets drawn. A scene that is simply
+  // big enough to hit it loses its first half.
+  // OFF: never fired in Maximum Speed (ovf_total=0), safe to re-enable (if(1)).
+  static void dbg_vtx_overflow()
+  {
+    g_dbg_vtx_ovf++;
+    if (0)
+    {
+      if (g_dbg_vtx_ovf <= 30 || (g_dbg_vtx_ovf % 100) == 0)
+      {
+        printf("[OVF] #%u vertex cap hit: vtx=%d/%d strips=%d/%d params=%d TransLST=%d PTLST=%d frame=%u "
+               "-> reset_vtx_state() DROPS the frame collected so far\n",
+               g_dbg_vtx_ovf, (int)(curVTX - vertices), (int)(sizeof(vertices) / sizeof(vertices[0])),
+               (int)(curLST - lists), (int)(sizeof(lists) / sizeof(lists[0])),
+               (int)(curMod - listModes),
+               TransLST ? (int)(TransLST - lists) : -1,
+               PTLST    ? (int)(PTLST    - lists) : -1,
+               (u32)FrameCount);
+        fflush(stdout);
+      }
+    }
+  }
+
   // Polys
 #define glob_param_bdc                 \
   if ((curVTX - vertices) > 38 * 1024) \
+  {                                    \
+    dbg_vtx_overflow();                \
     reset_vtx_state();                 \
+  }                                    \
   global_regd = true;                  \
   curMod->pcw = pp->pcw;               \
   curMod->isp = pp->isp;               \
@@ -12999,6 +13118,13 @@ struct VertexDecoder
 #define vert_base(dst, _x, _y, _z) /*VertexCount++;*/         \
   float _safe_z = (_z >= g_vert_z_clamp) ? _z : g_vert_z_clamp; \
   float W = 1.0f / _safe_z;                                   \
+  /* [DEPTH] debug: raw 1/W census, OFF (if(0)), see the [DEPTH] line. */ \
+  if (0)                                                      \
+  {                                                           \
+    if (!(_z >= 0.0001f))  g_dbg_z_lt4++;                     \
+    if (!(_z >= 0.00001f)) g_dbg_z_lt5++;                     \
+    if (!(_z > 0.0f))      g_dbg_z_zero++;                    \
+  }                                                           \
   /* INF_VTX: NaN/negative 1/W were clamped above, so W is 0 */\
   /* only for 1/W = +inf. Flag the frame; the strip loop cuts */\
   /* such vertices out (it scans only flagged frames). */     \
@@ -13412,6 +13538,14 @@ bool InitRenderer()
          SCN_BURST, SCN_QUIET_PASSES, SCN_HEARTBEAT);
   fflush(stdout);
 #endif
+  // If this line is missing from ndclog.txt the build did not pick up the
+  // [DEPTH]/[OVF] census (DoRender + glob_param_bdc), and there is nothing to look for.
+  // OFF with the census itself (if(0)); flip both together.
+  if (0)
+  {
+    printf("[DEPTH] census ARMED ([DEPTH] first 6 renders then every 120th; [OVF] on every 38K vertex-cap wipe)\n");
+    fflush(stdout);
+  }
   // Obtain the preferred video mode from the system
   // This will correspond to the settings in the Wii menu
   rmode = VIDEO_GetPreferredMode(NULL);
