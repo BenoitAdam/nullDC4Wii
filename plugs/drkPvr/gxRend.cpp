@@ -851,13 +851,22 @@ static unsigned s_logo_sig_used = 0; // signature-triggered passes so far (LOGO_
 //     forcing — read it before blaming `vtx_alpha` a second time.
 // Flip to 1 and rebuild to re-arm it for the next game; nothing else needs
 // changing (see feedback-quiet-diagnostics in project memory).
+// 2026-11-05, F1 World Grand Prix II (garbage gameplay frame, split_screen no
+// help): the header now also prints the clip / write / region / scaler
+// registers and each strip carries its user tile clip (tc=). One Dolphin capture
+// answered it: every frame is a 256x256 bit-24 mirror pass (W_SOF1=01462740,
+// XCLIP/YCLIP 0..255, 776 strips) then the display pass. With
+// render_to_texture=off the mirror pass is dropped but its list is NOT consumed,
+// so the display pass drew 776 + 3329 strips: the rear-view camera's geometry
+// painted into the top-left of the screen. Fix = render_to_texture=on (preset,
+// no code). Safe to re-arm (flip to 1) for the next game.
 #define SCENE_DEBUG_LOG 0
 
 #define SCN_BURST        4    // passes per burst (consecutive passes are nearly
                               // identical; 4 is plenty and keeps the SD log small)
-#define SCN_QUIET_PASSES 200  // render passes of quiet between bursts
+#define SCN_QUIET_PASSES 400  // render passes of quiet between bursts
 #define SCN_HEARTBEAT    120  // proof-of-life line every N passes, always
-#define SCN_MAX_STRIPS   128  // per-strip lines per dumped pass. Was 40, which
+#define SCN_MAX_STRIPS   160 // per-strip lines per dumped pass. Was 40, which
                               // truncated Puyo Puyo's ~73-strip frames right
                               // where the interesting geometry lives: a strip
                               // drawn ON TOP of everything is by definition the
@@ -12299,6 +12308,27 @@ static void scene_dump_pass()
          vtx_min_Z, vtx_max_Z,
          get_framebuffer_2d(), get_render_to_texture_preset(),
          get_list_order_preset());
+  {
+    // Everything a multi-pass / mirror / RTT frame is decided from. Read the
+    // headers of a burst against each other: same frame= with different W_SOF1
+    // or clip bands = several viewports per frame; bit24=1 = render to texture.
+    const u32 xc = FB_X_CLIP.full, yc = FB_Y_CLIP.full;
+    u32 rx0 = 0xFFFFFFFFu, ry0 = 0xFFFFFFFFu, rx1 = 0xFFFFFFFFu, ry1 = 0xFFFFFFFFu;
+    const bool rgn_ok = split_region_bounds(&rx0, &ry0, &rx1, &ry1);
+    printf("[SCN]     W_CTRL=%08X pack=%d stride=%u XCLIP=%u..%u YCLIP=%u..%u tclip=%08X "
+           "R_SIZE=%08X R_CTRL=%08X SCALER=%08X\n",
+           (u32)FB_W_CTRL, (int)(FB_W_CTRL & 7), (u32)((FB_W_LINESTRIDE & 0x1FF) * 8),
+           (u32)(xc & 0x7FF), (u32)((xc >> 16) & 0x7FF),
+           (u32)(yc & 0x3FF), (u32)((yc >> 16) & 0x3FF), ta_tileclip,
+           (u32)FB_R_SIZE, (u32)FB_R_CTRL.full, (u32)SCALER_CTL.full);
+    printf("[SCN]     REGION=%08X(%s %d..%d,%d..%d) PARAM_BASE=%08X PARAMCFG=%08X FEEDCFG=%08X "
+           "GLOBCLIP=%08X SHADSCALE=%08X HALFOFF=%08X CULLVAL=%08X PERPVAL=%08X\n",
+           (u32)REGION_BASE, rgn_ok ? "ok" : "unparsed",
+           (int)rx0, (int)rx1, (int)ry0, (int)ry1,
+           (u32)PARAM_BASE, (u32)FPU_PARAM_CFG, (u32)ISP_FEED_CFG,
+           (u32)TA_GLOB_TILE_CLIP, (u32)FPU_SHAD_SCALE, (u32)HALF_OFFSET,
+           (u32)FPU_CULL_VAL, (u32)FPU_PERP_VAL);
+  }
 
   u32 lt_count[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
@@ -12345,7 +12375,7 @@ static void scene_dump_pass()
       // tool's address convention.
       printf("[SCN] #%03d %s lt=%d cnt=%2d tex=%d addr=%06X fmt=%d vq=%d pal=%d %dx%d "
              "src=%d dst=%d shad=%d usea=%d ita=%d zw=%d dm=%d cull=%d ct=%d col=%08X "
-             "x=%.0f..%.0f y=%.0f..%.0f W=%.5f..%.2f\n",
+             "uc=%d tc=%08X x=%.0f..%.0f y=%.0f..%.0f W=%.5f..%.2f\n",
              idx, cls, (int)cur->pcw.ListType, (int)c, (int)cur->pcw.Texture,
              tex_addr, (int)cur->tcw.NO_PAL.PixelFmt, (int)cur->tcw.NO_PAL.VQ_Comp,
              (int)cur->tcw.PAL.PalSelect,
@@ -12354,6 +12384,7 @@ static void scene_dump_pass()
              (int)cur->tsp.ShadInstr, (int)cur->tsp.UseAlpha, (int)cur->tsp.IgnoreTexA,
              (int)cur->isp.ZWriteDis, (int)cur->isp.DepthMode, (int)cur->isp.CullMode,
              (int)cur->pcw.Col_Type, vtx[0].col,
+             (int)cur->pcw.User_Clip, listTileClip[cur - listModes],
              minx, maxx, miny, maxy, minw, maxw);
     }
     vtx += c;
@@ -12869,7 +12900,7 @@ struct VertexDecoder
   curMod->isp = pp->isp;               \
   curMod->tsp = pp->tsp;               \
   curMod->tcw = pp->tcw;               \
-  if (g_split_screen_cached || g_rtt_keep_cached || SCOPE_DEBUG_LOG || LOGO_DEBUG_LOG) \
+  if (g_split_screen_cached || g_rtt_keep_cached || SCOPE_DEBUG_LOG || LOGO_DEBUG_LOG || SCENE_DEBUG_LOG) \
     listTileClip[curMod - listModes] = ta_tileclip; \
   /* FOG(): with the offset colour dropped, keep its ALPHA anyway - that is the per-vertex fog coefficient. */ \
   curPolyOffsMask = pp->pcw.Offset ? (g_offset_color_fix_cached ? 0xFFFFFFFFu : (g_fog_cached ? 0xFF000000u : 0u)) : 0u;
