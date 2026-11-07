@@ -102,3 +102,5 @@ extern u32 AicaSampleCount;
 // SPG.cpp's stats line alongside the other census dumps; a no-op unless the
 // strip_dedup preset is on. See the STRIP_DEDUP macro block in gxRend.cpp.
 void strip_dedup_dump(double tdiff);
+void swa_diag_dump(double tdiff);   // [SWA] StartRender census (gxRend.cpp), SWA_DIAG gated
+void asic_irq_diag_dump(double tdiff); // [IRQ] Holly IRQ census (dc/asic/asic.cpp), IRQ_DIAG gated

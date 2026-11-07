@@ -2687,6 +2687,129 @@ static void render_path_dump(double f)
   for (u32 i = 0; i < SR_PATHS; i++) s_sr_path[i] = 0;
   s_sr_calls = 0; s_sr_vtx0 = 0; s_sr_strips = 0;
 }
+
+// ── [SWA] diagnostic: "high SPEED but low RPS" (Star Wars Arcade) ────────────
+// TEMPORARY. Switch with SWA_DIAG (1 = armed, 0 = compiled-out dead code).
+//
+// Symptom: 246% SPEED, VPS 147, RPS 27.9, rnd 1.8%, but 247K vtx/s counted.
+// 147/27.9 = 5.3 vblanks per presented frame, and 1.8% of wall time in DoRender
+// cannot be 247K vertices (~1.3 us/vtx would be ~30%). So either StartRender
+// runs ~once a vblank and most passes die before DoRender, or the guest only
+// submits ~28 passes/s. The existing [RENDER_PATH] census answers that but is
+// only printed with STRIP_DEDUP on; this one prints on its own and adds:
+//   * VERTICES per exit path (which path eats the geometry),
+//   * a signature table (path + FB_W_SOF1 + clips + W_CTRL + R_SOF1) so a
+//     multi-pass / RTT / split frame is readable straight from the log,
+//   * the vblank gap between consecutive StartRender calls (guest pacing),
+//   * StartRender with/without a TA_LIST_INIT since the last one.
+// Cost: a few increments per StartRender (~100/s). Print: once a second, from
+// the stats block in SPG.cpp, fflush'd. SAFE TO LEAVE ARMED; re-comment (set
+// SWA_DIAG to 0) once the cause is found.
+//
+// FOUND (Star Wars Arcade, Wii log): every pass took the plain RENDER path
+// (no drops, vtx0=0), 1 frame per ~4 vblanks, all IRQs at normal rates -> the
+// guest itself submitted ~13-15 frames per emulated second; idle_x3=on fixed
+// it. Gated off again; set to 1 to re-arm (prints "[SWA] ARMED").
+static const int SWA_DIAG = 0;
+
+#define SWA_SIGS 8
+struct swa_sig_t {
+  u32 path, wsof1, xclip, yclip, wctrl, rsof1;
+  u32 n, vtx, strips;
+};
+static swa_sig_t s_swa_sig[SWA_SIGS];
+static u32 s_swa_sig_used = 0;
+static u32 s_swa_sig_ovf  = 0;              // passes that did not fit the table
+static u32 s_sr_path_vtx[SR_PATHS];         // vertices that entered each path
+static u32 s_sr_cur_vtx   = 0;              // VtxCnt of the pass being dispatched
+static u32 s_sr_cur_strips = 0;
+static u32 s_swa_gap[8];                    // vblanks since previous StartRender
+static u32 s_swa_last_vb  = 0xFFFFFFFFu;
+static u32 s_swa_listinit = 0;              // StartRenders preceded by a ListInit
+static u32 s_swa_nolistinit = 0;            // ...and those that were not
+static u32 s_swa_armed    = 0;
+
+static void swa_note_path(u32 path)
+{
+  s_sr_path_vtx[path] += s_sr_cur_vtx;
+  if (!SWA_DIAG) return;
+  const u32 ws = (u32)FB_W_SOF1, xc = (u32)FB_X_CLIP.full, yc = (u32)FB_Y_CLIP.full;
+  const u32 wc = (u32)FB_W_CTRL, rs = (u32)FB_R_SOF1;
+  for (u32 i = 0; i < s_swa_sig_used; i++)
+  {
+    swa_sig_t &s = s_swa_sig[i];
+    if (s.path == path && s.wsof1 == ws && s.xclip == xc && s.yclip == yc &&
+        s.wctrl == wc && s.rsof1 == rs)
+    {
+      s.n++; s.vtx += s_sr_cur_vtx; s.strips += s_sr_cur_strips;
+      return;
+    }
+  }
+  if (s_swa_sig_used < SWA_SIGS)
+  {
+    swa_sig_t &s = s_swa_sig[s_swa_sig_used++];
+    s.path = path; s.wsof1 = ws; s.xclip = xc; s.yclip = yc; s.wctrl = wc; s.rsof1 = rs;
+    s.n = 1; s.vtx = s_sr_cur_vtx; s.strips = s_sr_cur_strips;
+  }
+  else
+    s_swa_sig_ovf++;
+}
+#define SR_COUNT(p) do { s_sr_path[p]++; swa_note_path(p); } while (0)
+
+// Called from the once-a-second stats block in SPG.cpp. Prints on its own
+// (independent of STRIP_DEDUP); if STRIP_DEDUP is also on it owns the shared
+// path counters, so only the [SWA]-private tables are reported then.
+void swa_diag_dump(double tdiff)
+{
+  if (!SWA_DIAG || tdiff <= 0.0) return;
+  if (!s_swa_armed)
+  {
+    s_swa_armed = 1;
+    printf("[SWA] ARMED -- per-second StartRender census (high SPEED / low RPS)\n");
+  }
+
+  u32 gap_tot = 0;
+  for (u32 i = 0; i < 8; i++) gap_tot += s_swa_gap[i];
+
+  printf("[SWA] SR/s:%.1f vtx0/s:%.1f listinit:%u nolistinit:%u | paths/s(vtx/s):",
+         s_sr_calls / tdiff, s_sr_vtx0 / tdiff, s_swa_listinit, s_swa_nolistinit);
+  for (u32 i = 0; i < SR_PATHS; i++)
+    if (s_sr_path[i] || s_sr_path_vtx[i])
+      printf(" %s:%.1f(%.0f)", s_sr_name[i], s_sr_path[i] / tdiff, s_sr_path_vtx[i] / tdiff);
+  printf("\n");
+
+  printf("[SWA] vblanks between StartRenders (n=%u): 0:%u 1:%u 2:%u 3:%u 4:%u 5-6:%u 7-12:%u 13+:%u\n",
+         gap_tot, s_swa_gap[0], s_swa_gap[1], s_swa_gap[2], s_swa_gap[3],
+         s_swa_gap[4], s_swa_gap[5], s_swa_gap[6], s_swa_gap[7]);
+
+  for (u32 i = 0; i < s_swa_sig_used; i++)
+  {
+    const swa_sig_t &s = s_swa_sig[i];
+    printf("[SWA]   %-13s n/s:%5.1f vtx/pass:%5.0f strips/pass:%4.0f W_SOF1=%08X W_CTRL=%08X "
+           "XCLIP=%u..%u YCLIP=%u..%u R_SOF1=%08X\n",
+           s_sr_name[s.path], s.n / tdiff, (double)s.vtx / s.n, (double)s.strips / s.n,
+           s.wsof1, s.wctrl,
+           s.xclip & 0x7FF, (s.xclip >> 16) & 0x7FF,
+           s.yclip & 0x3FF, (s.yclip >> 16) & 0x3FF, s.rsof1);
+  }
+  if (s_swa_sig_ovf)
+    printf("[SWA]   (+%u passes with signatures beyond the first %d)\n", s_swa_sig_ovf, SWA_SIGS);
+  fflush(stdout);
+
+  // Reset the [SWA]-private tables. The shared s_sr_path/s_sr_calls counters are
+  // reset by render_path_dump() when STRIP_DEDUP is on; otherwise reset here, so
+  // the next line is per-second either way.
+  memset(s_swa_sig, 0, sizeof(s_swa_sig));
+  s_swa_sig_used = 0; s_swa_sig_ovf = 0;
+  memset(s_swa_gap, 0, sizeof(s_swa_gap));
+  memset(s_sr_path_vtx, 0, sizeof(s_sr_path_vtx));
+  s_swa_listinit = 0; s_swa_nolistinit = 0;
+  if (!g_strip_dedup_cached)
+  {
+    for (u32 i = 0; i < SR_PATHS; i++) s_sr_path[i] = 0;
+    s_sr_calls = 0; s_sr_vtx0 = 0; s_sr_strips = 0;
+  }
+}
 // Runs before the per-strip state block, which is why it can still see the
 // PREVIOUS bind in s_texbind_* -- that is what makes its `run` figure identical
 // to the hit rate mode 2 would get, rather than a separate re-derivation of it.
@@ -12515,6 +12638,22 @@ void StartRender()
   s_sr_strips += (u32)(curLST - lists);
   if (VtxCnt == 0) s_sr_vtx0++;
 
+  // [SWA] diagnostic (see swa_diag_dump): what this pass carries, how many
+  // vblanks passed since the previous pass, and whether a TA_LIST_INIT came first.
+  s_sr_cur_vtx    = VtxCnt;
+  s_sr_cur_strips = (u32)(curLST - lists);
+  if (SWA_DIAG)
+  {
+    const u32 vb = spg_VblankCountTotal;
+    if (s_swa_last_vb != 0xFFFFFFFFu)
+    {
+      const u32 g = vb - s_swa_last_vb;
+      s_swa_gap[g <= 4 ? g : g <= 6 ? 5 : g <= 12 ? 6 : 7]++;
+    }
+    s_swa_last_vb = vb;
+    if (s_rd_list_init) s_swa_listinit++; else s_swa_nolistinit++;
+  }
+
 #if SCOPE_DEBUG_LOG
   ss_dump_pass();   // must run BEFORE any path below returns
 #endif
@@ -12624,7 +12763,7 @@ void StartRender()
       s_rtt_pass = true;
       { const u64 _rt0 = PERF_TICKS(); const u32 _fpg0 = g_fp.gxw; DoRender(); RenderTicks += PERF_TICKS() - _rt0; g_fp.gxw_rend += g_fp.gxw - _fpg0; }
       s_rtt_pass = false;
-      s_sr_path[SR_RTT_RENDER]++;
+      SR_COUNT(SR_RTT_RENDER);
       return; // not a presented frame: no FrameCount++, display untouched
     }
 
@@ -12669,7 +12808,7 @@ void StartRender()
       global_regd = false;
       vtx_min_Z = 131072;
       vtx_max_Z = 0;
-      s_sr_path[SR_RTT_CARRY]++;
+      SR_COUNT(SR_RTT_CARRY);
       return; // no present, no FrameCount++ — this pass was never a frame
     }
 
@@ -12695,13 +12834,13 @@ void StartRender()
         wii_audio_frame();
         // VIDEO_WaitVSync() // Not necessary here (don't block the SH4 thread)
         FrameCount++;
-        s_sr_path[SR_2D_AFTER_3D]++;
+        SR_COUNT(SR_2D_AFTER_3D);
         return;
       }
 
       if (ShouldSkipFrame())
       {
-        s_sr_path[SR_2D_SKIPPED]++;
+        SR_COUNT(SR_2D_SKIPPED);
         return;   // skip the 2D present, same as the VBlank() path
       }
 
@@ -12710,10 +12849,10 @@ void StartRender()
 
       PresentFramebuffer();
       FrameCount++;
-      s_sr_path[SR_2D_BLIT]++;
+      SR_COUNT(SR_2D_BLIT);
       return;
     } else {
-      s_sr_path[SR_BIT24_DROPPED]++;
+      SR_COUNT(SR_BIT24_DROPPED);
       return; // just return
     }
   }
@@ -12796,7 +12935,7 @@ void StartRender()
       if (s_cmp_skip)
       {
         reset_vtx_state();  // whole composed frame is being dropped
-        s_sr_path[SR_SPLIT_PARTIAL]++;
+        SR_COUNT(SR_SPLIT_PARTIAL);
         return;
       }
 
@@ -12813,7 +12952,7 @@ void StartRender()
       // divider between the viewports still counts as complete.
       if (s_cmp_cov_area * 8 >= (u32)(s_cmp_canvas_w * s_cmp_canvas_h) * 7)
         split_compose_present();
-      s_sr_path[SR_SPLIT_DRAW]++;
+      SR_COUNT(SR_SPLIT_DRAW);
       return;
     }
 
@@ -12830,7 +12969,7 @@ void StartRender()
   if (ShouldSkipFrame())
   {
     reset_vtx_state();   // discard this frame's geometry; free the buffers
-    s_sr_path[SR_SKIPPED]++;
+    SR_COUNT(SR_SKIPPED);
     return;              // no GX calls — saves ~10-15 ms on a heavy frame
   }
 
@@ -12840,7 +12979,7 @@ void StartRender()
   { const u64 _rt0 = PERF_TICKS(); const u32 _fpg0 = g_fp.gxw; DoRender(); RenderTicks += PERF_TICKS() - _rt0; g_fp.gxw_rend += g_fp.gxw - _fpg0; }
 
   FrameCount++;
-  s_sr_path[SR_RENDER]++;
+  SR_COUNT(SR_RENDER);
 }
 
 void EndRender() {}

@@ -3,6 +3,7 @@
     Bridges hardware interrupts from Holly peripherals to the SH4 CPU.
 */
 
+#include <stdio.h>   // [IRQ] diagnostic printf
 #include "types.h"
 #include "asic.h"
 #include "dc/sh4/intc.h"
@@ -47,14 +48,63 @@ static void RaiseAsicErr(HollyInterruptID inter)
     asic_UpdatePending();
 }
 
+// ── [IRQ] diagnostic: Holly IRQs raised per second ───────────────────────────
+// TEMPORARY, for "high SPEED / low RPS" (Star Wars Arcade): which events does
+// the guest actually get, and at what rate? One increment per raised IRQ
+// (a few hundred/s), printed once a second from SPG.cpp's stats block via
+// asic_irq_diag_dump(). IRQ_DIAG = 1 armed, 0 compiled-out.
+// Star Wars Arcade: all IRQs fired at normal rates (ruled out missing events);
+// gated off again, set to 1 to re-arm (prints "[IRQ] ARMED").
+static const int IRQ_DIAG = 0;
+static u32 s_irq_cnt[3][32];
+static u32 s_irq_armed = 0;
+
 void fastcall asic_RaiseInterrupt(HollyInterruptID inter)
 {
+    if (IRQ_DIAG && (u32)(inter >> 8) < 3)
+        s_irq_cnt[(u32)(inter >> 8)][(u32)inter & 31]++;
+
     switch (inter >> 8)
     {
     case 0: RaiseAsicNormal(inter); break;
     case 1: RaiseAsicExt(inter);    break;
     case 2: RaiseAsicErr(inter);    break;
     }
+}
+
+// Once a second (SPG.cpp). Prints every IRQ that fired, with its rate.
+void asic_irq_diag_dump(double tdiff)
+{
+    if (!IRQ_DIAG || tdiff <= 0.0) return;
+    if (!s_irq_armed)
+    {
+        s_irq_armed = 1;
+        printf("[IRQ] ARMED -- Holly IRQs raised per second\n");
+    }
+
+    static const char *const nrm[22] = {
+        "RENDER_DONE_vd", "RENDER_DONE_isp", "RENDER_DONE_tsp", "VBLANK_IN", "VBLANK_OUT",
+        "HBLANK", "YUV_DMA", "OPAQUE", "OPAQUE_MOD", "TRANS", "TRANS_MOD", "PVR_DMA",
+        "MAPLE_DMA", "MAPLE_VBOI", "GDROM_DMA", "SPU_DMA", "EXT_DMA1", "EXT_DMA2",
+        "DEV_DMA", "CH2_DMA", "SORT_DMA", "PUNCHTHRU" };
+    static const char *const ext[4] = { "GDROM_CMD", "SPU_IRQ", "EXP_8BIT", "EXP_PCI" };
+
+    printf("[IRQ]");
+    for (u32 i = 0; i < 22; i++)
+        if (s_irq_cnt[0][i]) printf(" %s:%.1f", nrm[i], s_irq_cnt[0][i] / tdiff);
+    for (u32 i = 0; i < 32; i++)
+    {
+        if (!s_irq_cnt[1][i]) continue;
+        if (i < 4) printf(" %s:%.1f", ext[i], s_irq_cnt[1][i] / tdiff);
+        else       printf(" ext%u:%.1f", i, s_irq_cnt[1][i] / tdiff);
+    }
+    for (u32 i = 0; i < 32; i++)
+        if (s_irq_cnt[2][i]) printf(" ERR%u:%.1f", i, s_irq_cnt[2][i] / tdiff);
+    printf("\n");
+    fflush(stdout);
+
+    for (u32 g = 0; g < 3; g++)
+        for (u32 i = 0; i < 32; i++) s_irq_cnt[g][i] = 0;
 }
 
 // BUG FIX: original always cleared SB_ISTEXT regardless of interrupt type.
