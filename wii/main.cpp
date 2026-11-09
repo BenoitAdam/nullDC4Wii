@@ -510,6 +510,19 @@ extern "C" {
 // audible change. Default ON.
 int g_aica_fast_preset = 1;
 
+// AICA_REL_CULL - per-game SPEED TRADE (changes the sound slightly), default
+// off. A keyed-off voice still fading out in its Release envelope is ended as
+// soon as its loudest send is quieter than the chosen level, instead of being
+// mixed until the envelope reaches the bottom (plugs/nullAICA/sgc_if.cpp
+// ChannelStepFast; needs AICA FAST on). Found with the [VOX] census in Sega
+// Tetris (2026-11-09, real Wii): 25-58 voices in a full well, ~2/3 of them
+// fading out over 1.4-2.8 s, ~125 cycles each per sample, never silent before
+// the game reuses them -- AICA was 22% of the frame. The census put ~1/5 of the
+// voices below -60 dB and ~1/3 to 1/2 below -48 dB at the heaviest moments.
+// Read once per audio sample, so it can be changed live.
+// 0=off (exact, default), 1=-72 dB, 2=-60 dB (what cfg `on` means), 3=-48 dB.
+int g_aica_rel_cull_preset = 0;
+
 // ADPCM_LOOP - how a looped ADPCM sound starts its next lap.
 // plugs/nullAICA/sgc_if.cpp reset the ADPCM decoder (quant 127, previous
 // sample 0) at every loop lap. A loop that starts after sample 0 then decodes
@@ -3104,6 +3117,7 @@ void checkBiosFiles()
 #define OPT_FAR_CLAMP   144  // Page 3 (DEPTH & WIDTH), under FIXED DEPTH
 #define OPT_DECAL_FIX   145  // Page 6 (EXPERIMENTAL), under TLUT FIX (page 2 is full)
 #define OPT_IDLE_HOOK   146  // Page 5 (CORE), under IDLE KAMUI
+#define OPT_AICA_REL_CULL 147 // Page 4 (AUDIO), under AICA FAST
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3200,6 +3214,7 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_CDDA,
   OPT_MUTE_PCM16,
   OPT_AICA_FAST,
+  OPT_AICA_REL_CULL,
   OPT_ADPCM_LOOP,
   OPT_ARM7_SPEED,
   OPT_ARM7_JIT,
@@ -4028,6 +4043,17 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (FASTER)       >]"); break;
     }
     printf(" same sound, less CPU");
+    printf("\n");
+
+    // --- Row: AICA_REL_CULL - end quiet Release tails early (sgc_if.cpp ChannelStepFast) ---
+    printf("%s AICA REL CULL  : ", (selectedRow == OPT_AICA_REL_CULL) ? MENU_CURSOR : " ");
+    switch (g_aica_rel_cull_preset) {
+      case 0: printf("[< OFF (EXACT)       >]"); break;
+      case 1: printf("[< ON (-72 DB TAILS) >]"); break;
+      case 2: printf("[< ON (-60 DB TAILS) >]"); break;
+      case 3: printf("[< ON (-48 DB TAILS) >]"); break;
+    }
+    printf(" per game: Sega Tetris");
     printf("\n");
 
     // --- Row: ADPCM_LOOP - looped ADPCM keeps its LSA decoder state (sgc_if.cpp) ---
@@ -5000,6 +5026,7 @@ bool displayOptionsMenu()
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
         case OPT_ADPCM_LOOP:     g_adpcm_loop_preset      = (g_adpcm_loop_preset      + 1) % 2; break;
+        case OPT_AICA_REL_CULL:  g_aica_rel_cull_preset   = (g_aica_rel_cull_preset   + 3) % 4; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
@@ -5160,6 +5187,7 @@ bool displayOptionsMenu()
         case OPT_MUTE_PCM16:     g_mute_pcm16_preset      = (g_mute_pcm16_preset      + 1) % 2; break;
         case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
         case OPT_ADPCM_LOOP:     g_adpcm_loop_preset      = (g_adpcm_loop_preset      + 1) % 2; break;
+        case OPT_AICA_REL_CULL:  g_aica_rel_cull_preset   = (g_aica_rel_cull_preset   + 1) % 4; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
@@ -6195,6 +6223,9 @@ int main(int argc, wchar *argv[])
     printf("Flash Save     : %s\n", g_flash_save_preset ? "ON (AT EXIT)" : "OFF (NEVER SAVED)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");
     printf("AICA Fast      : %s\n", g_aica_fast_preset ? "ON (FASTER)" : "OFF (LEGACY)");
+    printf("AICA Rel Cull  : %s\n", g_aica_rel_cull_preset == 3 ? "ON (-48 DB TAILS)" :
+                                    g_aica_rel_cull_preset == 2 ? "ON (-60 DB TAILS)" :
+                                    g_aica_rel_cull_preset == 1 ? "ON (-72 DB TAILS)" : "OFF (EXACT)");
     printf("ADPCM Loop Fix : %s\n", g_adpcm_loop_preset ? "ON (KEEP STATE)" : "OFF (RESET/LAP)");
     printf("BG Polygon     : %s\n", g_bg_poly_preset ? "ON (CORRECT)" : "OFF (FASTER)");
     printf("X Scaler       : %s\n", g_x_scaler_preset ? "ON (DEFAULT)" : "OFF (LEGACY)");

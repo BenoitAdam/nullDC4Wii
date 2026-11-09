@@ -973,12 +973,47 @@ void FASTCALL FegStep(ChannelEx* ch) { /* stub */ }
 // ---------------------------------------------------------------------------
 extern int g_aica_fast_preset;   // wii/main.cpp; read directly, 44,100x/s
 
-static INLINE void ChannelStepFast(ChannelEx* ch, bool dsp_on, SampleType& ml, SampleType& mr)
+// ---------------------------------------------------------------------------
+// AICA_REL_CULL (wii/main.cpp g_aica_rel_cull_preset): a per-game SPEED TRADE,
+// not a fix, default off. A voice that has been keyed off (AEG in Release) and
+// whose LOUDEST live send (L, R, and the DSP send when the DSP runs) is already
+// at least cull_thr attenuation steps down is ended at once, exactly the way
+// AegStep<3> ends it when the envelope reaches 0x3FF: disable(), AEG = 0x3FF.
+// One step of tl_lut is 6.02/16 = 0.376 dB, so 192/160/128 = -72/-60/-48 dB.
+// Why it pays (Sega Tetris, [VOX] census on real Wii, 2026-11-09): 25-58 voices
+// in a full well, ~2/3 of them in Release with RR=12 (2.8 s to reach 0x3FF),
+// all looping ADPCM, each costing ~125 Wii cycles per sample while it fades,
+// and the game steals them back at -40..-67 dB anyway, so they never finish
+// and never reach the exactly-silent level (241 steps) an exact skip needs.
+// The census at the heaviest moments put ~1/5 of the voices below -60 dB and
+// ~1/3 to 1/2 below -48 dB. The output changes: those tails stop instead of
+// fading out under the music. Only the aica_fast mixer applies it.
+// ---------------------------------------------------------------------------
+extern int g_aica_rel_cull_preset;   // wii/main.cpp; read once per sample
+static const u32 kRelCullThr[4] = { 0, 192, 160, 128 };   // off, -72, -60, -48 dB
+
+static INLINE void ChannelStepFast(ChannelEx* ch, bool dsp_on, u32 cull_thr,
+                                   SampleType& ml, SampleType& mr)
 {
     SampleType sample = ch->InterpolateSample();
 
     u32 ofsatt = ch->lfo.alfo + (ch->AEG.GetValue() >> 2);
     ofsatt = min(ofsatt, 255u);
+
+    // AICA_REL_CULL, see above. Disabling itself is allowed here: a channel's
+    // step may only ever disable ITSELF, which GenerateAllFast's mask walk
+    // already relies on (AegStep<3> does the same at 0x3FF).
+    if (cull_thr && ch->AEG.state == EG_Release)
+    {
+        u32 att = min(ch->VolMix.DLAtt, ch->VolMix.DRAtt);
+        if (dsp_on)
+            att = min(att, ch->VolMix.DSPAtt);
+        if (ofsatt + att >= cull_thr)
+        {
+            ch->disable();
+            return;
+        }
+    }
 
     u32 const max_att = ((16 << 4) - 1) - ofsatt;
     s32* logtable = ofsatt + tl_lut;
@@ -1024,16 +1059,16 @@ static INLINE void ChannelStepFast(ChannelEx* ch, bool dsp_on, SampleType& ml, S
     ch->lfo.Step(ch);
 }
 
-static void GenerateAllFast(bool dsp_on)
+static void GenerateAllFast(bool dsp_on, u32 cull_thr)
 {
     SampleType ml = mixl;
     SampleType mr = mixr;
     u32 voices = 0;
 
     for (u32 m = ChannelEx::active_lo; m; m &= m - 1, voices++)
-        ChannelStepFast(&ChannelEx::Chans[__builtin_ctz(m)], dsp_on, ml, mr);
+        ChannelStepFast(&ChannelEx::Chans[__builtin_ctz(m)], dsp_on, cull_thr, ml, mr);
     for (u32 m = ChannelEx::active_hi; m; m &= m - 1, voices++)
-        ChannelStepFast(&ChannelEx::Chans[32 + __builtin_ctz(m)], dsp_on, ml, mr);
+        ChannelStepFast(&ChannelEx::Chans[32 + __builtin_ctz(m)], dsp_on, cull_thr, ml, mr);
 
     mixl = ml;
     mixr = mr;
@@ -1308,7 +1343,7 @@ void AICA_Sample()
 
     const u64 t_vox = SGC_PERF_TICKS();
     if (fast)
-        GenerateAllFast(dsp_on);
+        GenerateAllFast(dsp_on, kRelCullThr[g_aica_rel_cull_preset & 3]);
     else
         ChannelEx::GenerateAll();
     AicaVoxTicks += SGC_PERF_TICKS() - t_vox;

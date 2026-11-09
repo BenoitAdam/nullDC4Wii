@@ -1073,6 +1073,15 @@
                                 filter-envelope call is gone, no DSP send while
                                 the DSP is off, master volume is cached, silent
                                 CD-audio sectors are skipped. off (default, legacy).
+        aica_rel_cull=60    <- off/72/60/48 (on = 60), PER GAME speed trade,
+                                default off. A sound that has been released and
+                                is fading out is cut as soon as its loudest
+                                send is below -72/-60/-48 dB, instead of being
+                                mixed until it reaches the bottom. Changes the
+                                sound slightly (quiet tails stop early). Sega
+                                Tetris: 25-58 voices in a full well, ~2/3 of
+                                them long fade-outs the game never lets finish.
+                                Needs aica_fast on.
         adpcm_loop=on       <- on/off, a looped ADPCM sound keeps the decoder
                                 state it had at the loop start and restores it
                                 on each lap (Flycast), instead of resetting the
@@ -1384,6 +1393,7 @@ extern int g_cdda_state_fix_preset;
 extern int g_cdi_hdr_fix_preset;
 extern int g_mute_pcm16_preset;
 extern int g_aica_fast_preset;
+extern int g_aica_rel_cull_preset;
 extern int g_adpcm_loop_preset;
 extern int g_bg_poly_preset;
 extern int g_layer_sort_preset;
@@ -1555,6 +1565,7 @@ struct GamePreset
     int cdi_hdr_fix;
     int mute_pcm16;
     int aica_fast;
+    int aica_rel_cull;
     int adpcm_loop;
     int bg_poly;
     int layer_sort;
@@ -1762,6 +1773,20 @@ static int parse_mmucr_fix(const char* v)
     if (key_eq(v, "full") || strcmp(v, "2") == 0) return 2;
     if (key_eq(v, "bits")) return 1;
     return parse_bool(v);   // on/off/1/0/true/false/yes/no
+}
+
+// aica_rel_cull: 0 off, 1 -72 dB, 2 -60 dB, 3 -48 dB. Values are the dB level
+// (72/60/48, with or without a minus sign or "db") or the level number 1..3;
+// `on` means 60, the middle level. Spelled out so `=on` is not read as 0.
+static int parse_aica_rel_cull(const char* v)
+{
+    const char* p = (*v == '-') ? v + 1 : v;
+    if (key_eq(p, "72") || key_eq(p, "72db") || strcmp(v, "1") == 0) return 1;
+    if (key_eq(p, "60") || key_eq(p, "60db") || strcmp(v, "2") == 0 || key_eq(v, "on")) return 2;
+    if (key_eq(p, "48") || key_eq(p, "48db") || strcmp(v, "3") == 0) return 3;
+    if (key_eq(v, "off") || key_eq(v, "no") || key_eq(v, "false") || strcmp(v, "0") == 0) return 0;
+    printf("[game_presets] aica_rel_cull needs off/72/60/48, got '%s'\n", v);
+    return -1;
 }
 
 // render_delay: 0 off, 1 on/hw (hardware-like stagger), 2 flycast (TA-size burst).
@@ -2126,6 +2151,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "cdi_hdr_fix"))    p->cdi_hdr_fix    = parse_bool(val);
     else if (key_eq(key, "mute_pcm16"))     p->mute_pcm16     = parse_bool(val);
     else if (key_eq(key, "aica_fast"))      p->aica_fast      = parse_bool(val);
+    else if (key_eq(key, "aica_rel_cull"))  p->aica_rel_cull  = parse_aica_rel_cull(val);
     else if (key_eq(key, "adpcm_loop"))     p->adpcm_loop     = parse_bool(val);
     else if (key_eq(key, "bg_poly"))        p->bg_poly        = parse_bool(val);
     else if (key_eq(key, "layer_sort"))     p->layer_sort     = parse_bool(val);
@@ -2277,6 +2303,7 @@ static void preset_clear(GamePreset* cur)
     cur->cdi_hdr_fix = -1;
     cur->mute_pcm16 = -1;
     cur->aica_fast = -1;
+    cur->aica_rel_cull = -1;
     cur->adpcm_loop = -1;
     cur->bg_poly = -1;
     cur->layer_sort = -1;
@@ -2444,6 +2471,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->cdi_hdr_fix    >= 0) { g_cdi_hdr_fix_preset    = p->cdi_hdr_fix;    printf("  cdi_hdr_fix    -> %d\n", p->cdi_hdr_fix);    }
     if (p->mute_pcm16     >= 0) { g_mute_pcm16_preset    = p->mute_pcm16;      printf("  mute_pcm16     -> %d\n", p->mute_pcm16);     }
     if (p->aica_fast      >= 0) { g_aica_fast_preset     = p->aica_fast;       printf("  aica_fast      -> %d\n", p->aica_fast);      }
+    if (p->aica_rel_cull  >= 0) { g_aica_rel_cull_preset = p->aica_rel_cull;   printf("  aica_rel_cull  -> %d\n", p->aica_rel_cull);  }
     if (p->adpcm_loop     >= 0) { g_adpcm_loop_preset    = p->adpcm_loop;      printf("  adpcm_loop     -> %d\n", p->adpcm_loop);     }
     if (p->bg_poly        >= 0) { g_bg_poly_preset       = p->bg_poly;         printf("  bg_poly        -> %d\n", p->bg_poly);        }
     if (p->layer_sort     >= 0) { g_layer_sort_preset    = p->layer_sort;      printf("  layer_sort     -> %d\n", p->layer_sort);     }
