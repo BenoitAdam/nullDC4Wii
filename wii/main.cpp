@@ -3086,9 +3086,9 @@ void checkBiosFiles()
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
-// Options are split across eight themed pages so no single page scrolls off
+// Options are split across nine themed pages so no single page scrolls off
 // screen and related settings are grouped together.
-#define OPT_PAGE_COUNT 8
+#define OPT_PAGE_COUNT 9
 
 // Explicit, ordered list of selectable rows for each page — in the SAME
 // order they are printf'd below. Cursor navigation (UP/DOWN) walks these
@@ -3113,7 +3113,6 @@ static const int OPT_PAGE0_ROWS[] = {
   OPT_ANISO,
   OPT_TEX_CACHE,
   OPT_VQ_CMPR,
-  OPT_TEX_CLAMP_FIX,
   OPT_FRAMESKIP,
   OPT_FRAMEBUFFER_2D,
   OPT_ADV_ALPHA,
@@ -3130,7 +3129,6 @@ static const int OPT_PAGE1_ROWS[] = {
   OPT_LAUNCH,
   OPT_FMV_FORMAT,
   OPT_YUV_STRIDE,
-  OPT_YUV_TWIDDLE_FIX,
   OPT_VERTEX_COLOR,
   OPT_SPRITE_COLOR,
   OPT_VTX_ALPHA,
@@ -3179,8 +3177,6 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_AUDIO_BLOCK,
   OPT_AUDIO_DRC,
   OPT_CDDA,
-  OPT_CDDA_PAUSE_FIX,
-  OPT_CDDA_STATE_FIX,
   OPT_MUTE_PCM16,
   OPT_AICA_FAST,
   OPT_ADPCM_LOOP,
@@ -3188,7 +3184,6 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_ARM7_JIT,
   OPT_ARM7_BATCH,
   OPT_ARM7_STR_ALIGN,
-  OPT_ARM7_RESET_FIX,
   OPT_AICA_RACE,
   OPT_AICA_CA_CLAMP
 };
@@ -3204,13 +3199,7 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_SH4_CLOCK,
   OPT_DISC_BULK,
   OPT_GDROM_DELAY,
-  OPT_CDI_HDR_FIX,
   OPT_FLASH_BROADCAST,
-  OPT_INTERP_FIX,
-  OPT_GDROM_STAT_FIX,
-  OPT_GDROM_HANG_FIX,
-  OPT_TOC_FIX,
-  OPT_SPG_FIX,
   OPT_GDROM_SPINUP,
   OPT_RTC_HOST,
   OPT_IDLE_KAMUI,
@@ -3223,10 +3212,6 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_LAUNCH,
   OPT_MIPMAP,
   OPT_TEX_WRAP_GUARD,
-  OPT_TLUT_FIX,
-  OPT_DECAL_FIX,
-  OPT_DMA_FIX,
-  OPT_MMUCR_FIX,
   OPT_SCHED,
   OPT_EXIT_FIX,
   OPT_FLASH_CHIP,
@@ -3260,8 +3245,7 @@ static const int OPT_PAGE6_ROWS[] = {
   OPT_JIT_CR0,
   OPT_BLOCKCOPY,
   OPT_JIT_FSQRT,
-  OPT_JIT_FIPR,
-  OPT_DIV32_FIX
+  OPT_JIT_FIPR
 };
 
 // Page 7 - LOGS (everything that writes to /ndclog.txt, incl. the JIT census tools)
@@ -3281,6 +3265,27 @@ static const int OPT_PAGE7_ROWS[] = {
   OPT_DISC_CENSUS
 };
 
+// Page 8 - FIXES (the *_FIX presets; SEAM/JOJO/EXIT FIX stay on pages 1/1/5)
+static const int OPT_PAGE8_ROWS[] = {
+  OPT_LAUNCH,
+  OPT_TEX_CLAMP_FIX,
+  OPT_YUV_TWIDDLE_FIX,
+  OPT_TLUT_FIX,
+  OPT_DECAL_FIX,
+  OPT_CDDA_PAUSE_FIX,
+  OPT_CDDA_STATE_FIX,
+  OPT_ARM7_RESET_FIX,
+  OPT_CDI_HDR_FIX,
+  OPT_INTERP_FIX,
+  OPT_GDROM_STAT_FIX,
+  OPT_GDROM_HANG_FIX,
+  OPT_TOC_FIX,
+  OPT_SPG_FIX,
+  OPT_DMA_FIX,
+  OPT_MMUCR_FIX,
+  OPT_DIV32_FIX
+};
+
 static const int *opt_page_rows(int page, int *count)
 {
   switch (page) {
@@ -3292,6 +3297,7 @@ static const int *opt_page_rows(int page, int *count)
     case 5: *count = sizeof(OPT_PAGE5_ROWS) / sizeof(int); return OPT_PAGE5_ROWS;
     case 6: *count = sizeof(OPT_PAGE6_ROWS) / sizeof(int); return OPT_PAGE6_ROWS;
     case 7: *count = sizeof(OPT_PAGE7_ROWS) / sizeof(int); return OPT_PAGE7_ROWS;
+    case 8: *count = sizeof(OPT_PAGE8_ROWS) / sizeof(int); return OPT_PAGE8_ROWS;
     default: *count = 1; return OPT_PAGE0_ROWS; // OPT_LAUNCH only, defensive fallback
   }
 }
@@ -3333,6 +3339,7 @@ static const char *opt_page_title(int page)
     case 5: return "EXPERIMENTAL STUFF & DEBUG";
     case 6: return "JIT/DYNAREC";
     case 7: return "LOGS";
+    case 8: return "FIXES";
     default: return "";
   }
 }
@@ -3499,14 +3506,6 @@ bool displayOptionsMenu()
     printf(" fixes VQ glitches on VERY FAST/+");
     printf("\n");
 
-    // --- Row: TEX CLAMP FIX - per-polygon wrap mode on cached textures ---
-    printf("%s TEX CLAMP FIX  : ", (selectedRow == OPT_TEX_CLAMP_FIX) ? MENU_CURSOR : " ");
-    switch (g_tex_clamp_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (PER POLYGON)  >]"); break;
-    }
-    printf(" fix streaked/stretched textures");
-    printf("\n");
 
     // --- Row: Frameskipping ---
     printf("%s FRAMESKIPPING  : ", (selectedRow == OPT_FRAMESKIP) ? MENU_CURSOR : " ");
@@ -3620,14 +3619,6 @@ bool displayOptionsMenu()
     printf(" TEXCTL if FMV still messy");
     printf("\n");
 
-    // --- Row: Twiddled YUV422 texture decode fix ---
-    printf("%s YUV TWIDDLE FIX: ", (selectedRow == OPT_YUV_TWIDDLE_FIX) ? MENU_CURSOR : " ");
-    switch (g_yuv_twiddle_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (CORRECT)      >]"); break;
-    }
-    printf(" green YUV art (VF3tb FIRST MATCH)");
-    printf("\n");
 
     // --- Row: Intensity Color Fix ---
     printf("%s VERTEX COLOR   : ", (selectedRow == OPT_VERTEX_COLOR) ? MENU_CURSOR : " ");
@@ -3702,6 +3693,7 @@ bool displayOptionsMenu()
     printf(" Fix Crazy Taxi's cars");
     printf("\n");
 
+
     // --- Row: 2D sprite seam fix (half-texel inset) ---
     printf("%s SEAM FIX       : ", (selectedRow == OPT_SEAM_FIX) ? MENU_CURSOR : " ");
     switch (g_seam_fix_preset) {
@@ -3746,6 +3738,7 @@ bool displayOptionsMenu()
     }
     printf(" OFF for POD2");
     printf("\n");
+
 
     // --- Row: Jojo Fix ---
     printf("%s JOJO FIX       : ", (selectedRow == OPT_JOJO_FIX) ? MENU_CURSOR : " ");
@@ -3995,23 +3988,7 @@ bool displayOptionsMenu()
     printf(" (GD-ROM CD audio tracks)");
     printf("\n");
 
-    // --- Row: CDDA_PAUSE_FIX - CD audio pause keeps its position (gdromv3.cpp) ---
-    printf("%s CDDA PAUSE FIX : ", (selectedRow == OPT_CDDA_PAUSE_FIX) ? MENU_CURSOR : " ");
-    switch (g_cdda_pause_fix_preset) {
-      case 0: printf("[< OFF (TO FAD 150)  >]"); break;
-      case 1: printf("[< ON (KEEP POS)     >]"); break;
-    }
-    printf(" music resumes after a pause");
-    printf("\n");
 
-    // --- Row: CDDA_STATE_FIX - Flycast CD-DA play/pause/end/read rules (gdromv3.cpp) ---
-    printf("%s CDDA STATE FIX : ", (selectedRow == OPT_CDDA_STATE_FIX) ? MENU_CURSOR : " ");
-    switch (g_cdda_state_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FLYCAST)      >]"); break;
-    }
-    printf(" play/pause/end/read rules");
-    printf("\n");
 
     // --- Row: Mute 16-bit PCM channels (ChuChu Rocket SFX workaround) ---
     printf("%s MUTE 16BIT PCM : ", (selectedRow == OPT_MUTE_PCM16) ? MENU_CURSOR : " ");
@@ -4084,14 +4061,6 @@ bool displayOptionsMenu()
     printf(" ChuChu SFX echo/slow fix");
     printf("\n");
 
-    // --- Row: ARM7_RESET_FIX - ARM7 reset enters SVC, clears the FIQ latch (arm7.cpp) ---
-    printf("%s ARM7 RESET FIX : ", (selectedRow == OPT_ARM7_RESET_FIX) ? MENU_CURSOR : " ");
-    switch (g_arm7_reset_fix_preset) {
-      case 0: printf("[< OFF (SYSTEM MODE) >]"); break;
-      case 1: printf("[< ON (SVC + LATCH)  >]"); break;
-    }
-    printf(" sound CPU reset like real HW");
-    printf("\n");
 
     // --- Row: AICA_RACE - Flycast G2-DMA / AICA IRQ timing rules (aica_if.cpp, aica.cpp) ---
     printf("%s AICA RACE FIX  : ", (selectedRow == OPT_AICA_RACE) ? MENU_CURSOR : " ");
@@ -4192,14 +4161,6 @@ bool displayOptionsMenu()
     printf(" spreads loads, no frame freeze");
     printf("\n");
 
-    // --- Row: CDI_HDR_FIX - V2/V3 DiscJuggler header offset (cdi.cpp) ---
-    printf("%s CDI HEADER FIX : ", (selectedRow == OPT_CDI_HDR_FIX) ? MENU_CURSOR : " ");
-    switch (g_cdi_hdr_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (CDIRIP RULE)  >]"); break;
-    }
-    printf(" V2/V3 .cdi images load");
-    printf("\n");
 
     // --- Row: FLASH_BROADCAST - flash broadcast byte per disc (dc/dc.cpp) ---
     printf("%s FLASH BROADCAST: ", (selectedRow == OPT_FLASH_BROADCAST) ? MENU_CURSOR : " ");
@@ -4211,50 +4172,10 @@ bool displayOptionsMenu()
     printf(" PAL flash: 60Hz for NTSC discs");
     printf("\n");
 
-    // --- Row: INTERP_FIX - SH4 interpreter div1/addv/subv/mul.l/mac (sh4_cpu.cpp) ---
-    printf("%s SH4 INTERP FIX : ", (selectedRow == OPT_INTERP_FIX) ? MENU_CURSOR : " ");
-    switch (g_interp_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (MANUAL OPS)   >]"); break;
-    }
-    printf(" div1/addv/subv/mul.l/mac exact");
-    printf("\n");
 
-    // --- Row: GDROM_STAT_FIX - REQ_STAT / GET_SCD position reports (gdromv3.cpp) ---
-    printf("%s GDROM STAT FIX : ", (selectedRow == OPT_GDROM_STAT_FIX) ? MENU_CURSOR : " ");
-    switch (g_gdrom_stat_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FAD+TRACK)    >]"); break;
-    }
-    printf(" CD position/subcode reports");
-    printf("\n");
 
-    // --- Row: GDROM_HANG_FIX - rare drive commands abort instead of die() (gdromv3.cpp) ---
-    printf("%s GDROM HANG FIX : ", (selectedRow == OPT_GDROM_HANG_FIX) ? MENU_CURSOR : " ");
-    switch (g_gdrom_hang_fix_preset) {
-      case 0: printf("[< OFF (DIE/VERIFY)  >]"); break;
-      case 1: printf("[< ON (ABORT/CLAMP)  >]"); break;
-    }
-    printf(" bad drive cmds no longer hang");
-    printf("\n");
 
-    // --- Row: TOC_FIX - TOC ADR / lead-out / GDI track 2 + sessions (ImgReader) ---
-    printf("%s GDROM TOC FIX  : ", (selectedRow == OPT_TOC_FIX) ? MENU_CURSOR : " ");
-    switch (g_toc_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (ADR1+LEADOUT) >]"); break;
-    }
-    printf(" TOC: ADR, lead-out, GDI track 2");
-    printf("\n");
 
-    // --- Row: SPG_FIX - field bit / HBlank IRQ modes / VBLANK_INT reset (SPG.cpp) ---
-    printf("%s SPG TIMING FIX : ", (selectedRow == OPT_SPG_FIX) ? MENU_CURSOR : " ");
-    switch (g_spg_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (FLYCAST)      >]"); break;
-    }
-    printf(" field bit, HBlank IRQ modes");
-    printf("\n");
 
     // --- Row: GDROM_SPINUP - no-disc drive BUSY 3 s after reset (gdromv3.cpp) ---
     printf("%s GDROM SPINUP   : ", (selectedRow == OPT_GDROM_SPINUP) ? MENU_CURSOR : " ");
@@ -4324,42 +4245,9 @@ bool displayOptionsMenu()
     printf(" stop tex corruption in full cache");
     printf("\n");
 
-    // --- Row: TLUT FIX - CI4/CI8 palettes from a per-render copy, not a ring ---
-    printf("%s TLUT FIX       : ", (selectedRow == OPT_TLUT_FIX) ? MENU_CURSOR : " ");
-    switch (g_tlut_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (DEFAULT)      >]"); break;
-    }
-    printf(" fixes CI4/CI8 color flicker");
-    printf("\n");
 
-    // --- Row: DECAL FIX - TSP Decal (ShadInstr 0) ignores the vertex colour ---
-    printf("%s DECAL FIX      : ", (selectedRow == OPT_DECAL_FIX) ? MENU_CURSOR : " ");
-    switch (g_decal_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (DEFAULT)      >]"); break;
-    }
-    printf(" black world textures (SoF)");
-    printf("\n");
 
-    // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
-    printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? MENU_CURSOR : " ");
-    switch (g_dma_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< ON (DEFAULT)      >]"); break;
-    }
-    printf(" ch2/PVR/Sort/AICA DMA fixes");
-    printf("\n");
 
-    // --- Row: MMUCR_FIX - MMU control register at its real bits (ccn.h) ---
-    printf("%s MMUCR FIX      : ", (selectedRow == OPT_MMUCR_FIX) ? MENU_CURSOR : " ");
-    switch (g_mmucr_fix_preset) {
-      case 0: printf("[< OFF (LEGACY)      >]"); break;
-      case 1: printf("[< BITS (AT/TI/URC)  >]"); break;
-      case 2: printf("[< FULL (PS3 TESTED) >]"); break;
-    }
-    printf(" Rez/Ikaruga/Border Down boot");
-    printf("\n");
 
     // --- Row: SCHED - unified cycle-deadline event scheduler ---
     printf("%s SCHED (ORDER)  : ", (selectedRow == OPT_SCHED) ? MENU_CURSOR : " ");
@@ -4369,6 +4257,7 @@ bool displayOptionsMenu()
     }
     printf(" hw-order DMA/IRQ completions (exp)");
     printf("\n");
+
 
     // --- Row: exit-combo shutdown (wii/wii_exit.cpp) ---
     // OFF reproduces the old bare exit(0); everything above it quiesces the
@@ -4641,15 +4530,6 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (DOUBLE SUM)   >]"); break;
     }
     printf(" fipr/ftrv: round once, like HW");
-    printf("\n");
-
-    // --- Row: DIV32_FIX - matched divide as 64/32 one's complement (decoder.cpp) ---
-    printf("%s JIT DIV32 FIX  : ", (selectedRow == OPT_DIV32_FIX) ? MENU_CURSOR : " ");
-    switch (g_div32_fix_preset) {
-      case 0: printf("[< OFF (32/32)       >]"); break;
-      case 1: printf("[< ON (64/32 EXACT)  >]"); break;
-    }
-    printf(" matched divide: high word kept");
     printf("\n\n");
 
     printOptionsFooter();
@@ -4771,6 +4651,156 @@ bool displayOptionsMenu()
 
     printOptionsFooter();
     } // end page 7
+
+    // Page 8 - FIXES: every *_FIX preset in one place (moved from pages 0-6).
+    if (optionsPage == 8) {
+    // --- Row: TEX CLAMP FIX - per-polygon wrap mode on cached textures ---
+    printf("%s TEX CLAMP FIX  : ", (selectedRow == OPT_TEX_CLAMP_FIX) ? MENU_CURSOR : " ");
+    switch (g_tex_clamp_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (PER POLYGON)  >]"); break;
+    }
+    printf(" fix streaked/stretched textures");
+    printf("\n");
+
+    // --- Row: Twiddled YUV422 texture decode fix ---
+    printf("%s YUV TWIDDLE FIX: ", (selectedRow == OPT_YUV_TWIDDLE_FIX) ? MENU_CURSOR : " ");
+    switch (g_yuv_twiddle_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CORRECT)      >]"); break;
+    }
+    printf(" green YUV art (VF3tb FIRST MATCH)");
+    printf("\n");
+
+    // --- Row: TLUT FIX - CI4/CI8 palettes from a per-render copy, not a ring ---
+    printf("%s TLUT FIX       : ", (selectedRow == OPT_TLUT_FIX) ? MENU_CURSOR : " ");
+    switch (g_tlut_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" fixes CI4/CI8 color flicker");
+    printf("\n");
+
+    // --- Row: DECAL FIX - TSP Decal (ShadInstr 0) ignores the vertex colour ---
+    printf("%s DECAL FIX      : ", (selectedRow == OPT_DECAL_FIX) ? MENU_CURSOR : " ");
+    switch (g_decal_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" black world textures (SoF)");
+    printf("\n");
+
+    // --- Row: CDDA_PAUSE_FIX - CD audio pause keeps its position (gdromv3.cpp) ---
+    printf("%s CDDA PAUSE FIX : ", (selectedRow == OPT_CDDA_PAUSE_FIX) ? MENU_CURSOR : " ");
+    switch (g_cdda_pause_fix_preset) {
+      case 0: printf("[< OFF (TO FAD 150)  >]"); break;
+      case 1: printf("[< ON (KEEP POS)     >]"); break;
+    }
+    printf(" music resumes after a pause");
+    printf("\n");
+
+    // --- Row: CDDA_STATE_FIX - Flycast CD-DA play/pause/end/read rules (gdromv3.cpp) ---
+    printf("%s CDDA STATE FIX : ", (selectedRow == OPT_CDDA_STATE_FIX) ? MENU_CURSOR : " ");
+    switch (g_cdda_state_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FLYCAST)      >]"); break;
+    }
+    printf(" play/pause/end/read rules");
+    printf("\n");
+
+    // --- Row: ARM7_RESET_FIX - ARM7 reset enters SVC, clears the FIQ latch (arm7.cpp) ---
+    printf("%s ARM7 RESET FIX : ", (selectedRow == OPT_ARM7_RESET_FIX) ? MENU_CURSOR : " ");
+    switch (g_arm7_reset_fix_preset) {
+      case 0: printf("[< OFF (SYSTEM MODE) >]"); break;
+      case 1: printf("[< ON (SVC + LATCH)  >]"); break;
+    }
+    printf(" sound CPU reset like real HW");
+    printf("\n");
+
+    // --- Row: CDI_HDR_FIX - V2/V3 DiscJuggler header offset (cdi.cpp) ---
+    printf("%s CDI HEADER FIX : ", (selectedRow == OPT_CDI_HDR_FIX) ? MENU_CURSOR : " ");
+    switch (g_cdi_hdr_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (CDIRIP RULE)  >]"); break;
+    }
+    printf(" V2/V3 .cdi images load");
+    printf("\n");
+
+    // --- Row: INTERP_FIX - SH4 interpreter div1/addv/subv/mul.l/mac (sh4_cpu.cpp) ---
+    printf("%s SH4 INTERP FIX : ", (selectedRow == OPT_INTERP_FIX) ? MENU_CURSOR : " ");
+    switch (g_interp_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (MANUAL OPS)   >]"); break;
+    }
+    printf(" div1/addv/subv/mul.l/mac exact");
+    printf("\n");
+
+    // --- Row: GDROM_STAT_FIX - REQ_STAT / GET_SCD position reports (gdromv3.cpp) ---
+    printf("%s GDROM STAT FIX : ", (selectedRow == OPT_GDROM_STAT_FIX) ? MENU_CURSOR : " ");
+    switch (g_gdrom_stat_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FAD+TRACK)    >]"); break;
+    }
+    printf(" CD position/subcode reports");
+    printf("\n");
+
+    // --- Row: GDROM_HANG_FIX - rare drive commands abort instead of die() (gdromv3.cpp) ---
+    printf("%s GDROM HANG FIX : ", (selectedRow == OPT_GDROM_HANG_FIX) ? MENU_CURSOR : " ");
+    switch (g_gdrom_hang_fix_preset) {
+      case 0: printf("[< OFF (DIE/VERIFY)  >]"); break;
+      case 1: printf("[< ON (ABORT/CLAMP)  >]"); break;
+    }
+    printf(" bad drive cmds no longer hang");
+    printf("\n");
+
+    // --- Row: TOC_FIX - TOC ADR / lead-out / GDI track 2 + sessions (ImgReader) ---
+    printf("%s GDROM TOC FIX  : ", (selectedRow == OPT_TOC_FIX) ? MENU_CURSOR : " ");
+    switch (g_toc_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (ADR1+LEADOUT) >]"); break;
+    }
+    printf(" TOC: ADR, lead-out, GDI track 2");
+    printf("\n");
+
+    // --- Row: SPG_FIX - field bit / HBlank IRQ modes / VBLANK_INT reset (SPG.cpp) ---
+    printf("%s SPG TIMING FIX : ", (selectedRow == OPT_SPG_FIX) ? MENU_CURSOR : " ");
+    switch (g_spg_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FLYCAST)      >]"); break;
+    }
+    printf(" field bit, HBlank IRQ modes");
+    printf("\n");
+
+    // --- Row: DMA_FIX - ch2/PVR/Sort/AICA-G2 DMA correctness fixes ---
+    printf("%s DMA FIX        : ", (selectedRow == OPT_DMA_FIX) ? MENU_CURSOR : " ");
+    switch (g_dma_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" ch2/PVR/Sort/AICA DMA fixes");
+    printf("\n");
+
+    // --- Row: MMUCR_FIX - MMU control register at its real bits (ccn.h) ---
+    printf("%s MMUCR FIX      : ", (selectedRow == OPT_MMUCR_FIX) ? MENU_CURSOR : " ");
+    switch (g_mmucr_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< BITS (AT/TI/URC)  >]"); break;
+      case 2: printf("[< FULL (PS3 TESTED) >]"); break;
+    }
+    printf(" Rez/Ikaruga/Border Down boot");
+    printf("\n");
+
+    // --- Row: DIV32_FIX - matched divide as 64/32 one's complement (decoder.cpp) ---
+    printf("%s JIT DIV32 FIX  : ", (selectedRow == OPT_DIV32_FIX) ? MENU_CURSOR : " ");
+    switch (g_div32_fix_preset) {
+      case 0: printf("[< OFF (32/32)       >]"); break;
+      case 1: printf("[< ON (64/32 EXACT)  >]"); break;
+    }
+    printf(" matched divide: high word kept");
+    printf("\n\n");
+
+    printOptionsFooter();
+    } // end page 8
 
 
 
