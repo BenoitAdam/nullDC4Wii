@@ -802,6 +802,13 @@ int g_tlut_fix_preset = 1;
 // colour 0 on its Decal world + lightmap strips: the whole level went black.
 // See DECAL_FIX() in gxRend.cpp.
 int g_decal_fix_preset = 1;
+// 0 = off (legacy: the TA vertex/strip/param arenas have no bounds, and a
+// render that lands while the TA is mid-strip leaves that strip to end against
+// the previous frame's lists[0] count -- a huge count, GX_Begin's u16 count
+// truncates it, FIFO error; GitHub issue #16). 1 = on (default): hard stops on
+// all three arenas, the open strip is carried across the render, bad counts
+// are dropped. See TA_ARENA_FIX() in gxRend.cpp.
+int g_ta_arena_fix_preset = 1;
 
 // STRIP_DEDUP: skip the texture bind a strip repeats from the strip before it.
 // Built for ChuChu Rocket's mouse mania -- hundreds of copies of one mouse
@@ -823,6 +830,7 @@ extern "C" {
   int get_tex_clamp_fix_preset() { return g_tex_clamp_fix_preset; }
   int get_tlut_fix_preset() { return g_tlut_fix_preset; }
   int get_decal_fix_preset() { return g_decal_fix_preset; }
+  int get_ta_arena_fix_preset() { return g_ta_arena_fix_preset; }
 }
 
 // FASTMEM — PPC-MMU fastmem for the SH4 dynarec (wii/wii_fastmem.cpp +
@@ -3118,6 +3126,7 @@ void checkBiosFiles()
 #define OPT_DECAL_FIX   145  // Page 6 (EXPERIMENTAL), under TLUT FIX (page 2 is full)
 #define OPT_IDLE_HOOK   146  // Page 5 (CORE), under IDLE KAMUI
 #define OPT_AICA_REL_CULL 147 // Page 4 (AUDIO), under AICA FAST
+#define OPT_TA_ARENA_FIX 148 // Page 9 (FIXES), under DECAL FIX
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3309,6 +3318,7 @@ static const int OPT_PAGE8_ROWS[] = {
   OPT_YUV_TWIDDLE_FIX,
   OPT_TLUT_FIX,
   OPT_DECAL_FIX,
+  OPT_TA_ARENA_FIX,
   OPT_CDDA_PAUSE_FIX,
   OPT_CDDA_STATE_FIX,
   OPT_ARM7_RESET_FIX,
@@ -4747,6 +4757,15 @@ bool displayOptionsMenu()
     printf(" black world textures (SoF)");
     printf("\n");
 
+    // --- Row: TA ARENA FIX - bounded TA arenas + mid-strip render carry (#16) ---
+    printf("%s TA ARENA FIX   : ", (selectedRow == OPT_TA_ARENA_FIX) ? MENU_CURSOR : " ");
+    switch (g_ta_arena_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" mad vertices + FIFO error");
+    printf("\n");
+
     // --- Row: CDDA_PAUSE_FIX - CD audio pause keeps its position (gdromv3.cpp) ---
     printf("%s CDDA PAUSE FIX : ", (selectedRow == OPT_CDDA_PAUSE_FIX) ? MENU_CURSOR : " ");
     switch (g_cdda_pause_fix_preset) {
@@ -5033,6 +5052,7 @@ bool displayOptionsMenu()
         case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
         case OPT_TLUT_FIX:       g_tlut_fix_preset        = (g_tlut_fix_preset        + 1) % 2; break;
         case OPT_DECAL_FIX:      g_decal_fix_preset       = (g_decal_fix_preset       + 1) % 2; break;
+        case OPT_TA_ARENA_FIX:   g_ta_arena_fix_preset    = (g_ta_arena_fix_preset    + 1) % 2; break;
         case OPT_TEX_CLAMP_FIX:  g_tex_clamp_fix_preset   = (g_tex_clamp_fix_preset   + 1) % 2; break;
         case OPT_STRIP_DEDUP:    g_strip_dedup_preset     = (g_strip_dedup_preset     + 2) % 3; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
@@ -5194,6 +5214,7 @@ bool displayOptionsMenu()
         case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
         case OPT_TLUT_FIX:       g_tlut_fix_preset        = (g_tlut_fix_preset        + 1) % 2; break;
         case OPT_DECAL_FIX:      g_decal_fix_preset       = (g_decal_fix_preset       + 1) % 2; break;
+        case OPT_TA_ARENA_FIX:   g_ta_arena_fix_preset    = (g_ta_arena_fix_preset    + 1) % 2; break;
         case OPT_TEX_CLAMP_FIX:  g_tex_clamp_fix_preset   = (g_tex_clamp_fix_preset   + 1) % 2; break;
         case OPT_STRIP_DEDUP:    g_strip_dedup_preset     = (g_strip_dedup_preset     + 1) % 3; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
@@ -6130,6 +6151,7 @@ int main(int argc, wchar *argv[])
     printf("Tex wrap guard : %s\n", g_tex_wrap_guard_preset ? "ON (SAFE WRAP)" : "OFF (LEGACY)");
     printf("TLUT fix       : %s\n", g_tlut_fix_preset ? "ON (PER-RENDER COPY)" : "OFF (RING)");
     printf("Decal fix      : %s\n", g_decal_fix_preset ? "ON (TEXTURE ONLY)" : "OFF (MODULATE)");
+    printf("TA arena fix   : %s\n", g_ta_arena_fix_preset ? "ON (BOUNDED + CARRY)" : "OFF (LEGACY)");
     printf("Strip dedup    : %s\n", g_strip_dedup_preset == 2 ? "SKIP REPEATED" :
                                     g_strip_dedup_preset == 1 ? "CENSUS (LOG ONLY)" : "OFF (LEGACY)");
     printf("Tex clamp fix  : %s\n", g_tex_clamp_fix_preset ? "ON (PER POLYGON)" : "OFF (LEGACY)");

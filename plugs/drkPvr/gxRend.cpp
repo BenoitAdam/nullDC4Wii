@@ -402,6 +402,38 @@ extern "C" int get_decal_alpha_preset();
 extern "C" int get_decal_fix_preset();
 #define DECAL_FIX() (get_decal_fix_preset() == 1)
 
+// TA arena fix (ta_arena_fix) -- GitHub issue #16, "GFX FIFO: Unknown Opcode"
+// after a stretch of mad vertices (18 Wheeler, Castlevania HALL, Demolition
+// Racer, Magforce Racing, Moho, NHL 2K, South Park Rally, Test Drive 6 2P).
+//
+// Every strip is recorded as lists[i].ptr = curVTX at its first vertex, then
+// overwritten with count = curVTX - ptr at its last. reset_vtx_state() rewinds
+// curVTX/curLST to the arena start after each render, but a STARTRENDER can
+// arrive while the TA is in the MIDDLE of a strip (the game's render-done or
+// vblank interrupt kicks the render while the main loop is still feeding the
+// next list -- timing-dependent, hence JIT-only / HALL-only / 2P-only). The
+// open strip then ends against lists[0].ptr, which still holds the previous
+// frame's lists[0] COUNT: count = (curVTX - (Vertex*)0x8000000x) is a huge
+// number. Flagged, the draw loop masks it to 15 bits and every later strip of
+// the frame is drawn from the wrong offset (mad vertices). Unflagged, it goes
+// straight to GX_Begin(), whose count is a u16: GX expects (count & 0xFFFF)
+// vertices, the loop sends them all, the FIFO desyncs, and drawVTX walks off
+// into wild memory (the "Unknown Pointer" lines in the Dolphin logs).
+// Separately, nothing bounds lists[]/listModes[] at all (the only cap is 38K
+// vertices, checked at polygon headers only), and right behind them in BSS
+// sit s_texmap, listTileClip and gp_fifo -- the GX FIFO itself.
+//
+// ON (default): reset_vtx_state() carries an open strip (and the polygon
+// header in effect) to the start of the fresh arena so it ends with a real
+// count; every arena gets a hard stop (vertex writes past the end land in a
+// 4-slot sink, strips/headers past the end are dropped until the next header
+// resets the arena, like the 38K vertex cap); a strip whose count is negative
+// or above the draw loop's 0x7FFF mask is dropped. NotDC (PS3) has the same
+// caps (MAX_VTX/MAX_STRIPS/MAX_PARAMS). Fires print one [ARENA] line each
+// (rate limited) to /ndclog.txt. OFF = legacy, no checks.
+extern "C" int get_ta_arena_fix_preset();
+#define TA_ARENA_FIX() (get_ta_arena_fix_preset() == 1)
+
 // 2D Framebuffer Rendering
 extern "C" int get_framebuffer_2d();
 
@@ -2544,6 +2576,29 @@ PolyParam *OpaqueMod = 0;
 PolyParam *curMod = listModes;
 bool global_regd;
 
+// ── TA_ARENA_FIX() state (see the macro doc at the top of the file) ──────────
+// Arena capacities, in elements.
+#define TA_VTX_N ((s32)(sizeof(vertices)  / sizeof(vertices[0])))
+#define TA_LST_N ((s32)(sizeof(lists)     / sizeof(lists[0])))
+#define TA_MOD_N ((s32)(sizeof(listModes) / sizeof(listModes[0])))
+// Longest open strip reset_vtx_state() moves to the fresh arena start. Real
+// strips are a few dozen vertices; anything longer just restarts there.
+#define TA_CARRY_MAX 4096
+// Highest address a vertex write may START at: the arena's last 4 slots are a
+// sink (a sprite writes curVTX[0..3]). 0xFFFFFFFF = preset off, never fires.
+// Refreshed in reset_vtx_state() like the other cached preset flags, so the
+// per-vertex check is one load and one compare, no preset call.
+u32  g_ta_vtx_stop     = 0xFFFFFFFFu;
+bool g_ta_arena_cached = false;
+// An arena filled up: every strip is dropped (its vertices reclaimed) until
+// the arena resets -- at the render, or at the next polygon header past the
+// 38K vertex cap. Only ever set while the preset is on.
+bool g_ta_full = false;
+// A strip is open in the TA decoder (StartPolyStrip seen, EndPolyStrip not
+// yet). Kept unconditionally (two byte stores per strip); only read by
+// reset_vtx_state() under the preset.
+bool g_ta_strip_open = false;
+
 // ── RTT_CARRY_OVERLAY() state ────────────────────────────────────────────────
 // When a bit-24 render is dropped in carry mode, StartRender() snapshots that
 // pass here and moves the frame origin past it. DoRender() then builds the
@@ -3185,12 +3240,107 @@ static u32 bg_lerp_color(u32 c0, u32 c1, u32 c2, f32 w0, f32 w1, f32 w2, bool fo
 u32 g_vtx_reset_seq = 0;
 #endif
 
+// ── TA_ARENA_FIX() helpers ───────────────────────────────────────────────────
+// [ARENA] lines: one per guard event, first 20 then every 500th, so a game
+// that trips a guard every frame cannot flood /ndclog.txt. A game the guards
+// never fire for writes only the ARMED line.
+static u32 s_arena_events = 0;
+static void ta_arena_log(const char *what, s32 n)
+{
+  s_arena_events++;
+  if (s_arena_events <= 20 || (s_arena_events % 500) == 0)
+  {
+    printf("[ARENA] #%u %s n=%d frame=%u vtx=%d/%d strips=%d/%d params=%d/%d\n",
+           s_arena_events, what, (int)n, (u32)FrameCount,
+           (int)(curVTX - vertices), (int)TA_VTX_N,
+           (int)(curLST - lists), (int)TA_LST_N,
+           (int)(curMod - listModes), (int)TA_MOD_N);
+    fflush(stdout);
+  }
+}
+
+// A vertex is about to start past g_ta_vtx_stop: send it, and every vertex
+// after it, to the 4-slot sink at the end of the arena. The strip it belongs
+// to is dropped at EndPolyStrip (g_ta_full).
+static void __attribute__((noinline)) ta_vtx_full()
+{
+  if (!g_ta_full)
+  {
+    g_ta_full = true;
+    ta_arena_log("VTX FULL, strips dropped until the arena resets",
+                 (s32)(curVTX - vertices));
+  }
+  curVTX = vertices + TA_VTX_N - 4;
+}
+
+// EndPolyStrip()/sprite B could not record this strip (arena full, or a count
+// outside 0..0x7FFF). The caller returns without advancing curLST/curMod; a
+// pending polygon header stays pending for the next strip. n = curVTX - ptr.
+static void __attribute__((noinline)) ta_strip_drop(s32 n)
+{
+  if (!g_ta_full)
+  {
+    if (curLST >= lists + TA_LST_N - 1)
+    {
+      g_ta_full = true;
+      ta_arena_log("STRIPS FULL, strips dropped until the arena resets", n);
+    }
+    else if (global_regd && curMod >= listModes + TA_MOD_N - 1)
+    {
+      g_ta_full = true;
+      ta_arena_log("PARAMS FULL, strips dropped until the arena resets", n);
+    }
+    else
+      ta_arena_log(n < 0 ? "BAD COUNT, strip dropped" : "LONG STRIP, strip dropped", n);
+  }
+  // Give the dropped strip's vertices back (ptr is valid whenever n >= 0), so
+  // a run of dropped strips cannot walk curVTX into the sink.
+  if (n >= 0)
+    curVTX = curLST->ptr;
+}
+
 // Resets internal pointers for the next frame's vertex list.
 void reset_vtx_state()
 {
 #if LOGO_DEBUG_LOG
   g_vtx_reset_seq++;
 #endif
+  // TA_ARENA_FIX(): capture what the TA decoder has in flight BEFORE the
+  // cursors are rewound -- the polygon header in effect and, when the render
+  // landed mid-strip, the open strip (see the macro doc at the top of the file).
+  const bool arena_fix = TA_ARENA_FIX();
+  bool      carry_param = false;
+  PolyParam carried_mod;
+  u32       carried_clip = 0;
+  Vertex   *carry_src = 0;  // first slot to move to vertices[0]
+  s32       carry_n = 0;    // complete vertices moved (the open strip so far)
+  if (arena_fix)
+  {
+    // The header the next strip would use: a pending one sits at *curMod,
+    // otherwise the last one consumed is curMod[-1].
+    PolyParam *src = global_regd ? curMod : (curMod > listModes ? curMod - 1 : 0);
+    if (src && src < listModes + TA_MOD_N)
+    {
+      carried_mod  = *src;
+      carried_clip = listTileClip[src - listModes];
+      carry_param  = true;
+    }
+    if (g_ta_strip_open && curVTX >= vertices && curVTX <= vertices + TA_VTX_N)
+    {
+      const Vertex *ptr = curLST->ptr;
+      const s32 k = (s32)(curVTX - ptr);
+      if (!g_ta_full && ptr >= vertices && k >= 0 && k <= TA_CARRY_MAX)
+      {
+        carry_src = (Vertex *)ptr; // whole strip so far + the in-flight slots
+        carry_n   = k;
+      }
+      else
+      {
+        carry_src = curVTX;        // in-flight slots only: the strip restarts
+        carry_n   = 0;
+      }
+    }
+  }
   curVTX = vertices;
   curLST = lists;
   curMod = listModes;
@@ -3242,6 +3392,63 @@ void reset_vtx_state()
   g_fixed_depth_cached      = !FIXED_DEPTH_OFF() || g_legacy_depth_cached;
   g_vert_z_clamp            = g_legacy_depth_cached ? 0.001f
                             : (FAR_CLAMP() ? 0.00001f : 0.0001f);
+
+  // TA_ARENA_FIX(): arm the hard stops, then put back what was in flight.
+  g_ta_arena_cached = arena_fix;
+  g_ta_vtx_stop     = arena_fix ? (u32)(vertices + TA_VTX_N - 4) : 0xFFFFFFFFu;
+  g_ta_full         = false;
+  if (arena_fix)
+  {
+    static bool s_arena_armed = false;
+    if (!s_arena_armed)
+    {
+      s_arena_armed = true;
+      printf("[ARENA] ARMED: ta_arena_fix on, vtx=%d strips=%d params=%d "
+             "(a line below only when a guard fires)\n",
+             (int)TA_VTX_N, (int)TA_LST_N, (int)TA_MOD_N);
+      fflush(stdout);
+    }
+    // The header in effect becomes slot 0's pending header: a strip that
+    // continues (or starts) before the next header is drawn with it instead
+    // of with whatever state the previous strip left. A new header simply
+    // overwrites it, which is the normal case.
+    if (carry_param)
+    {
+      listModes[0]    = carried_mod;
+      listTileClip[0] = carried_clip;
+      global_regd     = true;
+    }
+    if (carry_src)
+    {
+      // Move the open strip to the arena start, plus the 4 slots past it: a
+      // 64-byte vertex (or a sprite) whose first half was written before the
+      // render has its position there, and its second half will land at
+      // curVTX[0]. memmove: the source is at or above the destination.
+      s32 slots = carry_n + 4;
+      const s32 room = (s32)((vertices + TA_VTX_N) - carry_src);
+      if (slots > room)
+        slots = room;
+      if (carry_src != vertices && slots > 0)
+        memmove(vertices, carry_src, (size_t)slots * sizeof(Vertex));
+      curVTX = vertices + carry_n;
+      // The carried vertices belong to this frame's depth range and inf scan.
+      for (s32 i = 0; i < carry_n; i++)
+      {
+        const float W = vertices[i].z;
+        if (!(W > 0.0f))
+          g_inf_vtx_seen = true;
+        if (!g_fixed_depth_cached && W > 0.0f)
+        {
+          if (W < vtx_min_Z) vtx_min_Z = W;
+          if (W > vtx_max_Z) vtx_max_Z = W;
+        }
+      }
+      ta_arena_log("RESET MID-STRIP, open strip carried", carry_n);
+    }
+    // The open strip (carried or restarting) ends against a real pointer, not
+    // against the count the previous frame left in lists[0].
+    lists[0].ptr = vertices;
+  }
 }
 
 #define VTX_TFX(x) (x)
@@ -13528,10 +13735,26 @@ struct VertexDecoder
   __forceinline static void StartPolyStrip()
   {
     curLST->ptr = curVTX;
+    g_ta_strip_open = true; // TA_ARENA_FIX(): reset_vtx_state() carries it
   }
 
   __forceinline static void EndPolyStrip()
   {
+    g_ta_strip_open = false;
+    // TA_ARENA_FIX(): record the strip only if its count is one the draw loop
+    // can walk (0..0x7FFF, its flagged-count mask) and both arenas still have
+    // a slot after this one. The last lists[]/listModes[] slot is never
+    // advanced past, so StartPolyStrip / glob_param_bdc always write in bounds.
+    if (g_ta_arena_cached)
+    {
+      const s32 n = (s32)(curVTX - curLST->ptr);
+      if (g_ta_full || (u32)n > 0x7FFFu || curLST >= lists + TA_LST_N - 1 ||
+          (global_regd && curMod >= listModes + TA_MOD_N - 1))
+      {
+        ta_strip_drop(n);
+        return;
+      }
+    }
     curLST->count = (curVTX - curLST->ptr);
     if (global_regd)
     {
@@ -13589,7 +13812,12 @@ struct VertexDecoder
   curVTX[dst].z = W; /*Linearly scaled later*/
 
   // Poly Vertex handlers
-#define vert_cvt_base vert_base(0, vtx->xyz[0], vtx->xyz[1], vtx->xyz[2])
+  // TA_ARENA_FIX(): every poly vertex handler (all 15 types; the 64-byte ones
+  // in their A half) starts here, so this is the one vertex-arena stop for
+  // polys. g_ta_vtx_stop is 0xFFFFFFFF with the preset off: never taken.
+#define vert_cvt_base \
+  if ((u32)curVTX > g_ta_vtx_stop) ta_vtx_full(); \
+  vert_base(0, vtx->xyz[0], vtx->xyz[1], vtx->xyz[2])
 
   // Handlers for various PVR vertex types (Packed color, Float color, Intensity, etc.)
   //(Non-Textured, Packed Color)
@@ -13817,7 +14045,10 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
   // Sprites are converted to 4-vertex triangle strips.
   __forceinline static void AppendSpriteVertexA(TA_Sprite1A *sv)
   {
-    
+    // TA_ARENA_FIX(): a sprite writes curVTX[0..3] across A and B, and the
+    // stop leaves exactly 4 slots after it.
+    if ((u32)curVTX > g_ta_vtx_stop)
+      ta_vtx_full();
     StartPolyStrip();
     curVTX[0].col = curSpriteCol;
     curVTX[1].col = curSpriteCol;
@@ -13856,6 +14087,15 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
     //			VertexCount+=4;
 
     // EndPolyStrip();
+    g_ta_strip_open = false;
+    // TA_ARENA_FIX(): same arena checks as EndPolyStrip (the count is always 4).
+    if (g_ta_arena_cached &&
+        (g_ta_full || curLST >= lists + TA_LST_N - 1 ||
+         (global_regd && curMod >= listModes + TA_MOD_N - 1)))
+    {
+      ta_strip_drop((s32)(curVTX - curLST->ptr));
+      return;
+    }
     curLST->count = 4;
     if (global_regd)
     {
@@ -13906,10 +14146,14 @@ static void AppendSpriteVertex0B(TA_Sprite0B* sv)
   __forceinline static void ListInit()
   {
   // reset_vtx_state();
+    // ta.h drops StripStarted here without an EndPolyStrip: no strip is open
+    // any more, so reset_vtx_state() must not carry one (TA_ARENA_FIX()).
+    g_ta_strip_open = false;
   }
   __forceinline static void SoftReset()
   {
   // reset_vtx_state();
+    g_ta_strip_open = false; // same as ListInit
   }
 };
 // Setup related
