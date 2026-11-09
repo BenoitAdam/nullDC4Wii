@@ -381,6 +381,27 @@ extern "C" int get_ppz_write_preset();
 extern "C" int get_decal_alpha_preset();
 #define DECAL_ALPHA_FIX() (get_decal_alpha_preset() == 1)
 
+// Decal shading (decal_fix)
+//
+// TSP.ShadInstr 0 is Decal: PIXRGB = TEXRGB (+ offset), PIXA = TEXA. The
+// vertex colour plays no part at all, so a game may send any value there.
+// Flycast's shader does exactly `color = texcol` for it. This renderer put
+// GX_MODULATE (texture x vertex colour) on every textured strip, so a Decal
+// surface came out as texture x whatever the game left in the colour slot.
+//
+// Soldier of Fortune (2026-11-09 [SIG] census) sends 0x00000000 there: ~1150
+// opaque world strips (Decal, Src One/Dst Zero) and ~1150 translucent lightmap
+// strips (Decal, Src Zero/Dst OtherColor, i.e. framebuffer *= lightmap) per
+// frame. Modulate turned both into black, so the base walls were black and the
+// lightmap pass then multiplied the whole level by zero. Only the ModulateAlpha
+// strips (characters, lamp) survived.
+//
+// ON puts GX_REPLACE (texture colour and alpha, no rasterised colour) on stage
+// 0 for ShadInstr 0, which is the hardware rule. Offset colour and fog stages
+// read CPREV after it, as they do after MODULATE. OFF = legacy MODULATE.
+extern "C" int get_decal_fix_preset();
+#define DECAL_FIX() (get_decal_fix_preset() == 1)
+
 // 2D Framebuffer Rendering
 extern "C" int get_framebuffer_2d();
 
@@ -860,6 +881,13 @@ static unsigned s_logo_sig_used = 0; // signature-triggered passes so far (LOGO_
 // so the display pass drew 776 + 3329 strips: the rear-view camera's geometry
 // painted into the top-left of the screen. Fix = render_to_texture=on (preset,
 // no code). Safe to re-arm (flip to 1) for the next game.
+// 2026-11-09, Soldier of Fortune (most world textures black): the per-strip
+// lines now also carry off/gou/fog/mip/clr/spc/tsp/tcw/uv range, and every burst
+// ends with [SIG] lines: strips grouped by full render state with blk=1
+// (vertex-0 RGB zero) / a0=1 (vertex-0 alpha zero) flags. One capture answered
+// it: ~1150 OP + ~1150 TR (lightmap, Src Zero/Dst OtherColor) strips per frame
+// are ShadInstr 0 = Decal with col=00000000, and this renderer modulated Decal by
+// the vertex colour -> DECAL_FIX() (GX_REPLACE). Off again; safe to re-arm (1).
 #define SCENE_DEBUG_LOG 0
 
 #define SCN_BURST        4    // passes per burst (consecutive passes are nearly
@@ -4806,10 +4834,12 @@ static void tev_stage0_alpha_mode(int mode, int tev_op)
     GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_KONST);
     break;
   default:
-    // GX_SetTevOp(GX_DECAL) leaves (ZERO,ZERO,ZERO,RASA); every other op this
-    // renderer puts on stage 0 leaves MODULATE's (ZERO,TEXA,RASA,ZERO).
+    // GX_SetTevOp(GX_DECAL) leaves (ZERO,ZERO,ZERO,RASA), GX_REPLACE (DECAL_FIX)
+    // leaves (ZERO,ZERO,ZERO,TEXA); MODULATE leaves (ZERO,TEXA,RASA,ZERO).
     if (tev_op == GX_DECAL)
       GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_RASA);
+    else if (tev_op == GX_REPLACE)
+      GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_ZERO, GX_CA_ZERO, GX_CA_TEXA);
     else
       GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_TEXA, GX_CA_RASA, GX_CA_ZERO);
     break;
@@ -4950,7 +4980,7 @@ static u16 *tlut_mirror_get(u32 pal_base, u32 n_entries, u32 pal_fmt)
   return &s_tlut_mirror[pal_base];
 }
 
-static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
+static void SetTextureParams(PolyParam *mod, bool caller_sets_op)
 {
   // STRIP_DEDUP() mode 2: this strip asks for exactly what is already loaded.
   // Everything below derives from tsp/tcw alone, so a match means there is
@@ -4979,10 +5009,11 @@ static void SetTextureParams(PolyParam *mod, bool decal_alpha_fix)
   s_texbind_tcw   = mod->tcw.full;
   s_texbind_valid = true;
 
-  // decal_alpha_fix off: keep the original unconditional GX_MODULATE here so this
-  // path costs exactly what it did before the fix existed. On: the caller sets
-  // TEVSTAGE0's op itself based on TSP.ShadInstr right after this returns.
-  if (!decal_alpha_fix)
+  // caller_sets_op = decal_alpha_fix || decal_fix. Both off: keep the original
+  // unconditional GX_MODULATE here so this path costs exactly what it did before
+  // either fix existed. On: the caller sets TEVSTAGE0's op itself based on
+  // TSP.ShadInstr right after this returns.
+  if (!caller_sets_op)
     GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
 
   u32 tex_addr = (mod->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK;
@@ -9165,6 +9196,11 @@ void DoRender()
   // the per-strip block below, so a stale 0 can never hide a live override.
   int last_tev_amode = 0;
   const bool decal_alpha_fix = DECAL_ALPHA_FIX(); // read once per frame, not per polygon
+  const bool decal_fix       = DECAL_FIX();       // ShadInstr 0 -> GX_REPLACE, same rule
+  // Either fix makes the per-strip code below own TEVSTAGE0's op (picked from
+  // TSP.ShadInstr); SetTextureParams() then leaves the op alone. With both off,
+  // SetTextureParams() keeps setting GX_MODULATE itself, exactly as before.
+  const bool stage0_op_owned = decal_alpha_fix || decal_fix;
   // fmv_format=tev: true while the 8-stage YUV program owns the TEV.
   const bool fmv_tev  = FMV_FORMAT_TEV(); // read once per frame like the rest
   bool last_yuv_tev   = false;
@@ -9363,13 +9399,15 @@ void DoRender()
     {
       GX_SetNumTexGens(1);
       GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
-      GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
+      // DECAL_FIX(): the background is an ordinary polygon to the PVR, so a
+      // Decal background ignores its vertex colour too.
+      GX_SetTevOp(GX_TEVSTAGE0, (decal_fix && bg_tsp.ShadInstr == 0) ? GX_REPLACE : GX_MODULATE);
 
       PolyParam bgParam = {};
       bgParam.isp = bg_isp;
       bgParam.tsp = bg_tsp;
       bgParam.tcw = bg_tcw;
-      SetTextureParams(&bgParam, decal_alpha_fix);
+      SetTextureParams(&bgParam, stage0_op_owned);
     }
     else
     {
@@ -10239,10 +10277,10 @@ void DoRender()
         bool as_kill = false;
         if (is_textured)
         {
-          SetTextureParams(stripMod, decal_alpha_fix);
-          // Under decal_alpha_fix the caller owns stage 0's op — the select
-          // pass always modulates (texA*vtxA feeds the kill).
-          if (decal_alpha_fix && last_shad_instr != GX_MODULATE)
+          SetTextureParams(stripMod, stage0_op_owned);
+          // Under decal_alpha_fix/decal_fix the caller owns stage 0's op — the
+          // select pass always modulates (texA*vtxA feeds the kill).
+          if (stage0_op_owned && last_shad_instr != GX_MODULATE)
           {
             GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
             last_shad_instr = GX_MODULATE;
@@ -10351,15 +10389,20 @@ void DoRender()
 
         if (is_textured)
         {
-          SetTextureParams(stripMod, decal_alpha_fix);
+          SetTextureParams(stripMod, stage0_op_owned);
 
           // TSP.ShadInstr==2 (DecalAlpha) needs GX_DECAL instead of GX_MODULATE on
-          // TEVSTAGE0 (see DECAL_ALPHA_FIX() above for why). Gated on decal_alpha_fix
-          // so the off path never reads tsp.ShadInstr here — SetTextureParams() above
-          // already set GX_MODULATE unconditionally either way.
-          if (decal_alpha_fix)
+          // TEVSTAGE0 (see DECAL_ALPHA_FIX() above for why), and ShadInstr==0
+          // (Decal) needs GX_REPLACE (see DECAL_FIX()). Gated on stage0_op_owned
+          // so the off path never reads tsp.ShadInstr here — SetTextureParams()
+          // above already set GX_MODULATE unconditionally in that case.
+          if (stage0_op_owned)
           {
-            int tev_op = (stripMod->tsp.ShadInstr == 2) ? GX_DECAL : GX_MODULATE;
+            int tev_op = GX_MODULATE;
+            if (decal_alpha_fix && stripMod->tsp.ShadInstr == 2)
+              tev_op = GX_DECAL;
+            else if (decal_fix && stripMod->tsp.ShadInstr == 0)
+              tev_op = GX_REPLACE;
             if (tev_op != last_shad_instr)
             {
               GX_SetTevOp(GX_TEVSTAGE0, tev_op);
@@ -10389,7 +10432,7 @@ void DoRender()
           if (tev_amode || last_tev_amode)
           {
             tev_stage0_alpha_mode(tev_amode,
-                                  decal_alpha_fix ? last_shad_instr : GX_MODULATE);
+                                  stage0_op_owned ? last_shad_instr : GX_MODULATE);
             last_tev_amode = tev_amode;
           }
           u32 fmt = stripMod->tcw.NO_PAL.PixelFmt;
@@ -10501,6 +10544,8 @@ void DoRender()
             int op = GX_MODULATE;
             if (decal_alpha_fix && is_textured && stripMod->tsp.ShadInstr == 2)
               op = GX_DECAL;
+            else if (decal_fix && is_textured && stripMod->tsp.ShadInstr == 0)
+              op = GX_REPLACE;
             // last_fog_mode is this strip's mode: the fog block above already
             // ran and cached it, but the program overwrote the stage it lives
             // in, so hand it to the restore to reinstall.
@@ -12422,6 +12467,21 @@ static void scene_dump_pass()
 
   u32 lt_count[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
+  // [SIG] state histogram (2026-11-09, Soldier of Fortune: most world textures
+  // black). The per-strip list below is capped at SCN_MAX_STRIPS and a SOF frame
+  // is far bigger, so this walks EVERY strip and groups them by the whole render
+  // state that can turn a textured surface black: list type, blend factors,
+  // ShadInstr, UseAlpha/IgnoreTexA, Col_Type, Offset/Gouraud, fog, texture
+  // format, and two derived bits: vertex-0 RGB == 0 ("blk") and vertex-0 alpha
+  // == 0 ("a0"). One line per distinct state, n = strips in it, so
+  // "tex=1 blk=1 n=900" reads straight off as "900 textured strips multiply
+  // their texture by a zero vertex colour".
+  struct SigRow { u32 key; u32 n; u32 first; u32 addr; u32 tsp; u32 tcw; u32 col; u32 spc; };
+  static const int SIG_MAX = 48;
+  SigRow sig[SIG_MAX];
+  int    sig_n = 0;
+  u32    sig_lost = 0;
+
   int idx = 0;
   for (; l != curLST; l++, idx++)
   {
@@ -12432,14 +12492,61 @@ static void scene_dump_pass()
 
     lt_count[cur->pcw.ListType & 7]++;
 
+    {
+      const u32 vcol = (c > 0) ? vtx[0].col : 0;
+      const u32 blk  = ((vcol & 0x00FFFFFFu) == 0) ? 1u : 0u;
+      const u32 a0   = ((vcol >> 24) == 0)         ? 1u : 0u;
+      const u32 key  = ((u32)cur->pcw.ListType & 7)
+                     | ((u32)cur->pcw.Texture      << 3)
+                     | ((u32)cur->tsp.SrcInstr     << 4)
+                     | ((u32)cur->tsp.DstInstr     << 7)
+                     | ((u32)cur->tsp.ShadInstr    << 10)
+                     | ((u32)cur->tsp.UseAlpha     << 12)
+                     | ((u32)cur->tsp.IgnoreTexA   << 13)
+                     | ((u32)cur->pcw.Col_Type     << 14)
+                     | ((u32)cur->pcw.Offset       << 16)
+                     | ((u32)cur->pcw.Gouraud      << 17)
+                     | ((u32)cur->isp.ZWriteDis    << 18)
+                     | ((u32)cur->tsp.FogCtrl      << 19)
+                     | ((u32)cur->tcw.NO_PAL.PixelFmt << 21)
+                     | ((u32)cur->tcw.NO_PAL.VQ_Comp  << 24)
+                     | ((u32)cur->tcw.NO_PAL.MipMapped << 25)
+                     | (blk << 26) | (a0 << 27);
+      int s = 0;
+      for (; s < sig_n; s++)
+        if (sig[s].key == key) break;
+      if (s == sig_n)
+      {
+        if (sig_n < SIG_MAX)
+        {
+          sig[s].key   = key;  sig[s].n = 0;
+          sig[s].first = (u32)idx;
+          sig[s].addr  = (u32)((cur->tcw.NO_PAL.TexAddr << 3) & VRAM_MASK);
+          sig[s].tsp   = cur->tsp.full;
+          sig[s].tcw   = cur->tcw.full;
+          sig[s].col   = vcol;
+          sig[s].spc   = (c > 0) ? vtx[0].spc : 0;
+          sig_n++;
+        }
+        else
+          s = -1;
+      }
+      if (s >= 0) sig[s].n++; else sig_lost++;
+    }
+
     if (idx < SCN_MAX_STRIPS)
     {
       // Screen bbox: x,y are W-prescaled (screen x = x/W), same math the
       // [SS]/[LOGO] dumps use. W is the raw view depth (larger = farther).
       float minx = 1e30f, maxx = -1e30f, miny = 1e30f, maxy = -1e30f;
       float minw = 1e30f, maxw = -1e30f;
+      float minu = 1e30f, maxu = -1e30f, minv = 1e30f, maxv = -1e30f;
       for (s32 i = 0; i < c; i++)
       {
+        if (vtx[i].u < minu) minu = vtx[i].u;
+        if (vtx[i].u > maxu) maxu = vtx[i].u;
+        if (vtx[i].v < minv) minv = vtx[i].v;
+        if (vtx[i].v > maxv) maxv = vtx[i].v;
         const float z  = vtx[i].z;
         const float iw = (z != 0.0f) ? 1.0f / z : 0.0f;
         const float sx = vtx[i].x * iw, sy = vtx[i].y * iw;
@@ -12465,7 +12572,9 @@ static void scene_dump_pass()
       // tool's address convention.
       printf("[SCN] #%03d %s lt=%d cnt=%2d tex=%d addr=%06X fmt=%d vq=%d pal=%d %dx%d "
              "src=%d dst=%d shad=%d usea=%d ita=%d zw=%d dm=%d cull=%d ct=%d col=%08X "
-             "uc=%d tc=%08X x=%.0f..%.0f y=%.0f..%.0f W=%.5f..%.2f\n",
+             "uc=%d tc=%08X x=%.0f..%.0f y=%.0f..%.0f W=%.5f..%.2f "
+             "off=%d gou=%d fog=%d mip=%d clr=%d spc=%08X tsp=%08X tcw=%08X "
+             "u=%.2f..%.2f v=%.2f..%.2f\n",
              idx, cls, (int)cur->pcw.ListType, (int)c, (int)cur->pcw.Texture,
              tex_addr, (int)cur->tcw.NO_PAL.PixelFmt, (int)cur->tcw.NO_PAL.VQ_Comp,
              (int)cur->tcw.PAL.PalSelect,
@@ -12475,12 +12584,37 @@ static void scene_dump_pass()
              (int)cur->isp.ZWriteDis, (int)cur->isp.DepthMode, (int)cur->isp.CullMode,
              (int)cur->pcw.Col_Type, vtx[0].col,
              (int)cur->pcw.User_Clip, listTileClip[cur - listModes],
-             minx, maxx, miny, maxy, minw, maxw);
+             minx, maxx, miny, maxy, minw, maxw,
+             (int)cur->pcw.Offset, (int)cur->pcw.Gouraud, (int)cur->tsp.FogCtrl,
+             (int)cur->tcw.NO_PAL.MipMapped, (int)cur->tsp.ColorClamp,
+             (c > 0) ? vtx[0].spc : 0u, (u32)cur->tsp.full, (u32)cur->tcw.full,
+             minu, maxu, minv, maxv);
     }
     vtx += c;
   }
   if (idx > SCN_MAX_STRIPS)
     printf("[SCN]  ... %d more strips not shown\n", idx - SCN_MAX_STRIPS);
+  {
+    // One line per distinct render state over ALL strips (see the [SIG] note
+    // above). first= is the strip index of its first member, addr/col/spc/tsp/
+    // tcw are that first member's, so any row can be matched to a #NNN line or
+    // fed to debug_skip_tex=0x<addr> to see what it draws.
+    static const char *const ltn[8] = { "OP", "OPmv", "TR", "TRmv", "PT", "5", "6", "7" };
+    for (int s = 0; s < sig_n; s++)
+    {
+      const u32 k = sig[s].key;
+      printf("[SIG] n=%5u %s tex=%u src=%u dst=%u shad=%u usea=%u ita=%u ct=%u off=%u gou=%u "
+             "zw=%u fog=%u fmt=%u vq=%u mip=%u blk=%u a0=%u | first=#%u addr=%06X col=%08X "
+             "spc=%08X tsp=%08X tcw=%08X\n",
+             sig[s].n, ltn[k & 7], (k >> 3) & 1, (k >> 4) & 7, (k >> 7) & 7, (k >> 10) & 3,
+             (k >> 12) & 1, (k >> 13) & 1, (k >> 14) & 3, (k >> 16) & 1, (k >> 17) & 1,
+             (k >> 18) & 1, (k >> 19) & 3, (k >> 21) & 7, (k >> 24) & 1, (k >> 25) & 1,
+             (k >> 26) & 1, (k >> 27) & 1,
+             sig[s].first, sig[s].addr, sig[s].col, sig[s].spc, sig[s].tsp, sig[s].tcw);
+    }
+    if (sig_lost)
+      printf("[SIG] ... %u strips in states beyond the first %d not counted\n", sig_lost, SIG_MAX);
+  }
   // PT is ListType 4 (ta.h), not 3 — 3 is the translucent modifier volume.
   printf("[SCN]     SUMMARY lt: OP=%u TR=%u PT=%u modvol=%u other=%u\n",
          lt_count[0], lt_count[2], lt_count[4], lt_count[1] + lt_count[3],
