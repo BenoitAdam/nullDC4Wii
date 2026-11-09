@@ -1383,8 +1383,22 @@ int frame_counter;
 // it -- which matters because the waits taken OUTSIDE DoRender() (StartRender,
 // PresentFramebuffer) are exactly the ones a render-time average hides. Both
 // compile to the bare GX call plus a not-taken branch while the preset is off.
-static INLINE void fp_GX_DrawDone()     { FP_T0(t); GX_DrawDone();     FP_ACC(gxw, t); }
-static INLINE void fp_GX_WaitDrawDone() { FP_T0(t); GX_WaitDrawDone(); FP_ACC(gxw, t); }
+// [TET] accumulators (Sega Tetris slowdown probe, 2026-11-09; the report is
+// tet_census_pass() above StartRender, gated by if(1) there). Unconditional and
+// independent of FRAME_PROF so one preset-free run answers "where does a heavy
+// frame go". Plain adds: one per DoRender, one per GP wait, one per texture
+// decode, one per bind -- nothing per strip or per vertex.
+static u64 s_tet_gxw   = 0;   // ticks blocked on the GP, every wait in this file
+static u64 s_tet_rend  = 0;   // ticks inside DoRender() (includes its decodes + waits)
+static u64 s_tet_dec_t = 0;   // ticks decoding textures (the cache-miss path)
+static u32 s_tet_dec   = 0;   // texture decodes (cache misses)
+static u32 s_tet_binds = 0;   // SetTextureParams() calls (one per param header)
+static u32 s_tet_drawn = 0;   // DoRender() runs
+#define TET_TICKS()       gettime()
+#define TET_REND_DONE(dt) do { s_tet_rend += (dt); s_tet_drawn++; } while (0)
+
+static INLINE void fp_GX_DrawDone()     { FP_T0(t); const u64 _tt = TET_TICKS(); GX_DrawDone();     s_tet_gxw += TET_TICKS() - _tt; FP_ACC(gxw, t); }
+static INLINE void fp_GX_WaitDrawDone() { FP_T0(t); const u64 _tt = TET_TICKS(); GX_WaitDrawDone(); s_tet_gxw += TET_TICKS() - _tt; FP_ACC(gxw, t); }
 
 // The FIFO is the command buffer for the GX hardware. 
 // 256KB is a standard size for most homebrew applications. May need more for NullDC4Wii to avoid FIFO error ?
@@ -4982,6 +4996,7 @@ static u16 *tlut_mirror_get(u32 pal_base, u32 n_entries, u32 pal_fmt)
 
 static void SetTextureParams(PolyParam *mod, bool caller_sets_op)
 {
+  s_tet_binds++; // [TET] binds per pass vs decodes per pass = cache hit rate
   // STRIP_DEDUP() mode 2: this strip asks for exactly what is already loaded.
   // Everything below derives from tsp/tcw alone, so a match means there is
   // nothing left to compute -- TEXMAP0, TLUT0, stage 0's op and s_tex_is_yuv_tev
@@ -5606,6 +5621,7 @@ static void SetTextureParams(PolyParam *mod, bool caller_sets_op)
     // or a new opponent faults in a whole working set at once, while the frames
     // either side of it decode nothing at all and look perfectly healthy.
     FP_T0(_fp_tex0);
+    const u64 _tet_dec0 = TET_TICKS(); // [TET] decode time + count, see s_tet_dec
     if (DEBUG_MESSAGE())
     {
       g_texc_decodes++; // see tex_frame_reset()
@@ -6670,6 +6686,8 @@ static void SetTextureParams(PolyParam *mod, bool caller_sets_op)
 
     FP_ACC(tex, _fp_tex0);
     FP_BUMP(n_tex);
+    s_tet_dec_t += TET_TICKS() - _tet_dec0;
+    s_tet_dec++;
   }
 
   // TEX_CLAMP_FIX(): Clamp/Flip are per-POLYGON TSP bits, but the GXTexObj keeps
@@ -12634,6 +12652,299 @@ static void scene_dump_pass()
 }
 #endif // SCENE_DEBUG_LOG
 
+// ── [TET] Sega Tetris slowdown probe (2026-11-09) ────────────────────────────
+// Report: ~100% speed at the start of the game, ~50% once the well fills with
+// shiny blocks, although every block is the same. One line per TET_WINDOW
+// StartRender passes (~2 s), written to /ndclog.txt, so the log of a run shows
+// the slowdown AS the block count grows. It answers, in this order:
+//   1. [TET] time split. fr = wall ms per pass (spd = 16.68/fr, i.e. % of 60 Hz);
+//      rend = ms inside DoRender (texture decodes and in-render GP waits are
+//      inside it); gxw = ms blocked on the GP over ALL waits; dec = ms decoding
+//      textures (n = decodes per pass); bind = SetTextureParams calls per pass.
+//        - rend tracks fr             -> the renderer is the cost; read 2-5.
+//        - rend flat, fr grows        -> SH4/TA is the cost, not the renderer.
+//        - gxw large inside rend      -> GPU fill bound (overdraw), see fill=.
+//        - dec/n grows with the blocks-> the shiny texture is re-decoded
+//                                        (cache miss every strip or frame).
+//   2. [TET] geometry of the HEAVIEST pass of the window, by list: strips and
+//      vertices for OP/TR/PT/modvol, how many are textured, carry an Offset
+//      (specular) colour, blend additively (Src One / Dst One), are fogged.
+//   3. [TET] fill. Sum of screen bounding-box areas / 640x480, per list, from
+//      every TET_FILL_EVERY-th pass. 3.0x on TR = every pixel blended 3 times.
+//      Bounding box, so it over-counts rotated strips (upper bound).
+//   4. [TET] presets that multiply per-strip cost (sorts, offset stage, seam).
+//   5. [TETS] the heaviest pass's strips grouped by full render state, and
+//      [TETT] grouped by texture (addr = VRAM, so the same shiny texture on all
+//      blocks shows as ONE row with a big n).
+// Cost: one walk over the strips per pass (~50-80 cycles/strip, well under 0.1 ms
+// at a few hundred strips) plus a per-vertex bbox pass on 1 pass in 4. Flip the
+// if(1) in tet_census_pass() to if(0) to silence it; the accumulators stay.
+// OFF (if(0)) since 2026-11-09: ONE capture ruled the renderer out. In a heavy
+// well (~2000-2300 strips, 14-16K vertices/frame, 7 v/st) rend was 1.2-1.4 ms of a
+// 24-29 ms frame, gxw=0.00 (the GPU never made the CPU wait), dec=0 (no texture
+// re-decode, 6-8 shared 256x32 block textures), fill ~7x but irrelevant. The time
+// is on the CPU side: SH4 per-vertex work (non-AICA cost scaled ~linearly with
+// vertices/frame) plus AICA, which swings with vox (37 voices = 69%, 63 voices =
+// 54% at similar geometry). Safe to re-enable (flip both if(1) back) to compare.
+#define TET_WINDOW     120   // StartRender passes per report
+#define TET_FILL_EVERY 4     // bbox fill scan on 1 pass in N (power of two)
+#define TET_ROWS       24    // distinct render states kept per pass
+#define TET_TEXS       16    // distinct textures kept per pass
+#define TET_TOP        8     // [TETS]/[TETT] rows printed
+
+struct TetRow { u32 key, n, verts, tsp, tcw, col; };
+struct TetTex { u32 tcw, tsp, n, verts; };
+struct TetPass
+{
+  u32 frame, strips, verts;
+  u32 cs[4], cv[4];                       // OP, TR, PT, modvol/other: strips, verts
+  u32 textured, offs, add, fog, nozw;
+  int rows_n, tex_n;
+  u32 rows_lost, tex_lost;
+  TetRow rows[TET_ROWS];
+  TetTex tex[TET_TEXS];
+};
+
+static TetPass s_tet_cur, s_tet_best;
+static u32     s_tet_pass_no = 0;
+static u32     s_tet_win_n = 0, s_tet_win_rtt = 0, s_tet_win_strips = 0, s_tet_win_verts = 0;
+static u64     s_tet_win_t0 = 0;
+static float   s_tet_fill[4] = { 0, 0, 0, 0 };
+static u32     s_tet_fill_n = 0;
+
+static double tet_ms(u64 t) { return (double)ticks_to_microsecs(t) / 1000.0; }
+
+static void tet_report()
+{
+  const double n    = (double)s_tet_win_n;
+  const double wall = tet_ms(TET_TICKS() - s_tet_win_t0);
+  const double fr   = wall / n;
+  const TetPass *b  = &s_tet_best;
+
+  printf("[TET] pass=%u win=%u rtt=%u drawn=%u fr=%.1fms spd=%.0f%% | rend=%.2f gxw=%.2f dec=%.2f(n=%.1f) "
+         "bind=%.0f ms/pass | strips avg=%.0f max=%u verts avg=%.0f max=%u v/st=%.1f rend=%.1fus/strip\n",
+         s_tet_pass_no, s_tet_win_n, s_tet_win_rtt, s_tet_drawn, fr, 16.683 * 100.0 / fr,
+         tet_ms(s_tet_rend) / n, tet_ms(s_tet_gxw) / n, tet_ms(s_tet_dec_t) / n,
+         (double)s_tet_dec / n, (double)s_tet_binds / n,
+         (double)s_tet_win_strips / n, b->strips, (double)s_tet_win_verts / n, b->verts,
+         s_tet_win_strips ? (double)s_tet_win_verts / (double)s_tet_win_strips : 0.0,
+         // rend over strips of ALL passes in the window; frameskipped passes add strips but no rend
+         // time, so read this one only when drawn == win.
+         s_tet_win_strips ? tet_ms(s_tet_rend) * 1000.0 / (double)s_tet_win_strips : 0.0);
+  printf("[TET]   heaviest pass (frame=%u): OP s=%u v=%u | TR s=%u v=%u | PT s=%u v=%u | mv/other s=%u v=%u"
+         " | textured=%u offset=%u additive=%u fogged=%u zwrite_off=%u | states=%d%s textures=%d%s\n",
+         b->frame, b->cs[0], b->cv[0], b->cs[1], b->cv[1], b->cs[2], b->cv[2], b->cs[3], b->cv[3],
+         b->textured, b->offs, b->add, b->fog, b->nozw,
+         b->rows_n, b->rows_lost ? "+" : "", b->tex_n, b->tex_lost ? "+" : "");
+  {
+    const float fn = s_tet_fill_n ? (float)s_tet_fill_n : 1.0f;
+    const float o = s_tet_fill[0] / fn, t = s_tet_fill[1] / fn, p = s_tet_fill[2] / fn;
+    printf("[TET]   fill (bbox/640x480, %u samples): OP=%.2fx TR=%.2fx PT=%.2fx total=%.2fx\n",
+           s_tet_fill_n, o, t, p, o + t + p);
+  }
+  printf("[TET]   presets: tex_cache=%d trans_sort=%d autosort=%d offset_col=%d seam=%d fog=%d "
+         "fixed_depth=%d hud_pass=%d punch=%d layer_sort=%d graphics=%d\n",
+         get_texture_cache_preset(), (int)TRANS_SORT(), AUTOSORT(), (int)OFFSET_COLOR_FIX(),
+         (int)SEAM_FIX(), (int)FOG(), get_fixed_depth_preset(), HUD_PASS(),
+         (int)PUNCH_THROUGH_FIX(), (int)LAYER_SORT(), get_graphism_preset());
+
+  // Top rows by strip count, copied so the sort cannot disturb the saved pass.
+  {
+    TetRow r[TET_ROWS];
+    const int rn = b->rows_n;
+    memcpy(r, b->rows, sizeof(TetRow) * rn);
+    for (int i = 1; i < rn; i++)
+    {
+      TetRow v = r[i];
+      int j = i;
+      while (j > 0 && r[j - 1].n < v.n) { r[j] = r[j - 1]; j--; }
+      r[j] = v;
+    }
+    for (int i = 0; i < rn && i < TET_TOP; i++)
+    {
+      const u32 k = r[i].key;
+      const u32 lt = k & 7;
+      printf("[TETS] n=%3u v=%4u %s tex=%u src=%u dst=%u shad=%u usea=%u ita=%u off=%u gou=%u fog=%u zw=%u dm=%u"
+             " | col=%08X tsp=%08X tcw=%08X\n",
+             r[i].n, r[i].verts, lt == 0 ? "OP" : lt == 2 ? "TR" : lt == 4 ? "PT" : "MV",
+             (k >> 3) & 1, (k >> 4) & 7, (k >> 7) & 7, (k >> 10) & 3, (k >> 12) & 1, (k >> 13) & 1,
+             (k >> 14) & 1, (k >> 15) & 1, (k >> 16) & 3, (k >> 18) & 1, (k >> 19) & 7,
+             r[i].col, r[i].tsp, r[i].tcw);
+    }
+  }
+  {
+    TetTex t[TET_TEXS];
+    const int tn = b->tex_n;
+    memcpy(t, b->tex, sizeof(TetTex) * tn);
+    for (int i = 1; i < tn; i++)
+    {
+      TetTex v = t[i];
+      int j = i;
+      while (j > 0 && t[j - 1].n < v.n) { t[j] = t[j - 1]; j--; }
+      t[j] = v;
+    }
+    TCW tc; TSP ts;
+    for (int i = 0; i < tn && i < TET_TOP; i++)
+    {
+      tc.full = t[i].tcw; ts.full = t[i].tsp;
+      printf("[TETT] n=%3u v=%4u addr=%06X fmt=%d vq=%d mip=%d scan=%d stride=%d %dx%d filt=%d mipd=%d sup=%d"
+             " clampUV=%d%d flipUV=%d%d | tsp=%08X tcw=%08X\n",
+             t[i].n, t[i].verts, (u32)((tc.NO_PAL.TexAddr << 3) & VRAM_MASK),
+             (int)tc.NO_PAL.PixelFmt, (int)tc.NO_PAL.VQ_Comp, (int)tc.NO_PAL.MipMapped,
+             (int)tc.NO_PAL.ScanOrder, (int)tc.NO_PAL.StrideSel,
+             8 << ts.TexU, 8 << ts.TexV, (int)ts.FilterMode, (int)ts.MipMapD, (int)ts.SupSample,
+             (int)ts.ClampU, (int)ts.ClampV, (int)ts.FlipU, (int)ts.FlipV, t[i].tsp, t[i].tcw);
+    }
+  }
+  fflush(stdout); // fully buffered file on the SD card: a power-cycle loses the tail otherwise
+}
+
+// Called at the top of StartRender, before any path that returns.
+static void tet_census_pass()
+{
+  if (0)
+  {
+    s_tet_pass_no++;
+    if (s_tet_win_n == 0)
+      s_tet_win_t0 = TET_TICKS();
+
+    TetPass *p = &s_tet_cur;
+    memset(p, 0, sizeof(*p));
+    p->frame = (u32)FrameCount;
+
+    const bool do_fill = ((s_tet_pass_no & (TET_FILL_EVERY - 1)) == 0);
+    float fill[4] = { 0, 0, 0, 0 };
+
+    // Same walk as scene_dump_pass(): count < 0 marks a new param header.
+    const VertexList *l   = lists;
+    const Vertex     *vtx = vertices;
+    const PolyParam  *mod = listModes;
+    const PolyParam  *cur = mod;
+    for (; l != curLST; l++)
+    {
+      s32 c = l->count;
+      if (c < 0)
+        cur = mod++;
+      c &= 0x7FFF;
+
+      const u32 lt  = cur->pcw.ListType & 7;
+      const int cl  = (lt == 0) ? 0 : (lt == 2) ? 1 : (lt == 4) ? 2 : 3;
+      const u32 tex = cur->pcw.Texture ? 1u : 0u;
+      p->strips++;  p->verts += (u32)c;
+      p->cs[cl]++;  p->cv[cl] += (u32)c;
+      p->textured += tex;
+      p->offs     += cur->pcw.Offset ? 1u : 0u;
+      p->fog      += cur->tsp.FogCtrl ? 1u : 0u;
+      p->nozw     += cur->isp.ZWriteDis ? 1u : 0u;
+      if (cur->tsp.SrcInstr == 1 && cur->tsp.DstInstr == 1)
+        p->add++;
+
+      const u32 key = lt
+                    | (tex << 3)
+                    | ((u32)cur->tsp.SrcInstr   << 4)
+                    | ((u32)cur->tsp.DstInstr   << 7)
+                    | ((u32)cur->tsp.ShadInstr  << 10)
+                    | ((u32)cur->tsp.UseAlpha   << 12)
+                    | ((u32)cur->tsp.IgnoreTexA << 13)
+                    | ((u32)cur->pcw.Offset     << 14)
+                    | ((u32)cur->pcw.Gouraud    << 15)
+                    | ((u32)cur->tsp.FogCtrl    << 16)
+                    | ((u32)cur->isp.ZWriteDis  << 18)
+                    | ((u32)cur->isp.DepthMode  << 19);
+      int s = 0;
+      for (; s < p->rows_n; s++)
+        if (p->rows[s].key == key) break;
+      if (s == p->rows_n)
+      {
+        if (p->rows_n < TET_ROWS)
+        {
+          TetRow *r = &p->rows[p->rows_n++];
+          r->key = key; r->n = 0; r->verts = 0;
+          r->tsp = cur->tsp.full; r->tcw = cur->tcw.full;
+          r->col = (c > 0) ? vtx[0].col : 0u;
+        }
+        else
+          s = -1;
+      }
+      if (s >= 0) { p->rows[s].n++; p->rows[s].verts += (u32)c; }
+      else        p->rows_lost++;
+
+      if (tex)
+      {
+        const u32 tcw = cur->tcw.full;
+        const u32 tu  = cur->tsp.TexU, tv = cur->tsp.TexV;
+        int t = 0;
+        for (; t < p->tex_n; t++)
+        {
+          const TetTex *e = &p->tex[t];
+          TSP es; es.full = e->tsp;
+          if (e->tcw == tcw && es.TexU == tu && es.TexV == tv) break;
+        }
+        if (t == p->tex_n)
+        {
+          if (p->tex_n < TET_TEXS)
+          {
+            TetTex *e = &p->tex[p->tex_n++];
+            e->tcw = tcw; e->tsp = cur->tsp.full; e->n = 0; e->verts = 0;
+          }
+          else
+            t = -1;
+        }
+        if (t >= 0) { p->tex[t].n++; p->tex[t].verts += (u32)c; }
+        else        p->tex_lost++;
+      }
+
+      if (do_fill && c > 0)
+      {
+        // Screen bbox of the strip, clamped to the 640x480 canvas. x,y are
+        // W-prescaled (screen = x/W), same math as the [SCN] strip lines.
+        float minx = 1e30f, maxx = -1e30f, miny = 1e30f, maxy = -1e30f;
+        for (s32 i = 0; i < c; i++)
+        {
+          const float z  = vtx[i].z;
+          const float iw = (z != 0.0f) ? 1.0f / z : 0.0f;
+          const float sx = vtx[i].x * iw, sy = vtx[i].y * iw;
+          if (sx < minx) minx = sx;
+          if (sx > maxx) maxx = sx;
+          if (sy < miny) miny = sy;
+          if (sy > maxy) maxy = sy;
+        }
+        if (minx < 0.f) minx = 0.f;
+        if (miny < 0.f) miny = 0.f;
+        if (maxx > 640.f) maxx = 640.f;
+        if (maxy > 480.f) maxy = 480.f;
+        if (maxx > minx && maxy > miny)
+          fill[cl] += (maxx - minx) * (maxy - miny);
+      }
+      vtx += c;
+    }
+
+    s_tet_win_n++;
+    s_tet_win_strips += p->strips;
+    s_tet_win_verts  += p->verts;
+    if (FB_W_SOF1 & 0x1000000)
+      s_tet_win_rtt++;
+    if (do_fill)
+    {
+      for (int i = 0; i < 4; i++)
+        s_tet_fill[i] += fill[i] / (640.f * 480.f);
+      s_tet_fill_n++;
+    }
+    if (s_tet_win_n == 1 || p->strips > s_tet_best.strips)
+      memcpy(&s_tet_best, p, sizeof(TetPass));
+
+    if (s_tet_win_n >= TET_WINDOW)
+    {
+      tet_report();
+      s_tet_win_n = s_tet_win_rtt = s_tet_win_strips = s_tet_win_verts = 0;
+      s_tet_fill[0] = s_tet_fill[1] = s_tet_fill[2] = s_tet_fill[3] = 0.f;
+      s_tet_fill_n = 0;
+      s_tet_gxw = s_tet_rend = s_tet_dec_t = 0;
+      s_tet_dec = s_tet_binds = s_tet_drawn = 0;
+    }
+  }
+}
+
 void StartRender()
 {
   u32 VtxCnt = curVTX - vertices;
@@ -12660,6 +12971,8 @@ void StartRender()
 #if SCENE_DEBUG_LOG
   scene_dump_pass(); // same rule: must run BEFORE any path below returns
 #endif
+
+  tet_census_pass(); // [TET] Sega Tetris slowdown probe; same rule, runs before any return
 
   const int rd_mode = get_render_delay_preset();
   if (rd_mode == 1)
@@ -12756,7 +13069,7 @@ void StartRender()
       s_rtt_w = rtt_w;           // always, 0,0)
       s_rtt_h = rtt_h;
       s_rtt_pass = true;
-      { const u64 _rt0 = PERF_TICKS(); const u32 _fpg0 = g_fp.gxw; DoRender(); RenderTicks += PERF_TICKS() - _rt0; g_fp.gxw_rend += g_fp.gxw - _fpg0; }
+      { const u64 _rt0 = PERF_TICKS(); const u32 _fpg0 = g_fp.gxw; DoRender(); { const u64 _rd = PERF_TICKS() - _rt0; RenderTicks += _rd; TET_REND_DONE(_rd); } g_fp.gxw_rend += g_fp.gxw - _fpg0; }
       s_rtt_pass = false;
       s_sr_path[SR_RTT_RENDER]++;
       return; // not a presented frame: no FrameCount++, display untouched
@@ -12938,7 +13251,7 @@ void StartRender()
       s_cmp_dy0 = (u32)dy0; s_cmp_dy1 = (u32)dy1;
       s_cmp_shift_y = (float)shift;
       s_cmp_pass = true;
-      { const u64 _rt0 = PERF_TICKS(); const u32 _fpg0 = g_fp.gxw; DoRender(); RenderTicks += PERF_TICKS() - _rt0; g_fp.gxw_rend += g_fp.gxw - _fpg0; }          // draws into the band; no copy, no present
+      { const u64 _rt0 = PERF_TICKS(); const u32 _fpg0 = g_fp.gxw; DoRender(); { const u64 _rd = PERF_TICKS() - _rt0; RenderTicks += _rd; TET_REND_DONE(_rd); } g_fp.gxw_rend += g_fp.gxw - _fpg0; }          // draws into the band; no copy, no present
       s_cmp_pass = false;
       s_cmp_scissor_on = false;
 
@@ -12971,7 +13284,7 @@ void StartRender()
   if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[PATH] 3D: FB_W_SOF1=%08X FB_R_SOF1=%08X VtxCnt=%d lists=%d\n",
     FB_W_SOF1, FB_R_SOF1, VtxCnt, (int)(curLST - lists));
 
-  { const u64 _rt0 = PERF_TICKS(); const u32 _fpg0 = g_fp.gxw; DoRender(); RenderTicks += PERF_TICKS() - _rt0; g_fp.gxw_rend += g_fp.gxw - _fpg0; }
+  { const u64 _rt0 = PERF_TICKS(); const u32 _fpg0 = g_fp.gxw; DoRender(); { const u64 _rd = PERF_TICKS() - _rt0; RenderTicks += _rd; TET_REND_DONE(_rd); } g_fp.gxw_rend += g_fp.gxw - _fpg0; }
 
   FrameCount++;
   s_sr_path[SR_RENDER]++;
@@ -13672,6 +13985,14 @@ bool InitRenderer()
          SCN_BURST, SCN_QUIET_PASSES, SCN_HEARTBEAT);
   fflush(stdout);
 #endif
+  // [TET] Sega Tetris slowdown probe: if this line is missing from ndclog.txt
+  // the build did not pick it up. Off with tet_census_pass() (if(0)); flip both together.
+  if (0)
+  {
+    printf("[TET] census ARMED (report every %d passes: [TET] time split + heaviest pass + fill, "
+           "[TETS] by state, [TETT] by texture)\n", TET_WINDOW);
+    fflush(stdout);
+  }
   // If this line is missing from ndclog.txt the build did not pick up the
   // [DEPTH]/[OVF] census (DoRender + glob_param_bdc), and there is nothing to look for.
   // OFF with the census itself (if(0)); flip both together.

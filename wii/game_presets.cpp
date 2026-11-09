@@ -719,6 +719,14 @@
                                its exact code; emulated time per slice is
                                unchanged. Default on. Read when code is
                                COMPILED, so set it before launching.
+        idle_hook=on        <- on/off, the Sega-library "while (busy) call an
+                               (empty) hook" wait loop (Sega Tetris, ChuChu
+                               Rocket) ends its timeslice after one turn
+                               instead of spinning ~6 turns of pure waiting
+                               per slice. Matched by its code shape; emulated
+                               time per slice is unchanged. Default on. Read
+                               when code is COMPILED, so set it before
+                               launching.
         idle_shinobi=on     <- on/off, the Shinobi library's idle task walk
                                (Garou, Border Down, Sonic Shuffle, ...) leaves
                                a debt of 15 timeslices that the next interrupt
@@ -1440,6 +1448,7 @@ extern int g_ta_guard_preset;
 extern int g_gdrom_spinup_preset;
 extern int g_rtc_host_preset;
 extern int g_idle_kamui_preset;
+extern int g_idle_hook_preset;
 extern int g_idle_shinobi_preset;
 extern int g_idle_x3_preset;
 extern int g_flash_chip_preset;
@@ -1610,6 +1619,7 @@ struct GamePreset
     int gdrom_spinup;
     int rtc_host;
     int idle_kamui;
+    int idle_hook;
     int idle_shinobi;
     int idle_x3;
     int flash_chip;
@@ -2184,6 +2194,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "gdrom_spinup"))   p->gdrom_spinup   = parse_bool(val);
     else if (key_eq(key, "rtc_host"))       p->rtc_host       = parse_bool(val);
     else if (key_eq(key, "idle_kamui"))     p->idle_kamui     = parse_bool(val);
+    else if (key_eq(key, "idle_hook"))      p->idle_hook      = parse_bool(val);
     else if (key_eq(key, "idle_shinobi"))   p->idle_shinobi   = parse_bool(val);
     else if (key_eq(key, "idle_x3"))        p->idle_x3        = parse_bool(val);
     else if (key_eq(key, "flash_chip"))     p->flash_chip     = parse_bool(val);
@@ -2330,6 +2341,7 @@ static void preset_clear(GamePreset* cur)
     cur->gdrom_spinup = -1;
     cur->rtc_host = -1;
     cur->idle_kamui = -1;
+    cur->idle_hook = -1;
     cur->idle_shinobi = -1;
     cur->idle_x3 = -1;
     cur->flash_chip = -1;
@@ -2505,6 +2517,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->gdrom_spinup   >= 0) { g_gdrom_spinup_preset   = p->gdrom_spinup;   printf("  gdrom_spinup   -> %d\n", p->gdrom_spinup);   }
     if (p->rtc_host       >= 0) { g_rtc_host_preset       = p->rtc_host;       printf("  rtc_host       -> %d\n", p->rtc_host);       }
     if (p->idle_kamui     >= 0) { g_idle_kamui_preset     = p->idle_kamui;     printf("  idle_kamui     -> %d\n", p->idle_kamui);     }
+    if (p->idle_hook      >= 0) { g_idle_hook_preset      = p->idle_hook;      printf("  idle_hook      -> %d\n", p->idle_hook);      }
     if (p->idle_shinobi   >= 0) { g_idle_shinobi_preset   = p->idle_shinobi;   printf("  idle_shinobi   -> %d\n", p->idle_shinobi);   }
     if (p->idle_x3        >= 0) { g_idle_x3_preset        = p->idle_x3;        printf("  idle_x3        -> %d\n", p->idle_x3);        }
     if (p->flash_chip     >= 0) { g_flash_chip_preset     = p->flash_chip;     printf("  flash_chip     -> %d\n", p->flash_chip);     }

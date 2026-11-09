@@ -98,6 +98,75 @@ static int idle_kamui_form(u32 addr, u32 opcodes)
 extern "C" int get_idle_kamui_preset();
 
 // ----------------------------------------------------------------------------
+// IDLE_HOOK preset (wii/main.cpp). A second Sega-library wait loop, found with
+// jit_hotblocks in Sega Tetris (2026-11-09; game 8C15BBD8, menu 8C0BA506) and
+// already the top of ChuChu Rocket's light scenes (8C10BCF8, same 4/2/10/4-op
+// shape, 0.5-5.2M turns/s):
+//     do { (*hook)(arg); if (a + b + 1 > limit) timeout(); } while (busy);
+//   Dnxx 6mn2 4m0B 54n1        hook(arg)        mov.l @(d,pc),Rn / mov.l @Rn,Rm /
+//                                                jsr @Rm / mov.l @(4,Rn),R4
+//   D... 6..2 D... 6..2 D... 3..C 7.01 6..2 3..6 8B01    a + b + 1 > limit?
+//   ???? ????                                    timeout path (not executed)
+//   Dnxx 6mn2 2mm8 8Bxx        while (*busy)    bf back to the hook call
+// The hook is an empty "rts; nop" in both games. Its turns per FRAME fall as the
+// game gets busier (Tetris 16.3K at the start, 11.4K with a full well), which
+// is a loop absorbing slack, not work. Only loads, compares and the call: the
+// flag is set by an interrupt, which is only dispatched between timeslices.
+// Matched as the 4-opcode tail block (the bf) plus the 16 words from its bf
+// target, opcode classes and register links checked, literal offsets and the
+// two timeout-path words free; the bf target must be exactly 32 bytes back, so
+// every read stays inside the loop. Same effect as IDLE_KAMUI: idle_hash = 1,
+// the slice ends after one turn, emulated time per slice is unchanged.
+// ----------------------------------------------------------------------------
+static bool idle_hook_rule(u32 addr, u32 opcodes)
+{
+	if (opcodes != 4)
+		return false;
+
+	// Tail: mov.l @(d,pc),Rn / mov.l @Rn,Rm / tst Rm,Rm / bf <head>
+	const u32 t0 = ReadMem16(addr + 0), t1 = ReadMem16(addr + 2);
+	const u32 t2 = ReadMem16(addr + 4), t3 = ReadMem16(addr + 6);
+	if ((t0 & 0xF000) != 0xD000 || (t1 & 0xF00F) != 0x6002 || (t3 & 0xFF00) != 0x8B00)
+		return false;
+	const u32 n = (t0 >> 8) & 0xF;
+	const u32 m = (t1 >> 8) & 0xF;
+	if (((t1 >> 4) & 0xF) != n || t2 != (0x2008 | (m << 8) | (m << 4)))
+		return false;
+	const s32 disp = (s8)(t3 & 0xFF);
+	const u32 head = addr + 6 + 4 + disp * 2;
+	if (addr - head != 32)
+		return false;
+
+	// Head: mov.l @(d,pc),Ra / mov.l @Ra,Rb / jsr @Rb / mov.l @(4,Ra),R4
+	const u32 h0 = ReadMem16(head + 0), h1 = ReadMem16(head + 2);
+	const u32 h2 = ReadMem16(head + 4), h3 = ReadMem16(head + 6);
+	if ((h0 & 0xF000) != 0xD000 || (h1 & 0xF00F) != 0x6002)
+		return false;
+	const u32 a = (h0 >> 8) & 0xF;
+	const u32 b = (h1 >> 8) & 0xF;
+	if (((h1 >> 4) & 0xF) != a || h2 != (0x400B | (b << 8)) || h3 != (0x5401 | (a << 4)))
+		return false;
+
+	// Timeout test: 10 opcodes by class, ending in the "bf +1" over the two
+	// timeout-path words straight to the tail. Words 4/5 are the third
+	// mov.l @(d,pc) and the add Rm,Rn in either order: the Tetris game build
+	// has D11B 323C, the menu build 313C D21D (scheduling differs).
+	static const u16 mask[10] = { 0xF000, 0xF00F, 0xF000, 0xF00F, 0x0000,
+	                              0x0000, 0xF0FF, 0xF00F, 0xF00F, 0xFFFF };
+	static const u16 want[10] = { 0xD000, 0x6002, 0xD000, 0x6002, 0x0000,
+	                              0x0000, 0x7001, 0x6002, 0x3006, 0x8B01 };
+	for (u32 i = 0; i < 10; i++)
+		if ((ReadMem16(head + 8 + i * 2) & mask[i]) != want[i])
+			return false;
+	const u32 w4 = ReadMem16(head + 16), w5 = ReadMem16(head + 18);
+	const bool w4_ld = (w4 & 0xF000) == 0xD000, w4_add = (w4 & 0xF00F) == 0x300C;
+	const bool w5_ld = (w5 & 0xF000) == 0xD000, w5_add = (w5 & 0xF00F) == 0x300C;
+	return (w4_ld && w5_add) || (w4_add && w5_ld);
+}
+
+extern "C" int get_idle_hook_preset();
+
+// ----------------------------------------------------------------------------
 // IDLE_SHINOBI preset (wii/main.cpp; flycastPS3 other_fix.md 2.2 / P94).
 // The Shinobi library's idle fiber walks a 16-slot task table forever:
 //     for (;;) for (i = 0; i < 16; i++) if (task[i].ready) task[i].fn(...);
@@ -1594,6 +1663,26 @@ _end:
 				printf("[IDLE] Kamui vsync wait form %d at %08X\n", form, block.start);
 				fflush(stdout);
 			}
+		}
+	}
+
+	// IDLE_HOOK: the tail of the Sega-library "while (busy) hook(arg);" wait
+	// loop (Sega Tetris, ChuChu Rocket) ends the slice after one turn too.
+	if (!block.idle_hash && get_idle_hook_preset() &&
+	    idle_hook_rule(block.start, block.opcodes))
+	{
+		block.idle_hash = 1;
+		// Bounded log, same idea as Kamui's. The two words just before the tail
+		// are the timeout path the matcher leaves free; printed so a new match
+		// can be checked by eye (Sega Tetris: game 8C15BBF8, menu 8C0BA526).
+		static u32 s_idle_hook_log = 0;
+		if (s_idle_hook_log < 16)
+		{
+			s_idle_hook_log++;
+			printf("[IDLE] hook wait loop at %08X (head %08X, timeout path %04X %04X)\n",
+			       block.start, block.start - 32,
+			       (u32)ReadMem16(block.start - 4), (u32)ReadMem16(block.start - 2));
+			fflush(stdout);
 		}
 	}
 

@@ -39,6 +39,11 @@ extern u32 AicaSampleCount;
 SampleType mixl;
 SampleType mixr;
 
+// [VOX] voice census (Sega Tetris, 2026-11-09): channel starts since the last
+// [VOX] line. Bumped in KEY_ON only when a released channel actually starts, so
+// it is one add per note, never per sample. See vox_census() above AICA_Sample.
+static u32 s_vox_keyon = 0;
+
 // MUTE_PCM16_FIX(): preset-gated (default OFF) workaround for ChuChu Rocket's
 // echoey/slow-motion 16-bit SFX. When ON, any AICA channel whose sample format
 // is 16-bit PCM (PCMS==0, non-noise) is silenced at KEY_ON instead of playing.
@@ -566,6 +571,7 @@ struct ChannelEx
 
         if (AEG.state == EG_Release)
         {
+            s_vox_keyon++; // [VOX] census
             enable();
             SetAegState(EG_Attack);
             AEG.SetValue(0x3FF);
@@ -1181,6 +1187,112 @@ extern "C" int get_cdda_preset();
 #define CDDA_FIX() (get_cdda_preset() != 0)
 void FASTCALL gdrom_get_cdda(s16* sector);
 
+// ---------------------------------------------------------------------------
+// [VOX] voice census (Sega Tetris, 2026-11-09). The stats line's vox:N%(V)
+// says how many channels are stepped per sample (35-63 in a full well, ~180
+// cycles each); this says WHAT they are, to decide whether any per-voice work
+// can be skipped without changing a single output sample:
+//   * mute= channels whose L and R sends are both attenuated to exactly 0.
+//     tl_lut[i] is 0 for i >= 241, and the mixer indexes it with
+//     ofsatt + min(att, 255 - ofsatt), so ofsatt + DLAtt >= 241 (same for R)
+//     means oLeft == oRight == 0 for every sample, whatever the waveform.
+//     muteall= the same with the DSP send too (or the DSP off).
+//   * A/D1/D2/R = envelope state; a Release tail that is already mute is the
+//     cheapest candidate (it only has to reach 0x3FF and disable itself).
+//   * fmt = PCMS 16-bit / 8-bit / ADPCM / ADPCM-long, noise = SSCTL, loop = LPCTL.
+//   * keyon/s = new notes started per emulated second (SFX churn).
+// One snapshot of all 64 channels every VOX_SNAP_EVERY samples (0.25 emulated
+// s), averaged into one [VOX] line per VOX_SNAPS snapshots, plus a full
+// per-channel [VOXC] listing every VOX_LIST_EVERY lines. Cost: one increment
+// and compare per sample. Flip the if(1) to if(0) to silence it.
+// OFF (if(0)) since 2026-11-09, one real-Wii capture answered it: an EXACT
+// mute skip buys nothing. Sega Tetris, full well: 25-58 voices, mute=0.0 in
+// every line but one (6.4 of 58.6). All looping ADPCM (a little PCM16), and
+// about two thirds sit in Release with RR=12/14 (2.8 s / 1.4 s to 0x3FF), but
+// the game steals them back at AEG ~0x1E0 (-40..-67 dB): never silent, never
+// finished. Per voice ~125 Wii cycles per sample (vox% x 729 MHz / voice-samples).
+// Safe to re-enable.
+// ---------------------------------------------------------------------------
+#define VOX_SNAP_EVERY 11025u
+#define VOX_SNAPS      8u
+#define VOX_LIST_EVERY 5u
+
+static INLINE void vox_census(bool dsp_on)
+{
+    if (0)
+    {
+        static u32 s_cnt = 0, s_snaps = 0, s_lines = 0;
+        static bool s_armed = false;
+        static u32 s_v = 0, s_st[4] = { 0, 0, 0, 0 }, s_fmt[4] = { 0, 0, 0, 0 };
+        static u32 s_noise = 0, s_loop = 0, s_mute = 0, s_muteall = 0, s_relmute = 0;
+
+        if (!s_armed)
+        {
+            s_armed = true;
+            printf("[VOX] voice census ARMED (snapshot every %u samples, line every %u snapshots)\n",
+                   VOX_SNAP_EVERY, VOX_SNAPS);
+            fflush(stdout);
+        }
+        if (++s_cnt < VOX_SNAP_EVERY)
+            return;
+        s_cnt = 0;
+
+        const bool list = (s_snaps == VOX_SNAPS - 1) && ((s_lines % VOX_LIST_EVERY) == 0);
+        for (int i = 0; i < 64; i++)
+        {
+            ChannelEx *ch = &ChannelEx::Chans[i];
+            if (!ch->enabled)
+                continue;
+            u32 ofsatt = ch->lfo.alfo + (ch->AEG.GetValue() >> 2);
+            if (ofsatt > 255u) ofsatt = 255u;
+            const u32 aL = ofsatt + ch->VolMix.DLAtt;
+            const u32 aR = ofsatt + ch->VolMix.DRAtt;
+            const u32 aD = ofsatt + ch->VolMix.DSPAtt;
+            const bool mute    = (aL >= 241u) && (aR >= 241u);
+            const bool muteall = mute && (!dsp_on || aD >= 241u);
+            const u32 st = (u32)ch->AEG.state & 3;
+
+            s_v++;
+            s_st[st]++;
+            s_fmt[ch->ccd->PCMS & 3]++;
+            s_noise += ch->ccd->SSCTL ? 1u : 0u;
+            s_loop  += ch->ccd->LPCTL ? 1u : 0u;
+            s_mute    += mute    ? 1u : 0u;
+            s_muteall += muteall ? 1u : 0u;
+            s_relmute += (mute && st == EG_Release) ? 1u : 0u;
+
+            if (list)
+                printf("[VOXC] ch=%2d fmt=%u noise=%u loop=%u TL=%3u DISDL=%2u DIPAN=%2u IMXL=%2u ISEL=%2u "
+                       "aeg=%u val=%03X alfo=%u attL=%u attR=%u attDSP=%u AR=%u D1R=%u D2R=%u RR=%u DL=%u%s\n",
+                       i, (u32)ch->ccd->PCMS, (u32)ch->ccd->SSCTL, (u32)ch->ccd->LPCTL,
+                       (u32)ch->ccd->TL, (u32)ch->ccd->DISDL, (u32)ch->ccd->DIPAN,
+                       (u32)ch->ccd->IMXL, (u32)ch->ccd->ISEL, st, (u32)ch->AEG.GetValue(),
+                       (u32)ch->lfo.alfo, aL > 9999u ? 9999u : aL, aR > 9999u ? 9999u : aR,
+                       aD > 9999u ? 9999u : aD, (u32)ch->ccd->AR, (u32)ch->ccd->D1R,
+                       (u32)ch->ccd->D2R, (u32)ch->ccd->RR, (u32)ch->ccd->DL,
+                       muteall ? " MUTE-ALL" : mute ? " MUTE-DRY" : "");
+        }
+
+        if (++s_snaps < VOX_SNAPS)
+            return;
+
+        const float n = (float)VOX_SNAPS;
+        printf("[VOX] voices=%.1f | A=%.1f D1=%.1f D2=%.1f R=%.1f | pcm16=%.1f pcm8=%.1f adpcm=%.1f adpcm_long=%.1f "
+               "noise=%.1f loop=%.1f | mute=%.1f muteall=%.1f (mute in Release=%.1f) | keyon/s=%.1f dsp=%d\n",
+               s_v / n, s_st[0] / n, s_st[1] / n, s_st[2] / n, s_st[3] / n,
+               s_fmt[0] / n, s_fmt[1] / n, s_fmt[2] / n, s_fmt[3] / n,
+               s_noise / n, s_loop / n, s_mute / n, s_muteall / n, s_relmute / n,
+               (float)s_vox_keyon * 44100.0f / (float)(VOX_SNAP_EVERY * VOX_SNAPS), (int)dsp_on);
+        fflush(stdout);
+
+        s_snaps = 0;
+        s_lines++;
+        s_v = s_noise = s_loop = s_mute = s_muteall = s_relmute = 0;
+        for (int k = 0; k < 4; k++) { s_st[k] = 0; s_fmt[k] = 0; }
+        s_vox_keyon = 0;
+    }
+}
+
 void AICA_Sample()
 {
     const bool fast   = g_aica_fast_preset != 0;
@@ -1201,6 +1313,7 @@ void AICA_Sample()
         ChannelEx::GenerateAll();
     AicaVoxTicks += SGC_PERF_TICKS() - t_vox;
     AicaSampleCount++;
+    vox_census(dsp_on); // [VOX] voice census, outside the vox bracket
 
     // CDDA input — refill the sector buffer every 588 stereo frames.
     if (cdda_index >= CDDA_SIZE)

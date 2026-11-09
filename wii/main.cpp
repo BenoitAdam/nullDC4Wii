@@ -1524,6 +1524,26 @@ extern "C" {
   int get_idle_kamui_preset() { return g_idle_kamui_preset; }
 }
 
+// IDLE_HOOK - the Sega-library "do { (*hook)(arg); timeout check; } while
+// (busy);" wait loop ends its timeslice after one turn (dc/sh4/rec_v2/
+// decoder.cpp idle_hook_rule + wii_driver.cpp ngen_Begin, same mechanism as
+// IDLE_KAMUI). Found with jit_hotblocks in Sega Tetris (2026-11-09): the loop
+// (game 8C15BBD8, menu 8C0BA506, hook = an empty "rts; nop") was 44% of all
+// SH4 block entries at the start of a game and still ~11.4K turns per frame
+// with a full well at 48% speed -- turns per frame FALL as the game gets busier,
+// so it is waiting, not working. ChuChu Rocket's 8C10BCF8 loop has the same
+// 4/2/10/4-op shape. Matched at compile time by opcode classes and register
+// links over the whole 18-word loop (literal offsets free); emulated time per
+// slice is unchanged, the wait just costs fewer host turns. Expected: a few %
+// in a full Tetris well, more headroom in light scenes. Logs "[IDLE] hook wait
+// loop at ADDR" (first 16 matches). Read when a block is COMPILED.
+// Wii-untested. 0=off (legacy), 1=on (default).
+int g_idle_hook_preset = 1;
+
+extern "C" {
+  int get_idle_hook_preset() { return g_idle_hook_preset; }
+}
+
 // IDLE_SHINOBI - the Shinobi library's idle task walk leaves a 15-slice debt
 // that the next interrupt drops (dc/sh4/rec_v2/decoder.cpp idle_task_rule +
 // wii_driver.cpp ngen_Begin and the mainloop's interrupt branch; flycastPS3
@@ -3083,6 +3103,7 @@ void checkBiosFiles()
 #define OPT_TLUT_FIX    143  // Page 6 (EXPERIMENTAL), under TEX WRAP GUARD
 #define OPT_FAR_CLAMP   144  // Page 3 (DEPTH & WIDTH), under FIXED DEPTH
 #define OPT_DECAL_FIX   145  // Page 6 (EXPERIMENTAL), under TLUT FIX (page 2 is full)
+#define OPT_IDLE_HOOK   146  // Page 5 (CORE), under IDLE KAMUI
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3203,6 +3224,7 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_GDROM_SPINUP,
   OPT_RTC_HOST,
   OPT_IDLE_KAMUI,
+  OPT_IDLE_HOOK,
   OPT_IDLE_SHINOBI,
   OPT_IDLE_X3
 };
@@ -4204,6 +4226,15 @@ bool displayOptionsMenu()
     printf(" vsync wait: Ikaruga/Rez/CvS2");
     printf("\n");
 
+    // --- Row: IDLE_HOOK - Sega "while (busy) hook()" wait: 1 turn per slice (decoder.cpp) ---
+    printf("%s IDLE HOOK      : ", (selectedRow == OPT_IDLE_HOOK) ? MENU_CURSOR : " ");
+    switch (g_idle_hook_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (1 TURN/SLICE) >]"); break;
+    }
+    printf(" busy wait: Tetris/ChuChu");
+    printf("\n");
+
     // --- Row: IDLE_SHINOBI - Shinobi idle task walk: 15-slice debt (decoder.cpp) ---
     printf("%s IDLE SHINOBI   : ", (selectedRow == OPT_IDLE_SHINOBI) ? MENU_CURSOR : " ");
     switch (g_idle_shinobi_preset) {
@@ -4931,6 +4962,7 @@ bool displayOptionsMenu()
         case OPT_FOG_INDEX:      g_fog_index_preset       = (g_fog_index_preset       + 1) % 2; break;
         case OPT_RTC_HOST:       g_rtc_host_preset        = (g_rtc_host_preset        + 1) % 2; break;
         case OPT_IDLE_KAMUI:     g_idle_kamui_preset      = (g_idle_kamui_preset      + 1) % 2; break;
+        case OPT_IDLE_HOOK:      g_idle_hook_preset       = (g_idle_hook_preset       + 1) % 2; break;
         case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
         case OPT_IDLE_X3:        g_idle_x3_preset         = (g_idle_x3_preset         + 1) % 2; break;
         case OPT_FLASH_CHIP:     g_flash_chip_preset      = (g_flash_chip_preset      + 1) % 2; break;
@@ -5090,6 +5122,7 @@ bool displayOptionsMenu()
         case OPT_FOG_INDEX:      g_fog_index_preset       = (g_fog_index_preset       + 1) % 2; break;
         case OPT_RTC_HOST:       g_rtc_host_preset        = (g_rtc_host_preset        + 1) % 2; break;
         case OPT_IDLE_KAMUI:     g_idle_kamui_preset      = (g_idle_kamui_preset      + 1) % 2; break;
+        case OPT_IDLE_HOOK:      g_idle_hook_preset       = (g_idle_hook_preset       + 1) % 2; break;
         case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
         case OPT_IDLE_X3:        g_idle_x3_preset         = (g_idle_x3_preset         + 1) % 2; break;
         case OPT_FLASH_CHIP:     g_flash_chip_preset      = (g_flash_chip_preset      + 1) % 2; break;
@@ -6155,6 +6188,7 @@ int main(int argc, wchar *argv[])
     printf("Fog Index Fix  : %s\n", g_fog_index_preset ? "ON (DENSITY/W)" : "OFF (W*DENSITY)");
     printf("RTC From Host  : %s\n", g_rtc_host_preset ? "ON (WII CLOCK)" : "OFF (SAVED VALUE)");
     printf("Idle Kamui     : %s\n", g_idle_kamui_preset ? "ON (1 TURN/SLICE)" : "OFF (LEGACY)");
+    printf("Idle Hook      : %s\n", g_idle_hook_preset ? "ON (1 TURN/SLICE)" : "OFF (LEGACY)");
     printf("Idle Shinobi   : %s\n", g_idle_shinobi_preset ? "ON (DEBT TIL IRQ)" : "OFF (LEGACY)");
     printf("Idle X3 Back   : %s\n", g_idle_x3_preset ? "ON (X3 BACKWARD)" : "OFF (X30, LEGACY)");
     printf("Flash Chip     : %s\n", g_flash_chip_preset ? "ON (AMD COMMANDS)" : "OFF (PLAIN RAM)");
