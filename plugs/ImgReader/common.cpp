@@ -47,8 +47,22 @@ DriveIF drives[]=
 u8 q_subchannel[96];
 
 u32 settings_PatchRegion=1;
+
+// FLASH_BROADCAST: the disc's own IP.BIN area symbols, saved before the patch
+// below turns every GDI into "JUE". Without this the "disc" rule saw J/U on
+// every GDI and forced 60 Hz even for EU-only discs (South Park Rally PAL then
+// refused to run: "cannot be run on an NTSC console").
+char g_gdi_orig_area[8] = { 0 };
+bool g_gdi_orig_area_valid = false;
+
 void PatchRegion_0(u8* sector,int size)
 {
+	if (size==2048)
+	{
+		memcpy(g_gdi_orig_area,&sector[0x30],8);
+		g_gdi_orig_area_valid = true;
+	}
+
 	if (settings_PatchRegion==0)
 		return;
 

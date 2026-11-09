@@ -371,8 +371,11 @@ static bool s_bc_patched = false;
 
 // The disc's IP.BIN area symbols (8 bytes at IP.BIN + 0x30), as the PS3 port
 // reads them: a GD-ROM at FAD 45150, a CD at the start of its last session.
-// Note: the GDI reader patches the area to "JUE" (PatchRegion_0), so a GDI
-// always reads as NTSC here.
+// Note: the GDI reader patches the sector to "JUE" (PatchRegion_0) so every
+// BIOS accepts the disc; it keeps the original in g_gdi_orig_area, which is
+// used instead so a GDI is judged by its real region.
+extern char g_gdi_orig_area[8];          // plugs/ImgReader/common.cpp
+extern bool g_gdi_orig_area_valid;
 static bool flash_read_disc_area(char area[8])
 {
 	u32 fad;
@@ -392,10 +395,12 @@ static bool flash_read_disc_area(char area[8])
 	}
 
 	u8 sec[2048];
+	g_gdi_orig_area_valid = false;
 	libGDR_ReadSector(sec, fad, 1, 2048);
 	if (memcmp(sec, "SEGA SEGAKATANA ", 16) != 0)
 		return false;
-	memcpy(area, sec + 0x30, 8);
+	// Set only when the GDI reader patched this very read.
+	memcpy(area, g_gdi_orig_area_valid ? g_gdi_orig_area : (const char*)(sec + 0x30), 8);
 	return true;
 }
 
