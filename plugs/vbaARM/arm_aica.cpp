@@ -20,9 +20,21 @@ extern u64 AicaTicks;
 #endif
 #include <ogc/lwp_watchdog.h>   // gettime() - inline mftb read, no call
 #define ARM_PERF_TICKS() gettime()
+// SOUND_CLOCK = REAL TIME (below): the time base, TB_TIMER_CLOCK ticks per ms.
+#define RT_CLOCK_NOW() ((u32)gettime())
+#define RT_CLOCK_HZ    ((u64)TB_TIMER_CLOCK * 1000u)
 #else
 #define ARM_PERF_TICKS() ((u64)0)
+#include <chrono>
+#define RT_CLOCK_NOW() ((u32)std::chrono::duration_cast<std::chrono::microseconds>( \
+                            std::chrono::steady_clock::now().time_since_epoch()).count())
+#define RT_CLOCK_HZ    ((u64)1000000u)
 #endif
+
+// SOUND_CLOCK preset (wii/main.cpp `sound_clock`): 0 = the ARM7 and the AICA
+// follow the SH4's emulated time (exact, default), 1 = they follow the real
+// clock. Per game, see armUpdateARM() below.
+extern "C" int get_sound_clock_preset();
 
 // Real AICA sample step (nullAICA). Declared here to avoid pulling the whole
 // nullAICA header into the ARM core; one call generates exactly one 44.1 kHz
@@ -63,7 +75,10 @@ static int aica_clock_mhz     = 200;
 // rather than a fixed 32x loop, then run the ARM for this slice. The ARM and
 // AICA therefore stay in lockstep instead of being bulk-updated independently
 // (and AICA is no longer stepped from the video/audio frame).
-void FASTCALL armUpdateARM(u32 Cycles)
+//
+// stepSound() is that slice; armUpdateARM() below decides which clock the
+// slices are measured on.
+static void stepSound(u32 Cycles)
 {
 	static u32 aica_cycle_acc = 0;
 	static u32 arm_batch_acc = 0;     // SH4 cycles owed to the ARM (arm7_batch > 1)
@@ -129,5 +144,76 @@ arm_deferred:
 		while (aica_cycle_acc >= aica_sample_cycles);
 
 		AicaTicks += ARM_PERF_TICKS() - t_aica;
+	}
+}
+
+// SOUND_CLOCK = REAL TIME (ported from the Initial D 3 Wii port, where it is
+// Wii-confirmed). Music that is a sequencer running on the ARM7 off the AICA's
+// timers plays at the emulation's speed: at 80% the music is at 80% tempo,
+// whatever the output does. Here the ARM7 and the AICA are handed the SH4
+// cycles that elapsed on the REAL clock instead of the emulated ones, in
+// slices the size of the emulated one, so the ARM, its timers and the samples
+// stay interleaved exactly as in EMULATED mode. The game itself still runs at
+// its own speed; only the sound side keeps real time. Its timer and sample
+// interrupts then reach the SH4 a little more often per emulated second when
+// the emulation is slow (that is the trade this per-game option makes).
+//
+// Costs: when the game is slow, the sound side still does a full real-time
+// second of work per second, so it takes a bigger share of the frame. Pacing
+// on the audio ring is off in this mode (wii/wii_audio.cpp), so the speed cap
+// comes from the speed_limiter preset alone.
+//
+// Stalls longer than RT_MAX_MS (a disc load, the console's own pauses) are
+// not caught up: the sound resumes from where it was.
+//
+// NOT for music the SH4 STREAMS to the AICA (ADX/ADPCM rings it refills, e.g.
+// Initial D 3's two 4-bit ADPCM stream channels): in real time the AICA
+// overtakes the refills and replays stale pieces. Those games' music tempo can
+// only come from the emulation itself running at full speed. CD audio is not
+// affected either way (and has its own preset, CDDA_CLOCK).
+#define RT_MAX_MS     50u
+#define RT_MIN_CHUNK  256u
+
+void FASTCALL armUpdateARM(u32 Cycles)
+{
+	static bool started = false;
+	static u32 last = 0, rt_mhz = 0;
+	static u64 cycles_per_tick = 0;	// SH4 cycles per clock tick, 16.16 fixed point
+	static u64 acc = 0;
+
+	if (!get_sound_clock_preset())
+	{
+		started = false;	// a later switch to REAL TIME starts a fresh clock
+		stepSound(Cycles);
+		return;
+	}
+
+	const int mhz = get_sh4_clock_preset();
+	if (!started || mhz != (int)rt_mhz)
+	{
+		started = true;
+		rt_mhz = (u32)mhz;
+		cycles_per_tick = ((u64)rt_mhz * 1000000u << 16) / RT_CLOCK_HZ;
+		last = RT_CLOCK_NOW();
+		acc = 0;
+		return;
+	}
+
+	const u32 now = RT_CLOCK_NOW();
+	u32 delta = now - last;		// u32 wrap (~70 s on Wii) is harmless here
+	last = now;
+	const u32 max_delta = (u32)(RT_CLOCK_HZ * RT_MAX_MS / 1000u);
+	if (delta > max_delta)
+		delta = max_delta;
+	acc += (u64)delta * cycles_per_tick;
+	u32 cycles = (u32)(acc >> 16);
+	acc &= 0xFFFF;
+
+	const u32 chunk = (Cycles > RT_MIN_CHUNK) ? Cycles : RT_MIN_CHUNK;
+	while (cycles)
+	{
+		const u32 c = (cycles < chunk) ? cycles : chunk;
+		stepSound(c);
+		cycles -= c;
 	}
 }

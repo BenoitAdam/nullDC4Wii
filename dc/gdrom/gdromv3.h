@@ -243,3 +243,8 @@ extern char szExDT[8][32];
 #define SPI_GET_SCD		0x40	// 
 
 void FASTCALL gdrom_get_cdda(s16* sector);
+
+// CDDA_CLOCK = REAL TIME: the CD voice's read head (see gdromv3.cpp).
+bool gdrom_cdda_rt_sync(u32 played);
+bool gdrom_cdda_rt_read(s16* sector);
+void gdrom_cdda_rt_reset();

@@ -496,6 +496,32 @@ extern "C" {
   int get_cdda_preset() { return g_cdda_preset; }
 }
 
+// CDDA_CLOCK - which clock CD audio (Red Book) music follows. Default REAL TIME.
+// 0=emulated (legacy: one sector per 588 emulated AICA samples, so below 100%
+//   speed the CD music slows down, crackles or detunes with the game).
+// 1=real time (CD audio gets its own ASND voice fed 75 sectors per REAL second,
+//   as the real drive streams it; the drive the game sees moves by what was
+//   actually played -- wii/wii_audio.cpp, plugs/nullAICA/sgc_if.cpp
+//   cdda_rt_pump, dc/gdrom/gdromv3.cpp gdrom_cdda_rt_*). Needs CDDA MUSIC on.
+int g_cdda_clock_preset = 1;
+
+extern "C" {
+  int get_cdda_clock_preset() { return g_cdda_clock_preset; }
+}
+
+// SOUND_CLOCK - which clock the ARM7 sound CPU and the AICA follow. PER GAME,
+// default EMULATED. From the Initial D 3 Wii port's SOUND CLOCK option.
+// 0=emulated (exact: sequenced music plays at the emulation's speed).
+// 1=real time (plugs/vbaARM/arm_aica.cpp armUpdateARM: the sound side is handed
+//   the cycles of the REAL clock, so sequenced music keeps its tempo when the
+//   game is slow; audio pacing is off, speed_limiter caps the speed). Breaks
+//   music the SH4 streams to the AICA (ADX/ADPCM rings) -- per game only.
+int g_sound_clock_preset = 0;
+
+extern "C" {
+  int get_sound_clock_preset() { return g_sound_clock_preset; }
+}
+
 int g_mute_pcm16_preset = 0; // 0=off (all AICA sample formats audible, legacy), 1=on (16-bit PCM channels (PCMS==0) are silenced at KEY_ON — workaround for ChuChu Rocket's echoey 16-bit SFX; also mutes any 16-bit music/voices, so game-specific)
 
 extern "C" {
@@ -3137,6 +3163,8 @@ void checkBiosFiles()
 #define OPT_AICA_REL_CULL 147 // Page 4 (AUDIO), under AICA FAST
 #define OPT_TA_ARENA_FIX 148 // Page 9 (FIXES), under DECAL FIX
 #define OPT_TA_CTX_FIX  149  // Page 9 (FIXES), under TA ARENA FIX
+#define OPT_SOUND_CLOCK 150  // Page 4 (AUDIO), under AUDIO DRC
+#define OPT_CDDA_CLOCK  151  // Page 4 (AUDIO), under CDDA MUSIC
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3230,7 +3258,9 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_AUDIO_BUFFERS,
   OPT_AUDIO_BLOCK,
   OPT_AUDIO_DRC,
+  OPT_SOUND_CLOCK,
   OPT_CDDA,
+  OPT_CDDA_CLOCK,
   OPT_MUTE_PCM16,
   OPT_AICA_FAST,
   OPT_AICA_REL_CULL,
@@ -4045,6 +4075,15 @@ bool displayOptionsMenu()
     printf(" retunes output to kill crackle");
     printf("\n");
 
+    // --- Row: SOUND_CLOCK - ARM7 + AICA on the real clock (plugs/vbaARM/arm_aica.cpp) ---
+    printf("%s SOUND CLOCK    : ", (selectedRow == OPT_SOUND_CLOCK) ? MENU_CURSOR : MENU_NOCURSOR);
+    switch (g_sound_clock_preset) {
+      case 0: printf("[< EMULATED (EXACT)  >]"); break;
+      case 1: printf("[< REAL TIME         >]"); break;
+    }
+    printf(" per game: music tempo if slow");
+    printf("\n");
+
     // --- Row: CDDA music (GD-ROM CD audio tracks) ---
     printf("%s CDDA MUSIC     : ", (selectedRow == OPT_CDDA) ? MENU_CURSOR : MENU_NOCURSOR);
     switch (g_cdda_preset) {
@@ -4052,6 +4091,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (CD MUSIC)     >]"); break;
     }
     printf(" (GD-ROM CD audio tracks)");
+    printf("\n");
+
+    // --- Row: CDDA_CLOCK - CD audio on its own real-time voice (wii/wii_audio.cpp) ---
+    printf("%s CDDA CLOCK     : ", (selectedRow == OPT_CDDA_CLOCK) ? MENU_CURSOR : MENU_NOCURSOR);
+    switch (g_cdda_clock_preset) {
+      case 0: printf("[< EMULATED (LEGACY) >]"); break;
+      case 1: printf("[< REAL TIME (DRIVE) >]"); break;
+    }
+    printf(" CD music keeps tempo if slow");
     printf("\n");
 
 
@@ -5074,6 +5122,8 @@ bool displayOptionsMenu()
         case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
         case OPT_ADPCM_LOOP:     g_adpcm_loop_preset      = (g_adpcm_loop_preset      + 1) % 2; break;
         case OPT_AICA_REL_CULL:  g_aica_rel_cull_preset   = (g_aica_rel_cull_preset   + 3) % 4; break;
+        case OPT_SOUND_CLOCK:    g_sound_clock_preset     = (g_sound_clock_preset     + 1) % 2; break;
+        case OPT_CDDA_CLOCK:     g_cdda_clock_preset      = (g_cdda_clock_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 2) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
@@ -5237,6 +5287,8 @@ bool displayOptionsMenu()
         case OPT_AICA_FAST:      g_aica_fast_preset       = (g_aica_fast_preset       + 1) % 2; break;
         case OPT_ADPCM_LOOP:     g_adpcm_loop_preset      = (g_adpcm_loop_preset      + 1) % 2; break;
         case OPT_AICA_REL_CULL:  g_aica_rel_cull_preset   = (g_aica_rel_cull_preset   + 1) % 4; break;
+        case OPT_SOUND_CLOCK:    g_sound_clock_preset     = (g_sound_clock_preset     + 1) % 2; break;
+        case OPT_CDDA_CLOCK:     g_cdda_clock_preset      = (g_cdda_clock_preset      + 1) % 2; break;
         case OPT_HUD_PASS:       g_hud_pass_preset        = (g_hud_pass_preset        + 1) % 3; break;
         case OPT_SUBPASS_ZCLEAR: g_subpass_zclear_preset  = (g_subpass_zclear_preset  + 1) % 2; break;
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
@@ -6253,6 +6305,8 @@ int main(int argc, wchar *argv[])
     printf("Async Render   : %s\n", g_async_render_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("TMEM Cache     : %s\n", g_tmem_cache_preset ? "ON (FASTER?)" : "OFF (LEGACY)");
     printf("CDDA Music     : %s\n", g_cdda_preset ? "ON (CD MUSIC)" : "OFF (LEGACY)");
+    printf("CDDA Clock     : %s\n", g_cdda_clock_preset ? "REAL TIME (DRIVE)" : "EMULATED (LEGACY)");
+    printf("Sound Clock    : %s\n", g_sound_clock_preset ? "REAL TIME" : "EMULATED (EXACT)");
     printf("CDDA Pause Fix : %s\n", g_cdda_pause_fix_preset ? "ON (KEEP POS)" : "OFF (TO FAD 150)");
     printf("CDDA State Fix : %s\n", g_cdda_state_fix_preset ? "ON (FLYCAST)" : "OFF (LEGACY)");
     printf("CDI Header Fix : %s\n", g_cdi_hdr_fix_preset ? "ON (CDIRIP RULE)" : "OFF (LEGACY)");

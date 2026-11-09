@@ -1222,6 +1222,28 @@ extern "C" int get_cdda_preset();
 #define CDDA_FIX() (get_cdda_preset() != 0)
 void FASTCALL gdrom_get_cdda(s16* sector);
 
+// CDDA_CLOCK = REAL TIME (wii/main.cpp `cdda_clock`): the CD audio leaves the
+// AICA mix (EXTS0 stays silent) and plays on its own ASND voice, fed 75
+// sectors per REAL second as the real drive streams them, so it keeps its
+// tempo and pitch when the emulation runs below 100%. The drive split (read
+// head ahead, game-visible drive at what was played) is in dc/gdrom/gdromv3.cpp;
+// the voice is in wii/wii_audio.cpp. Read once per CD sector (75/s).
+extern "C" int get_cdda_clock_preset();
+#define CDDA_CLOCK_RT() (get_cdda_clock_preset() != 0)
+bool gdrom_cdda_rt_sync(u32 played);
+bool gdrom_cdda_rt_read(s16* sector);
+void gdrom_cdda_rt_reset();
+#define CD_BLOCK_SAMPLES 1176   // wii/wii_audio.h: one CD voice block = 2 sectors
+extern "C" {
+    int  wii_cd_start();
+    void wii_cd_stop();
+    u32  wii_cd_take_played();
+    void wii_cd_flush();
+    u32  wii_cd_free();
+    s16 *wii_cd_slot();
+    void wii_cd_publish();
+}
+
 // ---------------------------------------------------------------------------
 // [VOX] voice census (Sega Tetris, 2026-11-09). The stats line's vox:N%(V)
 // says how many channels are stepped per sample (35-63 in a full well, ~180
@@ -1328,6 +1350,119 @@ static INLINE void vox_census(bool dsp_on)
     }
 }
 
+// ---------------------------------------------------------------------------
+// CDDA_CLOCK = REAL TIME: keep the CD voice's queue topped up. Called from
+// AICA_Sample() at every CD-sector boundary (every 588 emulated samples, ~13 ms
+// at 100%). That is only how often the queue is checked: what plays, and how
+// fast, is set by the voice, which drains it at 44.1 kHz of real time.
+// ---------------------------------------------------------------------------
+#define CD_PUMP_MAX_BLOCKS 3   // per call (6 sector reads): a new track fills over 2 calls
+
+static bool s_cdda_rt_on = false;
+static s16  s_cdda_rt_raw[CD_BLOCK_SAMPLES * 2];   // two raw sectors, L/R interleaved
+
+#ifdef WII
+static inline s32 cdda_le16(s16 v)   // disc bytes are little-endian
+{
+    const u16 u = (u16)v;
+    return (s16)(u16)((u >> 8) | (u << 8));
+}
+#else
+static inline s32 cdda_le16(s16 v) { return v; }
+#endif
+
+// One voice block (two sectors) from the read head, with the CD volume applied
+// exactly as AICA_Sample() applies it to EXTS0: send level and pan per side,
+// mono, master volume, 18-bit DAC, clip. The voice is mixed with the AICA voice
+// by ASND, so the CD part is clipped on its own -- the only difference from the
+// single mix, and only on samples that would clip anyway.
+static void cdda_rt_fill(s16* dst)
+{
+    const bool a0 = gdrom_cdda_rt_read(s_cdda_rt_raw);
+    const bool a1 = gdrom_cdda_rt_read(s_cdda_rt_raw + CDDA_SIZE);
+    if ((!a0 && !a1) || aica_settings.CDDAMute != 0)
+    {
+        memset(dst, 0, CD_BLOCK_SAMPLES * 2 * sizeof(s16));
+        return;
+    }
+
+    const u32  sdl_l = dsp_out_vol[16].EFSDL, pan_l = dsp_out_vol[16].EFPAN;
+    const u32  sdl_r = dsp_out_vol[17].EFSDL, pan_r = dsp_out_vol[17].EFPAN;
+    const s32  val   = (s32)(volume_lut[CommonData->MVOL] * aica_settings.Volume / 100.0f);
+    const bool mono  = CommonData->Mono != 0;
+    const bool dac18 = CommonData->DAC18B != 0;
+
+    for (int i = 0; i < CD_BLOCK_SAMPLES; i++)
+    {
+        const s32 in_l = cdda_le16(s_cdda_rt_raw[i * 2 + 0]);
+        const s32 in_r = cdda_le16(s_cdda_rt_raw[i * 2 + 1]);
+        s32 l = 0, r = 0;
+        VOLPAN(in_l, sdl_l, pan_l, l, r);
+        VOLPAN(in_r, sdl_r, pan_r, l, r);
+        if (mono)
+        {
+            l += r;
+            r = l;
+        }
+        l = (s32)FPMul((s64)l, val, 15);
+        r = (s32)FPMul((s64)r, val, 15);
+        if (dac18)
+        {
+            l = FPs(l, 2);
+            r = FPs(r, 2);
+        }
+        clip16(l);
+        clip16(r);
+        dst[i * 2 + 0] = (s16)l;
+        dst[i * 2 + 1] = (s16)r;
+    }
+}
+
+static void cdda_rt_pump()
+{
+    const int st = wii_cd_start();
+    if (st == 0)
+        return;                 // audio sink not up yet
+    if (st == 2)
+        gdrom_cdda_rt_reset();  // fresh voice, empty queue: restart the read head
+
+    // The drive the game sees moves on by what was played (2 sectors a
+    // block). If the game changed it since the last call (play, pause, seek,
+    // data read), the queue no longer follows it: drop it and refill.
+    if (gdrom_cdda_rt_sync(wii_cd_take_played() * 2))
+        wii_cd_flush();
+
+    u32 n = wii_cd_free();
+    if (n > CD_PUMP_MAX_BLOCKS)
+        n = CD_PUMP_MAX_BLOCKS;
+    while (n != 0)
+    {
+        cdda_rt_fill(wii_cd_slot());
+        wii_cd_publish();
+        n--;
+    }
+}
+
+// True while CDDA_CLOCK = REAL TIME owns the CD audio (EXTS0 is then silent).
+static bool cdda_rt_update()
+{
+    if (CDDA_FIX() && CDDA_CLOCK_RT())
+    {
+        s_cdda_rt_on = true;
+        cdda_rt_pump();
+        return true;
+    }
+    if (s_cdda_rt_on)
+    {
+        // Back to EMULATED: the AICA path takes the drive over where it was
+        // heard (the game-visible drive only ever moved by what was played).
+        s_cdda_rt_on = false;
+        wii_cd_stop();
+        gdrom_cdda_rt_reset();
+    }
+    return false;
+}
+
 void AICA_Sample()
 {
     const bool fast   = g_aica_fast_preset != 0;
@@ -1354,7 +1489,8 @@ void AICA_Sample()
     if (cdda_index >= CDDA_SIZE)
     {
         cdda_index = 0;
-        if (CDDA_FIX())
+        const bool cdda_rt = cdda_rt_update();   // CDDA_CLOCK: CD audio on its own voice
+        if (CDDA_FIX() && !cdda_rt)
         {
             // gdrom_get_cdda gives the raw Red Book sector (s16 L/R
             // interleaved, little-endian) or silence when no track plays.

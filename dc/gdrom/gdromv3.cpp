@@ -179,7 +179,8 @@ struct
 // being output" flag every reader uses, kept equal to (status == CDDA_PLAYING).
 enum { CDDA_NOINFO = 0, CDDA_PLAYING, CDDA_PAUSED, CDDA_TERMINATED };
 
-struct
+// Named so CDDA_CLOCK = REAL TIME can keep a read-ahead copy (gdrom_cdda_rt_*).
+struct cdda_state
 {
 	bool playing;
 	u8   status;	// CDDA_STATE_FIX, see the enum above
@@ -261,44 +262,130 @@ void nilprintf(...){}
 #define printf_spi nilprintf
 #define printf_spicmd printf
 
+// One sector of CD-DA progress on `c`: the position moves on, then the end of
+// the play stops it or starts the next repeat. `drive` = c is the drive the
+// game sees, so a stop also sets the drive status it reads; the CDDA_CLOCK
+// read head below runs the same rule on its own copy and touches nothing else.
+static void cdda_advance(cdda_state& c, bool drive)
+{
+	c.CurrAddr.FAD++;
+	// CDDA_STATE_FIX (Flycast libCore_CDDA_Sector): end on >=, so a play whose
+	// end lies behind its position still stops; the drive then PAUSEs and the
+	// audio status reads "ended normally" (GET_SCD 0x13).
+	const bool state_fix = get_cdda_state_fix_preset() != 0;
+	if (state_fix ? c.CurrAddr.FAD>=c.EndAddr.FAD : c.CurrAddr.FAD==c.EndAddr.FAD)
+	{
+		if (c.repeats==0)
+		{
+			//stop
+			c.playing=false;
+			if (state_fix)
+			{
+				c.status=CDDA_TERMINATED;
+				if (drive)
+					SecNumber.Status=GD_PAUSE;
+			}
+			else if (drive)
+				SecNumber.Status=GD_STANDBY;
+		}
+		else
+		{
+			//Repeat ;)
+			if (c.repeats!=0xf)
+				c.repeats--;
+			c.CurrAddr.FAD=c.StartAddr.FAD;
+		}
+	}
+}
+
 void FASTCALL gdrom_get_cdda(s16* sector)
 {
 	//silence ! :p
 	if (cdda.playing)
 	{
 		libGDR_ReadSector((u8*)sector,cdda.CurrAddr.FAD,1,2352);
-		cdda.CurrAddr.FAD++;
-		// CDDA_STATE_FIX (Flycast libCore_CDDA_Sector): end on >=, so a play whose
-		// end lies behind its position still stops; the drive then PAUSEs and the
-		// audio status reads "ended normally" (GET_SCD 0x13).
-		const bool state_fix = get_cdda_state_fix_preset() != 0;
-		if (state_fix ? cdda.CurrAddr.FAD>=cdda.EndAddr.FAD : cdda.CurrAddr.FAD==cdda.EndAddr.FAD)
-		{
-			if (cdda.repeats==0)
-			{
-				//stop
-				cdda.playing=false;
-				if (state_fix)
-				{
-					cdda.status=CDDA_TERMINATED;
-					SecNumber.Status=GD_PAUSE;
-				}
-				else
-					SecNumber.Status=GD_STANDBY;
-			}
-			else
-			{
-				//Repeat ;)
-				if (cdda.repeats!=0xf)
-					cdda.repeats--;
-				cdda.CurrAddr.FAD=cdda.StartAddr.FAD;
-			}
-		}
+		cdda_advance(cdda, true);
 	}
 	else
 	{
 		memset(sector,0,2352);
 	}
+}
+
+// ---------------------------------------------------------------------------
+// CDDA_CLOCK = REAL TIME (plugs/nullAICA/sgc_if.cpp cdda_rt_pump, and the CD
+// voice in wii/wii_audio.cpp). The CD audio plays on its own ASND voice at
+// 44.1 kHz of REAL time, the way the real drive streams it, instead of being
+// pulled once per 588 emulated AICA samples -- so a game running at 80% keeps
+// its CD music at full tempo and pitch. A voice needs audio queued ahead, so
+// the drive is split in two:
+//   s_cdda_head - the read head. Sectors are read from here into the voice's
+//                 queue, up to ~160 ms ahead of what is heard.
+//   cdda        - the drive the game sees (REQ_STAT / GET_SCD position, the
+//                 end of the track, the repeat count, the drive status). It
+//                 only moves by what the voice has actually PLAYED, so what
+//                 the game reads matches what is heard, and a game that waits
+//                 for the track to end before starting the next one does not
+//                 cut its last ~160 ms.
+// Both start from the same state and step with the same cdda_advance(), so
+// they walk the same sectors. Anything ELSE that changes `cdda` -- a play, a
+// pause, a seek, a data read, a disc change -- is caught by comparing it with
+// what the last sync left (s_cdda_seen): the read head restarts from the new
+// state and the caller throws away the queued audio. No command handler had
+// to change for that.
+// ---------------------------------------------------------------------------
+static cdda_state s_cdda_head;
+static cdda_state s_cdda_seen;
+static bool       s_cdda_rt_live = false;
+
+static bool cdda_same(const cdda_state& a, const cdda_state& b)
+{
+	return a.playing == b.playing && a.status == b.status && a.repeats == b.repeats &&
+	       a.CurrAddr.FAD == b.CurrAddr.FAD && a.EndAddr.FAD == b.EndAddr.FAD &&
+	       a.StartAddr.FAD == b.StartAddr.FAD;
+}
+
+// Moves the drive the game sees on by the `played` sectors the voice consumed
+// since the last call. Returns true instead -- the queued audio no longer
+// follows the drive and must be dropped -- on the first call after a reset or
+// when the game changed the drive state since the last call; the read head
+// then restarts from the drive.
+bool gdrom_cdda_rt_sync(u32 played)
+{
+	if (!s_cdda_rt_live || !cdda_same(cdda, s_cdda_seen))
+	{
+		s_cdda_head    = cdda;
+		s_cdda_seen    = cdda;
+		s_cdda_rt_live = true;
+		return true;
+	}
+	while (played != 0 && cdda.playing)
+	{
+		cdda_advance(cdda, true);
+		played--;
+	}
+	s_cdda_seen = cdda;
+	return false;
+}
+
+// The next sector at the read head: true and its 2352 bytes of Red Book audio
+// (little-endian) while the head plays, false and silence once it does not.
+bool gdrom_cdda_rt_read(s16* sector)
+{
+	if (s_cdda_head.playing)
+	{
+		libGDR_ReadSector((u8*)sector, s_cdda_head.CurrAddr.FAD, 1, 2352);
+		cdda_advance(s_cdda_head, false);
+		return true;
+	}
+	memset(sector, 0, 2352);
+	return false;
+}
+
+// The voice was (re)started or left: the next sync restarts the read head.
+void gdrom_cdda_rt_reset()
+{
+	s_cdda_rt_live = false;
 }
 void gd_spi_pio_end(u8* buffer,u32 len,gd_states next_state=gds_pio_end);
 void gd_process_spi_cmd();

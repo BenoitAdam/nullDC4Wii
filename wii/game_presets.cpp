@@ -1074,6 +1074,27 @@
                                 normally", end FAD 0 = end of disc, a disc
                                 change stops it. Default on. off = legacy single
                                 "playing" flag.
+        cdda_clock=realtime <- realtime/emulated (also on/off), which clock CD
+                                audio music follows. realtime (default): it
+                                gets its own ASND voice fed 75 sectors per REAL
+                                second, as the real drive streams it, so it
+                                keeps its tempo and pitch when the game runs
+                                below 100% (wii/wii_audio.cpp CD voice, sgc_if.cpp
+                                cdda_rt_pump). The drive position, "ended" and
+                                repeat count the game reads move by what was
+                                actually played. emulated (legacy): one sector
+                                per 588 emulated AICA samples, so the music
+                                slows down/crackles with the game. Needs cdda on.
+        sound_clock=realtime <- realtime/emulated (also on/off), PER GAME,
+                                default emulated. Which clock the ARM7 sound CPU
+                                and the AICA follow (plugs/vbaARM/arm_aica.cpp).
+                                realtime: SEQUENCED music (played by the sound
+                                CPU from AICA RAM) keeps its tempo when the game
+                                runs below 100%; audio pacing is off, so pair it
+                                with speed_limiter=on. Breaks music the main CPU
+                                STREAMS to the sound chip (ADX/ADPCM rings):
+                                stale pieces replay. From the Initial D 3 Wii
+                                port's SOUND CLOCK.
         mute_pcm16=on       <- on/off, silence 16-bit PCM channels (see sgc_if.cpp
                                 MUTE_PCM16_FIX()). off (default, legacy) plays all
                                 sample formats. on drops any AICA channel whose
@@ -1402,6 +1423,8 @@ extern int g_hud_pass_preset;
 extern int g_async_render_preset;
 extern int g_tmem_cache_preset;
 extern int g_cdda_preset;
+extern int g_cdda_clock_preset;
+extern int g_sound_clock_preset;
 extern int g_cdda_pause_fix_preset;
 extern int g_cdda_state_fix_preset;
 extern int g_cdi_hdr_fix_preset;
@@ -1576,6 +1599,8 @@ struct GamePreset
     int tmem_cache;
     int show_fps;
     int cdda;
+    int cdda_clock;
+    int sound_clock;
     int cdda_pause_fix;
     int cdda_state_fix;
     int cdi_hdr_fix;
@@ -1804,6 +1829,19 @@ static int parse_aica_rel_cull(const char* v)
     if (key_eq(p, "48") || key_eq(p, "48db") || strcmp(v, "3") == 0) return 3;
     if (key_eq(v, "off") || key_eq(v, "no") || key_eq(v, "false") || strcmp(v, "0") == 0) return 0;
     printf("[game_presets] aica_rel_cull needs off/72/60/48, got '%s'\n", v);
+    return -1;
+}
+
+// cdda_clock / sound_clock: 0 emulated, 1 real time. The documented words are
+// realtime/emulated; on/off/1/0 are aliases (on = realtime). Spelled out, never
+// atoi(), so `=on` is not silently read as 0.
+static int parse_clock(const char* v, const char* key)
+{
+    if (key_eq(v, "realtime") || key_eq(v, "real_time") || key_eq(v, "real") ||
+        key_eq(v, "on") || key_eq(v, "yes") || key_eq(v, "true") || strcmp(v, "1") == 0) return 1;
+    if (key_eq(v, "emulated") || key_eq(v, "exact") ||
+        key_eq(v, "off") || key_eq(v, "no") || key_eq(v, "false") || strcmp(v, "0") == 0) return 0;
+    printf("[game_presets] %s needs realtime/emulated, got '%s'\n", key, v);
     return -1;
 }
 
@@ -2164,6 +2202,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "tmem_cache"))     p->tmem_cache     = parse_bool(val);
     else if (key_eq(key, "show_fps"))       p->show_fps       = parse_bool(val);
     else if (key_eq(key, "cdda"))           p->cdda           = parse_bool(val);
+    else if (key_eq(key, "cdda_clock"))     p->cdda_clock     = parse_clock(val, "cdda_clock");
+    else if (key_eq(key, "sound_clock"))    p->sound_clock    = parse_clock(val, "sound_clock");
     else if (key_eq(key, "cdda_pause_fix")) p->cdda_pause_fix = parse_bool(val);
     else if (key_eq(key, "cdda_state_fix")) p->cdda_state_fix = parse_bool(val);
     else if (key_eq(key, "cdi_hdr_fix"))    p->cdi_hdr_fix    = parse_bool(val);
@@ -2318,6 +2358,8 @@ static void preset_clear(GamePreset* cur)
     cur->tmem_cache = -1;
     cur->show_fps = -1;
     cur->cdda = -1;
+    cur->cdda_clock = -1;
+    cur->sound_clock = -1;
     cur->cdda_pause_fix = -1;
     cur->cdda_state_fix = -1;
     cur->cdi_hdr_fix = -1;
@@ -2488,6 +2530,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->tmem_cache     >= 0) { g_tmem_cache_preset    = p->tmem_cache;      printf("  tmem_cache     -> %d\n", p->tmem_cache);     }
     if (p->show_fps       >= 0) { g_show_fps_overlay     = p->show_fps;        printf("  show_fps       -> %d\n", p->show_fps);       }
     if (p->cdda           >= 0) { g_cdda_preset          = p->cdda;            printf("  cdda           -> %d\n", p->cdda);           }
+    if (p->cdda_clock     >= 0) { g_cdda_clock_preset    = p->cdda_clock;      printf("  cdda_clock     -> %d\n", p->cdda_clock);     }
+    if (p->sound_clock    >= 0) { g_sound_clock_preset   = p->sound_clock;     printf("  sound_clock    -> %d\n", p->sound_clock);    }
     if (p->cdda_pause_fix >= 0) { g_cdda_pause_fix_preset = p->cdda_pause_fix; printf("  cdda_pause_fix -> %d\n", p->cdda_pause_fix); }
     if (p->cdda_state_fix >= 0) { g_cdda_state_fix_preset = p->cdda_state_fix; printf("  cdda_state_fix -> %d\n", p->cdda_state_fix); }
     if (p->cdi_hdr_fix    >= 0) { g_cdi_hdr_fix_preset    = p->cdi_hdr_fix;    printf("  cdi_hdr_fix    -> %d\n", p->cdi_hdr_fix);    }

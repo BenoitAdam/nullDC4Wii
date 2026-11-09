@@ -26,11 +26,24 @@ void wii_audio_aica_ready();
 // settings.emulator.AudioBuffers controls pacing: >=1 blocks the caller until
 // the audio side consumes the buffer (paces emulation to audio); 0 never blocks
 // (drops on overrun). Only one buffer is in flight, so values >1 behave like 1.
+// SOUND_CLOCK = REAL TIME never blocks (the samples already follow real time).
 void wii_audio_push_sample(s16 l, s16 r);
 
 // Legacy no-op kept so existing call sites (gxRend present path) still link.
 // AICA is no longer stepped from the video frame.
 void wii_audio_frame();
+
+// CDDA_CLOCK = REAL TIME: CD audio's own ASND voice, fed by
+// plugs/nullAICA/sgc_if.cpp cdda_rt_pump() from the emulation thread. One block
+// = two CD sectors, stereo s16 L/R interleaved, CD volume already applied.
+#define CD_BLOCK_SAMPLES 1176
+int  wii_cd_start();         // 0 = sink not up yet, 1 = running, 2 = started now (queue empty)
+void wii_cd_stop();
+u32  wii_cd_take_played();   // blocks played since the last call
+void wii_cd_flush();         // drop everything queued
+u32  wii_cd_free();          // blocks that may be queued now
+s16 *wii_cd_slot();          // block to fill next...
+void wii_cd_publish();       // ...then publish it
 
 #ifdef __cplusplus
 }

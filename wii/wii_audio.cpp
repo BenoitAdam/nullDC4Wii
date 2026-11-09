@@ -53,6 +53,15 @@
 // without a single underrun: the output is slowed to match production instead
 // of glitching. Wide settings let the pitch follow a game that sits well off
 // 100%, trading a little detune for clean sound.
+//
+// Two presets take music off the emulated clock (both "sound keeps real time
+// when the game runs slow", from the Initial D 3 Wii port's SOUND CLOCK):
+//   CDDA_CLOCK  - CD audio gets its OWN voice (CD_VOICE below), fed 75 sectors
+//                 per REAL second, as the real drive streams it. The AICA voice
+//                 is untouched.
+//   SOUND_CLOCK - the ARM7 and the AICA are stepped by the real clock
+//                 (plugs/vbaARM/arm_aica.cpp), so this sink receives 44100
+//                 samples per real second and its pacing wait is skipped.
 
 // config.h (pulled in transitively via types.h -> nullAICA headers) poisons
 // BIG_ENDIAN / LITTLE_ENDIAN. Undef before any libogc/ASND header (which define
@@ -81,11 +90,13 @@
 #include <unistd.h>
 #include <ogc/cache.h>        // DCFlushRange
 #include <ogc/lwp_watchdog.h> // gettime() for the pacing-wait timer
+#include <ogc/irq.h>          // IRQ_Disable/IRQ_Restore for the CD queue flush
 
 // Per-game / options-menu presets (wii/main.cpp).
 extern "C" int get_audio_block_preset();   // 0=1024, 1=1536, 2=2048 samples
 extern "C" int get_audio_drc_preset();     // 0=off, 1=+-1%, 2=+-3%, 3=+-15%
 extern "C" int get_audio_stats_preset();   // 0=off, 1=one line/sec to ndclog
+extern "C" int get_sound_clock_preset();   // SOUND_CLOCK: 1 = real time (never pace, see push)
 
 // Set to 1 by wii_audio_aica_ready() once AICA_Init() has run. Until then
 // wii_audio_push_sample() is a no-op.
@@ -239,20 +250,22 @@ static void drc_update(u32 used)
 // ---------------------------------------------------------------------------
 #define CONCEAL_RAMP 64   // samples, ~1.5 ms at 44.1 kHz
 
-static void conceal_fill(s16 *dst, int samples)
+// `last_l`/`last_r` = the last sample the voice played; both voices (AICA and
+// CD) keep their own.
+static void conceal_fill(s16 *dst, int samples, s16 *last_l, s16 *last_r)
 {
     int n = (samples < CONCEAL_RAMP) ? samples : CONCEAL_RAMP;
 
     for (int i = 0; i < n; i++)
     {
         int sc = n - i;
-        dst[i * 2 + 0] = (s16)(((s32)conceal_l * sc) / n);
-        dst[i * 2 + 1] = (s16)(((s32)conceal_r * sc) / n);
+        dst[i * 2 + 0] = (s16)(((s32)*last_l * sc) / n);
+        dst[i * 2 + 1] = (s16)(((s32)*last_r * sc) / n);
     }
     memset(dst + n * 2, 0, (size_t)(samples - n) * NUM_CHANNELS * sizeof(s16));
 
-    conceal_l = 0;
-    conceal_r = 0;
+    *last_l = 0;
+    *last_r = 0;
 }
 
 static void conceal_fade_in(s16 *dst, int samples)
@@ -302,7 +315,7 @@ static void audio_callback(s32 voice)
     else
     {
         stat_underruns = stat_underruns + 1;
-        conceal_fill(play_buf[next], block_samples);
+        conceal_fill(play_buf[next], block_samples, &conceal_l, &conceal_r);
         fade_in_pending = 1;
     }
 
@@ -312,6 +325,153 @@ static void audio_callback(s32 voice)
 
     stat_blocks = stat_blocks + 1;
     drc_update(used);
+}
+
+// ---------------------------------------------------------------------------
+// CD audio voice - CDDA_CLOCK = REAL TIME.
+//
+// On a real Dreamcast the GD-ROM drive streams CD audio by itself, 75 sectors
+// per second, whatever the SH4 is doing. Here it gets its own ASND voice at a
+// fixed 44.1 kHz (no rate control: it is fed by the real clock, not by the
+// emulation), so a game running below 100% keeps its CD music at full tempo
+// and pitch, and the AICA voice's underruns or pitch trim never touch it.
+//
+// The queue is filled from the emulation thread by plugs/nullAICA/sgc_if.cpp
+// (cdda_rt_pump: disc reads, CD volume/pan/master volume) and drained here, one
+// block per callback. Same single-producer / single-consumer counters as the
+// AICA ring. A block is two CD sectors: 1176 samples = 26.7 ms, above the
+// 940.8-sample-per-tick floor (rule 1) and a multiple of 8 samples (rule 3).
+//
+// CD_FILL blocks (160 ms) are kept queued: enough to ride out a pacing wait
+// (<= 100 ms) or a heavy frame, since the queue can only be topped up while
+// the emulation thread is running.
+// ---------------------------------------------------------------------------
+#define CD_VOICE  1
+#define CD_RING   8
+#define CD_FILL   6
+
+static s16 cd_ring[CD_RING][CD_BLOCK_SAMPLES * NUM_CHANNELS] __attribute__((aligned(32)));
+static s16 cd_play[2][CD_BLOCK_SAMPLES * NUM_CHANNELS]       __attribute__((aligned(32)));
+
+static volatile u32 cd_wr = 0;      // producer (emulation thread)
+static volatile u32 cd_rd = 0;      // consumer (audio DMA IRQ)
+static u32 cd_seen = 0;             // cd_rd at the last wii_cd_take_played()
+static int cd_live = 0;             // voice running (emulation thread only)
+static int cd_play_idx = 0;
+static s16 cd_last_l = 0, cd_last_r = 0;
+static int cd_fade_in = 0;
+static volatile u32 cd_stat_under = 0;
+
+static const int cd_block_bytes = CD_BLOCK_SAMPLES * NUM_CHANNELS * 2;
+
+static void cd_callback(s32 voice)
+{
+    (void)voice;
+
+    const int next = cd_play_idx ^ 1;
+
+    if (cd_wr != cd_rd)
+    {
+        memcpy(cd_play[next], cd_ring[cd_rd % (u32)CD_RING], (size_t)cd_block_bytes);
+        __sync_synchronize();
+        cd_rd = cd_rd + 1;
+
+        if (cd_fade_in)
+        {
+            conceal_fade_in(cd_play[next], CD_BLOCK_SAMPLES);
+            cd_fade_in = 0;
+        }
+        cd_last_l = cd_play[next][CD_BLOCK_SAMPLES * 2 - 2];
+        cd_last_r = cd_play[next][CD_BLOCK_SAMPLES * 2 - 1];
+    }
+    else
+    {
+        // Emulation thread late (or a pause/track change just emptied the
+        // queue): fade to silence rather than repeat or click.
+        cd_stat_under = cd_stat_under + 1;
+        conceal_fill(cd_play[next], CD_BLOCK_SAMPLES, &cd_last_l, &cd_last_r);
+        cd_fade_in = 1;
+    }
+
+    DCFlushRange(cd_play[next], (u32)cd_block_bytes);
+    ASND_AddVoice(CD_VOICE, (void *)cd_play[next], cd_block_bytes);
+    cd_play_idx = next;
+}
+
+// 0 = the audio sink is not up yet (nothing to do), 1 = voice running,
+// 2 = voice (re)started just now with an empty queue.
+extern "C" int wii_cd_start()
+{
+    if (!aica_ready)
+        return 0;
+    if (cd_live)
+        return 1;
+
+    memset(cd_play, 0, sizeof(cd_play));
+    DCFlushRange(cd_play, sizeof(cd_play));
+    cd_wr = 0;
+    cd_rd = 0;
+    cd_seen = 0;
+    cd_play_idx = 0;
+    cd_last_l = 0;
+    cd_last_r = 0;
+    cd_fade_in = 0;
+
+    ASND_SetVoice(CD_VOICE, VOICE_STEREO_16BIT, SAMPLE_RATE, 0,
+                  (void *)cd_play[0], cd_block_bytes, 255, 255, cd_callback);
+    cd_live = 1;
+    printf("[WiiAudio] CD voice started (CDDA CLOCK = REAL TIME, %d-sample blocks, %d queued)\n",
+           CD_BLOCK_SAMPLES, CD_FILL);
+    return 2;
+}
+
+extern "C" void wii_cd_stop()
+{
+    if (!cd_live)
+        return;
+    cd_live = 0;
+    ASND_StopVoice(CD_VOICE);
+}
+
+// Blocks the voice has played since the last call.
+extern "C" u32 wii_cd_take_played()
+{
+    const u32 rd = cd_rd;
+    const u32 n  = rd - cd_seen;
+    cd_seen = rd;
+    return n;
+}
+
+// Drop everything queued (a play, pause or seek changed the drive). With the
+// IRQ off: the callback owns cd_rd and could otherwise retire a block between
+// the read and the write below, leaving cd_wr one behind cd_rd.
+extern "C" void wii_cd_flush()
+{
+    const u32 level = IRQ_Disable();
+    cd_wr   = cd_rd;
+    cd_seen = cd_rd;
+    IRQ_Restore(level);
+}
+
+// How many blocks may be queued now to reach CD_FILL.
+extern "C" u32 wii_cd_free()
+{
+    const u32 used = cd_wr - cd_rd;
+    return (used >= (u32)CD_FILL) ? 0 : (u32)CD_FILL - used;
+}
+
+// The block to fill next; publish it with wii_cd_publish().
+extern "C" s16 *wii_cd_slot()
+{
+    return cd_ring[cd_wr % (u32)CD_RING];
+}
+
+extern "C" void wii_cd_publish()
+{
+    // The callback reads the slot with a CPU memcpy (same core, same cache):
+    // order the writes before the publish, no cache flush needed.
+    __sync_synchronize();
+    cd_wr = cd_wr + 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +567,7 @@ void wii_audio_aica_ready()
 
 void wii_audio_term()
 {
+    wii_cd_stop();
     ASND_StopVoice(VOICE_SLOT);
 }
 
@@ -419,6 +580,7 @@ extern "C" void wii_audio_shutdown()
 {
     aica_ready = 0;
     ring_wr    = ring_rd;   // releases anyone in the pacing wait below
+    wii_cd_stop();
     ASND_StopVoice(VOICE_SLOT);
 }
 
@@ -469,15 +631,20 @@ static void audio_stats_tick()
     last = now;
 
     printf("[WiiAudio] blocks=%u under=%u drop=%u wait=%u timeout=%u "
-           "ring=%u/%d pitch=%d\n",
+           "ring=%u/%d pitch=%d",
            stat_blocks, stat_underruns, stat_drops, stat_waits, stat_timeouts,
            (unsigned)(ring_wr - ring_rd), ring_slots, drc_pitch);
+    // CDDA_CLOCK = REAL TIME: the CD voice's own underruns and queue level.
+    if (cd_live)
+        printf(" cd_under=%u cd_q=%u/%d", cd_stat_under, (unsigned)(cd_wr - cd_rd), CD_FILL);
+    printf("%s\n", get_sound_clock_preset() ? " clock=realtime" : "");
 
     stat_blocks    = 0;
     stat_underruns = 0;
     stat_drops     = 0;
     stat_waits     = 0;
     stat_timeouts  = 0;
+    cd_stat_under  = 0;
 
     fflush(stdout);   // log is freopen'd to SD; without this the tail is lost
 }
@@ -534,10 +701,18 @@ void wii_audio_push_sample(s16 l, s16 r)
     // second source of crackle at AudioBuffers=0, on top of the plain overruns,
     // and the depth is also what gives dynamic rate control something to steer
     // when emulation is left unpaced.
+    //
+    // SOUND_CLOCK = REAL TIME (arm_aica.cpp armUpdateARM): the samples follow
+    // the real clock, so waiting here cannot pace anything, and it feeds on
+    // itself: the time spent waiting becomes samples at the next call, which
+    // fill the ring again, so a ring that filled once stays full for good
+    // (Initial D 3 Wii port, real Wii: ~25% of the time spent here). Free-run
+    // instead: a full ring drops one block. The speed cap then comes from the
+    // speed_limiter preset alone.
     {
         int want = (int)settings.emulator.AudioBuffers;
         if (want <= 0) { ring_paced = 0; want = AUD_RING_FREERUN; }
-        else           { ring_paced = 1; }
+        else           { ring_paced = get_sound_clock_preset() ? 0 : 1; }
         if (want > AUD_RING_MAX) want = AUD_RING_MAX;
         ring_slots = want;
     }
