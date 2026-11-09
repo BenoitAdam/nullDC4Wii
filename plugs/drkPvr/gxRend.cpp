@@ -434,6 +434,29 @@ extern "C" int get_decal_fix_preset();
 extern "C" int get_ta_arena_fix_preset();
 #define TA_ARENA_FIX() (get_ta_arena_fix_preset() == 1)
 
+// TA context fix (ta_ctx_fix) -- issue #16's second half: geometry vanishing
+// and coming back, one frame at a time, exactly when ta_arena_fix logs
+// "RESET MID-STRIP" (Magforce Racing log, 2026-11-09).
+//
+// The real PVR double-buffers: the TA writes the list it is building at
+// TA_ISP_BASE while a render reads the finished one at PARAM_BASE, so a game
+// may start building frame N+1 (TA_LIST_INIT) and only then STARTRENDER frame
+// N. This renderer has ONE flat buffer and renders everything accumulated:
+// that render draws N plus the head of N+1 (doubled/misplaced objects), and the
+// next one draws only N+1's tail (missing objects) -- a mid-strip render is just
+// the visible symptom of landing inside N+1.
+//
+// ON (default): every TA_LIST_INIT marks where the new list starts in the
+// buffer (cursors, the list boundaries and depth range of the data before it,
+// and its context = TA_ISP_BASE & 0xF00000, Flycast's key). A STARTRENDER whose
+// PARAM_BASE & 0xF00000 names a different context than the list being built
+// renders only what lies before the mark; the new list's head is then moved to
+// the start of the fresh buffer and keeps building there. Anything else (same
+// context, no mark, RTT_KEEP_LIST / RTT_CARRY_OVERLAY in play) = legacy, so a
+// game that never builds ahead never takes this path. OFF = legacy.
+extern "C" int get_ta_ctx_fix_preset();
+#define TA_CTX_FIX() (get_ta_ctx_fix_preset() == 1)
+
 // 2D Framebuffer Rendering
 extern "C" int get_framebuffer_2d();
 
@@ -2599,6 +2622,28 @@ bool g_ta_full = false;
 // reset_vtx_state() under the preset.
 bool g_ta_strip_open = false;
 
+// ── TA_CTX_FIX() state (see the macro doc at the top of the file) ────────────
+// Where the list a TA_LIST_INIT started sits in the buffer, and everything
+// DoRender() needs to render the data BEFORE it on its own. Taken at every
+// TA_LIST_INIT that finds strips already in the buffer; dropped by every
+// reset_vtx_state() (the buffer it points into is gone).
+struct TaCtxMark
+{
+  bool        valid;
+  u32         inits;     // TA_LIST_INITs since the buffer last reset
+  VertexList *lst;       // first strip / vertex / header of the new list
+  Vertex     *vtx;
+  PolyParam  *mod;
+  VertexList *trans_lst, *pt_lst, *op_lst;   // older data's list boundaries
+  Vertex     *trans_vtx, *pt_vtx, *op_vtx;
+  PolyParam  *trans_mod, *pt_mod, *op_mod;
+  float       zmin, zmax;                    // older data's depth range
+};
+static TaCtxMark g_ta_mark;
+static u32  g_ta_build_ctx = 0;        // TA_ISP_BASE & 0xF00000 at the last TA_LIST_INIT
+static u32  g_ta_reset_seq = 0;        // bumped by every reset_vtx_state()
+static bool s_ta_ctx_rendering = false; // StartRender() is rendering the older data only
+
 // ── RTT_CARRY_OVERLAY() state ────────────────────────────────────────────────
 // When a bit-24 render is dropped in carry mode, StartRender() snapshots that
 // pass here and moves the frame origin past it. DoRender() then builds the
@@ -3245,6 +3290,7 @@ u32 g_vtx_reset_seq = 0;
 // that trips a guard every frame cannot flood /ndclog.txt. A game the guards
 // never fire for writes only the ARMED line.
 static u32 s_arena_events = 0;
+static u32 s_arena_carries = 0; // mid-strip carries only; shown in the [MAD] line
 static void ta_arena_log(const char *what, s32 n)
 {
   s_arena_events++;
@@ -3314,7 +3360,14 @@ void reset_vtx_state()
   u32       carried_clip = 0;
   Vertex   *carry_src = 0;  // first slot to move to vertices[0]
   s32       carry_n = 0;    // complete vertices moved (the open strip so far)
-  if (arena_fix)
+  // TA_CTX_FIX(): the buffer this mark points into is about to be rewound.
+  g_ta_reset_seq++;
+  g_ta_mark.valid = false;
+  g_ta_mark.inits = 0;
+  // While StartRender() renders only the data before a TA_LIST_INIT mark, the
+  // open strip and header in effect belong to the NEW list, which StartRender()
+  // moves itself once this returns -- nothing to carry here.
+  if (arena_fix && !s_ta_ctx_rendering)
   {
     // The header the next strip would use: a pending one sits at *curMod,
     // otherwise the last one consumed is curMod[-1].
@@ -3443,6 +3496,7 @@ void reset_vtx_state()
           if (W > vtx_max_Z) vtx_max_Z = W;
         }
       }
+      s_arena_carries++;
       ta_arena_log("RESET MID-STRIP, open strip carried", carry_n);
     }
     // The open strip (carried or restarting) ends against a real pointer, not
@@ -9235,6 +9289,138 @@ void DoRender()
            get_matched_preset_name());
 #endif
 
+  // [MAD] DEBUG census (2026-11-09, issue #16: vertices "going mad" and coming
+  // back, with no FIFO error once ta_arena_fix is on). TEMPORARY, on for the
+  // test round; flip if(1) -> if(0) here and in InitRenderer's ARMED line once
+  // it has answered. Scans what the TA decoder STORED, before any GX call, so it
+  // separates "the data is already wrong" from "GX drew it wrong":
+  //   1. structure: sum of strip counts must equal the vertex cursor, flagged
+  //      strips must equal the headers consumed, no count above the draw loop's
+  //      0x7FFF mask, no strip running past the cursor. A mismatch means the
+  //      draw loop's drawVTX / drawMod cursors desync = every later strip mad.
+  //   2. values: non-finite or W <= 0 vertices, screen position (x/W, y/W) beyond
+  //      +-4096, non-finite / huge UV. The first 3 offending strips are dumped
+  //      with their header (pcw/tsp/tcw) and list class.
+  // Line = every render with an anomaly (first 200, then every 10th), plus a
+  // heartbeat every 120 renders so a clean run still shows it is alive.
+  // arena=/carries= are ta_arena_fix's running counters: an anomaly line that
+  // follows a carries bump points at the carried strip.
+  // OFF (2026-11-09, Magforce Racing with ta_ctx_fix): structure always clean
+  // (sum/flagged ok, no over_cnt/overrun, nonfin=0). "wild" = the game's own
+  // near-plane clip (W=4, x/W ~ -27000, whole triangles off screen, GX clips
+  // them); "baduv" = an untextured off-screen dummy sprite (pcw=A0820000) with
+  // no UVs to read. Nothing to fix. Cost rnd ~3.5% -> ~10% while on. Safe to
+  // re-enable: flip if(0) back to if(1) here and in InitRenderer's ARMED line.
+  if (0)
+  {
+    static u32 s_mad_n = 0, s_mad_lines = 0, s_mad_bad = 0;
+    s_mad_n++;
+    const s32 mad_nv = (s32)(curVTX - vertices);
+    const s32 mad_np = (s32)(curMod - listModes);
+    s32 sum = 0, flagged = 0, over_cnt = 0, short_s = 0, long_s = 0, overrun = 0;
+    u32 nonfin = 0, wild = 0, baduv = 0, bad_strips = 0;
+    float maxabs = 0.0f, wmin = 1e30f, wmax = 0.0f;
+    const Vertex *sv = vertices;
+    const PolyParam *pm = listModes;
+    const PolyParam *cur_hdr = 0;
+    int detail = 0, si = 0;
+    for (const VertexList *l = lists; l != curLST; l++, si++)
+    {
+      const s32 c = l->count;
+      if (c < 0)
+      {
+        flagged++;
+        if (pm < curMod) cur_hdr = pm++;
+      }
+      const u32 raw = (u32)c & 0x7FFFFFFFu;
+      if (raw > 0x7FFFu) over_cnt++;
+      const s32 n = (s32)(raw & 0x7FFFu);
+      sum += n;
+      if (n < 3) short_s++;
+      if (n >= 1000) long_s++;
+      if (sv + n > curVTX) { overrun++; break; }
+      bool strip_bad = false;
+      int first_bad = -1;
+      for (s32 i = 0; i < n; i++)
+      {
+        const Vertex &v = sv[i];
+        bool bad = false;
+        if (!(v.z > 0.0f) || !(v.z < 1e29f) || !(v.x > -1e30f && v.x < 1e30f) ||
+            !(v.y > -1e30f && v.y < 1e30f))
+        {
+          nonfin++; bad = true;
+        }
+        else
+        {
+          if (v.z < wmin) wmin = v.z;
+          if (v.z > wmax) wmax = v.z;
+          const float sx = v.x / v.z, sy = v.y / v.z;
+          const float ax = sx < 0.0f ? -sx : sx, ay = sy < 0.0f ? -sy : sy;
+          if (ax > maxabs) maxabs = ax;
+          if (ay > maxabs) maxabs = ay;
+          if (!(sx > -4096.0f && sx < 4096.0f && sy > -4096.0f && sy < 4096.0f))
+          {
+            wild++; bad = true;
+          }
+        }
+        if (!(v.u > -1e4f && v.u < 1e4f && v.v > -1e4f && v.v < 1e4f))
+        {
+          baduv++; bad = true;
+        }
+        if (bad && first_bad < 0) first_bad = i;
+        strip_bad |= bad;
+      }
+      if (strip_bad)
+      {
+        bad_strips++;
+        if (detail < 3 && (s_mad_lines < 200 || (s_mad_n % 10) == 0))
+        {
+          detail++;
+          const char *cls = "OP";
+          const VertexList *t = TransLST, *p = PTLST;
+          if (t && l >= t && (!p || p < t || l < p)) cls = "TR";
+          else if (p && l >= p && (!t || t < p || l < t)) cls = "PT";
+          printf("[MAD]   strip#%d %s n=%d flagged=%d first_bad=%d hdr: pcw=%08X tsp=%08X tcw=%08X\n",
+                 si, cls, n, (int)(c < 0), first_bad,
+                 cur_hdr ? (u32)cur_hdr->pcw.full : 0u,
+                 cur_hdr ? (u32)cur_hdr->tsp.full : 0u,
+                 cur_hdr ? (u32)cur_hdr->tcw.full : 0u);
+          for (s32 i = 0; i < n && i < 6; i++)
+          {
+            const Vertex &v = sv[i];
+            printf("[MAD]     v%d x=%g y=%g W=%g scr=(%g,%g) uv=(%g,%g) col=%08X\n",
+                   i, (double)v.x, (double)v.y, (double)v.z,
+                   (double)(v.x / v.z), (double)(v.y / v.z),
+                   (double)v.u, (double)v.v, (u32)v.col);
+          }
+        }
+      }
+      sv += n;
+    }
+    const bool mismatch = (sum != mad_nv) || (flagged != mad_np) || over_cnt || overrun;
+    const bool anomaly = mismatch || nonfin || wild || baduv;
+    if (anomaly) s_mad_bad++;
+    if ((anomaly && (s_mad_lines < 200 || (s_mad_n % 10) == 0)) || (s_mad_n % 120) == 0)
+    {
+      s_mad_lines++;
+      printf("[MAD] n=%u frame=%u rtt=%d bit24=%d %s | nv=%d strips=%d params=%d | "
+             "sum=%d(%s) flagged=%d(%s) over_cnt=%d overrun=%d short=%d long=%d | "
+             "nonfin=%u wild=%u baduv=%u bad_strips=%u max|scr|=%g | W=%g..%g near=%g far=%g | "
+             "arena=%u carries=%u bad_renders=%u\n",
+             s_mad_n, (u32)FrameCount, (int)s_rtt_pass, ((FB_W_SOF1 & 0x1000000) != 0) ? 1 : 0,
+             anomaly ? "ANOMALY" : "ok",
+             mad_nv, (int)(curLST - lists), mad_np,
+             sum, sum == mad_nv ? "ok" : "MISMATCH",
+             flagged, flagged == mad_np ? "ok" : "MISMATCH",
+             over_cnt, overrun, short_s, long_s,
+             nonfin, wild, baduv, bad_strips, (double)maxabs,
+             (double)(wmax > 0.0f ? wmin : 0.0f), (double)wmax,
+             (double)vtx_min_Z, (double)vtx_max_Z,
+             s_arena_events, s_arena_carries, s_mad_bad);
+      fflush(stdout);
+    }
+  }
+
   // [DEPTH] DEBUG census (2026-11-06, Maximum Speed: far scenery missing).
   // Answers, per render: (1) how much of the frame sits at which W, (2) how many
   // vertices are pinned at the 1/W clamp (their depth saturates; x/y stay right),
@@ -13152,7 +13338,9 @@ static void tet_census_pass()
   }
 }
 
-void StartRender()
+// The real STARTRENDER handler. StartRender() (after ResetRenderer) wraps it
+// for TA_CTX_FIX(): it may present the buffer as ending at a TA_LIST_INIT mark.
+static void StartRender_inner()
 {
   u32 VtxCnt = curVTX - vertices;
   VertexCount += VtxCnt;
@@ -14245,6 +14433,22 @@ bool InitRenderer()
     printf("[DEPTH] census ARMED ([DEPTH] first 6 renders then every 120th; [OVF] on every 38K vertex-cap wipe)\n");
     fflush(stdout);
   }
+  // [TACTX] (StartRender wrapper, issue #16 flicker): OFF with tactx_log()
+  // (see there); flip both together.
+  if (0)
+  {
+    printf("[TACTX] ARMED (line per render that finds a TA_LIST_INIT mark or an open strip, "
+           "first 100 then every 50th; ta_ctx_fix=%d)\n", get_ta_ctx_fix_preset());
+    fflush(stdout);
+  }
+  // [MAD] census (DoRender, issue #16): if this line is missing from ndclog.txt
+  // the build did not pick it up. OFF with the census itself; flip both together.
+  if (0)
+  {
+    printf("[MAD] census ARMED ([MAD] line on every render with an anomaly, first 200 then every 10th; "
+           "heartbeat every 120 renders; up to 3 strip dumps per line)\n");
+    fflush(stdout);
+  }
   // Obtain the preferred video mode from the system
   // This will correspond to the settings in the Wii menu
   rmode = VIDEO_GetPreferredMode(NULL);
@@ -14401,6 +14605,184 @@ void ResetRenderer(bool Manual)
   FrameCount = 0;
 }
 
+// ── TA_CTX_FIX(): StartRender() wrapper ─────────────────────────────────────
+// [TACTX] DEBUG (2026-11-09, issue #16 flicker). TEMPORARY, on for the test
+// round: one line per StartRender() that finds a TA_LIST_INIT mark or a strip
+// still open (first 100, then every 50th), saying which context the render
+// asked for (PARAM_BASE), which one the TA is building (TA_ISP_BASE at the last
+// list init), how much data sits before/after the mark, and what was done.
+// "SPLIT" = the fix acted. "SAME-CTX" / "NO-INIT" while the flicker is on screen
+// = the theory does not cover this game. Flip if(1) -> if(0) here and in
+// InitRenderer's ARMED line once it has answered.
+static u32 s_tactx_lines = 0, s_tactx_split = 0, s_tactx_same = 0, s_tactx_noinit = 0;
+static void tactx_log(const char *what, u32 param_ctx, const TaCtxMark &mk,
+                      VertexList *end_lst, Vertex *end_vtx, bool strip_open)
+{
+  // OFF (2026-11-09): answered. Magforce Racing renders PARAM_BASE=000000
+  // while building 400000 on nearly every frame (SPLIT, same=0, noinit=0),
+  // flicker gone with ta_ctx_fix (user-CONFIRMED). Safe to re-enable: flip
+  // if(0) back to if(1) here and in InitRenderer's ARMED line.
+  if (0)
+  {
+    s_tactx_lines++;
+    if (s_tactx_lines <= 100 || (s_tactx_lines % 50) == 0)
+    {
+      const bool mv = mk.valid;
+      printf("[TACTX] #%u %s frame=%u PARAM_BASE=%06X build_ctx=%06X TA_ISP_BASE=%06X inits=%u "
+             "before: strips=%d vtx=%d | after: strips=%d vtx=%d | strip_open=%d "
+             "| splits=%u same=%u noinit=%u arena_carries=%u\n",
+             s_tactx_lines, what, (u32)FrameCount, (u32)(PARAM_BASE & 0xFFFFFF),
+             g_ta_build_ctx, (u32)(TA_ISP_BASE & 0xFFFFFF), mk.inits,
+             mv ? (int)(mk.lst - lists) : (int)(end_lst - lists),
+             mv ? (int)(mk.vtx - vertices) : (int)(end_vtx - vertices),
+             mv ? (int)(end_lst - mk.lst) : 0, mv ? (int)(end_vtx - mk.vtx) : 0,
+             (int)strip_open, s_tactx_split, s_tactx_same, s_tactx_noinit,
+             s_arena_carries);
+      fflush(stdout);
+    }
+  }
+}
+
+// One list boundary of the new list, moved with it: kept (rebased by `d*`)
+// when it was opened at/after the mark, cleared when it still points at the
+// older data the render just consumed.
+template <class L, class V, class M>
+static void tactx_rebase(L *&lst, V *&vtx, M *&mod, const TaCtxMark &mk)
+{
+  if (lst && lst >= mk.lst)
+  {
+    lst = lists + (lst - mk.lst);
+    vtx = vtx ? vertices + (vtx - mk.vtx) : 0;
+    mod = mod ? listModes + (mod - mk.mod) : 0;
+  }
+  else
+  {
+    lst = 0; vtx = 0; mod = 0;
+  }
+}
+
+void StartRender()
+{
+  const u32 param_ctx = PARAM_BASE & 0xF00000;
+  const bool strip_open = g_ta_strip_open;
+  const TaCtxMark mk = g_ta_mark;   // reset_vtx_state() drops the global copy
+
+  if (!mk.valid)
+  {
+    if (strip_open)
+    {
+      s_tactx_noinit++;
+      tactx_log("NO-INIT (render mid-list, no TA_LIST_INIT since the last reset)",
+                param_ctx, mk, curLST, curVTX, strip_open);
+    }
+    StartRender_inner();
+    return;
+  }
+
+  // A mark is only taken with RTT_KEEP_LIST / RTT_CARRY_OVERLAY idle, but they
+  // can have started since (an RTT pass between the list init and now).
+  const bool split = TA_CTX_FIX() && param_ctx != g_ta_build_ctx &&
+                     rtt_lst_end == 0 && carry_lst_end == 0 && mk.lst > lists;
+  if (!split)
+  {
+    if (param_ctx == g_ta_build_ctx)
+      s_tactx_same++;
+    tactx_log(param_ctx == g_ta_build_ctx ? "SAME-CTX (legacy: render everything)"
+                                          : "NOT-SPLIT (preset off / RTT keep-carry)",
+              param_ctx, mk, curLST, curVTX, strip_open);
+    StartRender_inner();
+    return;
+  }
+
+  // The new list as it stands: its end cursors and its own list boundaries.
+  VertexList *end_lst = curLST;
+  Vertex     *end_vtx = curVTX;
+  PolyParam  *end_mod = curMod;
+  const bool  end_regd = global_regd;
+  VertexList *n_trans_lst = TransLST, *n_pt_lst = PTLST, *n_op_lst = OpaqueLST;
+  Vertex     *n_trans_vtx = TransVTX, *n_pt_vtx = PT_VTX, *n_op_vtx = OpaqueVTX;
+  PolyParam  *n_trans_mod = TransMod, *n_pt_mod = PT_Mod, *n_op_mod = OpaqueMod;
+  Vertex     *open_ptr = strip_open ? curLST->ptr : 0;
+
+  s_tactx_split++;
+  tactx_log("SPLIT (render the older list only, new list moved to the buffer start)",
+            param_ctx, mk, end_lst, end_vtx, strip_open);
+
+  // Present the buffer as if it ended at the mark.
+  curLST = mk.lst;  curVTX = mk.vtx;  curMod = mk.mod;
+  global_regd = false;
+  TransLST  = mk.trans_lst; TransVTX  = mk.trans_vtx; TransMod  = mk.trans_mod;
+  PTLST     = mk.pt_lst;    PT_VTX    = mk.pt_vtx;    PT_Mod    = mk.pt_mod;
+  OpaqueLST = mk.op_lst;    OpaqueVTX = mk.op_vtx;    OpaqueMod = mk.op_mod;
+  vtx_min_Z = mk.zmin;      vtx_max_Z = mk.zmax;
+
+  const u32 seq0 = g_ta_reset_seq;
+  s_ta_ctx_rendering = true;
+  StartRender_inner();
+  s_ta_ctx_rendering = false;
+
+  if (g_ta_reset_seq == seq0)
+  {
+    // This path kept the buffer (an RTT pass in keep/carry mode, a dropped
+    // bit-24 pass...): put everything back exactly as it was -- legacy.
+    curLST = end_lst;  curVTX = end_vtx;  curMod = end_mod;
+    global_regd = end_regd;
+    TransLST  = n_trans_lst; TransVTX  = n_trans_vtx; TransMod  = n_trans_mod;
+    PTLST     = n_pt_lst;    PT_VTX    = n_pt_vtx;    PT_Mod    = n_pt_mod;
+    OpaqueLST = n_op_lst;    OpaqueVTX = n_op_vtx;    OpaqueMod = n_op_mod;
+    g_ta_mark = mk;
+    return;
+  }
+
+  // The buffer was rewound: move the new list's head to its start. memmove,
+  // every source sits at or above its destination.
+  const s32 nv = (s32)(end_vtx - mk.vtx);
+  const s32 nl = (s32)(end_lst - mk.lst);
+  const s32 nm = (s32)(end_mod - mk.mod);
+  {
+    // +4 vertex slots: a 64-byte vertex / sprite half-written at end_vtx.
+    s32 slots = nv + 4;
+    const s32 room = (s32)((vertices + TA_VTX_N) - mk.vtx);
+    if (slots > room) slots = room;
+    if (slots > 0) memmove(vertices, mk.vtx, (size_t)slots * sizeof(Vertex));
+  }
+  // +1 strip slot (the open strip's ptr) and +1 header slot (a pending header).
+  if (nl + 1 > 0) memmove(lists, mk.lst, (size_t)(nl + 1) * sizeof(VertexList));
+  if (nm + 1 > 0)
+  {
+    memmove(listModes, mk.mod, (size_t)(nm + 1) * sizeof(PolyParam));
+    memmove(listTileClip, listTileClip + (mk.mod - listModes), (size_t)(nm + 1) * sizeof(u32));
+  }
+  curVTX = vertices + nv;
+  curLST = lists + nl;
+  curMod = listModes + nm;
+  global_regd = end_regd;
+  if (strip_open && open_ptr >= mk.vtx)
+    curLST->ptr = vertices + (open_ptr - mk.vtx);
+  else if (strip_open)
+    curLST->ptr = vertices;   // cannot happen (a list init closes strips)
+
+  TransLST = n_trans_lst; TransVTX = n_trans_vtx; TransMod = n_trans_mod;
+  PTLST    = n_pt_lst;    PT_VTX   = n_pt_vtx;    PT_Mod   = n_pt_mod;
+  OpaqueLST = n_op_lst;   OpaqueVTX = n_op_vtx;   OpaqueMod = n_op_mod;
+  tactx_rebase(TransLST,  TransVTX,  TransMod,  mk);
+  tactx_rebase(PTLST,     PT_VTX,    PT_Mod,    mk);
+  tactx_rebase(OpaqueLST, OpaqueVTX, OpaqueMod, mk);
+
+  // The moved vertices are this frame's depth range and inf scan now.
+  for (s32 i = 0; i < nv; i++)
+  {
+    const float W = vertices[i].z;
+    if (!(W > 0.0f))
+      g_inf_vtx_seen = true;
+    if (!g_fixed_depth_cached && W > 0.0f)
+    {
+      if (W < vtx_min_Z) vtx_min_Z = W;
+      if (W > vtx_max_Z) vtx_max_Z = W;
+    }
+  }
+}
+
 // Thread Start
 bool ThreadStart()
 {
@@ -14423,6 +14805,24 @@ void ListInit()
 {
   TileAccel.ListInit();
   s_rd_list_init = true;   // RENDER_DELAY=FLYCAST: new TA data for the next render
+
+  // TA_CTX_FIX(): mark where the new list starts, with everything needed to
+  // render the data before it on its own. Taken whatever the preset (cheap,
+  // once per list); StartRender() decides. No mark when the buffer holds no
+  // strip, or while RTT_KEEP_LIST / RTT_CARRY_OVERLAY own the buffer layout.
+  g_ta_build_ctx = TA_ISP_BASE & 0xF00000;
+  g_ta_mark.inits++;
+  if (curLST > lists && rtt_lst_end == 0 && carry_lst_end == 0)
+  {
+    g_ta_mark.valid     = true;
+    g_ta_mark.lst       = curLST;    g_ta_mark.vtx    = curVTX;    g_ta_mark.mod    = curMod;
+    g_ta_mark.trans_lst = TransLST;  g_ta_mark.trans_vtx = TransVTX;  g_ta_mark.trans_mod = TransMod;
+    g_ta_mark.pt_lst    = PTLST;     g_ta_mark.pt_vtx    = PT_VTX;    g_ta_mark.pt_mod    = PT_Mod;
+    g_ta_mark.op_lst    = OpaqueLST; g_ta_mark.op_vtx    = OpaqueVTX; g_ta_mark.op_mod    = OpaqueMod;
+    g_ta_mark.zmin      = vtx_min_Z; g_ta_mark.zmax      = vtx_max_Z;
+  }
+  else
+    g_ta_mark.valid = false;
 }
 
 // Soft Reset
