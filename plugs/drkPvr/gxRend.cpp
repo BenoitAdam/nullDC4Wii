@@ -13506,8 +13506,8 @@ static void tet_census_pass()
 }
 
 // ── [TOYR] Toy Racer flicker census ─────────────────────────────────────────
-// TEMPORARY (2026-11-10), on for the test round. Flip if(1) -> if(0) in
-// toyr_census_pass() and in InitRenderer's ARMED line once it has answered.
+// TEMPORARY (2026-11-10), now OFF (if(0) in toyr_census_pass() and in
+// InitRenderer's ARMED line) -- safe to re-enable: flip both to if(1).
 //
 // Round 1 (2026-11-10, split_screen=both) found: Toy Racer renders TWO passes
 // per vblank -- 20 strips from PARAM_BASE 000000, then 0.4 ms later the
@@ -13656,7 +13656,7 @@ static void toyr_paths(char *out, u32 sz, u32 *snap)
 // Called at the top of StartRender_inner, before any path that returns.
 static void toyr_census_pass()
 {
-  if (1)
+  if (0) // OFF (2026-11-10): answered; flip with the ARMED line in InitRenderer
   {
     // Counters of other subsystems, sampled so each line shows what happened
     // SINCE the previous pass (= during the previous render and the vblank).
@@ -14997,7 +14997,7 @@ bool InitRenderer()
   }
   // [TOYR] Toy Racer flicker census (toyr_census_pass, StartRender_inner): if this
   // line is missing from ndclog.txt the build did not pick it up. Flip with it.
-  if (1)
+  if (0)
   {
     printf("[TOYR] census ARMED v2 (per PARAM_BASE role; first %d passes, %d-pass SAMPLE every %d, "
            "anomalies EMPTY/RET/GONE/JUMP/SKIP/DEC/SLOW/VFB/ARENA, [TOYRD] detail under the first 80; "
