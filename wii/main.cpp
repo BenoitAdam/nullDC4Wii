@@ -843,6 +843,24 @@ int g_ta_arena_fix_preset = 1;
 // (TA_ISP_BASE at the last TA_LIST_INIT) draws only the data before that list
 // init. See TA_CTX_FIX() in gxRend.cpp.
 int g_ta_ctx_fix_preset = 1;
+// 0 = off (legacy: at every vblank the VRAM framebuffer at FB_R_SOF1 is blitted
+// to screen whenever its first pixel lost the "already presented" magic word --
+// even right after a 3D frame went out, so a game whose 3D frame is stamped
+// somewhere else (split_screen compose stamps the FIRST pass's address) gets the
+// 3D frame and a stale VRAM image alternating every vblank: Toy Racer flicker).
+// 1 = on (default): a vblank that follows a presented 3D frame never blits the
+// VRAM framebuffer, it only re-arms the marker -- Flycast's render_called rule.
+// See VBL_FB_FIX() in gxRend.cpp.
+int g_vbl_fb_fix_preset = 1;
+// 0 = off (legacy: every 3D render is flipped to the screen as soon as it is
+// done). 1 = on (default): a finished 3D frame waits in the back buffer and the
+// vblank flips it, so when a game renders twice per vblank only the last render
+// is shown -- like the PVR, which only scans out the framebuffer. Toy Racer
+// renders a near-empty 20-strip pass then the scene each frame; with async
+// render the near-empty one (black) was the frame on screen almost all the time.
+// See VBL_FLIP_FIX() in gxRend.cpp. Menu row on page 5 (CORE), under ASYNC
+// RENDER (page 9 FIXES is full).
+int g_vbl_flip_fix_preset = 1;
 
 // STRIP_DEDUP: skip the texture bind a strip repeats from the strip before it.
 // Built for ChuChu Rocket's mouse mania -- hundreds of copies of one mouse
@@ -866,6 +884,8 @@ extern "C" {
   int get_decal_fix_preset() { return g_decal_fix_preset; }
   int get_ta_arena_fix_preset() { return g_ta_arena_fix_preset; }
   int get_ta_ctx_fix_preset() { return g_ta_ctx_fix_preset; }
+  int get_vbl_fb_fix_preset() { return g_vbl_fb_fix_preset; }
+  int get_vbl_flip_fix_preset() { return g_vbl_flip_fix_preset; }
 }
 
 // FASTMEM — PPC-MMU fastmem for the SH4 dynarec (wii/wii_fastmem.cpp +
@@ -3165,6 +3185,8 @@ void checkBiosFiles()
 #define OPT_TA_CTX_FIX  149  // Page 9 (FIXES), under TA ARENA FIX
 #define OPT_SOUND_CLOCK 150  // Page 4 (AUDIO), under AUDIO DRC
 #define OPT_CDDA_CLOCK  151  // Page 4 (AUDIO), under CDDA MUSIC
+#define OPT_VBL_FB_FIX  152  // Page 9 (FIXES), under TA CTX FIX
+#define OPT_VBL_FLIP_FIX 153 // Page 5 (CORE), under ASYNC RENDER (page 9 is full)
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3279,6 +3301,7 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_ACCURACY_INT,
   OPT_ACCURACY_FPU,
   OPT_ASYNC_RENDER,
+  OPT_VBL_FLIP_FIX,
   OPT_RENDER_DELAY,
   OPT_TMEM_CACHE,
   OPT_SH4_CLOCK,
@@ -3360,6 +3383,7 @@ static const int OPT_PAGE8_ROWS[] = {
   OPT_DECAL_FIX,
   OPT_TA_ARENA_FIX,
   OPT_TA_CTX_FIX,
+  OPT_VBL_FB_FIX,
   OPT_CDDA_PAUSE_FIX,
   OPT_CDDA_STATE_FIX,
   OPT_ARM7_RESET_FIX,
@@ -4238,6 +4262,15 @@ bool displayOptionsMenu()
     printf(" use GPU, cost 1 frame input-lag");
     printf("\n");
 
+    // --- Row: VBLANK FLIP FIX - flip at the vblank, last render of the vblank wins ---
+    printf("%s VBLANK FLIP FIX: ", (selectedRow == OPT_VBL_FLIP_FIX) ? MENU_CURSOR : MENU_NOCURSOR);
+    switch (g_vbl_flip_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" 2 renders/vblank (Toy Racer)");
+    printf("\n");
+
     // --- Row: Hardware-like render/list IRQ delays ---
     printf("%s RENDER DELAY   : ", (selectedRow == OPT_RENDER_DELAY) ? MENU_CURSOR : MENU_NOCURSOR);
     switch (g_render_delay_preset) {
@@ -4842,6 +4875,15 @@ bool displayOptionsMenu()
     printf(" geometry flicker (Magforce)");
     printf("\n");
 
+    // --- Row: VBL FB FIX - no VRAM framebuffer blit in a vblank that had a 3D frame ---
+    printf("%s VBLANK FB FIX  : ", (selectedRow == OPT_VBL_FB_FIX) ? MENU_CURSOR : MENU_NOCURSOR);
+    switch (g_vbl_fb_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" 3D/VRAM flicker (Toy Racer)");
+    printf("\n");
+
     // --- Row: CDDA_PAUSE_FIX - CD audio pause keeps its position (gdromv3.cpp) ---
     printf("%s CDDA PAUSE FIX : ", (selectedRow == OPT_CDDA_PAUSE_FIX) ? MENU_CURSOR : MENU_NOCURSOR);
     switch (g_cdda_pause_fix_preset) {
@@ -5038,6 +5080,7 @@ bool displayOptionsMenu()
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 2) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
+        case OPT_VBL_FLIP_FIX: g_vbl_flip_fix_preset = (g_vbl_flip_fix_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
         case OPT_BG_POLY:    g_bg_poly_preset        = (g_bg_poly_preset         + 1) % 2; break;
         case OPT_X_SCALER:   g_x_scaler_preset       = (g_x_scaler_preset        + 1) % 2; break;
@@ -5132,6 +5175,7 @@ bool displayOptionsMenu()
         case OPT_DECAL_FIX:      g_decal_fix_preset       = (g_decal_fix_preset       + 1) % 2; break;
         case OPT_TA_ARENA_FIX:   g_ta_arena_fix_preset    = (g_ta_arena_fix_preset    + 1) % 2; break;
         case OPT_TA_CTX_FIX:     g_ta_ctx_fix_preset      = (g_ta_ctx_fix_preset      + 1) % 2; break;
+        case OPT_VBL_FB_FIX:     g_vbl_fb_fix_preset      = (g_vbl_fb_fix_preset      + 1) % 2; break;
         case OPT_TEX_CLAMP_FIX:  g_tex_clamp_fix_preset   = (g_tex_clamp_fix_preset   + 1) % 2; break;
         case OPT_STRIP_DEDUP:    g_strip_dedup_preset     = (g_strip_dedup_preset     + 2) % 3; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
@@ -5203,6 +5247,7 @@ bool displayOptionsMenu()
         case OPT_LEGACY_DEPTH: g_legacy_depth_preset = (g_legacy_depth_preset    + 1) % 2; break;
         case OPT_DEPTH_CLIP: g_depth_clip_preset     = (g_depth_clip_preset      + 1) % 3; break;
         case OPT_ASYNC_RENDER: g_async_render_preset = (g_async_render_preset    + 1) % 2; break;
+        case OPT_VBL_FLIP_FIX: g_vbl_flip_fix_preset = (g_vbl_flip_fix_preset    + 1) % 2; break;
         case OPT_TMEM_CACHE: g_tmem_cache_preset     = (g_tmem_cache_preset      + 1) % 2; break;
         case OPT_BG_POLY:    g_bg_poly_preset        = (g_bg_poly_preset         + 1) % 2; break;
         case OPT_X_SCALER:   g_x_scaler_preset       = (g_x_scaler_preset        + 1) % 2; break;
@@ -5297,6 +5342,7 @@ bool displayOptionsMenu()
         case OPT_DECAL_FIX:      g_decal_fix_preset       = (g_decal_fix_preset       + 1) % 2; break;
         case OPT_TA_ARENA_FIX:   g_ta_arena_fix_preset    = (g_ta_arena_fix_preset    + 1) % 2; break;
         case OPT_TA_CTX_FIX:     g_ta_ctx_fix_preset      = (g_ta_ctx_fix_preset      + 1) % 2; break;
+        case OPT_VBL_FB_FIX:     g_vbl_fb_fix_preset      = (g_vbl_fb_fix_preset      + 1) % 2; break;
         case OPT_TEX_CLAMP_FIX:  g_tex_clamp_fix_preset   = (g_tex_clamp_fix_preset   + 1) % 2; break;
         case OPT_STRIP_DEDUP:    g_strip_dedup_preset     = (g_strip_dedup_preset     + 1) % 3; break;
         case OPT_DINO_CRISIS_INVENTORY_HACK: g_dino_crisis_inventory_hack_preset = (g_dino_crisis_inventory_hack_preset + 1) % 2; break;
@@ -6235,6 +6281,8 @@ int main(int argc, wchar *argv[])
     printf("Decal fix      : %s\n", g_decal_fix_preset ? "ON (TEXTURE ONLY)" : "OFF (MODULATE)");
     printf("TA arena fix   : %s\n", g_ta_arena_fix_preset ? "ON (BOUNDED + CARRY)" : "OFF (LEGACY)");
     printf("TA ctx fix     : %s\n", g_ta_ctx_fix_preset ? "ON (SPLIT AT LIST INIT)" : "OFF (LEGACY)");
+    printf("VBlank fb fix  : %s\n", g_vbl_fb_fix_preset ? "ON (NO VRAM BLIT AFTER 3D)" : "OFF (MAGIC WORD ONLY)");
+    printf("VBlank flip fix: %s\n", g_vbl_flip_fix_preset ? "ON (FLIP AT VBLANK, LAST RENDER WINS)" : "OFF (FLIP EVERY RENDER)");
     printf("Strip dedup    : %s\n", g_strip_dedup_preset == 2 ? "SKIP REPEATED" :
                                     g_strip_dedup_preset == 1 ? "CENSUS (LOG ONLY)" : "OFF (LEGACY)");
     printf("Tex clamp fix  : %s\n", g_tex_clamp_fix_preset ? "ON (PER POLYGON)" : "OFF (LEGACY)");

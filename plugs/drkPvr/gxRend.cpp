@@ -457,6 +457,49 @@ extern "C" int get_ta_arena_fix_preset();
 extern "C" int get_ta_ctx_fix_preset();
 #define TA_CTX_FIX() (get_ta_ctx_fix_preset() == 1)
 
+// VBlank framebuffer fix (vbl_fb_fix) -- Toy Racer flicker, 2026-11-10.
+//
+// VBlank() blits the VRAM framebuffer at FB_R_SOF1 to screen whenever its first
+// pixel no longer holds FB_PRESENT_MAGIC ("the CPU drew this frame"). 3D renders
+// never write their picture back to VRAM, so that blit shows a stale image, and
+// when it fires in the same vblank as a 3D present the two alternate every
+// vblank. Toy Racer with split_screen=both did exactly that: per vblank one
+// 20-strip pass (PARAM_BASE 000000) + one 1138-strip pass (400000), and the
+// [TOYR] fc counter rose by TWO per pair, the second being VBlank()'s
+// PresentFramebuffer() (the only other FrameCount++ that can fire there). The
+// marker was missing because the composer stamps the FIRST pass's FB_W_SOF1,
+// not the buffer the game then scans out (most likely; [TOYR] vfb= confirms).
+//
+// ON (default): a vblank with a 3D frame presented since the previous one, or
+// with a composed frame still waiting in the EFB, never blits VRAM; it re-arms
+// the marker at FB_R_SOF1 instead, so only a CPU write AFTER this vblank counts
+// -- Flycast's render_called + per-vblank framebuffer watch. Pure CPU-drawn
+// games never present a 3D frame and keep the legacy path. OFF = legacy.
+extern "C" int get_vbl_fb_fix_preset();
+#define VBL_FB_FIX() (get_vbl_fb_fix_preset() == 1)
+
+// VBlank flip fix (vbl_flip_fix) -- Toy Racer black screen, 2026-11-10.
+//
+// Every 3D render used to go to the screen the moment it finished. The PVR does
+// not work that way: a render only writes a framebuffer, and the display shows
+// whatever that framebuffer holds when it is scanned out. A game that renders
+// twice per vblank (Toy Racer: a 20-strip pass from PARAM_BASE 000000, then 0.4
+// ms later the whole scene from 400000) therefore had BOTH presented, and with
+// ASYNC_RENDER() it was worse: the second render's DoRender() opens with
+// gx_sync_pending(), which flipped the display to the first, near-empty, black
+// frame, and the scene's own flip only came at the next vblank ~16 ms later --
+// so the black frame was the one on screen almost all the time.
+//
+// ON (default): a finished 3D frame (DoRender's display tail, composed frames)
+// is copied into the back XFB but not flipped. A later render in the same vblank
+// waits for the GPU and copies over the same back buffer; VBlank() flips what is
+// there and swaps buffers -- the last render of the vblank wins, like scanout.
+// Other present paths (2D blit, reset) still flip a waiting frame first. As a
+// side effect the non-async path becomes double-buffered too. OFF = legacy:
+// every render flips as soon as it is done.
+extern "C" int get_vbl_flip_fix_preset();
+#define VBL_FLIP_FIX() (get_vbl_flip_fix_preset() == 1)
+
 // 2D Framebuffer Rendering
 extern "C" int get_framebuffer_2d();
 
@@ -1449,6 +1492,15 @@ static u64 s_tet_dec_t = 0;   // ticks decoding textures (the cache-miss path)
 static u32 s_tet_dec   = 0;   // texture decodes (cache misses)
 static u32 s_tet_binds = 0;   // SetTextureParams() calls (one per param header)
 static u32 s_tet_drawn = 0;   // DoRender() runs
+static u32 s_toyr_vbl  = 0;   // [TOYR] VBlank() calls, for passes-per-vblank cadence
+static u32 s_toyr_vfb  = 0;   // [TOYR] VBlank() VRAM framebuffer blits (PresentFramebuffer)
+static u32 s_toyr_cmp  = 0;   // [TOYR] split_compose_present() frames actually shown
+static u32 s_toyr_gate = 0;   // [TOYR] VBL_FB_FIX() vblanks that skipped the VRAM blit
+static u32 s_toyr_vrep = 0;   // [TOYR] VBL_FLIP_FIX() frames replaced before their vblank flip
+// VBL_FB_FIX(): a 3D frame went to the display since the last VBlank(). Set by
+// every 3D present (DoRender's display tail, split_compose_present, 2D-after-3D),
+// read and cleared by VBlank(). Plain store, nothing per strip.
+static bool s_vbl_3d_present = false;
 #define TET_TICKS()       gettime()
 #define TET_REND_DONE(dt) do { s_tet_rend += (dt); s_tet_drawn++; } while (0)
 
@@ -1810,6 +1862,18 @@ static void DrawXfbFpsText(void *xfb)
 // before that path programs its own.
 static bool s_gx_pending = false;
 static int  s_gx_pending_fb = 0;
+// VBL_FLIP_FIX(): the queued async frame was queued WITHOUT swapping fb (it sits
+// in frameBuffer[fb], the back buffer, and a later render of the same vblank
+// copies over it). Whoever flips it swaps fb afterwards.
+static bool s_gx_pending_vf = false;
+// VBL_FLIP_FIX(): its vblank came while the GPU was still drawing it, so it is
+// the frame that should be on screen -- the next render flips it first (legacy
+// behaviour) instead of replacing it. Without this, a game that starts its
+// render just before the vblank would never get a frame on screen at all.
+static bool s_gx_pending_due = false;
+// VBL_FLIP_FIX(), non-async path: a finished frame (copy complete, FPS text
+// drawn) waits in frameBuffer[fb] for VBlank() to flip it.
+static bool s_vf_pending = false;
 
 // Set from the GX draw-done interrupt (callback registered in InitRenderer).
 // Lets VBlank() apply the deferred flip without blocking when the GPU already
@@ -1822,8 +1886,19 @@ static void gx_drawdone_cb(void)
   s_gx_done_irq = true;
 }
 
+// VBL_FLIP_FIX(), non-async: put the waiting back buffer on screen, swap.
+static void vf_flip_now()
+{
+  VIDEO_SetNextFramebuffer(frameBuffer[fb]);
+  VIDEO_Flush();
+  fb ^= 1;
+  s_vf_pending = false;
+}
+
 static void gx_sync_pending()
 {
+  if (s_vf_pending)
+    vf_flip_now(); // a non-async VBL_FLIP_FIX frame goes out before this path's own
   if (!s_gx_pending)
     return;
   fp_GX_WaitDrawDone(); // GPU finished the queued frame's draws + display copy
@@ -1833,6 +1908,33 @@ static void gx_sync_pending()
   VIDEO_SetNextFramebuffer(frameBuffer[s_gx_pending_fb]);
   VIDEO_Flush();
   s_gx_pending = false;
+  s_gx_pending_due = false;
+  if (s_gx_pending_vf)
+  {
+    fb ^= 1;        // VBL_FLIP_FIX(): it was queued in the back buffer, swap now
+    s_gx_pending_vf = false;
+  }
+}
+
+// DoRender()'s own entry. The GPU must be idle before this render re-decodes
+// texture slots, but under VBL_FLIP_FIX() a finished frame waiting for its
+// vblank must NOT be flipped here: this render may be the one that replaces it
+// (two renders in one vblank -- only the last reaches the screen). A frame
+// queued by the legacy path is flipped exactly as before.
+static void gx_sync_for_render()
+{
+  if (s_gx_pending && s_gx_pending_vf && !s_gx_pending_due)
+  {
+    fp_GX_WaitDrawDone(); // idle GPU; the frame stays queued for VBlank()
+    return;
+  }
+  if (s_gx_pending)
+  {
+    gx_sync_pending();    // legacy async frame, or a VBL_FLIP_FIX one whose
+    return;               // vblank already passed: flip now, as before
+  }
+  // s_vf_pending (non-async VBL_FLIP_FIX): its copy completed at the tail,
+  // nothing to wait for; VBlank() flips it unless this render replaces it.
 }
 
 // Non-blocking flavor, called every vblank: apply the queued frame's flip only
@@ -1840,6 +1942,8 @@ static void gx_sync_pending()
 // next gx_sync_pending() or vblank picks it up).
 static void gx_present_if_done()
 {
+  if (s_vf_pending)
+    vf_flip_now(); // VBL_FLIP_FIX(), non-async: the vblank is the flip point
   if (s_gx_pending && s_gx_done_irq)
   {
     DrawXfbFpsText(frameBuffer[s_gx_pending_fb]);
@@ -1847,6 +1951,16 @@ static void gx_present_if_done()
     VIDEO_SetNextFramebuffer(frameBuffer[s_gx_pending_fb]);
     VIDEO_Flush();
     s_gx_pending = false;
+    s_gx_pending_due = false;
+    if (s_gx_pending_vf)
+    {
+      fb ^= 1;      // VBL_FLIP_FIX(): queued in the back buffer, swap now
+      s_gx_pending_vf = false;
+    }
+  }
+  else if (s_gx_pending && s_gx_pending_vf)
+  {
+    s_gx_pending_due = true; // its vblank is now: the next render must show it, not replace it
   }
 }
 
@@ -7638,6 +7752,9 @@ static void split_compose_present()
   split_open_scissor();
 
   const bool async_render = ASYNC_RENDER();
+  const bool vflip = VBL_FLIP_FIX(); // flip at the vblank, not now (see the macro)
+  if (vflip && ((s_gx_pending && s_gx_pending_vf) || s_vf_pending))
+    s_toyr_vrep++; // [TOYR]: a frame of this vblank is replaced before it was shown
   if (!async_render)
     fp_GX_DrawDone();
 
@@ -7648,17 +7765,27 @@ static void split_compose_present()
     GX_SetDrawDone();
     s_gx_pending = true;
     s_gx_pending_fb = fb;
-    fb ^= 1;
+    s_gx_pending_vf = vflip;
+    if (!vflip)
+      fb ^= 1;
   }
   else
   {
     fp_GX_DrawDone(); // wait for the copy before the CPU draws the FPS text
     DrawXfbFpsText(frameBuffer[fb]);
-    VIDEO_SetNextFramebuffer(frameBuffer[fb]);
-    VIDEO_Flush();
+    if (vflip)
+      s_vf_pending = true;   // VBlank() flips it
+    else
+    {
+      s_vf_pending = false;
+      VIDEO_SetNextFramebuffer(frameBuffer[fb]);
+      VIDEO_Flush();
+    }
   }
 
   s_did_3d_render = true;
+  s_vbl_3d_present = true; // VBL_FB_FIX(): this vblank must not blit VRAM over it
+  s_toyr_cmp++;
   // Stamp the frame's ORIGIN, not FB_W_SOF1: the last pass may have been
   // writing partway down the framebuffer, and VBlank() looks for the marker at
   // the scanout origin.
@@ -8668,7 +8795,8 @@ void DoRender()
   // ASYNC_RENDER(): wait for the previous queued frame and apply its deferred
   // VIDEO flip before anything else — texture decode below re-writes bump
   // slots the GPU may still be sampling. No-op when nothing is pending.
-  gx_sync_pending();
+  // VBL_FLIP_FIX(): wait only -- a frame queued for the vblank stays queued.
+  gx_sync_for_render();
 
   // CACHE_NORMAL_PLUS: one epoch per render - the guest cannot write VRAM while
   // this render decodes, so every write between two renders shares a stamp.
@@ -9309,8 +9437,12 @@ void DoRender()
   // (sum/flagged ok, no over_cnt/overrun, nonfin=0). "wild" = the game's own
   // near-plane clip (W=4, x/W ~ -27000, whole triangles off screen, GX clips
   // them); "baduv" = an untextured off-screen dummy sprite (pcw=A0820000) with
-  // no UVs to read. Nothing to fix. Cost rnd ~3.5% -> ~10% while on. Safe to
-  // re-enable: flip if(0) back to if(1) here and in InitRenderer's ARMED line.
+  // no UVs to read. Nothing to fix. Cost rnd ~3.5% -> ~10% while on.
+  // Re-read 2026-11-10 for Toy Racer, OFF again: same picture -- sum/flagged ok,
+  // over_cnt=overrun=nonfin=0, the only "bad" strips are the same off-screen
+  // dummy sprite (pcw=A0820000, W=10, no UVs) plus the game's near-plane clip
+  // (wild=210). Not the flicker. Safe to re-enable: flip if(0) back to if(1)
+  // here and in InitRenderer's ARMED line.
   if (0)
   {
     static u32 s_mad_n = 0, s_mad_lines = 0, s_mad_bad = 0;
@@ -11478,6 +11610,11 @@ void DoRender()
     return;
   }
 
+  // VBL_FLIP_FIX(): flip at the vblank, not now -- a second render in the same
+  // vblank copies over this back buffer and only the last one is shown.
+  const bool vflip = VBL_FLIP_FIX();
+  if (vflip && ((s_gx_pending && s_gx_pending_vf) || s_vf_pending))
+    s_toyr_vrep++; // [TOYR]: a frame of this vblank is replaced before it was shown
   GX_CopyDisp(frameBuffer[fb], GX_TRUE);
   if (async_render)
   {
@@ -11486,11 +11623,14 @@ void DoRender()
     // and only then flips VI to this buffer. Toggling fb makes the next frame
     // render into the other XFB, so the CPU never copies into the buffer VI
     // is about to scan out — true double buffering.
+    // VBL_FLIP_FIX(): no toggle yet -- the flip (VBlank()) swaps fb.
     s_gx_done_irq = false; // must clear BEFORE queuing the token (irq race)
     GX_SetDrawDone();
     s_gx_pending = true;
     s_gx_pending_fb = fb;
-    fb ^= 1;
+    s_gx_pending_vf = vflip;
+    if (!vflip)
+      fb ^= 1;
   }
   else
   {
@@ -11500,11 +11640,18 @@ void DoRender()
 
     DrawXfbFpsText(frameBuffer[fb]);
 
-    VIDEO_SetNextFramebuffer(frameBuffer[fb]);
-    VIDEO_Flush();
+    if (vflip)
+      s_vf_pending = true;   // VBlank() flips it and swaps fb
+    else
+    {
+      s_vf_pending = false;
+      VIDEO_SetNextFramebuffer(frameBuffer[fb]);
+      VIDEO_Flush();
+    }
   }
 
   s_did_3d_render = true;
+  s_vbl_3d_present = true; // VBL_FB_FIX(): this vblank must not blit VRAM over it
 
   // Mark the VRAM framebuffer as "produced by the PVR / already on screen".
   // VBlank() checks this magic word and only presents the VRAM framebuffer
@@ -11706,6 +11853,8 @@ void PresentFramebuffer()
 //     framebuffer -> scan it out of VRAM and present it.
 void VBlank()
 {
+  s_toyr_vbl++; // [TOYR] cadence counter (one add per vblank)
+
   // ASYNC_RENDER(): if the queued frame finished since last vblank, put it on
   // screen now (non-blocking) — without this, a game that stops submitting
   // frames (static menu) would never show its last rendered frame.
@@ -11726,8 +11875,25 @@ void VBlank()
       s_cmp_vb_passes = s_cmp_passes;
   }
 
+  // VBL_FB_FIX(): read AFTER the compose backstop above, so a composed frame it
+  // just flushed counts as this vblank's 3D frame. Cleared every vblank.
+  const bool vbl_3d = s_vbl_3d_present;
+  s_vbl_3d_present = false;
+
   if (!FB_R_CTRL.fb_enable)
     return;   // display output disabled
+
+  // VBL_FB_FIX(): a 3D frame went out since the last vblank (or a composed one is
+  // still being assembled in the EFB): the VRAM framebuffer holds no 3D picture,
+  // blitting it now would replace that frame with a stale image. Re-arm the
+  // marker on what is scanned out instead, so only a CPU write from here on
+  // asks for a VRAM present -- Flycast: render_called + per-vblank fb watch.
+  if ((vbl_3d || s_cmp_active) && VBL_FB_FIX())
+  {
+    fb_stamp_present_magic_at(FB_R_SOF1);
+    s_toyr_gate++;
+    return;
+  }
 
   if (!fb_needs_present())
     return;   // on-screen image is still the PVR render; nothing new
@@ -11738,6 +11904,7 @@ void VBlank()
   if(DEBUG_MESSAGE() || LOGO_ARMED()) printf("[PATH] VBlank-FB present: FB_R_SOF1=%08X fb_depth=%d\n",
     FB_R_SOF1, (int)FB_R_CTRL.fb_depth);
 
+  s_toyr_vfb++;
   PresentFramebuffer();
   s_did_3d_render = false;
   FrameCount++;
@@ -13338,6 +13505,399 @@ static void tet_census_pass()
   }
 }
 
+// ── [TOYR] Toy Racer flicker census ─────────────────────────────────────────
+// TEMPORARY (2026-11-10), on for the test round. Flip if(1) -> if(0) in
+// toyr_census_pass() and in InitRenderer's ARMED line once it has answered.
+//
+// Round 1 (2026-11-10, split_screen=both) found: Toy Racer renders TWO passes
+// per vblank -- 20 strips from PARAM_BASE 000000, then 0.4 ms later the
+// 1138-strip scene from 400000 (ta_ctx_fix splits them) -- and the presented
+// frame counter rose by TWO per pair: VBlank() blitted the VRAM framebuffer over
+// every 3D frame -> VBL_FB_FIX(). [MAD] structure clean (only the known
+// off-screen dummy sprite), dec=0, skip=0, arena fine: not TA data, not textures.
+// Round 2 keys the comparison by PARAM_BASE context (a "role"): every pass is
+// compared with the previous pass of the SAME context, so the two-pass frame no
+// longer fakes RET/GONE/JUMP; and it prints what decides how the pair reaches
+// the screen.
+//
+// Per pass line:
+//   role=N PB=  context this pass renders (PARAM_BASE & 0xF00000), its role slot
+//   prev=path   StartRender exit the PREVIOUS pass took: RENDER (drawn+shown),
+//               split_draw / split_partial (composed into a band, not shown),
+//               skipped, RTT_render, 2D_blit... (s_sr_name)
+//   fc=+N       frames presented since the previous pass; vbl=+N vblanks
+//   vfb=+N      VBlank() VRAM framebuffer blits since the previous pass (should
+//               stay 0 in a 3D game with vbl_fb_fix=on); cmp=+N composed frames
+//               shown; gate=+N vblanks where VBL_FB_FIX() refused the VRAM blit;
+//               rep=+N frames VBL_FLIP_FIX() let a later render of the same
+//               vblank replace before they were ever shown (Toy Racer: the
+//               20-strip pass, once per frame)
+//   strips/verts per list class; hdr/new/gone/ret/chg against the same role's
+//               previous passes (ret = header present 2 passes ago, absent last
+//               pass, back now = the A-B-A of a real flicker)
+//   dec/binds/wraps/arena/wf  texture cache during the previous render
+//   W=/R= FB_W_SOF1/FB_R_SOF1, XC=/YC= FB_X_CLIP/FB_Y_CLIP raw, LS= line stride
+//               in bytes, RB= REGION_BASE, BGT= ISP_BACKGND_T
+// Flags: EMPTY/RET/GONE/JUMP (same role), SKIP, DEC, SLOW, ARENA, and VFB = a
+// VRAM blit AND a 3D present in the same interval (the round-1 flicker).
+// Printed: the first 20 passes, 4 consecutive passes at the start of every
+// 120-pass window (SAMPLE: both passes of a pair with their registers), every
+// anomalous pass (first 300, then every 10th) with [TOYRD] header detail under
+// the first 80, and a [TOYR] WIN summary every 120 passes.
+#define TOYR_MAX      128   // distinct strip headers kept per pass
+#define TOYR_HT       256   // hash slots (power of two, <= 50% load)
+#define TOYR_ROLES    2     // PARAM_BASE contexts tracked at once (LRU)
+#define TOYR_DETAIL   4     // [TOYRD] lines per kind under an anomaly line
+#define TOYR_BASELINE 20    // passes always printed
+#define TOYR_WINDOW   120   // passes per WIN summary
+#define TOYR_SAMPLE   4     // consecutive passes printed at the start of each window
+
+struct ToyrEnt { u32 h, pcw, tsp, tcw, isp, n, verts, lt, tex; };
+struct ToyrFrame
+{
+  u32 strips, verts, nent, ent_lost;
+  u32 cs[4], cv[4];
+  ToyrEnt e[TOYR_MAX];
+  u16 ht[TOYR_HT];                // entry index + 1, 0 = empty slot
+};
+struct ToyrRole
+{
+  u32 pb;                         // PARAM_BASE & 0xF00000 of this context
+  u32 n;                          // passes recorded (0 = slot free)
+  u32 last;                       // s_toyr_n when last used (LRU)
+  ToyrFrame f[3];                 // ring: current, previous, the one before
+};
+static ToyrRole s_toyr_role[TOYR_ROLES];
+static u32 s_toyr_n = 0;          // non-RTT passes seen, all roles
+static u32 s_toyr_rtt = 0;        // bit-24 passes seen (not compared)
+static u32 s_toyr_lines = 0;      // anomaly lines printed so far
+
+static int toyr_find(const ToyrFrame *f, u32 h)
+{
+  u32 s = (h >> 7) & (TOYR_HT - 1);
+  for (u32 k = 0; k < TOYR_HT; k++)
+  {
+    const u32 v = f->ht[s];
+    if (!v) return -1;
+    if (f->e[v - 1].h == h) return (int)v - 1;
+    s = (s + 1) & (TOYR_HT - 1);
+  }
+  return -1;
+}
+
+// Entry index for h, adding it when absent (fresh = true, caller fills the entry).
+// -1 = table full (counted in ent_lost).
+static int toyr_add(ToyrFrame *f, u32 h, bool &fresh)
+{
+  u32 s = (h >> 7) & (TOYR_HT - 1);
+  fresh = false;
+  for (u32 k = 0; k < TOYR_HT; k++)
+  {
+    const u32 v = f->ht[s];
+    if (!v)
+    {
+      if (f->nent >= TOYR_MAX) { f->ent_lost++; return -1; }
+      f->ht[s] = (u16)(f->nent + 1);
+      fresh = true;
+      return (int)f->nent++;
+    }
+    if (f->e[v - 1].h == h) return (int)v - 1;
+    s = (s + 1) & (TOYR_HT - 1);
+  }
+  f->ent_lost++;
+  return -1;
+}
+
+static void toyr_print_ent(const char *what, const ToyrEnt *e)
+{
+  TSP ts; ts.full = e->tsp;
+  if (e->tex)
+  {
+    TCW tc; tc.full = e->tcw;
+    printf("[TOYRD] %-4s %s n=%3u v=%4u tex addr=%06X fmt=%d vq=%d mip=%d scan=%d stride=%d %dx%d "
+           "src=%u dst=%u shad=%u usea=%u | pcw=%08X isp=%08X tsp=%08X tcw=%08X\n",
+           what, e->lt == 0 ? "OP" : e->lt == 2 ? "TR" : e->lt == 4 ? "PT" : "MV",
+           e->n, e->verts, (u32)((tc.NO_PAL.TexAddr << 3) & VRAM_MASK),
+           (int)tc.NO_PAL.PixelFmt, (int)tc.NO_PAL.VQ_Comp, (int)tc.NO_PAL.MipMapped,
+           (int)tc.NO_PAL.ScanOrder, (int)tc.NO_PAL.StrideSel, 8 << ts.TexU, 8 << ts.TexV,
+           (unsigned)ts.SrcInstr, (unsigned)ts.DstInstr, (unsigned)ts.ShadInstr,
+           (unsigned)ts.UseAlpha, e->pcw, e->isp, e->tsp, e->tcw);
+  }
+  else
+    printf("[TOYRD] %-4s %s n=%3u v=%4u untextured src=%u dst=%u shad=%u usea=%u "
+           "| pcw=%08X isp=%08X tsp=%08X\n",
+           what, e->lt == 0 ? "OP" : e->lt == 2 ? "TR" : e->lt == 4 ? "PT" : "MV",
+           e->n, e->verts, (unsigned)ts.SrcInstr, (unsigned)ts.DstInstr,
+           (unsigned)ts.ShadInstr, (unsigned)ts.UseAlpha, e->pcw, e->isp, e->tsp);
+}
+
+// StartRender exits taken since the last call, as "name+name" ("none" if none).
+// render_path_dump() may zero s_sr_path behind our back: a counter below its
+// snapshot counts from zero.
+static void toyr_paths(char *out, u32 sz, u32 *snap)
+{
+  u32 len = 0;
+  out[0] = 0;
+  for (u32 i = 0; i < SR_PATHS; i++)
+  {
+    const u32 now = s_sr_path[i];
+    const u32 d = (now >= snap[i]) ? now - snap[i] : now;
+    snap[i] = now;
+    if (d && len + 2 < sz)
+    {
+      const int w = snprintf(out + len, sz - len, "%s%s", len ? "+" : "", s_sr_name[i]);
+      if (w > 0) len += (u32)w;
+      if (len >= sz) len = sz - 1;
+    }
+  }
+  if (!out[0]) snprintf(out, sz, "none");
+}
+
+// Called at the top of StartRender_inner, before any path that returns.
+static void toyr_census_pass()
+{
+  if (1)
+  {
+    // Counters of other subsystems, sampled so each line shows what happened
+    // SINCE the previous pass (= during the previous render and the vblank).
+    static u64 p_t = 0;
+    static u32 p_vbl = 0, p_fc = 0, p_dec = 0, p_binds = 0, p_drawn = 0, p_skip = 0;
+    static u32 p_vfb = 0, p_cmp = 0, p_gate = 0, p_rep = 0;
+    static u32 p_snap[SR_PATHS];
+    static bool p_arena = true;
+    // Window accumulators (reset by the WIN summary).
+    static u32 w_n = 0, w_rtt = 0, w_vh[4] = { 0, 0, 0, 0 };
+    static u32 w_smin = 0xFFFFFFFFu, w_smax = 0;
+    static u32 w_dec = 0, w_decmax = 0, w_vfb = 0, w_cmp = 0, w_gate = 0, w_fc = 0, w_rep = 0;
+    static u32 w_an[8] = { 0, 0, 0, 0, 0, 0, 0, 0 }; // empty ret gone jump skip dec slow vfb
+    static double w_dt_min = 1e9, w_dt_max = 0.0, w_dt_sum = 0.0;
+
+    const u64 now = TET_TICKS();
+    const u32 vbl_d   = s_toyr_vbl - p_vbl;
+    const u32 fc_d    = (u32)FrameCount - p_fc;   // SPG.cpp zeroes FrameCount once a second
+    const u32 dec_d   = s_tet_dec - p_dec;
+    const u32 binds_d = s_tet_binds - p_binds;
+    const u32 drawn_d = s_tet_drawn - p_drawn;
+    const u32 skip_d  = s_sr_path[SR_SKIPPED] >= p_skip ? s_sr_path[SR_SKIPPED] - p_skip : s_sr_path[SR_SKIPPED];
+    const u32 vfb_d   = s_toyr_vfb - p_vfb;
+    const u32 cmp_d   = s_toyr_cmp - p_cmp;
+    const u32 gate_d  = s_toyr_gate - p_gate;
+    const u32 rep_d   = s_toyr_vrep - p_rep;
+    const double dt   = p_t ? tet_ms(now - p_t) : 0.0;
+    char prev_path[64];
+    toyr_paths(prev_path, sizeof(prev_path), p_snap);
+    p_t = now; p_vbl = s_toyr_vbl; p_fc = (u32)FrameCount; p_dec = s_tet_dec;
+    p_binds = s_tet_binds; p_drawn = s_tet_drawn; p_skip = s_sr_path[SR_SKIPPED];
+    p_vfb = s_toyr_vfb; p_cmp = s_toyr_cmp; p_gate = s_toyr_gate; p_rep = s_toyr_vrep;
+    w_vfb += vfb_d; w_cmp += cmp_d; w_gate += gate_d; w_rep += rep_d;
+    if (fc_d < 64) w_fc += fc_d;   // skip the once-a-second FrameCount reset
+
+    // Render-to-texture passes are separate renders with their own geometry;
+    // counted only, never compared.
+    if (FB_W_SOF1 & 0x1000000)
+    {
+      s_toyr_rtt++; w_rtt++;
+      return;
+    }
+
+    // Role = the PARAM_BASE context; a new one takes a free slot or the LRU one.
+    const u32 pb = PARAM_BASE & 0xF00000;
+    int ri = -1;
+    for (int i = 0; i < TOYR_ROLES; i++)
+      if (s_toyr_role[i].n && s_toyr_role[i].pb == pb) { ri = i; break; }
+    if (ri < 0)
+    {
+      for (int i = 0; i < TOYR_ROLES; i++)
+      {
+        if (s_toyr_role[i].n == 0) { ri = i; break; }
+        if (ri < 0 || s_toyr_role[i].last < s_toyr_role[ri].last) ri = i;
+      }
+      s_toyr_role[ri].pb = pb;
+      s_toyr_role[ri].n = 0;
+    }
+    ToyrRole *R = &s_toyr_role[ri];
+    R->last = s_toyr_n + 1;
+
+    const u32 idx = R->n % 3;
+    ToyrFrame *f = &R->f[idx];
+    memset(f->ht, 0, sizeof(f->ht));
+    f->strips = f->verts = f->nent = f->ent_lost = 0;
+    for (int i = 0; i < 4; i++) f->cs[i] = f->cv[i] = 0;
+
+    // Same walk as tet_census_pass(): count < 0 marks a new param header.
+    {
+      const VertexList *l   = lists;
+      const PolyParam  *mod = listModes;
+      const PolyParam  *cur = mod;
+      for (; l != curLST; l++)
+      {
+        s32 c = l->count;
+        if (c < 0)
+          cur = mod++;
+        c &= 0x7FFF;
+
+        const u32 lt = cur->pcw.ListType & 7;
+        const int cl = (lt == 0) ? 0 : (lt == 2) ? 1 : (lt == 4) ? 2 : 3;
+        f->strips++;  f->verts += (u32)c;
+        f->cs[cl]++;  f->cv[cl] += (u32)c;
+
+        const u32 pcw = cur->pcw.full, tsp = cur->tsp.full, tcw = cur->tcw.full, isp = cur->isp.full;
+        u32 h = pcw * 2654435761u;
+        h = (h ^ (h >> 15)) + tsp * 2246822519u;
+        h = (h ^ (h >> 13)) + tcw * 3266489917u;
+        h = (h ^ (h >> 16)) + isp * 668265263u;
+        h ^= h >> 15;
+        bool fresh;
+        const int ei = toyr_add(f, h, fresh);
+        if (ei >= 0)
+        {
+          ToyrEnt *e = &f->e[ei];
+          if (fresh)
+          {
+            e->h = h; e->pcw = pcw; e->tsp = tsp; e->tcw = tcw; e->isp = isp;
+            e->n = 0; e->verts = 0; e->lt = lt; e->tex = cur->pcw.Texture ? 1u : 0u;
+          }
+          e->n++; e->verts += (u32)c;
+        }
+      }
+    }
+
+    const ToyrFrame *p1 = (R->n >= 1) ? &R->f[(idx + 2) % 3] : 0;
+    const ToyrFrame *p2 = (R->n >= 2) ? &R->f[(idx + 1) % 3] : 0;
+    u32 e_new = 0, e_gone = 0, e_ret = 0, e_chg = 0;
+    const ToyrEnt *ret_e[TOYR_DETAIL], *gone_e[TOYR_DETAIL];
+    u32 ret_n = 0, gone_n = 0;
+    if (p1)
+    {
+      for (u32 i = 0; i < f->nent; i++)
+      {
+        const ToyrEnt *e = &f->e[i];
+        const int j = toyr_find(p1, e->h);
+        if (j < 0)
+        {
+          e_new++;
+          if (p2 && toyr_find(p2, e->h) >= 0)
+          {
+            e_ret++;
+            if (ret_n < TOYR_DETAIL) ret_e[ret_n++] = e;
+          }
+        }
+        else if (p1->e[j].n != e->n)
+          e_chg++;
+      }
+      for (u32 i = 0; i < p1->nent; i++)
+        if (toyr_find(f, p1->e[i].h) < 0)
+        {
+          e_gone++;
+          if (gone_n < TOYR_DETAIL) gone_e[gone_n++] = &p1->e[i];
+        }
+    }
+    R->n++;
+    s_toyr_n++;
+    const u32 pass_no = s_toyr_n;
+
+    // Anomaly flags (geometry ones against the same role only).
+    const bool a_empty = p1 && f->strips == 0 && p1->strips > 0;
+    const bool a_ret   = e_ret > 0;
+    const bool a_gone  = p1 && e_gone >= 3 && e_gone * 4 >= p1->nent;
+    const bool a_jump  = p1 && p1->verts >= 200 &&
+                         (f->verts * 10 < p1->verts * 7 || f->verts * 10 > p1->verts * 14);
+    const bool a_skip  = skip_d > 0;
+    const bool a_dec   = dec_d >= 16;
+    const bool a_dt    = dt > 70.0;
+    const bool a_vfb   = vfb_d > 0 && fc_d > vfb_d && fc_d < 64; // VRAM blit + 3D present together
+    const bool arena_changed = (s_plus_arena_ok != p_arena);
+    p_arena = s_plus_arena_ok;
+    const bool anomaly = a_empty || a_ret || a_gone || a_jump || a_skip || a_dec || a_dt ||
+                         a_vfb || arena_changed;
+
+    // Window accumulators.
+    w_n++;
+    w_vh[vbl_d > 3 ? 3 : vbl_d]++;
+    if (f->strips < w_smin) w_smin = f->strips;
+    if (f->strips > w_smax) w_smax = f->strips;
+    w_dec += dec_d; if (dec_d > w_decmax) w_decmax = dec_d;
+    if (dt > 0.0)
+    {
+      if (dt < w_dt_min) w_dt_min = dt;
+      if (dt > w_dt_max) w_dt_max = dt;
+      w_dt_sum += dt;
+    }
+    w_an[0] += a_empty; w_an[1] += a_ret; w_an[2] += a_gone; w_an[3] += a_jump;
+    w_an[4] += a_skip;  w_an[5] += a_dec; w_an[6] += a_dt;   w_an[7] += a_vfb;
+
+    bool printed = false;
+    const bool sample = ((pass_no - 1) % TOYR_WINDOW) < TOYR_SAMPLE;
+    bool want = (pass_no <= TOYR_BASELINE) || sample;
+    bool detail = false;
+    if (anomaly)
+    {
+      s_toyr_lines++;
+      if (s_toyr_lines <= 300 || (s_toyr_lines % 10) == 0) want = true;
+      if (s_toyr_lines <= 80  || (s_toyr_lines % 10) == 0) detail = true;
+    }
+    if (want)
+    {
+      char fl[80]; fl[0] = 0;
+      if (a_empty) strcat(fl, " EMPTY");
+      if (a_ret)   strcat(fl, " RET");
+      if (a_gone)  strcat(fl, " GONE");
+      if (a_jump)  strcat(fl, " JUMP");
+      if (a_skip)  strcat(fl, " SKIP");
+      if (a_dec)   strcat(fl, " DEC");
+      if (a_dt)    strcat(fl, " SLOW");
+      if (a_vfb)   strcat(fl, " VFB");
+      if (arena_changed) strcat(fl, " ARENA");
+      if (sample && !anomaly) strcat(fl, " sample");
+      printf("[TOYR] #%u role=%d PB=%06X prev=%s fc=%u(+%u) vbl=+%u vfb=+%u cmp=+%u gate=+%u rep=+%u dt=%.1fms%s"
+             " | strips=%u verts=%u OP %u/%u TR %u/%u PT %u/%u MV %u/%u"
+             " | hdr=%u new=%u gone=%u ret=%u chg=%u lost=%u | dec=%u binds=%u wraps=%u arena=%d wf=%u"
+             " | skip=%u drawn=%u rtt=%u | W=%08X R=%08X XC=%08X YC=%08X LS=%u RB=%08X BGT=%08X\n",
+             pass_no, ri, pb, prev_path, (u32)FrameCount, fc_d, vbl_d, vfb_d, cmp_d, gate_d,
+             rep_d, dt, fl[0] ? fl : "",
+             f->strips, f->verts, f->cs[0], f->cv[0], f->cs[1], f->cv[1], f->cs[2], f->cv[2],
+             f->cs[3], f->cv[3], f->nent, e_new, e_gone, e_ret, e_chg, f->ent_lost,
+             dec_d, binds_d, g_texc_wraps_frame, s_plus_arena_ok ? 1 : 0, s_plus_wrap_frames,
+             skip_d, drawn_d, s_toyr_rtt, (u32)FB_W_SOF1, (u32)FB_R_SOF1,
+             (u32)FB_X_CLIP.full, (u32)FB_Y_CLIP.full, (u32)((FB_W_LINESTRIDE & 0x1FF) * 8),
+             (u32)REGION_BASE, (u32)ISP_BACKGND_T);
+      printed = true;
+      if (detail)
+      {
+        for (u32 i = 0; i < ret_n; i++)  toyr_print_ent("RET",  ret_e[i]);
+        for (u32 i = 0; i < gone_n; i++) toyr_print_ent("GONE", gone_e[i]);
+      }
+    }
+
+    if (w_n >= TOYR_WINDOW)
+    {
+      printf("[TOYR] WIN passes=%u rtt=%u | vbl/pass 0:%u 1:%u 2:%u 3+:%u | dt min/avg/max=%.1f/%.1f/%.1f ms"
+             " | strips min/max=%u/%u | presented=%u vram_blits=%u composed=%u gated=%u replaced_unseen=%u"
+             " | anomalies empty=%u ret=%u gone=%u jump=%u skip=%u dec=%u slow=%u vfb=%u"
+             " | dec sum=%u max=%u | presets: tex_cache=%d frameskip=%d render_delay=%d split_screen=%d"
+             " ta_ctx_fix=%d ta_arena_fix=%d vbl_fb_fix=%d vbl_flip_fix=%d async=%d arena_carries=%u\n",
+             w_n, w_rtt, w_vh[0], w_vh[1], w_vh[2], w_vh[3],
+             w_dt_min > 1e8 ? 0.0 : w_dt_min, w_n ? w_dt_sum / (double)w_n : 0.0, w_dt_max,
+             w_smin == 0xFFFFFFFFu ? 0u : w_smin, w_smax, w_fc, w_vfb, w_cmp, w_gate, w_rep,
+             w_an[0], w_an[1], w_an[2], w_an[3], w_an[4], w_an[5], w_an[6], w_an[7],
+             w_dec, w_decmax, get_texture_cache_preset(), get_frameskip_preset(),
+             get_render_delay_preset(), get_split_screen_preset(), get_ta_ctx_fix_preset(),
+             get_ta_arena_fix_preset(), get_vbl_fb_fix_preset(), get_vbl_flip_fix_preset(),
+             get_async_render_preset(), s_arena_carries);
+      printed = true;
+      w_n = w_rtt = 0;
+      w_rep = 0;
+      w_vh[0] = w_vh[1] = w_vh[2] = w_vh[3] = 0;
+      w_smin = 0xFFFFFFFFu; w_smax = 0;
+      w_dec = w_decmax = w_vfb = w_cmp = w_gate = w_fc = 0;
+      for (int i = 0; i < 8; i++) w_an[i] = 0;
+      w_dt_min = 1e9; w_dt_max = 0.0; w_dt_sum = 0.0;
+    }
+    if (printed)
+      fflush(stdout); // fully buffered file on the SD card: a power-cycle loses the tail otherwise
+  }
+}
+
 // The real STARTRENDER handler. StartRender() (after ResetRenderer) wraps it
 // for TA_CTX_FIX(): it may present the buffer as ending at a TA_LIST_INIT mark.
 static void StartRender_inner()
@@ -13368,6 +13928,7 @@ static void StartRender_inner()
 #endif
 
   tet_census_pass(); // [TET] Sega Tetris slowdown probe; same rule, runs before any return
+  toyr_census_pass(); // [TOYR] Toy Racer flicker census; same rule, runs before any return
 
   const int rd_mode = get_render_delay_preset();
   if (rd_mode == 1)
@@ -13536,6 +14097,7 @@ static void StartRender_inner()
         VIDEO_Flush();
         wii_audio_frame();
         // VIDEO_WaitVSync() // Not necessary here (don't block the SH4 thread)
+        s_vbl_3d_present = true; // VBL_FB_FIX(): a 3D frame just went out
         FrameCount++;
         s_sr_path[SR_2D_AFTER_3D]++;
         return;
@@ -14433,6 +14995,16 @@ bool InitRenderer()
     printf("[DEPTH] census ARMED ([DEPTH] first 6 renders then every 120th; [OVF] on every 38K vertex-cap wipe)\n");
     fflush(stdout);
   }
+  // [TOYR] Toy Racer flicker census (toyr_census_pass, StartRender_inner): if this
+  // line is missing from ndclog.txt the build did not pick it up. Flip with it.
+  if (1)
+  {
+    printf("[TOYR] census ARMED v2 (per PARAM_BASE role; first %d passes, %d-pass SAMPLE every %d, "
+           "anomalies EMPTY/RET/GONE/JUMP/SKIP/DEC/SLOW/VFB/ARENA, [TOYRD] detail under the first 80; "
+           "[TOYR] WIN summary every %d passes; vbl_fb_fix=%d)\n",
+           TOYR_BASELINE, TOYR_SAMPLE, TOYR_WINDOW, TOYR_WINDOW, get_vbl_fb_fix_preset());
+    fflush(stdout);
+  }
   // [TACTX] (StartRender wrapper, issue #16 flicker): OFF with tactx_log()
   // (see there); flip both together.
   if (0)
@@ -14589,6 +15161,9 @@ extern "C" void gxRend_ExitQuiesce(void)
 {
   GX_AbortFrame();
   s_gx_pending  = false;
+  s_gx_pending_vf = false;
+  s_gx_pending_due = false;
+  s_vf_pending  = false;
   s_gx_done_irq = false;
 }
 
@@ -14620,7 +15195,11 @@ static void tactx_log(const char *what, u32 param_ctx, const TaCtxMark &mk,
 {
   // OFF (2026-11-09): answered. Magforce Racing renders PARAM_BASE=000000
   // while building 400000 on nearly every frame (SPLIT, same=0, noinit=0),
-  // flicker gone with ta_ctx_fix (user-CONFIRMED). Safe to re-enable: flip
+  // flicker gone with ta_ctx_fix (user-CONFIRMED).
+  // Re-read 2026-11-10 for Toy Racer, OFF again: SPLIT on every frame too
+  // (PARAM_BASE 000000 = a 20-strip list built before the 400000 list init,
+  // 1137 strips after it), same=0 noinit=0 carries=0 -- the split works, the
+  // flicker was VBlank()'s VRAM blit (VBL_FB_FIX). Safe to re-enable: flip
   // if(0) back to if(1) here and in InitRenderer's ARMED line.
   if (0)
   {

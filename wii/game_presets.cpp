@@ -799,6 +799,19 @@
                                 buffer. Fixes geometry flickering away and back
                                 (Magforce Racing, issue #16). Off = legacy,
                                 render everything accumulated. Default on.
+        vbl_fb_fix=on       <- on/off, a vblank that follows a presented 3D
+                                frame never blits the VRAM framebuffer over it
+                                (Flycast's render_called rule). Fixes the 3D
+                                frame alternating with a stale VRAM image every
+                                vblank (Toy Racer with split_screen=both). Off =
+                                legacy, the magic word alone decides. Default on.
+        vbl_flip_fix=on     <- on/off, a finished 3D frame is flipped to the
+                                screen at the vblank, not when it is done, so of
+                                two renders in one vblank only the last is
+                                shown (the PVR only scans out the framebuffer).
+                                Fixes Toy Racer's black screen: its near-empty
+                                first pass was the frame on screen. Off =
+                                legacy, every render is flipped. Default on.
         strip_dedup=1     <- 0/1/2 (NUMBER, not on/off). Skip the texture
                                 bind a strip repeats from the strip before it.
                                 A game drawing many copies of one model submits
@@ -1509,6 +1522,8 @@ extern int g_tlut_fix_preset;
 extern int g_decal_fix_preset;
 extern int g_ta_arena_fix_preset;
 extern int g_ta_ctx_fix_preset;
+extern int g_vbl_fb_fix_preset;
+extern int g_vbl_flip_fix_preset;
 extern int g_strip_dedup_preset;
 extern int g_player_count;
 extern int g_controller_type;
@@ -1685,6 +1700,8 @@ struct GamePreset
     int decal_fix;
     int ta_arena_fix;
     int ta_ctx_fix;
+    int vbl_fb_fix;
+    int vbl_flip_fix;
     int strip_dedup;
     int debug_fb2d;
     int debug_message;
@@ -2292,6 +2309,8 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "decal_fix"))      p->decal_fix      = parse_bool(val);
     else if (key_eq(key, "ta_arena_fix"))   p->ta_arena_fix   = parse_bool(val);
     else if (key_eq(key, "ta_ctx_fix"))     p->ta_ctx_fix     = parse_bool(val);
+    else if (key_eq(key, "vbl_fb_fix"))     p->vbl_fb_fix     = parse_bool(val);
+    else if (key_eq(key, "vbl_flip_fix"))   p->vbl_flip_fix   = parse_bool(val);
     else if (key_eq(key, "strip_dedup"))    p->strip_dedup    = atoi(val);
     else if (key_eq(key, "debug_log_framebuffer2d")) p->debug_fb2d = parse_bool(val);
     else if (key_eq(key, "debug_message"))  p->debug_message  = parse_bool(val);
@@ -2444,6 +2463,8 @@ static void preset_clear(GamePreset* cur)
     cur->decal_fix      = -1;
     cur->ta_arena_fix   = -1;
     cur->ta_ctx_fix     = -1;
+    cur->vbl_fb_fix     = -1;
+    cur->vbl_flip_fix   = -1;
     cur->strip_dedup    = -1;
     cur->debug_fb2d = -1;
     cur->debug_message = -1;
@@ -2625,6 +2646,8 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->decal_fix      >= 0) { g_decal_fix_preset      = p->decal_fix;      printf("  decal_fix      -> %d\n", p->decal_fix);      }
     if (p->ta_arena_fix   >= 0) { g_ta_arena_fix_preset   = p->ta_arena_fix;   printf("  ta_arena_fix   -> %d\n", p->ta_arena_fix);   }
     if (p->ta_ctx_fix     >= 0) { g_ta_ctx_fix_preset     = p->ta_ctx_fix;     printf("  ta_ctx_fix     -> %d\n", p->ta_ctx_fix);     }
+    if (p->vbl_fb_fix     >= 0) { g_vbl_fb_fix_preset     = p->vbl_fb_fix;     printf("  vbl_fb_fix     -> %d\n", p->vbl_fb_fix);     }
+    if (p->vbl_flip_fix   >= 0) { g_vbl_flip_fix_preset   = p->vbl_flip_fix;   printf("  vbl_flip_fix   -> %d\n", p->vbl_flip_fix);   }
     if (p->strip_dedup    >= 0) { g_strip_dedup_preset    = p->strip_dedup;    printf("  strip_dedup    -> %d\n", p->strip_dedup);    }
     if (p->debug_fb2d     >= 0) { g_debug_fb2d            = p->debug_fb2d;     printf("  debug_log_framebuffer2d -> %d\n", p->debug_fb2d); }
     if (p->debug_message  >= 0) { g_debug_message         = p->debug_message;  printf("  debug_message  -> %d\n", p->debug_message);  }
