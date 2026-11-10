@@ -457,6 +457,13 @@ extern "C" int get_ta_arena_fix_preset();
 extern "C" int get_ta_ctx_fix_preset();
 #define TA_CTX_FIX() (get_ta_ctx_fix_preset() == 1)
 
+// Scene log (scene_log, options page 8 LOGS) -- the [SCN]/[SIG] pass logger,
+// formerly the compile-time SCENE_DEBUG_LOG. Read once per frame into
+// g_scene_log_cached (see the reset in reset_vtx_state's neighbour and
+// glob_param_bdc, which needs it to keep listTileClip[] per polygon).
+extern "C" int get_scene_log_preset();
+#define SCENE_LOG() (get_scene_log_preset() != 0)
+
 // VBlank framebuffer fix (vbl_fb_fix) -- Toy Racer flicker, 2026-11-10.
 //
 // VBlank() blits the VRAM framebuffer at FB_R_SOF1 to screen whenever its first
@@ -943,11 +950,14 @@ static unsigned s_logo_sig_used = 0; // signature-triggered passes so far (LOGO_
 //      (texture addr/fmt, blend, alpha, first vertex colour)? All-off-screen,
 //      all-zero-alpha or all-clear-colour geometry reads as "blank" on a real
 //      TV despite being submitted correctly. -> [SCN] per-strip lines.
-// Compile-time, not DEBUG_MESSAGE()-gated, exactly like SCOPE_DEBUG_LOG /
-// LOGO_DEBUG_LOG above: the per-strip bbox scan is too expensive for a
-// shipping build, and at 0 none of it is compiled at all.
+// RUNTIME since 2026-11-10 (World Series Baseball 2K2, all-black menu): the
+// logger is always compiled in (SCENE_DEBUG_LOG 1) and switched by the
+// `scene_log` preset -- options page 8 (LOGS) row SCENE LOG, or scene_log=on in
+// game_presets.cfg. Off, the cost is one cached-bool test per StartRender plus
+// one per polygon header; the bbox scan only runs inside a burst. No rebuild
+// needed to arm it any more; the other two probes above stay compile-time.
 //
-// OFF: round 3 (2026-09-04) found what it was re-armed for. Puyo21.txt caught
+// Round 3 (2026-09-04) found what it was re-armed for. Puyo21.txt caught
 // the intro/main screen's THIRD layering bug in one 9-strip frame: `054000`
 // (ARGB1555 1024x512, full-screen) is the LAST strip submitted, col=FFFFFFFF
 // (opaque at the source — not an alpha-forcing bug, `vtx_alpha=on` correctly
@@ -968,8 +978,8 @@ static unsigned s_logo_sig_used = 0; // signature-triggered passes so far (LOGO_
 //     depth-based (trans_sort, autosort) can order this content.
 //   * `col=` in the per-strip line is the vertex colour BEFORE any alpha
 //     forcing — read it before blaming `vtx_alpha` a second time.
-// Flip to 1 and rebuild to re-arm it for the next game; nothing else needs
-// changing (see feedback-quiet-diagnostics in project memory).
+// (see feedback-quiet-diagnostics in project memory: turn scene_log back off once
+// it has answered its question.)
 // 2026-11-05, F1 World Grand Prix II (garbage gameplay frame, split_screen no
 // help): the header now also prints the clip / write / region / scaler
 // registers and each strip carries its user tile clip (tc=). One Dolphin capture
@@ -978,20 +988,21 @@ static unsigned s_logo_sig_used = 0; // signature-triggered passes so far (LOGO_
 // render_to_texture=off the mirror pass is dropped but its list is NOT consumed,
 // so the display pass drew 776 + 3329 strips: the rear-view camera's geometry
 // painted into the top-left of the screen. Fix = render_to_texture=on (preset,
-// no code). Safe to re-arm (flip to 1) for the next game.
+// no code). Safe to re-arm for the next game.
 // 2026-11-09, Soldier of Fortune (most world textures black): the per-strip
 // lines now also carry off/gou/fog/mip/clr/spc/tsp/tcw/uv range, and every burst
 // ends with [SIG] lines: strips grouped by full render state with blk=1
 // (vertex-0 RGB zero) / a0=1 (vertex-0 alpha zero) flags. One capture answered
 // it: ~1150 OP + ~1150 TR (lightmap, Src Zero/Dst OtherColor) strips per frame
 // are ShadInstr 0 = Decal with col=00000000, and this renderer modulated Decal by
-// the vertex colour -> DECAL_FIX() (GX_REPLACE). Off again; safe to re-arm (1).
-#define SCENE_DEBUG_LOG 0
+// the vertex colour -> DECAL_FIX() (GX_REPLACE). Safe to re-arm.
+#define SCENE_DEBUG_LOG 1 // compiled in; runtime-gated by SCENE_LOG()
 
 #define SCN_BURST        4    // passes per burst (consecutive passes are nearly
                               // identical; 4 is plenty and keeps the SD log small)
 #define SCN_QUIET_PASSES 400  // render passes of quiet between bursts
 #define SCN_HEARTBEAT    120  // proof-of-life line every N passes, always
+#define SCN_RAW_BLOCKS   96   // [RAW] 32-byte TA blocks dumped unparsed per burst
 #define SCN_MAX_STRIPS   160 // per-strip lines per dumped pass. Was 40, which
                               // truncated Puyo Puyo's ~73-strip frames right
                               // where the interesting geometry lives: a strip
@@ -2777,6 +2788,7 @@ VertexList *carry_trans_lst = 0; // carried pass's own TR boundary (0 = none)
 // store listTileClip[], which is what splits the list — see the macro doc).
 VertexList *rtt_lst_end = 0;
 bool g_rtt_keep_cached = false;
+bool g_scene_log_cached = false; // SCENE_LOG(), refreshed once per frame
 
 u32 carry_clip_x = 0, carry_clip_y = 0;
 u32 carry_clip_w = 0, carry_clip_h = 0;
@@ -3529,6 +3541,7 @@ void reset_vtx_state()
   carry_trans_lst = 0;
   rtt_lst_end       = 0;
   g_rtt_keep_cached = RTT_KEEP_LIST();
+  g_scene_log_cached = SCENE_LOG();
   carry_clip_x    = 0;
   carry_clip_y    = 0;
   carry_clip_w    = 0;
@@ -12958,6 +12971,7 @@ static void fb2d_log_candidate(bool after_3d, u32 VtxCnt)
 }
 
 #if SCENE_DEBUG_LOG
+extern u32 g_scn_raw_left;        // ta.cpp: [RAW] blocks still to print (0 = dump off)
 static u32 s_scn_pass_no     = 0; // every StartRender, ever
 static u32 s_scn_burst       = 0; // passes logged in the current burst
 static u32 s_scn_quiet_until = 0; // pass number the next burst may start at
@@ -12998,6 +13012,11 @@ static void scene_dump_pass()
 
   if (!want)
     return;
+
+  // [RAW]: the first burst pass also arms the raw TA dump (ta.cpp), which prints
+  // the next SCN_RAW_BLOCKS 32-byte blocks the game submits, unparsed.
+  if (s_scn_burst == 0)
+    g_scn_raw_left = SCN_RAW_BLOCKS;
 
   printf("[SCN] === pass=%u (burst %u/%d) frame=%u bit24=%d W_SOF1=%08X R_SOF1=%08X fb_depth=%d\n",
          s_scn_pass_no, s_scn_burst + 1, SCN_BURST, (u32)FrameCount, b24 ? 1 : 0,
@@ -13924,7 +13943,8 @@ static void StartRender_inner()
 #endif
 
 #if SCENE_DEBUG_LOG
-  scene_dump_pass(); // same rule: must run BEFORE any path below returns
+  if (g_scene_log_cached)
+    scene_dump_pass(); // same rule: must run BEFORE any path below returns
 #endif
 
   tet_census_pass(); // [TET] Sega Tetris slowdown probe; same rule, runs before any return
@@ -14423,7 +14443,7 @@ struct VertexDecoder
   curMod->isp = pp->isp;               \
   curMod->tsp = pp->tsp;               \
   curMod->tcw = pp->tcw;               \
-  if (g_split_screen_cached || g_rtt_keep_cached || SCOPE_DEBUG_LOG || LOGO_DEBUG_LOG || SCENE_DEBUG_LOG) \
+  if (g_split_screen_cached || g_rtt_keep_cached || SCOPE_DEBUG_LOG || LOGO_DEBUG_LOG || g_scene_log_cached) \
     listTileClip[curMod - listModes] = ta_tileclip; \
   /* FOG(): with the offset colour dropped, keep its ALPHA anyway - that is the per-vertex fog coefficient. */ \
   curPolyOffsMask = pp->pcw.Offset ? (g_offset_color_fix_cached ? 0xFFFFFFFFu : (g_fog_cached ? 0xFF000000u : 0u)) : 0u;
@@ -14973,11 +14993,15 @@ bool InitRenderer()
   fflush(stdout);
 #endif
 #if SCENE_DEBUG_LOG
-  // If this line is missing from ndclog.txt the build did not pick up
-  // SCENE_DEBUG_LOG and there is no point looking for [SCN] lines.
-  printf("[SCN] scene pass logger ARMED (burst=%d, quiet=%d passes, heartbeat=%d)\n",
-         SCN_BURST, SCN_QUIET_PASSES, SCN_HEARTBEAT);
-  fflush(stdout);
+  // If this line is missing from ndclog.txt, scene_log was OFF at boot (menu
+  // row SCENE LOG on page 8 LOGS, or scene_log=on in game_presets.cfg) and
+  // there is no point looking for [SCN] lines.
+  if (SCENE_LOG())
+  {
+    printf("[SCN] scene pass logger ARMED (burst=%d, quiet=%d passes, heartbeat=%d)\n",
+           SCN_BURST, SCN_QUIET_PASSES, SCN_HEARTBEAT);
+    fflush(stdout);
+  }
 #endif
   // [TET] Sega Tetris slowdown probe: if this line is missing from ndclog.txt
   // the build did not pick it up. Off with tet_census_pass() (if(0)); flip both together.

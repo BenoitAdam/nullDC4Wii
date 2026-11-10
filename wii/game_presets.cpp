@@ -1494,6 +1494,7 @@ extern int g_disc_bulk_preset;
 extern int g_cable_preset;
 extern int g_flash_broadcast_preset;
 extern int g_disc_census_preset;
+extern int g_scene_log_preset;
 extern int g_gdrom_delay;
 extern "C" int g_blockcopy_preset;
 extern int g_jit_fsqrt_preset;
@@ -1672,6 +1673,7 @@ struct GamePreset
     int cable;
     int flash_broadcast;
     int disc_census;
+    int scene_log;
     int gdrom_delay;
     int blockcopy;
     int jit_fsqrt;
@@ -2280,6 +2282,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "cable") || key_eq(key, "cable_type")) p->cable = parse_cable(val);
     else if (key_eq(key, "flash_broadcast")) p->flash_broadcast = parse_flash_broadcast(val);
     else if (key_eq(key, "disc_census"))    p->disc_census    = parse_bool(val);
+    else if (key_eq(key, "scene_log"))      p->scene_log      = parse_bool(val);
     // NUMERIC: KB/s the GD-ROM DMA may move. 0 = off, 1800 = a real drive.
     else if (key_eq(key, "gdrom_delay"))    p->gdrom_delay    = atoi(val);
     else if (key_eq(key, "blockcopy"))      p->blockcopy      = parse_bool(val);
@@ -2435,6 +2438,7 @@ static void preset_clear(GamePreset* cur)
     cur->cable      = -1;
     cur->flash_broadcast = -1;
     cur->disc_census = -1;
+    cur->scene_log = -1;
     cur->gdrom_delay = -1;
     cur->blockcopy    = -1;
     cur->jit_fsqrt    = -1;
@@ -2618,6 +2622,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->cable          >= 0) { g_cable_preset          = p->cable;          printf("  cable          -> %d\n", p->cable);          }
     if (p->flash_broadcast >= 0) { g_flash_broadcast_preset = p->flash_broadcast; printf("  flash_broadcast -> %d\n", p->flash_broadcast); }
     if (p->disc_census    >= 0) { g_disc_census_preset    = p->disc_census;    printf("  disc_census    -> %d\n", p->disc_census);    }
+    if (p->scene_log      >= 0) { g_scene_log_preset      = p->scene_log;      printf("  scene_log      -> %d\n", p->scene_log);      }
     if (p->gdrom_delay    >= 0) { g_gdrom_delay           = p->gdrom_delay;    printf("  gdrom_delay    -> %d\n", p->gdrom_delay);    }
     if (p->blockcopy      >= 0) { g_blockcopy_preset      = p->blockcopy;      printf("  blockcopy      -> %d\n", p->blockcopy);      }
     if (p->jit_fsqrt      >= 0) { g_jit_fsqrt_preset      = p->jit_fsqrt;      printf("  jit_fsqrt      -> %d\n", p->jit_fsqrt);      }

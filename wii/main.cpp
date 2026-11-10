@@ -1311,6 +1311,20 @@ extern "C" {
   int get_disc_census_preset() { return g_disc_census_preset; }
 }
 
+// SCENE_LOG - the [SCN]/[SIG] render-pass logger: a heartbeat every 120 passes
+// (is StartRender running, are strips/verts arriving, which FB/RTT registers)
+// plus a 4-pass burst every 400 passes with one line per strip (texture addr,
+// format, blend, vertex colour, screen bbox, depth) and a grouped render-state
+// histogram. Answers "menu is all black: is nothing submitted, or is it
+// submitted and invisible (alpha 0 / colour 0 / off-screen / buried)?".
+// Lives in plugs/drkPvr/gxRend.cpp. 0=off (default), 1=on. Pair it with
+// DEBUG MESSAGE + DEBUG FB2D LOG for the render-path lines.
+int g_scene_log_preset = 0;
+
+extern "C" {
+  int get_scene_log_preset() { return g_scene_log_preset; }
+}
+
 // GDROM_DELAY - how fast the emulated GD-ROM DMA may move data, in KB/s.
 // 0 = off (legacy: the whole request moves in one synchronous burst and the
 // completion lands instantly, roughly 500x a real drive). 1800 is about a
@@ -3187,6 +3201,7 @@ void checkBiosFiles()
 #define OPT_CDDA_CLOCK  151  // Page 4 (AUDIO), under CDDA MUSIC
 #define OPT_VBL_FB_FIX  152  // Page 9 (FIXES), under TA CTX FIX
 #define OPT_VBL_FLIP_FIX 153 // Page 5 (CORE), under ASYNC RENDER (page 9 is full)
+#define OPT_SCENE_LOG   154  // Page 8 (LOGS), under DISC CENSUS
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3371,7 +3386,8 @@ static const int OPT_PAGE7_ROWS[] = {
   OPT_STRIP_DEDUP,
   OPT_AUDIO_STATS,
   OPT_FRAME_PROF,
-  OPT_DISC_CENSUS
+  OPT_DISC_CENSUS,
+  OPT_SCENE_LOG
 };
 
 // Page 8 - FIXES (the *_FIX presets; SEAM/JOJO/EXIT FIX stay on pages 1/1/5)
@@ -4812,6 +4828,15 @@ bool displayOptionsMenu()
     }
     printf(" sectors/call + bulk hit rate");
     printf("\n");
+
+    // --- Row: SCENE_LOG - what each render pass actually draws ([SCN]/[SIG]) ---
+    printf("%s SCENE LOG      : ", (selectedRow == OPT_SCENE_LOG) ? MENU_CURSOR : MENU_NOCURSOR);
+    switch (g_scene_log_preset) {
+      case 0: printf("[< OFF               >]"); break;
+      case 1: printf("[< ON (LOGS [SCN])   >]"); break;
+    }
+    printf(" per-strip dump: what is drawn");
+    printf("\n");
     printf("\n");
     printf(MENU_PLAIN "                  (logs are written to /ndclog.txt on the card)");
     printf("\n\n");
@@ -5196,6 +5221,7 @@ bool displayOptionsMenu()
         case OPT_AUDIO_STATS:    g_audio_stats_preset    = (g_audio_stats_preset    + 1) % 2; break;
         case OPT_FRAME_PROF:     g_frame_prof_preset     = (g_frame_prof_preset     + 2) % 3; break;
         case OPT_DISC_CENSUS:    g_disc_census_preset    = (g_disc_census_preset    + 1) % 2; break;
+        case OPT_SCENE_LOG:      g_scene_log_preset      = (g_scene_log_preset      + 1) % 2; break;
         default: break;
       }
     }
@@ -5363,6 +5389,7 @@ bool displayOptionsMenu()
         case OPT_AUDIO_STATS:    g_audio_stats_preset    = (g_audio_stats_preset    + 1) % 2; break;
         case OPT_FRAME_PROF:     g_frame_prof_preset     = (g_frame_prof_preset     + 1) % 3; break;
         case OPT_DISC_CENSUS:    g_disc_census_preset    = (g_disc_census_preset    + 1) % 2; break;
+        case OPT_SCENE_LOG:      g_scene_log_preset      = (g_scene_log_preset      + 1) % 2; break;
         default: break;
       }
     }
@@ -6306,6 +6333,7 @@ int main(int argc, wchar *argv[])
     printf("Frame Prof     : %s\n", g_frame_prof_preset == 2 ? "ON + TAIL FRAMES" :
                                      g_frame_prof_preset == 1 ? "ON (LOGS [FPROF])" : "OFF");
     printf("Disc Census    : %s\n", g_disc_census_preset ? "ON (LOGS [DISC])" : "OFF");
+    printf("Scene Log      : %s\n", g_scene_log_preset ? "ON (LOGS [SCN])" : "OFF");
     printf("Vertex Color Fix: %s\n", g_vertex_color_preset ? "ON" : "OFF");
     printf("Blend Mode     : %s\n", g_blend_mode_preset ? "ON (CORRECT)" : "OFF (LEGACY)");
     printf("RGB565 Opq Alpha: %s\n", g_rgb565_opaque_alpha_preset ? "ON (FMT0+FMT1)" : "OFF (FMT0 ONLY)");
