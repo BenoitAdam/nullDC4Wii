@@ -2900,6 +2900,140 @@ int rec_fastmem_patch(unsigned int pc)
 	return 0;
 }
 
+// ---------------------------------------------------------------------------
+// [SQPC] store-queue code probe -- part of the SCENE_LOG preset (2026-11-11,
+// World Series Baseball 2K2 black menu). The [RAW] TA dump showed the game's
+// vertices reaching the store queue with their words already in the wrong
+// slots (screen-X/Y-looking floats in the intensity slots, -inf / 0 where X/Y
+// belong), and no geometry-side preset changed that, so the values are wrong
+// BEFORE the TA sees them -- in SH4 code nobody has looked at. This names it.
+//
+//   compile time  every block containing a pref is noted (pc, SH4 size), and
+//                 its shop_pref stores the block pc in s_sqpc.cur and spills
+//                 the pinned GPRs/FPRs to Sh4cntx before calling do_sqw
+//   run time      ta.cpp's [RAW] dump prints that pc on every "sq" line and,
+//                 at the first VERTEX a block sends, calls sqpc_dump_once():
+//                 registers, 8 words at every register that points at RAM or
+//                 OC-RAM, and the block's SH4 code with 32 ops of lead-in
+//
+// Only blocks compiled while scene_log is on are tagged, so turn it on BEFORE
+// launching the game. With scene_log off nothing extra is emitted: shop_pref
+// is the legacy sequence instruction for instruction.
+// ---------------------------------------------------------------------------
+extern "C" int get_scene_log_preset();
+
+#define SQPC_BLOCKS 128		// pref-carrying blocks remembered (pc -> size)
+#define SQPC_DUMPS  6		// distinct blocks whose state + code is printed
+#define SQPC_PRE    32		// SH4 ops of lead-in printed before the block
+#define SQPC_MAXOPS 224		// cap on SH4 ops printed per block
+static struct
+{
+	u32  cur;			// pc of the block whose pref is running (0 = untagged)
+	u32  n;
+	u32  pc[SQPC_BLOCKS];
+	u32  size[SQPC_BLOCKS];
+	u32  dumped_n;
+	u32  dumped[SQPC_DUMPS];
+	bool said_untagged;
+	bool said_full;
+} s_sqpc;
+
+static void sqpc_note_block(u32 pc, u32 size)
+{
+	for (u32 i=0;i<s_sqpc.n;i++)
+		if (s_sqpc.pc[i]==pc) { s_sqpc.size[i]=size; return; }
+	const u32 slot=(s_sqpc.n<SQPC_BLOCKS) ? s_sqpc.n++ : (pc>>1)%SQPC_BLOCKS;
+	s_sqpc.pc[slot]=pc;
+	s_sqpc.size[slot]=size;
+}
+
+// For ta.cpp's [RAW] lines.
+u32 sqpc_current() { return s_sqpc.cur; }
+
+// System RAM (any mirror, P0..P3) or OC-RAM: safe to read, no side effects.
+static bool sqpc_readable(u32 a)
+{
+	const u32 page=a>>24;
+	if (page>=0x7C && page<=0x7F)
+		return true;
+	return page<0xE0 && (a&0x1C000000)==0x0C000000;
+}
+
+// Runs inside the pref's own do_sqw (ta.cpp -> here), so Sh4cntx is the state
+// at that pref: the tagged shop_pref spilled the pinned registers first.
+void sqpc_dump_once()
+{
+	const u32 pc=s_sqpc.cur;
+	if (!pc)
+	{
+		if (!s_sqpc.said_untagged)
+		{
+			s_sqpc.said_untagged=true;
+			printf("[SQPC] pref from an untagged block (compiled before SCENE LOG was on?)"
+			       " -- turn it on before launching the game\n");
+			fflush(stdout);
+		}
+		return;
+	}
+	for (u32 i=0;i<s_sqpc.dumped_n;i++)
+		if (s_sqpc.dumped[i]==pc)
+			return;
+	if (s_sqpc.dumped_n>=SQPC_DUMPS)
+	{
+		if (!s_sqpc.said_full)
+		{
+			s_sqpc.said_full=true;
+			printf("[SQPC] dump budget used up (%u blocks)\n",(u32)SQPC_DUMPS);
+			fflush(stdout);
+		}
+		return;
+	}
+	s_sqpc.dumped[s_sqpc.dumped_n++]=pc;
+
+	u32 size=0;
+	for (u32 i=0;i<s_sqpc.n;i++)
+		if (s_sqpc.pc[i]==pc) { size=s_sqpc.size[i]; break; }
+
+	printf("[SQPC] === block %08X (%u B of SH4): its pref sent the [RAW] vertex line above."
+	       " State at that pref:\n",pc,size);
+	printf("[SQPC] fpscr=%08X fpul=%08X pr=%08X gbr=%08X CCR=%08X QACR0=%08X QACR1=%08X\n",
+	       fpscr.full,fpul,pr,gbr,CCN_CCR.reg_data,CCN_QACR0.reg_data,CCN_QACR1.reg_data);
+	for (u32 b=0;b<16;b+=8)
+		printf("[SQPC] r%u-%u   %08X %08X %08X %08X %08X %08X %08X %08X\n",b,b+7,
+		       r[b],r[b+1],r[b+2],r[b+3],r[b+4],r[b+5],r[b+6],r[b+7]);
+	for (u32 b=0;b<16;b+=8)
+		printf("[SQPC] fr%u-%u  %08X %08X %08X %08X %08X %08X %08X %08X\n",b,b+7,
+		       fr_hex[b],fr_hex[b+1],fr_hex[b+2],fr_hex[b+3],
+		       fr_hex[b+4],fr_hex[b+5],fr_hex[b+6],fr_hex[b+7]);
+	for (u32 b=0;b<16;b+=8)
+		printf("[SQPC] xf%u-%u  %08X %08X %08X %08X %08X %08X %08X %08X\n",b,b+7,
+		       xf_hex[b],xf_hex[b+1],xf_hex[b+2],xf_hex[b+3],
+		       xf_hex[b+4],xf_hex[b+5],xf_hex[b+6],xf_hex[b+7]);
+
+	// What the address registers point at: the vertex may come from a buffer.
+	for (u32 i=0;i<16;i++)
+	{
+		const u32 a=r[i]&~3u;
+		if (!sqpc_readable(a))
+			continue;
+		printf("[SQPC] @r%-2u %08X: %08X %08X %08X %08X %08X %08X %08X %08X\n",i,a,
+		       ReadMem32(a),ReadMem32(a+4),ReadMem32(a+8),ReadMem32(a+12),
+		       ReadMem32(a+16),ReadMem32(a+20),ReadMem32(a+24),ReadMem32(a+28));
+	}
+
+	// The code: SQPC_PRE ops of lead-in, then the block ('>' = block start).
+	u32 a=pc-SQPC_PRE*2;
+	u32 end=pc+(size ? size : 96*2);
+	if ((end-a)/2>SQPC_MAXOPS)
+		end=a+SQPC_MAXOPS*2;
+	for (;a<end;a+=2)
+	{
+		const u16 o=ReadMem16(a);
+		printf("[SQPC] %c %08X: %04X  %s\n",a==pc?'>':' ',a,o,OpDesc[o]->diss);
+	}
+	fflush(stdout);
+}
+
 // ngen_CompileBlock: Main Block Compilation Loop
 DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 {
@@ -4462,15 +4596,36 @@ DynarecCodeEntry* ngen_Compile(DecodedBlock* block,bool force_checks)
 		// edge so no block keeps the old choice. addr in rarg0.
 		case shop_pref:
 			{
+				// [SQPC] (scene_log, decided at compile time): tag + spill, see
+				// sqpc_dump_once(). Off, this is the legacy sequence exactly.
+				const bool sqpc=get_scene_log_preset()!=0;
+				if (sqpc)
+					sqpc_note_block(block->start,block->sh4_code_size);
+
 				ppc_sh_load(ppc_rarg0,op->rs1);
 				ppc_rlwinmx(ppc_rarg1,ppc_rarg0,6,26,31,0);	// rarg1 = addr >> 26
 				ppc_cmpi(ppc_cr0,ppc_rarg1,0x38,0);		// SQ region?
 				ppc_label* skip=ppc_CreateLabel();
 				ppc_bcx(BO_FALSE,BI_CR0_EQ,0,0,0);		// bne skip (not SQ -> no-op)
+				if (sqpc)
+				{
+					// rarg1/rarg2 are dead here (do_sqw takes rarg0 only and the
+					// call clobbers both anyway).
+					ppc_li(ppc_rarg1,block->start);
+					u32 lo=ppc_addr_high(ppc_rarg2,(void*)&s_sqpc.cur);
+					ppc_stw(ppc_rarg1,ppc_rarg2,lo);		// s_sqpc.cur = block pc
+					reg_flush_all();				// Sh4cntx = live state
+					reg_flush_all_fpu();
+				}
 				if (mmucr_at())
 					ppc_call(&do_sqw_mmu);			// do_sqw reloads rarg0=addr arg
 				else
 					ppc_call(&do_sqw_nommu);
+				if (sqpc)
+				{
+					reg_reload_all();
+					reg_reload_all_fpu();
+				}
 				skip->MarkLabel();
 			}
 			break;

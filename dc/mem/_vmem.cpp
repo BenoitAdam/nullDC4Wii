@@ -48,6 +48,65 @@ static _vmem_WriteMem32FP* _vmem_WF32[HANDLER_COUNT];
 ALIGN(65536) void* _vmem_MemInfo_ptr[0x100];
 
 // ---------------------------------------------------------------------------
+// MMIO64_FIX preset (wii/main.cpp, default ON): word order of a 64-bit access
+// (fmov.d, or fmov with FPSCR.SZ=1) that lands on a HANDLER region.
+//
+// A pair move puts FRn at the lower address and FRn+1 at addr+4. Every caller
+// (the interpreter through dr_hex, the JIT through rarg2:rarg3) hands us that
+// pair as a u64 whose HIGH half is FRn on a big-endian host, and the direct
+// RAM/VRAM/SQ path below stores it with one native u64 store: high -> addr.
+// The handler split was written for a little-endian host, where the low half
+// is FRn, so on the Wii it sent FRn+1 to addr and FRn to addr+4 -- and read
+// the same way back. A pair read back as a pair cancels out, but a pair over
+// words written or read one at a time (fmov.s, mov.l, DMA) is swapped. The
+// handler regions are OC-RAM (0x7C000000, the scratchpad games build vertices
+// in), the 32-bit VRAM window, AICA RAM and the area 0/7/P4 registers.
+// Found 2026-11-11 chasing World Series Baseball 2K2's black menu: its vertex
+// words reach the store queue in the wrong slots.
+//   0 = legacy little-endian split, 1 = FRn at addr (fixed, default).
+// The [MMIO64] lines (scene_log preset) list the first pair accesses per
+// 64 KB region, so a log shows whether a game makes any at all.
+// ---------------------------------------------------------------------------
+extern "C" int get_mmio64_fix_preset();
+extern "C" int get_scene_log_preset();
+
+static void __attribute__((noinline)) mmio64_note(u32 addr, u32 w0, u32 w1, bool write)
+{
+    if (!get_scene_log_preset())
+        return;
+
+    static u32 s_lines = 0;
+    static u32 s_region[16];
+    static u32 s_region_hits[16];
+    static u32 s_region_n = 0;
+    if (s_lines >= 32)
+        return;
+
+    const u32 region = addr >> 16;
+    u32 i;
+    for (i = 0; i < s_region_n; i++)
+        if (s_region[i] == region)
+            break;
+    if (i == s_region_n)
+    {
+        if (s_region_n >= 16)
+            return;
+        s_region[s_region_n] = region;
+        s_region_hits[s_region_n] = 0;
+        s_region_n++;
+    }
+    if (s_region_hits[i] >= 4)
+        return;
+    s_region_hits[i]++;
+    s_lines++;
+
+    printf("[MMIO64] %s %08X  word[a]=%08X word[a+4]=%08X  mmio64_fix=%d%s\n",
+           write ? "write" : "read ", addr, w0, w1, get_mmio64_fix_preset(),
+           s_lines == 32 ? "  (budget used up)" : "");
+    fflush(stdout);
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -84,10 +143,16 @@ static INLINE T fastcall _vmem_readt(u32 addr)
             return (T)_vmem_RF32[id / 4](addr);
         else if (sz == 8)
         {
-            // 64-bit: two consecutive 32-bit reads
-            T rv = (T)_vmem_RF32[id / 4](addr);
-            rv  |= (T)((u64)_vmem_RF32[id / 4](addr + 4) << 32);
-            return rv;
+            // 64-bit: two consecutive 32-bit reads, addr first. Which half
+            // the word at addr becomes is MMIO64_FIX's business (see above).
+            const u32 w0 = _vmem_RF32[id / 4](addr);
+            const u32 w1 = _vmem_RF32[id / 4](addr + 4);
+            mmio64_note(addr, w0, w1, false);
+#if HOST_ENDIAN == ENDIAN_BIG
+            if (get_mmio64_fix_preset())
+                return (T)(((u64)w0 << 32) | w1);   // high = FRn = word[addr]
+#endif
+            return (T)(((u64)w1 << 32) | w0);       // legacy (little-endian) order
         }
         die("_vmem_readt: invalid size");
     }
@@ -126,8 +191,21 @@ static INLINE void fastcall _vmem_writet(u32 addr, T data)
             _vmem_WF32[id / 4](addr, (u32)data);
         else if (sz == 8)
         {
-            _vmem_WF32[id / 4](addr,     (u32)(u64)data);
-            _vmem_WF32[id / 4](addr + 4, (u32)((u64)data >> 32));
+            // Legacy (little-endian) order: low half to addr. MMIO64_FIX sends
+            // the high half -- FRn on this host -- to addr (see above).
+            const u64 d = (u64)data;
+            u32 w0 = (u32)d;
+            u32 w1 = (u32)(d >> 32);
+#if HOST_ENDIAN == ENDIAN_BIG
+            if (get_mmio64_fix_preset())
+            {
+                w0 = (u32)(d >> 32);
+                w1 = (u32)d;
+            }
+#endif
+            mmio64_note(addr, w0, w1, true);
+            _vmem_WF32[id / 4](addr,     w0);
+            _vmem_WF32[id / 4](addr + 4, w1);
         }
         else
             die("_vmem_writet: invalid size");

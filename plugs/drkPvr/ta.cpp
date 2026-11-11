@@ -44,17 +44,28 @@ static void __attribute__((noinline)) ta_sq_measured(Ta_Dma* t)
 // the existing g_ta_profile_preset test).
 u32 g_scn_raw_left = 0;
 
+// [SQPC] (wii_driver.cpp, same scene_log preset): the pc of the JIT block whose
+// pref is sending this store-queue block, and a one-shot dump of that block's
+// code and registers. Only meaningful on the "sq" path; DMA prints pc=0.
+u32  sqpc_current();
+void sqpc_dump_once();
+
 static void __attribute__((noinline)) ta_raw_dump(const Ta_Dma* t, u32 n, const char* path)
 {
     const u32* w = (const u32*)t;
+    const bool sq = (path[0] == 's');
     for (u32 i = 0; i < n && g_scn_raw_left; i++, w += 8, g_scn_raw_left--)
     {
         // PCW: ParaType 31..29, EndOfStrip 28, ListType 26..24, Group_En 23.
-        printf("[RAW] %s pt=%u eos=%u lt=%u  %08X %08X %08X %08X %08X %08X %08X %08X\n",
-               path, (unsigned)(w[0] >> 29), (unsigned)((w[0] >> 28) & 1),
+        printf("[RAW] %s pc=%08X pt=%u eos=%u lt=%u  %08X %08X %08X %08X %08X %08X %08X %08X\n",
+               path, (unsigned)(sq ? sqpc_current() : 0),
+               (unsigned)(w[0] >> 29), (unsigned)((w[0] >> 28) & 1),
                (unsigned)((w[0] >> 24) & 7),
                (unsigned)w[0], (unsigned)w[1], (unsigned)w[2], (unsigned)w[3],
                (unsigned)w[4], (unsigned)w[5], (unsigned)w[6], (unsigned)w[7]);
+        // First vertex (ParaType 7) a block sends: dump that block once.
+        if (sq && (w[0] >> 29) == 7)
+            sqpc_dump_once();
     }
     if (!g_scn_raw_left)
     {

@@ -688,6 +688,21 @@ extern "C" {
   int get_aica_dma_read_preset() { return g_aica_dma_read_preset; }
 }
 
+// MMIO64_FIX - word order of a 64-bit pair access (fmov.d / SZ=1 fmov) that
+// lands on a HANDLER region: OC-RAM (0x7C000000, the on-chip scratchpad games
+// build vertices in), the 32-bit VRAM window, AICA RAM, area 0/7/P4 registers.
+// The handler split in dc/mem/_vmem.cpp was little-endian-only: on the Wii it
+// put FRn+1 at addr and FRn at addr+4, while RAM/VRAM/SQ get FRn at addr. A pair
+// read back as a pair cancels out; a pair over words accessed one at a time is
+// swapped. Found 2026-11-11 on World Series Baseball 2K2's black menu (vertex
+// words in the wrong slots). [MMIO64] lines (scene_log) list the first pair
+// accesses per region. 0=off (legacy little-endian split), 1=on (default).
+int g_mmio64_fix_preset = 1;
+
+extern "C" {
+  int get_mmio64_fix_preset() { return g_mmio64_fix_preset; }
+}
+
 // AICA_CA_CLAMP - a game workaround, so OFF by default: the CA (play position)
 // register read never reports within 3 samples of the loop end. Flycast
 // 788cbfb64 added it for some Visual Concepts sports games; real hardware can
@@ -3218,6 +3233,7 @@ void checkBiosFiles()
 #define OPT_VBL_FLIP_FIX 153 // Page 5 (CORE), under ASYNC RENDER (page 9 is full)
 #define OPT_SCENE_LOG   154  // Page 8 (LOGS), under DISC CENSUS
 #define OPT_AICA_DMA_READ 155 // Page 4 (AUDIO), under AICA RACE FIX (page 9 is full)
+#define OPT_MMIO64_FIX  156  // Page 5 (CORE), under IDLE X3 BACK (page 9 is full)
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3345,7 +3361,8 @@ static const int OPT_PAGE4_ROWS[] = {
   OPT_IDLE_KAMUI,
   OPT_IDLE_HOOK,
   OPT_IDLE_SHINOBI,
-  OPT_IDLE_X3
+  OPT_IDLE_X3,
+  OPT_MMIO64_FIX
 };
 
 // Page 5 - EXPERIMENTAL STUFF & DEBUG
@@ -4429,6 +4446,15 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (X3 BACKWARD)  >]"); break;
     }
     printf(" per game: JSR/Donald Duck");
+    printf("\n");
+
+    // --- Row: MMIO64_FIX - fmov.d pair word order on handler regions (_vmem.cpp) ---
+    printf("%s MMIO PAIR FIX  : ", (selectedRow == OPT_MMIO64_FIX) ? MENU_CURSOR : MENU_NOCURSOR);
+    switch (g_mmio64_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FRn AT ADDR)  >]"); break;
+    }
+    printf(" fmov.d to OC-RAM/regs: 2K2");
     printf("\n\n");
 
     printOptionsFooter();
@@ -5181,6 +5207,7 @@ bool displayOptionsMenu()
         case OPT_IDLE_HOOK:      g_idle_hook_preset       = (g_idle_hook_preset       + 1) % 2; break;
         case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
         case OPT_IDLE_X3:        g_idle_x3_preset         = (g_idle_x3_preset         + 1) % 2; break;
+        case OPT_MMIO64_FIX:     g_mmio64_fix_preset      = (g_mmio64_fix_preset      + 1) % 2; break;
         case OPT_FLASH_CHIP:     g_flash_chip_preset      = (g_flash_chip_preset      + 1) % 2; break;
         case OPT_FLASH_SAVE:     g_flash_save_preset      = (g_flash_save_preset      + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 14400 :
@@ -5350,6 +5377,7 @@ bool displayOptionsMenu()
         case OPT_IDLE_HOOK:      g_idle_hook_preset       = (g_idle_hook_preset       + 1) % 2; break;
         case OPT_IDLE_SHINOBI:   g_idle_shinobi_preset    = (g_idle_shinobi_preset    + 1) % 2; break;
         case OPT_IDLE_X3:        g_idle_x3_preset         = (g_idle_x3_preset         + 1) % 2; break;
+        case OPT_MMIO64_FIX:     g_mmio64_fix_preset      = (g_mmio64_fix_preset      + 1) % 2; break;
         case OPT_FLASH_CHIP:     g_flash_chip_preset      = (g_flash_chip_preset      + 1) % 2; break;
         case OPT_FLASH_SAVE:     g_flash_save_preset      = (g_flash_save_preset      + 1) % 2; break;
         case OPT_GDROM_DELAY:    g_gdrom_delay = (g_gdrom_delay == 0)    ? 1800  :
@@ -6431,6 +6459,7 @@ int main(int argc, wchar *argv[])
     printf("Idle Hook      : %s\n", g_idle_hook_preset ? "ON (1 TURN/SLICE)" : "OFF (LEGACY)");
     printf("Idle Shinobi   : %s\n", g_idle_shinobi_preset ? "ON (DEBT TIL IRQ)" : "OFF (LEGACY)");
     printf("Idle X3 Back   : %s\n", g_idle_x3_preset ? "ON (X3 BACKWARD)" : "OFF (X30, LEGACY)");
+    printf("MMIO Pair Fix  : %s\n", g_mmio64_fix_preset ? "ON (FRn AT ADDR)" : "OFF (LEGACY)");
     printf("Flash Chip     : %s\n", g_flash_chip_preset ? "ON (AMD COMMANDS)" : "OFF (PLAIN RAM)");
     printf("Flash Save     : %s\n", g_flash_save_preset ? "ON (AT EXIT)" : "OFF (NEVER SAVED)");
     printf("Mute 16bit PCM : %s\n", g_mute_pcm16_preset ? "ON (SILENCED)" : "OFF (LEGACY)");

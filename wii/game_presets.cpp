@@ -751,6 +751,15 @@
                                hurts others (Quake III, Tomb Raider, Looney
                                Tunes, Ecco). Default off. Read when code is
                                COMPILED, so set it before launching.
+        mmio64_fix=on       <- on/off, word order of a 64-bit pair access
+                               (fmov.d / SZ=1 fmov) on a HANDLER region: OC-RAM
+                               (0x7C000000), the 32-bit VRAM window, AICA RAM,
+                               the area 0/7/P4 registers. on: FRn at addr, as
+                               RAM/VRAM/SQ already do (dc/mem/_vmem.cpp).
+                               off = legacy little-endian split, which swapped
+                               the two words on the Wii whenever a pair met
+                               single-word accesses (WSB 2K2 black menu).
+                               Default on.
         flash_chip=on       <- on/off, the BIOS flash obeys its chip's command
                                sequences (Flycast): a program only clears bits,
                                an erase sets 0xFF, the factory partition is
@@ -1520,6 +1529,7 @@ extern int g_idle_kamui_preset;
 extern int g_idle_hook_preset;
 extern int g_idle_shinobi_preset;
 extern int g_idle_x3_preset;
+extern int g_mmio64_fix_preset;
 extern int g_flash_chip_preset;
 extern int g_flash_save_preset;
 extern int g_inf_vtx_preset;
@@ -1700,6 +1710,7 @@ struct GamePreset
     int idle_hook;
     int idle_shinobi;
     int idle_x3;
+    int mmio64_fix;
     int flash_chip;
     int flash_save;
     int inf_vtx;
@@ -2311,6 +2322,7 @@ static void apply_kv(GamePreset* p, const char* key, const char* val)
     else if (key_eq(key, "idle_hook"))      p->idle_hook      = parse_bool(val);
     else if (key_eq(key, "idle_shinobi"))   p->idle_shinobi   = parse_bool(val);
     else if (key_eq(key, "idle_x3"))        p->idle_x3        = parse_bool(val);
+    else if (key_eq(key, "mmio64_fix"))     p->mmio64_fix     = parse_bool(val);
     else if (key_eq(key, "flash_chip"))     p->flash_chip     = parse_bool(val);
     else if (key_eq(key, "flash_save"))     p->flash_save     = parse_bool(val);
     else if (key_eq(key, "inf_vtx"))        p->inf_vtx        = parse_bool(val);
@@ -2467,6 +2479,7 @@ static void preset_clear(GamePreset* cur)
     cur->idle_hook = -1;
     cur->idle_shinobi = -1;
     cur->idle_x3 = -1;
+    cur->mmio64_fix = -1;
     cur->flash_chip = -1;
     cur->flash_save = -1;
     cur->inf_vtx = -1;
@@ -2652,6 +2665,7 @@ static void preset_apply_fields(const GamePreset* p)
     if (p->idle_hook      >= 0) { g_idle_hook_preset      = p->idle_hook;      printf("  idle_hook      -> %d\n", p->idle_hook);      }
     if (p->idle_shinobi   >= 0) { g_idle_shinobi_preset   = p->idle_shinobi;   printf("  idle_shinobi   -> %d\n", p->idle_shinobi);   }
     if (p->idle_x3        >= 0) { g_idle_x3_preset        = p->idle_x3;        printf("  idle_x3        -> %d\n", p->idle_x3);        }
+    if (p->mmio64_fix     >= 0) { g_mmio64_fix_preset     = p->mmio64_fix;     printf("  mmio64_fix     -> %d\n", p->mmio64_fix);     }
     if (p->flash_chip     >= 0) { g_flash_chip_preset     = p->flash_chip;     printf("  flash_chip     -> %d\n", p->flash_chip);     }
     if (p->flash_save     >= 0) { g_flash_save_preset     = p->flash_save;     printf("  flash_save     -> %d\n", p->flash_save);     }
     if (p->inf_vtx        >= 0) { g_inf_vtx_preset        = p->inf_vtx;        printf("  inf_vtx        -> %d\n", p->inf_vtx);        }

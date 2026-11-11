@@ -204,6 +204,13 @@ static void CCN_CCR_write(u32 value)
         printf("CCN: I-cache %s (pc=%08X)\n", temp.ICE ? "enabled" : "disabled", curr_pc);
     if (temp.OCE != CCN_CCR.OCE)
         printf("CCN: O-cache %s (pc=%08X)\n", temp.OCE ? "enabled" : "disabled", curr_pc);
+    // OC-RAM: CCR.ORA turns 8 KB of the operand cache into RAM at 0x7C000000
+    // (ReadMem_area7_OCR_T, sh4_internal_reg.cpp). Logged on change so a log
+    // shows whether a game uses it at all: its pair (fmov.d) accesses go
+    // through the handler split that MMIO64_FIX corrects (dc/mem/_vmem.cpp).
+    if (temp.ORA != CCN_CCR.ORA || temp.OIX != CCN_CCR.OIX)
+        printf("CCN: OC-RAM %s (ORA=%u OIX=%u, pc=%08X)\n", temp.ORA ? "enabled" : "disabled",
+               (u32)temp.ORA, (u32)temp.OIX, curr_pc);
 
     CCN_CCR = temp;
 }
