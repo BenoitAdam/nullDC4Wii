@@ -7567,9 +7567,17 @@ static bool s_cmp_active = false; // a composed frame is started and unpresented
 static u32  s_cmp_base   = 0;     // FB_W_SOF1 of that frame's first pass
 static u32  s_cmp_passes = 0;     // partial passes accumulated into it
 static bool s_cmp_skip   = false; // frameskip verdict, taken once for the FRAME
-// Union of the destination rects accumulated so far (DC framebuffer pixels),
-// plus the summed pass areas the "frame is covered" test uses.
-static s32  s_cmp_cov_x0 = 0, s_cmp_cov_y0 = 0, s_cmp_cov_x1 = -1, s_cmp_cov_y1 = -1;
+// Destination rects accumulated into the frame so far (DC framebuffer pixels),
+// kept INDIVIDUALLY rather than as one bounding box: with a box, a 4-way
+// split's fourth quadrant "overlaps" the box of the first three (already the
+// whole screen) and the frame was flipped three-quarters drawn — the 3P/4P
+// flicker (Magforce Racing, South Park Rally; same finding as the unmerged
+// quake3-splitscreen branch, aaaf03c). A frame with more passes than
+// CMP_MAX_RECTS stops recording and relies on the coverage test and the
+// vblank backstop. Plus the summed pass areas the "frame is covered" test uses.
+#define CMP_MAX_RECTS 8
+static s32  s_cmp_rc[CMP_MAX_RECTS][4]; // x0, y0, x1, y1 (inclusive)
+static u32  s_cmp_rc_n = 0;
 static u32  s_cmp_cov_area = 0;
 // Pass count as of the previous vblank, so the vblank backstop can tell a frame
 // the game has finished adding to from one it is still building. 0xFFFFFFFF =
@@ -7750,18 +7758,24 @@ static bool split_pass_window(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1, u32 *oshif
 // every pass on its own (cmp=1/1 on every pass), i.e. exactly the alternating
 // top-only / bottom-only flicker this mode exists to remove. The next frame's
 // first viewport repeats an earlier pass's band, so it still overlaps ~100%.
+// Measured against each recorded rect (s_cmp_rc), summed — never against their
+// bounding box, which swallows a 4-way split's last quadrant.
 static bool split_pass_overlaps_frame(s32 x0, s32 y0, s32 x1, s32 y1)
 {
   if (!s_cmp_active)
     return false;
-  const s32 ix0 = x0 > s_cmp_cov_x0 ? x0 : s_cmp_cov_x0;
-  const s32 iy0 = y0 > s_cmp_cov_y0 ? y0 : s_cmp_cov_y0;
-  const s32 ix1 = x1 < s_cmp_cov_x1 ? x1 : s_cmp_cov_x1;
-  const s32 iy1 = y1 < s_cmp_cov_y1 ? y1 : s_cmp_cov_y1;
-  if (ix1 < ix0 || iy1 < iy0)
-    return false; // disjoint
-  const u32 inter = (u32)(ix1 - ix0 + 1) * (u32)(iy1 - iy0 + 1);
-  const u32 area  = (u32)(x1 - x0 + 1) * (u32)(y1 - y0 + 1);
+  u32 inter = 0;
+  for (u32 i = 0; i < s_cmp_rc_n; i++)
+  {
+    const s32 *r = s_cmp_rc[i];
+    const s32 ix0 = x0 > r[0] ? x0 : r[0];
+    const s32 iy0 = y0 > r[1] ? y0 : r[1];
+    const s32 ix1 = x1 < r[2] ? x1 : r[2];
+    const s32 iy1 = y1 < r[3] ? y1 : r[3];
+    if (ix1 >= ix0 && iy1 >= iy0)
+      inter += (u32)(ix1 - ix0 + 1) * (u32)(iy1 - iy0 + 1);
+  }
+  const u32 area = (u32)(x1 - x0 + 1) * (u32)(y1 - y0 + 1);
   return inter * 4 > area;
 }
 
@@ -7776,8 +7790,7 @@ static void split_compose_present()
   const bool drawn = (s_cmp_passes != 0) && !s_cmp_skip;
   s_cmp_active = false;
   s_cmp_passes = 0;
-  s_cmp_cov_x0 = 0; s_cmp_cov_y0 = 0;
-  s_cmp_cov_x1 = -1; s_cmp_cov_y1 = -1;
+  s_cmp_rc_n = 0;
   s_cmp_cov_area = 0;
   s_cmp_vb_passes = 0xFFFFFFFFu;
   if (!drawn)
@@ -14228,17 +14241,17 @@ static void StartRender_inner()
         s_cmp_base     = FB_W_SOF1 & VRAM_MASK;
         s_cmp_passes   = 0;
         s_cmp_skip     = ShouldSkipFrame();
-        s_cmp_cov_x0   = 0x7FFF; s_cmp_cov_y0 = 0x7FFF;
-        s_cmp_cov_x1   = -1;     s_cmp_cov_y1 = -1;
+        s_cmp_rc_n     = 0;
         s_cmp_cov_area = 0;
         shift = 0; dy0 = (s32)wy0; dy1 = (s32)wy1;
       }
 
       s_cmp_passes++;
-      if ((s32)wx0 < s_cmp_cov_x0) s_cmp_cov_x0 = (s32)wx0;
-      if ((s32)wx1 > s_cmp_cov_x1) s_cmp_cov_x1 = (s32)wx1;
-      if (dy0 < s_cmp_cov_y0) s_cmp_cov_y0 = dy0;
-      if (dy1 > s_cmp_cov_y1) s_cmp_cov_y1 = dy1;
+      if (s_cmp_rc_n < CMP_MAX_RECTS)
+      {
+        s32 *r = s_cmp_rc[s_cmp_rc_n++];
+        r[0] = (s32)wx0; r[1] = dy0; r[2] = (s32)wx1; r[3] = dy1;
+      }
       s_cmp_cov_area += (u32)(wx1 - wx0 + 1) * (u32)(dy1 - dy0 + 1);
 
       if (s_cmp_skip)
@@ -15062,9 +15075,8 @@ bool InitRenderer()
     fflush(stdout);
   }
   // [VPS] viewport-per-render census (Magforce 2P flicker, vps_census() above
-  // StartRender): TEMPORARY, ON. If this line is missing from ndclog.txt the
-  // build did not pick it up. Flip with vps_census()'s if(1).
-  if (1)
+  // StartRender): OFF with vps_census() (answered, see there); flip both together.
+  if (0)
   {
     printf("[VPS] census ARMED (burst of 20 consecutive renders every 400 (40 max), "
            "[VPS] NEW line per novel clip/SOF1/ctx signature (120 max), WIN every 240 renders)\n");
@@ -15317,7 +15329,13 @@ static u32 s_vps_path_prev[SR_PATHS];
 
 static void vps_census(u32 param_ctx, const TaCtxMark &mk, bool strip_open)
 {
-  if (1)
+  // OFF (2026-11-11): answered. Magforce Racing = one render per viewport
+  // (2P: YCLIP 0..255 / 255..543; 3P/4P: quadrants via X+Y clip), same
+  // FB_W_SOF1 per frame, double-buffered 156000/556000, rgn=none. Two compose
+  // bugs found and fixed (shared boundary row = "new frame"; bounding-box
+  // coverage), user-CONFIRMED 2P and 3P/4P. Safe to re-enable: flip if(0) back
+  // to if(1) here and in InitRenderer's ARMED line.
+  if (0)
   {
     const u32 n   = s_vps_n++;
     const u32 vbl = s_toyr_vbl;
@@ -15382,8 +15400,9 @@ static void vps_census(u32 param_ctx, const TaCtxMark &mk, bool strip_open)
         sprintf(rgn, "none");
 
       // Distinct per-poly user tile clips in the buffer (stored only while
-      // split_screen / a scene log asks for them -- see tcstore).
-      u32 tc[3] = { 0, 0, 0 }, tcn = 0;
+      // split_screen / a scene log asks for them -- see tcstore). Up to 5: a
+      // 4-way split is 4 viewports + a full-screen HUD clip.
+      u32 tc[5] = { 0, 0, 0, 0, 0 }, tcn = 0;
       s32 nm = (s32)(curMod - listModes);
       if (nm > 8 * 1024) nm = 8 * 1024;
       for (s32 i = 0; i < nm; i++)
@@ -15391,15 +15410,34 @@ static void vps_census(u32 param_ctx, const TaCtxMark &mk, bool strip_open)
         const u32 w = listTileClip[i];
         if (w == 0) continue;
         u32 k = 0;
-        while (k < tcn && k < 3 && tc[k] != w) k++;
-        if (k == tcn) { if (tcn < 3) tc[tcn] = w; tcn++; }
+        while (k < tcn && k < 5 && tc[k] != w) k++;
+        if (k == tcn) { if (tcn < 5) tc[tcn] = w; tcn++; }
+      }
+      char tcs[64];
+      {
+        int o = 0;
+        tcs[0] = 0;
+        for (u32 k = 0; k < tcn && k < 5; k++)
+          o += sprintf(tcs + o, k ? ",%08X" : "%08X", tc[k]);
+      }
+
+      // Rects already composed into the frame in progress (SPLIT_COMPOSE).
+      char rcs[112];
+      {
+        int o = 0;
+        rcs[0] = 0;
+        for (u32 k = 0; k < s_cmp_rc_n && k < 4; k++)
+          o += sprintf(rcs + o, "%s%d..%d,%d..%d", k ? ";" : "",
+                       (int)s_cmp_rc[k][0], (int)s_cmp_rc[k][2],
+                       (int)s_cmp_rc[k][1], (int)s_cmp_rc[k][3]);
+        if (s_cmp_rc_n > 4) sprintf(rcs + o, ";+%u", s_cmp_rc_n - 4);
       }
 
       const bool mv = mk.valid;
       printf("[VPS] #%u%s vbl=%u fc=%u pb=%06X isp=%06X bld=%06X mk=%d/%u strips=%d vtx=%d "
              "pre=%d/%d post=%d/%d open=%d | W_SOF1=%08X R_SOF1=%08X stride=%u "
-             "xc=%u..%u yc=%u..%u rgn@%06X=%s | tcnow=%08X tcpoly=%u[%08X,%08X,%08X] tcstore=%d "
-             "| %s ctxfix=%d scr=%d cmp=%d/%u cov=%d..%d,%d..%d | prev=%s%s%s%s%s\n",
+             "xc=%u..%u yc=%u..%u rgn@%06X=%s | tcnow=%08X tcpoly=%u[%s] tcstore=%d "
+             "| %s ctxfix=%d scr=%d cmp=%d/%u area=%u rc=[%s] | prev=%s%s%s%s%s\n",
              n, is_new ? " NEW" : "", vbl, (u32)FrameCount,
              (u32)(PARAM_BASE & 0xFFFFFF), (u32)(TA_ISP_BASE & 0xFFFFFF), g_ta_build_ctx,
              (int)mv, mk.inits, strips, vtx,
@@ -15410,12 +15448,11 @@ static void vps_census(u32 param_ctx, const TaCtxMark &mk, bool strip_open)
              (u32)(FB_X_CLIP.full & 0x7FF), (u32)((FB_X_CLIP.full >> 16) & 0x7FF),
              (u32)(FB_Y_CLIP.full & 0x3FF), (u32)((FB_Y_CLIP.full >> 16) & 0x3FF),
              (u32)(REGION_BASE & 0xFFFFFF), rgn,
-             ta_tileclip, tcn, tc[0], tc[1], tc[2], (int)(g_split_screen_cached || g_scene_log_cached),
+             ta_tileclip, tcn, tcs, (int)(g_split_screen_cached || g_scene_log_cached),
              would_split ? "SPLIT" : (!mv ? (strip_open ? "NOINIT" : "NOMARK")
                                           : (param_ctx == g_ta_build_ctx ? "SAME-CTX" : "NOSPLIT")),
              get_ta_ctx_fix_preset(), get_split_screen_preset(),
-             (int)s_cmp_active, s_cmp_passes,
-             (int)s_cmp_cov_x0, (int)s_cmp_cov_x1, (int)s_cmp_cov_y0, (int)s_cmp_cov_y1,
+             (int)s_cmp_active, s_cmp_passes, s_cmp_cov_area, rcs,
              np ? prev[0] : "none",
              np > 1 ? "+" : "", np > 1 ? prev[1] : "",
              np > 2 ? "+" : "", np > 2 ? prev[2] : "");
