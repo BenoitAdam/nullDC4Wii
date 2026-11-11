@@ -18,6 +18,10 @@ extern "C" int get_aica_race_preset();
 // RTC_HOST preset (wii/main.cpp): GetRTC_now()'s DST correction is one hour.
 extern "C" int get_rtc_host_preset();
 
+// AICA_DMA_READ preset (wii/main.cpp): Write_SB_ADST() also runs the AICA ->
+// system RAM direction (SB_ADDIR == 1) instead of refusing it.
+extern "C" int get_aica_dma_read_preset();
+
 // SCHED preset (wii/main.cpp): route the AICA G2-DMA end IRQ through the unified
 // deadline scheduler (in true order relative to the ch2/PVR/GD-ROM completions)
 // instead of the standalone aica_dma_delay_cycles countdown in UpdateAicaDma().
@@ -318,7 +322,17 @@ void Write_SB_ADST(u32 data)
     if (!(SB_ADEN & 1))
         return;
 
-    if (SB_ADDIR == 1)
+    // AICA_DMA_READ (2026-11-11, World Series Baseball 2K2 black menu): the
+    // game keeps data in sound RAM and DMAs it back to system RAM while the
+    // menu runs (SB_ADDIR = 1). Legacy refused that direction: no copy, no
+    // SB_ADST, no end-of-DMA interrupt -- so the destination buffer kept stale
+    // contents and the game built its menu geometry out of them (the [RAW] TA
+    // dump: well-formed headers, junk vertex coordinates). Flycast swaps
+    // source and destination and otherwise runs the transfer exactly like the
+    // RAM -> AICA one, which is what EXT1/EXT2 below already do here.
+    // OFF = the legacy refusal, unchanged.
+    const bool aica_read = (SB_ADDIR == 1);
+    if (aica_read && !get_aica_dma_read_preset())
     {
         // Direction: AICA→system RAM is not implemented; warn and bail.
         msgboxf("AICA DMA: SB_ADDIR==1 (AICA→RAM) not supported",
@@ -326,12 +340,31 @@ void Write_SB_ADST(u32 data)
         return;
     }
 
+    // SB_ADSTAR = system RAM address, SB_ADSTAG = G2 (sound RAM) address.
     u32 src = SB_ADSTAR;
     u32 dst = SB_ADSTAG;
     u32 len = clamp_dma_len(SB_ADLEN & 0x7FFFFFFF);
 
     // Transfer must be 4-byte aligned
     len &= ~3u;
+
+    if (aica_read)
+    {
+        // Read from sound RAM into system RAM: swap src/dst (Flycast).
+        u32 tmp = src; src = dst; dst = tmp;
+
+        // Proof in /ndclog.txt that the path ran, bounded like the MMUCR log:
+        // the menu repeats the transfer every few seconds.
+        static u32 s_aica_read_logged = 0;
+        if (s_aica_read_logged < 8)
+        {
+            s_aica_read_logged++;
+            printf("[AICADMA] read sound RAM 0x%08X -> RAM 0x%08X, %u bytes%s\n",
+                   src, dst, len,
+                   s_aica_read_logged == 8 ? " (further reads not logged)" : "");
+            fflush(stdout);
+        }
+    }
 
     for (u32 i = 0; i < len; i += 4)
     {

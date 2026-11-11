@@ -673,6 +673,21 @@ extern "C" {
   int get_aica_race_preset() { return g_aica_race_preset; }
 }
 
+// AICA_DMA_READ - the AICA G2 DMA in the sound RAM -> system RAM direction
+// (SB_ADDIR = 1). Legacy refused it ("AICA DMA: SB_ADDIR==1 (AICA->RAM) not
+// supported"): nothing copied, no end interrupt, so the game read back a stale
+// buffer. World Series Baseball 2K2 does this every few seconds on its menu and
+// drew its whole menu from the stale data -> black screen (2026-11-11, the
+// [RAW] TA dump showed junk vertex coordinates). On = Flycast: swap source and
+// destination, otherwise the same transfer/completion as RAM -> AICA. Proof
+// line in /ndclog.txt: [AICADMA] (first 8 reads). dc/aica/aica_if.cpp.
+// 0=off (legacy refusal), 1=on (default).
+int g_aica_dma_read_preset = 1;
+
+extern "C" {
+  int get_aica_dma_read_preset() { return g_aica_dma_read_preset; }
+}
+
 // AICA_CA_CLAMP - a game workaround, so OFF by default: the CA (play position)
 // register read never reports within 3 samples of the loop end. Flycast
 // 788cbfb64 added it for some Visual Concepts sports games; real hardware can
@@ -3202,6 +3217,7 @@ void checkBiosFiles()
 #define OPT_VBL_FB_FIX  152  // Page 9 (FIXES), under TA CTX FIX
 #define OPT_VBL_FLIP_FIX 153 // Page 5 (CORE), under ASYNC RENDER (page 9 is full)
 #define OPT_SCENE_LOG   154  // Page 8 (LOGS), under DISC CENSUS
+#define OPT_AICA_DMA_READ 155 // Page 4 (AUDIO), under AICA RACE FIX (page 9 is full)
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3307,6 +3323,7 @@ static const int OPT_PAGE3_ROWS[] = {
   OPT_ARM7_BATCH,
   OPT_ARM7_STR_ALIGN,
   OPT_AICA_RACE,
+  OPT_AICA_DMA_READ,
   OPT_AICA_CA_CLAMP
 };
 
@@ -4236,6 +4253,15 @@ bool displayOptionsMenu()
     printf(" DMA/IRQ timing: Looney Tunes");
     printf("\n");
 
+    // --- Row: AICA_DMA_READ - G2 DMA sound RAM -> system RAM (aica_if.cpp) ---
+    printf("%s AICA DMA READ  : ", (selectedRow == OPT_AICA_DMA_READ) ? MENU_CURSOR : MENU_NOCURSOR);
+    switch (g_aica_dma_read_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (FLYCAST)      >]"); break;
+    }
+    printf(" sound RAM->RAM: WSB 2K2 menu");
+    printf("\n");
+
     // --- Row: AICA_CA_CLAMP - game workaround, CA read clamped below LEA (sgc_if.cpp) ---
     printf("%s AICA CA CLAMP  : ", (selectedRow == OPT_AICA_CA_CLAMP) ? MENU_CURSOR : MENU_NOCURSOR);
     switch (g_aica_ca_clamp_preset) {
@@ -5132,6 +5158,7 @@ bool displayOptionsMenu()
         case OPT_ARM7_STR_ALIGN: g_arm7_str_align_preset  = (g_arm7_str_align_preset  + 1) % 2; break;
         case OPT_ARM7_RESET_FIX: g_arm7_reset_fix_preset  = (g_arm7_reset_fix_preset  + 1) % 2; break;
         case OPT_AICA_RACE:      g_aica_race_preset       = (g_aica_race_preset       + 1) % 2; break;
+        case OPT_AICA_DMA_READ:  g_aica_dma_read_preset   = (g_aica_dma_read_preset   + 1) % 2; break;
         case OPT_AICA_CA_CLAMP:  g_aica_ca_clamp_preset   = (g_aica_ca_clamp_preset   + 1) % 2; break;
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset <= 150) ? 200 : g_sh4_clock_preset - 5; break;
@@ -5300,6 +5327,7 @@ bool displayOptionsMenu()
         case OPT_ARM7_STR_ALIGN: g_arm7_str_align_preset  = (g_arm7_str_align_preset  + 1) % 2; break;
         case OPT_ARM7_RESET_FIX: g_arm7_reset_fix_preset  = (g_arm7_reset_fix_preset  + 1) % 2; break;
         case OPT_AICA_RACE:      g_aica_race_preset       = (g_aica_race_preset       + 1) % 2; break;
+        case OPT_AICA_DMA_READ:  g_aica_dma_read_preset   = (g_aica_dma_read_preset   + 1) % 2; break;
         case OPT_AICA_CA_CLAMP:  g_aica_ca_clamp_preset   = (g_aica_ca_clamp_preset   + 1) % 2; break;
         case OPT_TA_PROFILE:     g_ta_profile_preset      = (g_ta_profile_preset      + 1) % 2; break;
         case OPT_SH4_CLOCK:      g_sh4_clock_preset       = (g_sh4_clock_preset >= 200) ? 150 : g_sh4_clock_preset + 5; break;
@@ -6265,6 +6293,7 @@ int main(int argc, wchar *argv[])
     printf("ARM7 STR Align : %s\n", g_arm7_str_align_preset ? "ON (ALIGNED WORD)" : "OFF (LEGACY)");
     printf("ARM7 Reset Fix : %s\n", g_arm7_reset_fix_preset ? "ON (SVC + LATCH)" : "OFF (SYSTEM MODE)");
     printf("AICA Race Fix  : %s\n", g_aica_race_preset ? "ON (FLYCAST)" : "OFF (LEGACY)");
+    printf("AICA DMA Read  : %s\n", g_aica_dma_read_preset ? "ON (FLYCAST)" : "OFF (LEGACY)");
     printf("AICA CA Clamp  : %s\n", g_aica_ca_clamp_preset ? "ON (LEA-3)" : "OFF (REAL HW)");
     printf("SH4 Clock      : %dMHz%s\n", g_sh4_clock_preset,
            g_sh4_clock_preset >= 200 ? " (FULL)" : " (UNDERCLOCK)");
