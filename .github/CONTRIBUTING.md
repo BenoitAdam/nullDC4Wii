@@ -120,7 +120,7 @@ Activate :
 
 ## Presets
 
-Presets are grouped in the in-emulator menu across **8 pages**. The order below follows the exact same order shown on screen (Page 1 to Page 8). "Default" below is what actually ships out of the box, from `game_presets.cfg`'s `[default]` section (applied on every launch before any per-game section) - see [game_presets.cfg](README.md#game_presetscfg) in the README for how to override any of this per game.
+Presets are grouped in the in-emulator menu across **9 pages**. The order below follows the exact same order shown on screen (Page 1 to Page 9). "Default" below is what actually ships out of the box, from `game_presets.cfg`'s `[default]` section (applied on every launch before any per-game section) - see [game_presets.cfg](README.md#game_presetscfg) in the README for how to override any of this per game.
 
 ### Page 1 : General
 
@@ -342,15 +342,6 @@ Needed for 2 players splitscreen or any 2 camera angle games.
 | **ALWAYS** | Take the pitch from `TA_YUV_TEX_CTRL` for EVERY YUV422 texture | Old behaviour; a game that never programs that register gets it decoded as 16x16 (Soul Calibur's character select went mostly black) |
 | **TEXCTL (default)** | AUTO, plus `TCW.StrideSel` (`TEXT_CONTROL[4:0] x 32` texels) as a fallback for surfaces AUTO's converter-address tracking never saw (it only remembers 4 base addresses) | Also fixes the planar RGB path. If a movie is still messy under AUTO, try this before ALWAYS |
 
-#### YUV TWIDDLE FIX
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (legacy)** | Twiddled YUV422 textures decode with luma/chroma swapped | Green<->magenta duotone with 1-column striping on affected art |
-| **ON (default)** | Correct luma/chroma extraction for twiddled YUV422 | Fixes static YUV artwork such as Virtua Fighter 3tb's "FIRST MATCH" loading screen |
-
-Static YUV artwork only, NOT movie playback - real (planar) FMV is unaffected either way.
-
 #### Vertex Color
 
 | Mode | Settings | Rendering | 
@@ -375,6 +366,37 @@ Pair with VTX ALPHA for sprite-based fades.
 |------|----------| ------------------------- |
 | **OFF (legacy, default)** | Vertex alpha forced to 0xFF on every ARGB1555 polygon regardless of TSP.UseAlpha - a deliberate hack for ARGB1555 cutout fonts (Test Drive 6) | Keeps cutout fonts correct |
 | **ON** | Honours `TSP.UseAlpha` as the hardware does | Needed by anything that FADES via vertex alpha on an ARGB1555 surface, e.g. Fighting Vipers 2's SEGA screen full-screen fade |
+
+#### TEX ALPHA
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Texture alpha read as the TSP reports it | Standard |
+| **ON** | Applies TSP bit 19 (IgnoreTexAlpha) to the TEV, which the renderer never did before | Fixes black panels (menu note: Headhunter) |
+
+#### PCW LISTTYPE
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Polygons drawn from the list the TA filed them in | Standard |
+| **BLEND** | Translucent polygons the TA filed in the OPAQUE list are blended | Needs BLEND MODE on (default) |
+| **BLEND + NO ZWRITE** | Same, and those polygons also skip the depth write, the way the translucent list does | Needs PPZ WRITE or ISP DEPTH FUNC on (the block it rides) |
+
+Treats the symptom in the renderer, not the cause: whether the TA should have opened the list at all is a separate question. Found on Headhunter, whose black panels sit in the opaque range with blend=-1/-1.
+
+#### TA GUARD
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Bad TA data stops the emulator (`die()`) | Standard |
+| **ON (default)** | Bad TA records (list-set, types 3/6, invalid polygon type) are skipped | No hang on bad data |
+
+#### INF VTX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | 1/W = +inf vertices sent to GX as they are | Standard, shows spikes/garbage |
+| **ON (default)** | Those vertices are cut out of their strips; the finite runs are drawn as their own strips | Fixes the Soul Calibur spikes; VCD unchanged |
 
 #### DECAL_ALPHA
 
@@ -404,6 +426,13 @@ Warning : ON causes a bug with Vertex Displacement (water mostly) : https://gith
 | **ON** | Per-polygon PVR2 fog honouring `TSP.FogCtrl`: LUT (`FOG_TABLE`/`FOG_DENSITY`), per-vertex (offset-colour alpha), or LUT mode 2, evaluated per vertex and blended by one extra TEV stage | Distance haze instead of geometry popping in at the draw distance - racers/outdoor games mostly |
 
 Costs 4 bytes/vertex + one TEV stage on fogged polygons only, and recolours every fogged polygon in the scene - stays per-game.
+
+#### FOG INDEX FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Fog table indexed by W x density | Standard |
+| **ON (density/W, default)** | Fog table indexed by density/W, as the PVR does with its 1/W depth | Correct fog falloff. Only has an effect while FOG is ON |
 
 #### BG POLYGON
 
@@ -472,6 +501,13 @@ It's basically like FIXED_DEPTH, leave it to NEAR MARGIN
 | **TIGHT** | Fixed planes W=[0.1..25000] - much finer Z, but geometry outside that range clips | can help display some stuff |
 
 FIXED_DEPTH can help flickering and Z-Fighting
+
+#### FAR CLAMP
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Depth floor 0.0001 (W <= 10000) | Standard |
+| **ON (default)** | Depth floor 0.00001 (W <= 100000) | Far scenery keeps its depth order (Maximum Speed, Dolphin-confirmed) |
 
 #### HUD_PASS
 
@@ -632,12 +668,26 @@ Bigger = more delay, but more slack against underruns.
 
 Instead of crackles, this detunes audio if the speed isn't 100%.
 
+#### SOUND CLOCK
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **EMULATED (exact, default)** | Sequenced music runs at emulated speed | Exact timing, slows down with the game |
+| **REAL TIME** | Sequenced music keeps its tempo when the game is slow | Breaks streamed music, so keep SPEED LIMITER on. Per game only, resets to the saved value on each game |
+
 #### CDDA MUSIC
 
 | Mode | Settings | Rendering |
 |------|----------| ------------------------- |
 | **OFF** | CD audio tracks silent | No CD music |
 | **ON (default)** | GD-ROM Red Book audio fed to the AICA mixer | CDDA music plays in games |
+
+#### CDDA CLOCK
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **EMULATED (legacy)** | CD music runs at emulated speed | Standard |
+| **REAL TIME (drive, default)** | CD music on its own voice at real speed, like the real drive | CD music keeps its tempo when the game is slow |
 
 #### MUTE 16BIT PCM
 
@@ -652,6 +702,24 @@ Instead of crackles, this detunes audio if the speed isn't 100%.
 |------|----------| ------------------------- |
 | **OFF (legacy)** | All 64 AICA channels visited every sample, even idle ones | Standard |
 | **ON (default)** | Only playing channels are visited, empty filter-envelope call skipped, no DSP send while the DSP is off, master volume cached, silent CD-audio skipped | Same output samples, cheaper mixer - Wii-CONFIRMED: aica% 10.0->7.7, speed +2.6%, no audible change |
+
+#### AICA REL CULL
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (exact, default)** | Release fades are mixed to the end | Exact |
+| **ON (-72 dB tails)** | Release fades below -72 dB are cut | Small speed gain, slight sound change |
+| **ON (-60 dB tails)** | Cut below -60 dB | More speed |
+| **ON (-48 dB tails)** | Cut below -48 dB | Most speed, most audible change |
+
+Per game only (e.g. Sega Tetris), because it changes the sound slightly.
+
+#### ADPCM LOOP FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Looped ADPCM effects reset their decoder state every lap | Standard |
+| **ON (keep state, default)** | Looped ADPCM keeps its decoder state and volume on every lap | Fixes held/fading SFX in Sonic Adventure 2 |
 
 #### ARM7 SPEED
 
@@ -675,6 +743,43 @@ A conformance test suite runs once at ARM init (see `[ARM7JIT]` in `/ndclog.txt`
 
 ARM7 SPEED and ARM7 JIT both govern the sound co-processor, so they moved here from Page 5 (Core) to sit next to the other audio presets.
 
+#### ARM7 BATCH
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **1** | Sound CPU runs every AICA update | Standard |
+| **2 / 4 (default) / 8 / 16** | Sound CPU runs once every N AICA updates | 4 is Wii-measured +1.5%; 8 and up wobble |
+
+#### ARM7 STR ALIGN
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Unaligned ARM7 word stores write the bytes as given | Standard |
+| **ON (aligned word, default)** | Unaligned word stores write the aligned word, as the real ARM7DI does | Fixes ChuChu Rocket's echoey / slow SFX |
+
+#### AICA RACE FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Old G2 DMA / ADEN / busy timing | Standard |
+| **ON (Flycast, default)** | G2 DMA end, ADEN and busy rules, SCIEB/MCIEB written together, ARM gets +50 cycles after an SH4 IRQ | Fixes DMA/IRQ timing in Looney Tunes |
+
+#### AICA DMA READ
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Sound RAM to main RAM DMA (`SB_ADDIR=1`) refused | Standard |
+| **ON (Flycast, default)** | Sound RAM to main RAM DMA performed, as Flycast does | Sound RAM copies work as on hardware |
+
+Not what fixed WSB 2K2's black menu, that was MMIO PAIR FIX (Page 5).
+
+#### AICA CA CLAMP
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (real HW, default)** | CA read as the hardware gives it | Standard |
+| **ON (LEA-3)** | CA read clamped 3 below the loop end | Game workaround for the Visual Concepts sports games only. Per game |
+
 ### Page 5 : Core
 
 #### 🧮 Calculation Accuracy Preset
@@ -697,6 +802,13 @@ If you experience various bugs (example that may happens : weird AI controled NP
 | **ON (faster, default)** | Frame queued, presented one vblank later; SH4 emulates while GPU draws | Faster, to the cost of 1 frame input-lag |
 
 ASYNC_RENDER is generally faster. Can resolve flickering. Works better on real hardware than dolphin
+
+#### VBL FLIP FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Frames go on screen asynchronously, so a pass can flip a black frame | Standard |
+| **ON (default)** | Frames go on screen at the vblank; the last render of the vblank wins | Fixes the Toy Racer 2 black screen |
 
 #### RENDER DELAY
 
@@ -741,6 +853,63 @@ Unused for now.
 
 Can read GDROM exactly like a real Dreamcast at 1x speed. Unused for now.
 
+#### FLASH BROADCAST
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (flash value)** | The BIOS flash decides 50/60 Hz | Standard |
+| **DISC (IP.BIN, default)** | 60 Hz for JP/US discs, 50 Hz for EU-only discs | Fixes PAL root / 50 Hz discs |
+| **NTSC (always)** | Always 60 Hz | Use if a disc is stuck on 50 Hz |
+
+#### GDROM SPINUP
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (no disc)** | Drive reports NODISC straight after reset | Standard |
+| **ON (busy 3 s, default)** | No disc: drive is BUSY for 3 s after reset, then NODISC | The BIOS swirl intro plays |
+
+#### RTC FROM HOST
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (saved value, default)** | Dreamcast clock is the value saved at last exit | Standard |
+| **ON (Wii clock)** | Dreamcast clock is set from the Wii clock at every boot | Correct date/time in games that read it |
+
+#### IDLE KAMUI
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Vsync wait loop runs its full timeslice | Standard |
+| **ON (1 turn/slice, default)** | The vsync wait loop ends its timeslice after 1 turn (exact code match) | Gives time back to the rest of the frame. Ikaruga, Rez, CvS2 |
+
+#### IDLE HOOK
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Sega's `while (busy) hook()` wait runs its full timeslice | Standard |
+| **ON (1 turn/slice, default)** | The same wait loop ends its timeslice after 1 turn (code-shape match) | Sega Tetris, ChuChu Rocket |
+
+#### IDLE SHINOBI
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Idle task walk keeps its slice debt | Standard |
+| **ON (debt til IRQ, default)** | The 15-slice debt is dropped by the next interrupt (exact code match) | Garou, Border Down |
+
+#### IDLE X3 BACK
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (x30, legacy, default)** | Idle-loop rule x30 | Standard |
+| **ON (x3 backward)** | Idle-loop rule x3 (`bf` / backward `bt`) | About x1.5 SH4 host time. Per game only |
+
+#### MMIO PAIR FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | `fmov.d` pairs to OC-RAM / 32-bit VRAM / sound RAM / registers in the wrong word order | Standard |
+| **ON (FRn at addr, default)** | `FRn` at the address, like RAM | Fixes the WSB 2K2 black menu (Dolphin-confirmed) |
+
 ### Page 6 : Experimental Stuff & Debug
 
 #### MIPMAPS
@@ -760,20 +929,6 @@ Required for ANISO (Page 1) to have any effect.
 | **OFF (legacy, default)** | Persistent texture arena wraps without draining the GPU first | If the GPU is still sampling old textures when the 14 MB cache arena wraps, their bytes get overwritten mid-sample - arena-wrap race corruption |
 | **ON** | Mid-frame, if the arena fills, calls `GX_DrawDone()` to drain the GPU queue before wrapping; a second exhaustion in the same frame falls back to the skimp slot | Wii-CONFIRMED mechanism (watch `[TEXC] drains=/wraps=`); did NOT fix the JSR intro streaking it was tried against, so it's not a general streak fix |
 
-#### TEX CLAMP FIX
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (legacy, default)** | A cached texture keeps the FIRST polygon's ClampU/V+FlipU/V wrap mode forever, since those are per-POLYGON TSP bits baked into `GXTexObj` only on decode | A tiled floor inheriting `GX_CLAMP` smears its edge texels to infinity - "streaked"/"infinite X or Y" symptom |
-| **ON** | Every texture bind re-applies the binding polygon's own wrap mode via `GX_InitTexObjWrapMode` before `GX_LoadTexObj` | Wii-CONFIRMED: fixes streaked textures in Crazy Taxi (VERY_FAST+ trees), Deadly Skies (FAST/VERY_FAST+ floors), Jet Set Radio (VERY_FAST+ intro). Does NOT fix Shadow Man's sky (QUALITY cache re-decodes every frame, never susceptible) |
-
-#### DMA FIX
-
-| Mode | Settings | Rendering |
-|------|----------| ------------------------- |
-| **OFF (legacy)** | Disable | Standard |
-| **ON (default)** | ch2/PVR/Sort/AICA-G2 DMA correctness fixes ported from the verified-working NullDC PSP port | Fixes related to loading CDI/GDI file |
-
 #### SCHED (ORDER)
 
 | Mode | Settings | Rendering |
@@ -789,6 +944,20 @@ Required for ANISO (Page 1) to have any effect.
 | **SAFE SHUTDOWN (default)** | Ordered teardown before exit | Fixes the black-screen hang |
 | **SAFE + WATCHDOG** | Safe shutdown + loader-stub watchdog | For a hang the plain safe shutdown doesn't catch |
 | **SAFE + WATCHDOG + HOST POLL** | Same, plus polls the exit combo host-side once a frame | For a game that stopped polling Maple, so the exit combo itself can still fire |
+
+#### FLASH CHIP
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (plain RAM)** | The BIOS flash is plain RAM | Standard |
+| **ON (AMD commands, default)** | The flash obeys AMD program/erase commands (Flycast's DCFlashChip); the factory partition is protected | BIOS flash program/erase behaves like the hardware |
+
+#### FLASH SAVE
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (never saved)** | Flash changes are lost at exit | Standard |
+| **ON (at exit, default)** | Flash is written back to `data/dc_flash_wb.bin` at exit if the session changed it (write-to-tmp then rename) | Keeps BIOS settings between runs. Needs FLASH CHIP |
 
 #### TRANS ZWRITE (debug only)
 
@@ -860,6 +1029,13 @@ Perf and diagnostic presets for the SH4 dynarec and its interpreter-fallback pat
 | **IGNORE + SBP=ALL** | Same, and forces JIT SBP to guard all RAM | Safest of the two IGNORE modes |
 
 Fixes some freezes/stuttering - e.g. kills a ~24ms stage-load frame (1648 blocks recompiled after one `CCR.ICI`) in Street Fighter Alpha 3. Costs ~25-30% more sh4 time, so only worth it on a game with budget to spare - don't set this on a game already near 100% SPEED.
+
+#### JIT LINK GUARD
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (log only)** | Logs `[LINK]` but still links a static exit that a cache clear overwrote | Standard |
+| **ON (skip stale, default)** | Never links a static exit that a cache clear overwrote | Stops patching a dead site. Read at compile time |
 
 #### FASTMEM
 
@@ -977,6 +1153,13 @@ Expect little effect for most games - the SH4 has a real FPU, so MAC is rarer he
 | **OFF (legacy)** | `fsqrt` calls newlib `sqrtf` - a 25-iteration shift-and-subtract bit loop bracketed by two load-hit-store stack round-trips (~300 cycles) | Standard |
 | **ON (default)** | Inline `frsqrte` + 3 Newton-Raphson steps + an exact-residual step, verified bit-identical to `sqrtf` over 2.07M simulated cases | **Wii-CONFIRMED +3.5-4.3%** (Crazy Taxi, which measured 167,906 fsqrt/s). Zero, negative, Inf and NaN still take the old libm call - `frsqrte` alone is only a 5-bit estimate and once distorted the BIOS swirl |
 
+#### JIT FIPR DP
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (single)** | `fipr`/`ftrv` round after every multiply-add | Standard |
+| **ON (double sum, default)** | `fipr`/`ftrv` sum in double and round once, like the SH4 | Accuracy preset, awaiting an A/B on Wii |
+
 ### Page 8 : LOGS
 
 Every row here is diagnostic, default OFF, and writes to `/ndclog.txt` on the card - costing a card write every frame while on, so turn it back off once a log has answered its question.
@@ -1053,6 +1236,157 @@ The census that found `writemem` at 1.1M calls/s in Crazy Taxi (57% of all JIT c
 |------|----------| ------------------------- |
 | **OFF (default)** | No counting | Standard |
 | **ON (logs [DISC])** | Logs sectors/call and DISC BULK READ's hit rate | For GDROM |
+
+#### SCENE LOG
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (default)** | No dump | Standard |
+| **ON (logs [SCN])** | Per-pass dump of what is drawn ([SCN] / [SIG]) to `/ndclog.txt` | Diagnostic for blank or black screens only |
+
+### Page 9 : FIXES
+
+The `*_FIX` presets: each one corrects a specific hardware or emulation deviation and ships ON unless noted. SEAM FIX, JOJO FIX and EXIT FIX stay on Pages 2, 2 and 6.
+
+#### TEX CLAMP FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | A cached texture keeps the FIRST polygon's ClampU/V+FlipU/V wrap mode forever, since those are per-POLYGON TSP bits baked into `GXTexObj` only on decode | A tiled floor inheriting `GX_CLAMP` smears its edge texels to infinity - "streaked"/"infinite X or Y" symptom |
+| **ON** | Every texture bind re-applies the binding polygon's own wrap mode via `GX_InitTexObjWrapMode` before `GX_LoadTexObj` | Wii-CONFIRMED: fixes streaked textures in Crazy Taxi (VERY_FAST+ trees), Deadly Skies (FAST/VERY_FAST+ floors), Jet Set Radio (VERY_FAST+ intro). Does NOT fix Shadow Man's sky (QUALITY cache re-decodes every frame, never susceptible) |
+
+#### YUV TWIDDLE FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Twiddled YUV422 textures decode with luma/chroma swapped | Green<->magenta duotone with 1-column striping on affected art |
+| **ON (default)** | Correct luma/chroma extraction for twiddled YUV422 | Fixes static YUV artwork such as Virtua Fighter 3tb's "FIRST MATCH" loading screen |
+
+Static YUV artwork only, NOT movie playback - real (planar) FMV is unaffected either way.
+
+#### TLUT FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (ring, legacy)** | CI4/CI8 palettes come from a 16-slot ring that overruns at full speed | Standard, colour flicker in Street Fighter III |
+| **ON (per-render copy, default)** | Palettes copied per render, not from the ring | Fixes the CI4/CI8 colour flicker |
+
+#### DECAL FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (modulate, legacy)** | Decal polygons are modulated by the vertex colour | Black world textures in Soldier of Fortune |
+| **ON (texture only, default)** | Decal polygons show the texture as-is, vertex colour ignored, like the PVR | Fixes the Soldier of Fortune black level |
+
+Not the same as DECAL ALPHA (Page 2), which is alpha on decals.
+
+#### TA ARENA FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Unbounded TA buffers; a mid-strip render loses the strip | Standard |
+| **ON (bounded + carry, default)** | Bounded TA buffers, and the strip is carried across a mid-strip render | Fixes issue #16: mad vertices then a FIFO error |
+
+#### TA CTX FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | A render of the finished list can draw the list already being built | Standard |
+| **ON (split at list init)** | A render of the finished list skips the next list already being built | Fixes issue #16 flicker, and the geometry flicker in Magforce Racing |
+
+#### VBL FB FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | A video-RAM framebuffer can be shown over a 3D frame in the same vblank | Flicker |
+| **ON (default)** | No video-RAM framebuffer is shown over a 3D frame in the same vblank | Fixes Toy Racer 3D's old-image flicker. Pairs with VBL FLIP FIX (Page 5) |
+
+#### CDDA PAUSE FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (to FAD 150)** | Pausing CD music jumps back to the disc start | Legacy |
+| **ON (keep position, default)** | Pausing CD music keeps its place, as the real Dreamcast does | Music resumes where it paused |
+
+#### CDDA STATE FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Old CD-DA state handling | Standard |
+| **ON (Flycast, default)** | Seek pauses, resume only from a pause, a data read stops audio, end and "ended" states as Flycast | Correct play/pause/end/read behaviour |
+
+#### ARM7 RESET FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (system mode, legacy)** | Sound CPU reset leaves it in system mode | Standard |
+| **ON (SVC + latch, default)** | Reset enters SVC mode and clears the FIQ latch, as the real ARM7DI | Sound CPU reset like the hardware. Part of the Looney Tunes group |
+
+#### CDI HDR FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | V2/V3 `.cdi` images fail to load | Standard |
+| **ON (cdirip rule, default)** | V2/V3 `.cdi` images find their header, as cdirip does | Those images load |
+
+#### INTERP FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Interpreter `div1` is wrong about 3 steps in 4, and `addv`/`subv`/`mul.l`/`mac` saturation is off | Standard |
+| **ON (manual ops, default)** | `div1`/`addv`/`subv`/`mul.l`/`mac` as the SH4 manual describes | Correct maths in the interpreter fallback path |
+
+FPSCR and `fneg` are deliberately left alone by this preset.
+
+#### GDROM STAT FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy, default)** | Drive position reports are not from the TOC | Standard |
+| **ON (FAD + track)** | `REQ_STAT` / `GET_SCD` report the real FAD, track and type from the TOC | Correct CD position and subcode reports |
+
+#### GDROM HANG FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (die / verify)** | Rare drive commands (die/verify) freeze the emulator | Standard |
+| **ON (abort / clamp, default)** | Rare drive commands are answered like a real drive | Fixes about 10 hangs |
+
+#### TOC FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | TOC without the ADR 1 per track, lead-out entry or GDI session table | Standard |
+| **ON (ADR1 + lead-out, default)** | ADR 1 per track, data lead-out entry, GDI track-2 end from file size, GDI session table | Correct TOC for GDI and CD-based images |
+
+#### SPG FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Field bit toggled wrongly; HBlank IRQ fixed for one mode; VBLANK_INT not reset | Standard |
+| **ON (Flycast, default)** | Field bit once per frame, HBlank IRQ per `SPG_HBLANK_INT` mode, VBLANK_INT reset value | Correct video timing |
+
+#### DMA FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | Disable | Standard |
+| **ON (default)** | ch2/PVR/Sort/AICA-G2 DMA correctness fixes ported from the verified-working NullDC PSP port | Fixes related to loading CDI/GDI file |
+
+#### MMUCR FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (legacy)** | MMU control register not at its real bits | Standard |
+| **BITS (AT/TI/URC, default)** | MMUCR at its real bits | Rez, Ikaruga, Border Down boot |
+| **FULL (PS3 tested)** | The full PS3-tested set | Use if BITS is not enough |
+
+#### JIT DIV32 FIX
+
+| Mode | Settings | Rendering |
+|------|----------| ------------------------- |
+| **OFF (32/32, legacy)** | Matched `rotcl`/`div1` divide done 32/32, wrong quotients | Standard |
+| **ON (64/32 exact, default)** | Matched divide done as 64/32 one's complement | Exact quotients |
 
 ### Game Specific Presets
 
