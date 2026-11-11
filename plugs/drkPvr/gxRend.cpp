@@ -7740,6 +7740,31 @@ static bool split_pass_window(u32 *ox0, u32 *oy0, u32 *ox1, u32 *oy1, u32 *oshif
   return clipped || shift != 0;
 }
 
+// Does this partial pass land on ground the frame in progress already covered
+// — i.e. is it the NEXT frame's first viewport, so the current one is finished?
+// Only a real overlap counts: more than a quarter of the pass's own area.
+// Neighbouring viewports whose inclusive clips share their boundary line
+// overlap by a sliver, and that sliver is not a new frame. Magforce Racing 2P
+// (2026-11-11 [VPS] log): top pass YCLIP 0..255, bottom pass YCLIP 255..543,
+// same FB_W_SOF1 — the old any-overlap test saw row 255 twice and presented
+// every pass on its own (cmp=1/1 on every pass), i.e. exactly the alternating
+// top-only / bottom-only flicker this mode exists to remove. The next frame's
+// first viewport repeats an earlier pass's band, so it still overlaps ~100%.
+static bool split_pass_overlaps_frame(s32 x0, s32 y0, s32 x1, s32 y1)
+{
+  if (!s_cmp_active)
+    return false;
+  const s32 ix0 = x0 > s_cmp_cov_x0 ? x0 : s_cmp_cov_x0;
+  const s32 iy0 = y0 > s_cmp_cov_y0 ? y0 : s_cmp_cov_y0;
+  const s32 ix1 = x1 < s_cmp_cov_x1 ? x1 : s_cmp_cov_x1;
+  const s32 iy1 = y1 < s_cmp_cov_y1 ? y1 : s_cmp_cov_y1;
+  if (ix1 < ix0 || iy1 < iy0)
+    return false; // disjoint
+  const u32 inter = (u32)(ix1 - ix0 + 1) * (u32)(iy1 - iy0 + 1);
+  const u32 area  = (u32)(x1 - x0 + 1) * (u32)(y1 - y0 + 1);
+  return inter * 4 > area;
+}
+
 // Put the assembled frame on screen. This is DoRender()'s display tail with the
 // drawing removed: every pass of the frame already went through DoRender, and
 // what they left in the EFB is the finished picture.
@@ -14189,9 +14214,8 @@ static void StartRender_inner()
       // Landing on ground a pass of the frame in progress already covered means
       // that frame is finished and this pass belongs to the next one. That is
       // what ends the frame for a game whose viewports don't tile the canvas.
-      if (s_cmp_active &&
-          !(dy0 > s_cmp_cov_y1 || dy1 < s_cmp_cov_y0 ||
-            (s32)wx0 > s_cmp_cov_x1 || (s32)wx1 < s_cmp_cov_x0))
+      // A shared boundary line is not "covered ground" (see the helper).
+      if (split_pass_overlaps_frame((s32)wx0, dy0, (s32)wx1, dy1))
         split_compose_present();
 
       if (!s_cmp_active)
@@ -15037,6 +15061,15 @@ bool InitRenderer()
            "first 100 then every 50th; ta_ctx_fix=%d)\n", get_ta_ctx_fix_preset());
     fflush(stdout);
   }
+  // [VPS] viewport-per-render census (Magforce 2P flicker, vps_census() above
+  // StartRender): TEMPORARY, ON. If this line is missing from ndclog.txt the
+  // build did not pick it up. Flip with vps_census()'s if(1).
+  if (1)
+  {
+    printf("[VPS] census ARMED (burst of 20 consecutive renders every 400 (40 max), "
+           "[VPS] NEW line per novel clip/SOF1/ctx signature (120 max), WIN every 240 renders)\n");
+    fflush(stdout);
+  }
   // [MAD] census (DoRender, issue #16): if this line is missing from ndclog.txt
   // the build did not pick it up. OFF with the census itself; flip both together.
   if (0)
@@ -15264,11 +15297,148 @@ static void tactx_rebase(L *&lst, V *&vtx, M *&mod, const TaCtxMark &mk)
   }
 }
 
+// ── [VPS] viewport-per-render census (Magforce Racing 2P flicker) ───────────
+// TEMPORARY (2026-11-11), ON for the test round. Called at the very top of
+// StartRender(), BEFORE the ta_ctx split and whatever split_screen is set to, so
+// it sees what the game really sends: how many renders per vblank, which
+// framebuffer / clip / region each one targets, how the TA list is cut, and
+// which path the PREVIOUS render ended up taking (prev=, from the s_sr_path
+// deltas). Output, all in /ndclog.txt:
+//   [VPS] #n NEW ...  one line per NOVEL register signature (last 16 remembered),
+//                     so entering 2P prints the new shapes whenever that happens
+//   [VPS] #n ...     a burst of 20 consecutive renders every 400 (40 bursts max):
+//                     the SEQUENCE is what shows "view A, view B, view A"
+//   [VPS] WIN ...    every 240 renders: renders-per-vblank histogram
+// Flip if(1) -> if(0) here and in InitRenderer's ARMED line once it has answered.
+static u32 s_vps_n = 0, s_vps_new = 0;
+static u32 s_vps_sig[16], s_vps_sig_n = 0, s_vps_sig_pos = 0;
+static u32 s_vps_last_vbl = 0, s_vps_in_vbl = 0, s_vps_hist[5];
+static u32 s_vps_path_prev[SR_PATHS];
+
+static void vps_census(u32 param_ctx, const TaCtxMark &mk, bool strip_open)
+{
+  if (1)
+  {
+    const u32 n   = s_vps_n++;
+    const u32 vbl = s_toyr_vbl;
+
+    // Renders per vblank: bucket the vblank that just ended (0 = vblank with no
+    // render at all, 4 = four or more).
+    if (n != 0 && vbl != s_vps_last_vbl)
+    {
+      u32 b = s_vps_in_vbl; if (b > 4) b = 4;
+      s_vps_hist[b]++;
+      u32 gap = vbl - s_vps_last_vbl;
+      if (gap > 1) s_vps_hist[0] += (gap - 1 > 1000) ? 1000 : (gap - 1);
+      s_vps_in_vbl = 0;
+    }
+    s_vps_last_vbl = vbl;
+    s_vps_in_vbl++;
+
+    // Previous render's exit path (delta of the dispatch counters).
+    const char *prev[3] = { 0, 0, 0 };
+    u32 np = 0;
+    for (u32 i = 0; i < SR_PATHS; i++)
+    {
+      if (s_sr_path[i] != s_vps_path_prev[i] && np < 3) prev[np++] = s_sr_name[i];
+      s_vps_path_prev[i] = s_sr_path[i];
+    }
+
+    const bool would_split = mk.valid && TA_CTX_FIX() && param_ctx != g_ta_build_ctx &&
+                             rtt_lst_end == 0 && carry_lst_end == 0 && mk.lst > lists;
+    const int  strips = (int)(curLST - lists);
+    const int  vtx    = (int)(curVTX - vertices);
+
+    // Signature over the registers that describe WHERE a render lands.
+    u32 sig = 0x811C9DC5u;
+#define VPS_MIX(x) sig = (sig ^ (u32)(x)) * 0x01000193u
+    VPS_MIX(FB_X_CLIP.full); VPS_MIX(FB_Y_CLIP.full); VPS_MIX(FB_W_SOF1);
+    VPS_MIX(FB_W_LINESTRIDE); VPS_MIX(REGION_BASE); VPS_MIX(param_ctx);
+    VPS_MIX(g_ta_build_ctx); VPS_MIX(would_split); VPS_MIX(strips > 0);
+    VPS_MIX(ta_tileclip); VPS_MIX(FB_R_SOF1);
+#undef VPS_MIX
+    bool is_new = true;
+    for (u32 i = 0; i < s_vps_sig_n; i++)
+      if (s_vps_sig[i] == sig) { is_new = false; break; }
+    if (is_new)
+    {
+      s_vps_sig[s_vps_sig_pos] = sig;
+      s_vps_sig_pos = (s_vps_sig_pos + 1) & 15;
+      if (s_vps_sig_n < 16) s_vps_sig_n++;
+    }
+
+    const bool in_burst = ((n % 400) < 20) && (n / 400) < 40;
+    const bool log_new  = is_new && s_vps_new < 120;
+    if (log_new) s_vps_new++;
+
+    if (in_burst || log_new)
+    {
+      // Region array bounds (self-validating walk, same as the 2P compose code).
+      char rgn[40];
+      u32 rx0, ry0, rx1, ry1;
+      if (split_region_bounds(&rx0, &ry0, &rx1, &ry1))
+        sprintf(rgn, "%u..%u,%u..%u", rx0, rx1, ry0, ry1);
+      else
+        sprintf(rgn, "none");
+
+      // Distinct per-poly user tile clips in the buffer (stored only while
+      // split_screen / a scene log asks for them -- see tcstore).
+      u32 tc[3] = { 0, 0, 0 }, tcn = 0;
+      s32 nm = (s32)(curMod - listModes);
+      if (nm > 8 * 1024) nm = 8 * 1024;
+      for (s32 i = 0; i < nm; i++)
+      {
+        const u32 w = listTileClip[i];
+        if (w == 0) continue;
+        u32 k = 0;
+        while (k < tcn && k < 3 && tc[k] != w) k++;
+        if (k == tcn) { if (tcn < 3) tc[tcn] = w; tcn++; }
+      }
+
+      const bool mv = mk.valid;
+      printf("[VPS] #%u%s vbl=%u fc=%u pb=%06X isp=%06X bld=%06X mk=%d/%u strips=%d vtx=%d "
+             "pre=%d/%d post=%d/%d open=%d | W_SOF1=%08X R_SOF1=%08X stride=%u "
+             "xc=%u..%u yc=%u..%u rgn@%06X=%s | tcnow=%08X tcpoly=%u[%08X,%08X,%08X] tcstore=%d "
+             "| %s ctxfix=%d scr=%d cmp=%d/%u cov=%d..%d,%d..%d | prev=%s%s%s%s%s\n",
+             n, is_new ? " NEW" : "", vbl, (u32)FrameCount,
+             (u32)(PARAM_BASE & 0xFFFFFF), (u32)(TA_ISP_BASE & 0xFFFFFF), g_ta_build_ctx,
+             (int)mv, mk.inits, strips, vtx,
+             mv ? (int)(mk.lst - lists) : strips, mv ? (int)(mk.vtx - vertices) : vtx,
+             mv ? (int)(curLST - mk.lst) : 0,     mv ? (int)(curVTX - mk.vtx) : 0,
+             (int)strip_open,
+             (u32)FB_W_SOF1, (u32)FB_R_SOF1, (u32)((FB_W_LINESTRIDE & 0x1FF) * 8),
+             (u32)(FB_X_CLIP.full & 0x7FF), (u32)((FB_X_CLIP.full >> 16) & 0x7FF),
+             (u32)(FB_Y_CLIP.full & 0x3FF), (u32)((FB_Y_CLIP.full >> 16) & 0x3FF),
+             (u32)(REGION_BASE & 0xFFFFFF), rgn,
+             ta_tileclip, tcn, tc[0], tc[1], tc[2], (int)(g_split_screen_cached || g_scene_log_cached),
+             would_split ? "SPLIT" : (!mv ? (strip_open ? "NOINIT" : "NOMARK")
+                                          : (param_ctx == g_ta_build_ctx ? "SAME-CTX" : "NOSPLIT")),
+             get_ta_ctx_fix_preset(), get_split_screen_preset(),
+             (int)s_cmp_active, s_cmp_passes,
+             (int)s_cmp_cov_x0, (int)s_cmp_cov_x1, (int)s_cmp_cov_y0, (int)s_cmp_cov_y1,
+             np ? prev[0] : "none",
+             np > 1 ? "+" : "", np > 1 ? prev[1] : "",
+             np > 2 ? "+" : "", np > 2 ? prev[2] : "");
+      if (log_new || (n % 400) == 19) fflush(stdout);
+    }
+
+    if ((n % 240) == 239)
+    {
+      printf("[VPS] WIN renders=%u vbl=%u | renders-per-vblank: 0:%u 1:%u 2:%u 3:%u 4+:%u | new_shapes=%u\n",
+             n + 1, vbl, s_vps_hist[0], s_vps_hist[1], s_vps_hist[2], s_vps_hist[3],
+             s_vps_hist[4], s_vps_new);
+      for (u32 i = 0; i < 5; i++) s_vps_hist[i] = 0;
+      fflush(stdout);
+    }
+  }
+}
+
 void StartRender()
 {
   const u32 param_ctx = PARAM_BASE & 0xF00000;
   const bool strip_open = g_ta_strip_open;
   const TaCtxMark mk = g_ta_mark;   // reset_vtx_state() drops the global copy
+  vps_census(param_ctx, mk, strip_open);   // [VPS] TEMPORARY, see above
 
   if (!mk.valid)
   {
