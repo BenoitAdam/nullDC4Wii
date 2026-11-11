@@ -168,8 +168,9 @@
                                 source and destination swapped, same transfer
                                 and end interrupt. Default on. off = legacy,
                                 which refused it ("AICA DMA: SB_ADDIR==1 ...
-                                not supported") and left the buffer stale --
-                                World Series Baseball 2K2's black menu.
+                                not supported") and left the buffer stale.
+                                World Series Baseball 2K2 does this copy, but
+                                its black menu was mmio64_fix, not this.
         aica_ca_clamp=on    <- on/off, GAME WORKAROUND (default off): the CA
                                 (play position) read never reports within 3
                                 samples of the loop end (Flycast 788cbfb64, for
@@ -758,7 +759,9 @@
                                RAM/VRAM/SQ already do (dc/mem/_vmem.cpp).
                                off = legacy little-endian split, which swapped
                                the two words on the Wii whenever a pair met
-                               single-word accesses (WSB 2K2 black menu).
+                               single-word accesses. Fixed World Series
+                               Baseball 2K2's black menu (Dolphin-confirmed
+                               2026-11-11).
                                Default on.
         flash_chip=on       <- on/off, the BIOS flash obeys its chip's command
                                sequences (Flycast): a program only clears bits,

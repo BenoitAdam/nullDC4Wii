@@ -61,7 +61,7 @@ ALIGN(65536) void* _vmem_MemInfo_ptr[0x100];
 // words written or read one at a time (fmov.s, mov.l, DMA) is swapped. The
 // handler regions are OC-RAM (0x7C000000, the scratchpad games build vertices
 // in), the 32-bit VRAM window, AICA RAM and the area 0/7/P4 registers.
-// Found 2026-11-11 chasing World Series Baseball 2K2's black menu: its vertex
+// FIXED 2026-11-11 World Series Baseball 2K2's all-black menu (Dolphin-confirmed): its vertex
 // words reach the store queue in the wrong slots.
 //   0 = legacy little-endian split, 1 = FRn at addr (fixed, default).
 // The [MMIO64] lines (scene_log preset) list the first pair accesses per

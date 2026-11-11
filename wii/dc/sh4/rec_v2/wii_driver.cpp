@@ -2916,6 +2916,12 @@ int rec_fastmem_patch(unsigned int pc)
 //                 registers, 8 words at every register that points at RAM or
 //                 OC-RAM, and the block's SH4 code with 32 ops of lead-in
 //
+// RESULT (2026-11-11): 2K2's cause turned out to be the fmov.d word order on
+// OC-RAM (mmio64_fix, _vmem.cpp), found by reading the code path rather than
+// this probe's output. Probe left in: it is compiled only with scene_log on
+// and costs nothing otherwise; safe to re-enable for the next "junk vertex"
+// game.
+//
 // Only blocks compiled while scene_log is on are tagged, so turn it on BEFORE
 // launching the game. With scene_log off nothing extra is emitted: shop_pref
 // is the legacy sequence instruction for instruction.

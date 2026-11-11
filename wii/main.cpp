@@ -676,9 +676,9 @@ extern "C" {
 // AICA_DMA_READ - the AICA G2 DMA in the sound RAM -> system RAM direction
 // (SB_ADDIR = 1). Legacy refused it ("AICA DMA: SB_ADDIR==1 (AICA->RAM) not
 // supported"): nothing copied, no end interrupt, so the game read back a stale
-// buffer. World Series Baseball 2K2 does this every few seconds on its menu and
-// drew its whole menu from the stale data -> black screen (2026-11-11, the
-// [RAW] TA dump showed junk vertex coordinates). On = Flycast: swap source and
+// buffer. World Series Baseball 2K2 does this every few seconds on its menu,
+// but that was NOT its black menu (2026-11-11: fixed by MMIO64_FIX with this
+// OFF) -- kept on because the hardware does the copy. On = Flycast: swap source and
 // destination, otherwise the same transfer/completion as RAM -> AICA. Proof
 // line in /ndclog.txt: [AICADMA] (first 8 reads). dc/aica/aica_if.cpp.
 // 0=off (legacy refusal), 1=on (default).
@@ -694,8 +694,8 @@ extern "C" {
 // The handler split in dc/mem/_vmem.cpp was little-endian-only: on the Wii it
 // put FRn+1 at addr and FRn at addr+4, while RAM/VRAM/SQ get FRn at addr. A pair
 // read back as a pair cancels out; a pair over words accessed one at a time is
-// swapped. Found 2026-11-11 on World Series Baseball 2K2's black menu (vertex
-// words in the wrong slots). [MMIO64] lines (scene_log) list the first pair
+// swapped. FIXED World Series Baseball 2K2's all-black menu (vertex words in the
+// wrong slots; Dolphin-confirmed 2026-11-11). [MMIO64] lines (scene_log) list the first pair
 // accesses per region. 0=off (legacy little-endian split), 1=on (default).
 int g_mmio64_fix_preset = 1;
 
@@ -4276,7 +4276,7 @@ bool displayOptionsMenu()
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FLYCAST)      >]"); break;
     }
-    printf(" sound RAM->RAM: WSB 2K2 menu");
+    printf(" sound RAM -> RAM copy (Flycast)");
     printf("\n");
 
     // --- Row: AICA_CA_CLAMP - game workaround, CA read clamped below LEA (sgc_if.cpp) ---
@@ -4454,7 +4454,7 @@ bool displayOptionsMenu()
       case 0: printf("[< OFF (LEGACY)      >]"); break;
       case 1: printf("[< ON (FRn AT ADDR)  >]"); break;
     }
-    printf(" fmov.d to OC-RAM/regs: 2K2");
+    printf(" fmov.d pairs: WSB 2K2 menu");
     printf("\n\n");
 
     printOptionsFooter();

@@ -322,15 +322,14 @@ void Write_SB_ADST(u32 data)
     if (!(SB_ADEN & 1))
         return;
 
-    // AICA_DMA_READ (2026-11-11, World Series Baseball 2K2 black menu): the
-    // game keeps data in sound RAM and DMAs it back to system RAM while the
-    // menu runs (SB_ADDIR = 1). Legacy refused that direction: no copy, no
-    // SB_ADST, no end-of-DMA interrupt -- so the destination buffer kept stale
-    // contents and the game built its menu geometry out of them (the [RAW] TA
-    // dump: well-formed headers, junk vertex coordinates). Flycast swaps
-    // source and destination and otherwise runs the transfer exactly like the
-    // RAM -> AICA one, which is what EXT1/EXT2 below already do here.
-    // OFF = the legacy refusal, unchanged.
+    // AICA_DMA_READ (2026-11-11): some games (World Series Baseball 2K2 every
+    // few seconds on its menu) DMA data from sound RAM back to system RAM
+    // (SB_ADDIR = 1). Legacy refused that direction: no copy, no SB_ADST, no
+    // end-of-DMA interrupt. Flycast swaps source and destination and otherwise
+    // runs the transfer exactly like the RAM -> AICA one, which is what
+    // EXT1/EXT2 below already do here. NOTE: this was first suspected of
+    // causing 2K2's black menu, but that was mmio64_fix (_vmem.cpp); 2K2 works
+    // with this OFF. Kept on for hardware accuracy. OFF = legacy refusal.
     const bool aica_read = (SB_ADDIR == 1);
     if (aica_read && !get_aica_dma_read_preset())
     {
