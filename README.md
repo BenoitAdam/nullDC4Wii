@@ -380,6 +380,7 @@ All together, let's Cast the Dream.
 - devkitPPC/Libogc
 - Everyone helping on emuvdev/discord
 - Jilou04 for constantly testing on Wii U and reporting
+- ZeoxGamer for heavily testing presets to make game run best as they could
 - All testers and all futur testers
 - People actually helping me on the wiibrew wiki
 
