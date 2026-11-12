@@ -1856,7 +1856,7 @@ extern "C" {
   int get_bg_poly_preset() { return g_bg_poly_preset; }
 }
 
-int g_audio_buffers_preset = -1; // -1=off (leave settings.emulator.AudioBuffers at its cfg/UI value), 0..8=force the audio ring depth (see nullDC.cpp LoadSettings(): 0=free-run/drop on overrun, 1..8=block once N blocks are queued)
+int g_audio_buffers_preset = 0; // default 0 = free run (never paces emulation, drops on overrun). -1=off (leave settings.emulator.AudioBuffers at its cfg/UI value), 0..8=force the audio ring depth (see nullDC.cpp LoadSettings(): 0=free-run/drop on overrun, 1..8=block once N blocks are queued)
 
 extern "C" {
   int get_audio_buffers_preset() { return g_audio_buffers_preset; }
