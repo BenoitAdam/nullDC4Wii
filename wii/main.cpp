@@ -438,8 +438,11 @@ extern "C" {
 // distance and, at a game's real density, nearly every vertex fell into the
 // last entry. On = density / W. Only matters with FOG on (a per-game preset).
 // The PS3 ran this rule in Ecco the Dolphin ("everything looked right").
-// Wii-untested. 0=off (legacy W*density), 1=on (default).
-int g_fog_index_preset = 1;
+// Wii-untested. 0=off (legacy W*density, default), 1=on (density/W).
+// Default OFF since 2026-11-12: Walt Disney Magical Racing Tour needs fog=on +
+// fog_index=off (Dolphin: fog_index=on gave the 8-bit VRAM write flood/hang),
+// and the density/W rule is only backed by Flycast's GLES path, not proven.
+int g_fog_index_preset = 0;
 
 extern "C" {
   int get_fog_index_preset() { return g_fog_index_preset; }

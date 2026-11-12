@@ -992,11 +992,10 @@
                                 distance haze back instead of hard geometry that
                                 pops in. Costs 4 bytes/vertex plus a TEV stage on
                                 fogged polygons only.
-        fog_index=on        <- on/off, the fog table is indexed with
-                                FOG_DENSITY / W (the PVR's 1/W depth, as Flycast)
-                                instead of W * FOG_DENSITY, which ran the wrong
-                                way with distance. Only matters with fog=on.
-                                Default on.
+        fog_index=off       <- on/off, on indexes the fog table with
+                                FOG_DENSITY / W (the PVR's 1/W depth, as Flycast's
+                                GLES path) instead of W * FOG_DENSITY (off).
+                                Only matters with fog=on. Default off.
         fixed_depth=1       <- 0/1/2, fixed depth projection (see gxRend.cpp
                                 FIXED_DEPTH_*()). 0 (default, legacy) tracks the
                                 scene's min/max depth on every TA vertex to fit
