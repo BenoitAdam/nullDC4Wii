@@ -3222,6 +3222,23 @@ static void FogFrameSetup()
 // typical density, put nearly every vertex in the last entry. W = 0 (1/W =
 // +inf, see INF_VTX) clamps to the last entry rather than dividing by zero.
 //
+// AUDIT NOTES (2026-11-12) -- fog_index is default OFF; revisit if digging here:
+//  * The rule is UNPROVEN either way. ON (density/W == density * raw 1/W) rests
+//    on Flycast's GLES shader + one PS3 result (Ecco). Against it: a hand-trace
+//    of Flycast's DIV_POS_Z path gave density*W (never run), and Walt Disney
+//    Magical Racing Tour on Dolphin needs fog=on + fog_index=OFF (ON gave a
+//    hang with a looping "8-bit VRAM writes" message -- mechanism UNEXPLAINED:
+//    no VRAM writes here and GX output doesn't feed the emulated CPU; re-run
+//    ON twice to see if it is reproducible, could be timing / a boot race).
+//  * Vertex::z (and the BG quad's z) is a true W: vert_base() does
+//    W = 1 / max(TA z, g_vert_z_clamp). So density/W == density * raw 1/W.
+//  * Far geometry and the BG are floored at W = 1/g_vert_z_clamp (1e4, 1e5 with
+//    FAR_CLAMP): ON drives them to index 0, OFF saturates them to index 127,
+//    so a sky quad gets OPPOSITE table ends under the two rules.
+//  * W = 0 (1/W = +inf) -> 255.999 under ON (nearest, last entry).
+//  * Cost: one fdivs per LUT-fogged vertex; re-inverting W loses a hair of
+//    precision (storing raw 1/W would avoid it, not worth a Vertex change).
+//
 // If a Wii test shows the ramp running the wrong way WITHIN each step (banded
 // or sawtooth fog rather than smooth), the two bytes of an entry are the pair
 // to swap — a and b below. If the whole scene is uniformly fogged or uniformly
