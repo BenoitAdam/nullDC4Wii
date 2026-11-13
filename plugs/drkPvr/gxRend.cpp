@@ -224,6 +224,17 @@ extern "C" int get_jojo_fix_preset();
 extern "C" int get_tlut_fix_preset();
 #define TLUT_FIX() (get_tlut_fix_preset() != 0)
 
+// A palettised TCW (PixelFmt 5/6) has no StrideSel/ScanOrder: bits 21-26 are
+// PalSelect, so bits 25/26 are PalSelect bits 4/5. The texture cache read them
+// as StrideSel+ScanOrder anyway, so any 4BPP texture on palette bank 48-63 (8BPP:
+// bank 3) was taken for a dynamic stride surface and NEVER cached: re-decoded on
+// every bind. Super Puzzle Fighter's 256x256 background (bank 61) was decoded 104
+// times per render, ~1.3 ms each under ci4_fast: 7 FPS. i4_stub hid it (its
+// "decode" writes nothing). On: palette textures are never stride surfaces.
+// See stride_dyn in SetTextureParams().
+extern "C" int get_pal_stride_fix_preset();
+#define PAL_STRIDE_FIX() (get_pal_stride_fix_preset() != 0)
+
 // VQ textures decoded to GX_TF_CMPR (DXT1) instead of 16bpp — see
 // texture_VQ_CMPR(). 4 bits/texel instead of 16, which is what lets a VQ
 // texture fit its address-derived cache slot instead of needing the overflow
@@ -2609,6 +2620,8 @@ static INLINE u32 stride_fingerprint(u32 base, u32 h, u32 pitch)
 static int s_last_cache_preset = -1;
 static int s_last_fmv_format   = -1;
 
+static void p4_render_tick(); // [P4] palette-texture census window, defined above SetTextureParams()
+
 static void tex_frame_reset()
 {
   // The cache preset can change from the in-game menu. Every offset already in
@@ -2654,6 +2667,8 @@ static void tex_frame_reset()
   // wrap is allowed to spend is available again. (This does NOT reset the arena
   // - it is persistent across frames by design.)
   s_fast_drained_frame = false;
+
+  p4_render_tick();   // [P4] window report + per-render re-decode table reset
 
   bump_reset();       // reset arena for new frame
   hash_map_reset();   // clear hash map — O(4 KB memset), fast on PPC
@@ -5375,6 +5390,7 @@ static INLINE u16 pal_to_tlut(u32 pe, u32 pal_fmt)
 static u16 ATTRIBUTE_ALIGN(32) s_tlut_mirror[1024];
 static u32 s_tlut_mirror_epoch[64];   // vram_wepoch the bank was last converted in
 static bool g_tlut_fix_cached = false; // TLUT_FIX(), read once per render in DoRender()
+static bool g_pal_stride_fix_cached = true; // PAL_STRIDE_FIX(), read once per render in DoRender()
 
 static u16 *tlut_mirror_get(u32 pal_base, u32 n_entries, u32 pal_fmt)
 {
@@ -5397,6 +5413,148 @@ static u16 *tlut_mirror_get(u32 pal_base, u32 n_entries, u32 pal_fmt)
       DCFlushRange(dst, 32);
   }
   return &s_tlut_mirror[pal_base];
+}
+
+// ── [P4] palette-texture (4BPP / 8BPP) decode census ────────────────────────
+// TEMPORARY (2026-11-13), now OFF (if(0) in p4_render_tick(), p4_bind(),
+// p4_decoded() and InitRenderer's ARMED line) -- safe to re-enable: flip all four
+// to if(1). Super Puzzle Fighter: 4bpp=i4_stub is full speed, but
+// 4bpp=4bpp_optimized / ci4_fast / ci4 collapse the FPS. i4_stub decodes
+// NOTHING (it only sets FMT = GX_TF_I4), so any real decoder pays its full
+// w*h loop on every cache MISS: the question was how often it misses, and why.
+// ANSWERED (one capture each, i4_stub vs ci4_fast, tex_cache=very_fast): ONE
+// texture, 5D4000 256x256 4bpp palette bank 61, mip=0, 104 binds per render, 0%
+// cached, every miss why=stride, redec on all but the first per render. Bank 61
+// = 111101b sets PalSelect bits 4/5 = TCW bits 25/26, which stride_dyn read as
+// StrideSel+ScanOrder. i4_stub 10 us/decode, ci4_fast 1.3 ms/decode -> 6.9 FPS.
+// The mipmap/sentinel suspect below was NOT it (mip=0 adv=0). -> PAL_STRIDE_FIX().
+// Original suspect (from reading, still unproven for other games): a MIPMAPPED
+// 4bpp texture advances tex_addr by OtherMipPoint inside the decoder, so under
+// tex_cache=fast/normal the sentinel is stomped at the advanced address while
+// the validity test reads the original one -> a re-decode on EVERY draw.
+//
+// Per window (every P4_WINDOW renders, only when a palette texture was bound):
+//   [P4] 4bpp|8bpp p<tex_cache> 4bpp=N 8bpp=N Nr binds=N dec=N (hit%) per-render
+//        mip=N      decodes of mipmapped textures
+//        adv=N      decodes where tex_addr was advanced past the declared one
+//                   (sentinel lands somewhere the validity test never looks)
+//        redec=N    decodes of an address ALREADY decoded earlier in the SAME
+//                   render (= the cache is not holding at all)
+//        miss: new/sent/shape/dirty/stride   why each decode happened
+//        ms=A max=B texels=K banks=N sz[8..1024]=...   decode time + sizes
+//        all: binds/dec/ms of EVERY texture format, for scale
+//   [P4D] one line per decode (first P4_DETAIL per kind, then every 100th)
+#define P4_WINDOW 60
+#define P4_DETAIL 40
+struct P4Kind
+{
+  u32 binds, dec, mip, adv, redec;
+  u32 m_new, m_sent, m_shape, m_dirty, m_stride;
+  u32 wh[8];                 // decodes by width 8,16,...,1024
+  u64 ticks, tmax, texels;
+  u64 banks;                 // PalSelect (4bpp) or PalSelect>>4 (8bpp) bitmap
+  u32 detail;                // [P4D] lines printed so far (never reset)
+  u32 dec_total;             // decodes since boot (drives the every-100th rule)
+};
+static P4Kind s_p4[2];       // 0 = 4BPP (PixelFmt 5), 1 = 8BPP (PixelFmt 6)
+static u32 s_p4_seen[128];   // orig addr | 1 | kind<<1 decoded THIS render (0 = empty)
+static u32 s_p4_renders = 0;
+static u64 s_p4_all_t0 = 0;  // s_tet_dec_t at window start
+static u32 s_p4_all_d0 = 0, s_p4_all_b0 = 0;
+
+static void p4_render_tick()
+{
+  if (0) // OFF (2026-11-13): answered, see the [P4] header above
+  {
+    memset(s_p4_seen, 0, sizeof(s_p4_seen));
+    if (++s_p4_renders < P4_WINDOW) return;
+    s_p4_renders = 0;
+    for (int k = 0; k < 2; k++)
+    {
+      P4Kind &s = s_p4[k];
+      if (s.binds)
+      {
+        u32 nb = 0;
+        for (u32 i = 0; i < 64; i++) if ((s.banks >> i) & 1u) nb++;
+        printf("[P4] %s p%d 4bpp=%d 8bpp=%d %ur binds=%u dec=%u (%u%% cached, %u/render) "
+               "mip=%u adv=%u redec=%u miss: new=%u sent=%u shape=%u dirty=%u stride=%u | "
+               "ms=%.2f max=%.2f texels=%u banks=%u sz[8..1024]=%u,%u,%u,%u,%u,%u,%u,%u | "
+               "all: binds=%u dec=%u ms=%.2f\n",
+               k ? "8bpp" : "4bpp", get_texture_cache_preset(), get_4bpp_preset(), get_8bpp_preset(),
+               (unsigned)P4_WINDOW, (unsigned)s.binds, (unsigned)s.dec,
+               (unsigned)(s.binds >= s.dec ? (100u * (s.binds - s.dec)) / s.binds : 0u),
+               (unsigned)(s.dec / P4_WINDOW),
+               (unsigned)s.mip, (unsigned)s.adv, (unsigned)s.redec,
+               (unsigned)s.m_new, (unsigned)s.m_sent, (unsigned)s.m_shape,
+               (unsigned)s.m_dirty, (unsigned)s.m_stride,
+               (double)ticks_to_microsecs(s.ticks) / 1000.0,
+               (double)ticks_to_microsecs(s.tmax) / 1000.0,
+               (unsigned)s.texels, (unsigned)nb,
+               (unsigned)s.wh[0], (unsigned)s.wh[1], (unsigned)s.wh[2], (unsigned)s.wh[3],
+               (unsigned)s.wh[4], (unsigned)s.wh[5], (unsigned)s.wh[6], (unsigned)s.wh[7],
+               (unsigned)(s_tet_binds - s_p4_all_b0), (unsigned)(s_tet_dec - s_p4_all_d0),
+               (double)ticks_to_microsecs(s_tet_dec_t - s_p4_all_t0) / 1000.0);
+        fflush(stdout); // log is freopen'd to SD; without this the tail is lost
+      }
+      const u32 keep_detail = s.detail, keep_total = s.dec_total;
+      memset(&s, 0, sizeof(s));
+      s.detail = keep_detail; s.dec_total = keep_total;
+    }
+    s_p4_all_t0 = s_tet_dec_t; s_p4_all_d0 = s_tet_dec; s_p4_all_b0 = s_tet_binds;
+  }
+}
+
+// One bind of a palette texture (hit or miss). k: 0 = 4BPP, 1 = 8BPP.
+static INLINE void p4_bind(int k)
+{
+  if (0) s_p4[k].binds++; // OFF with the rest of [P4]
+}
+
+// One decode (cache miss) of a palette texture, after it finished.
+//   why: 0 new, 1 sentinel gone, 2 shape, 3 dirty, 4 stride
+static void p4_decoded(int k, u32 orig_addr, u32 adv_addr, u32 w, u32 h, bool mip,
+                       u32 bank, u32 pal_fmt, u32 why, u64 dt)
+{
+  if (0) // OFF with the rest of [P4]
+  {
+    P4Kind &s = s_p4[k];
+    const bool adv = (adv_addr != orig_addr);
+
+    // Already decoded earlier in THIS render? (open-addressed, linear probe.)
+    bool redec = false;
+    const u32 key = orig_addr | 1u | ((u32)k << 1);
+    u32 slot = ((orig_addr >> 3) * 2654435761u) >> 25; // top 7 bits -> 0..127
+    for (u32 n = 0; n < 128; n++, slot = (slot + 1) & 127u)
+    {
+      if (s_p4_seen[slot] == key) { redec = true; break; }
+      if (s_p4_seen[slot] == 0)   { s_p4_seen[slot] = key; break; }
+    }
+
+    s.dec++; s.dec_total++;
+    if (mip)   s.mip++;
+    if (adv)   s.adv++;
+    if (redec) s.redec++;
+    switch (why) { case 0: s.m_new++; break; case 1: s.m_sent++; break;
+                   case 2: s.m_shape++; break; case 3: s.m_dirty++; break;
+                   default: s.m_stride++; break; }
+    u32 wi = 0;
+    for (u32 t = w >> 3; t > 1 && wi < 7; t >>= 1) wi++;
+    s.wh[wi]++;
+    s.ticks += dt; if (dt > s.tmax) s.tmax = dt;
+    s.texels += (u64)w * h;
+    s.banks |= 1ull << (bank & 63u);
+
+    if (s.detail < P4_DETAIL || (s.dec_total % 100u) == 0)
+    {
+      s.detail++;
+      printf("[P4D] %s addr=%06X%s %ux%u mip=%d bank=%u palfmt=%u why=%s redec=%d us=%u\n",
+             k ? "8bpp" : "4bpp", (unsigned)orig_addr,
+             adv ? "(adv)" : "", (unsigned)w, (unsigned)h, (int)mip, (unsigned)bank,
+             (unsigned)pal_fmt,
+             why == 0 ? "new" : why == 1 ? "sent" : why == 2 ? "shape" : why == 3 ? "dirty" : "stride",
+             (int)redec, (unsigned)ticks_to_microsecs(dt));
+    }
+  }
 }
 
 static void SetTextureParams(PolyParam *mod, bool caller_sets_op)
@@ -5444,9 +5602,15 @@ static void SetTextureParams(PolyParam *mod, bool caller_sets_op)
   // Declare all variables needed by section 1 upfront.
   bool is_vq = mod->tcw.NO_PAL.VQ_Comp;
   // Stride-selected scan-order surface: decodes 512 px wide and is redrawn by
-  // the game. Same test VERY_FAST and QUALITY use, deliberately without a
-  // PixelFmt exclusion so PLUS treats exactly the same set of textures they do.
+  // the game. Every cache preset refuses to (or, PLUS, only conditionally will)
+  // cache one, so this one bool decides "re-decode on every bind".
+  // PAL_STRIDE_FIX(): a palettised TCW (PixelFmt 5/6) has no such bits - 25/26
+  // are PalSelect bits 4/5 - so palette banks 48-63 were never cached at all.
+  // Off = the legacy test verbatim, PixelFmt ignored.
   bool stride_dyn = mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder;
+  if (g_pal_stride_fix_cached
+      && (mod->tcw.NO_PAL.PixelFmt == 5 || mod->tcw.NO_PAL.PixelFmt == 6))
+    stride_dyn = false;
   u32 FMT    = GX_TF_RGB565;
   u32 texVQ  = 0;
   u8 *vq_codebook;
@@ -5731,6 +5895,8 @@ static void SetTextureParams(PolyParam *mod, bool caller_sets_op)
   static u32 s_tlut_ring_idx = 0;
 
   u32 pixel_fmt = mod->tcw.NO_PAL.PixelFmt;
+  const int p4_k = (pixel_fmt == 5) ? 0 : (pixel_fmt == 6) ? 1 : -1; // [P4] census kind
+  if (p4_k >= 0) p4_bind(p4_k);
   // Only the CI4/CI8 presets sample through a GX TLUT. Every other 4/8BPP
   // preset (I4/I8 stubs, OPTIMIZED, RGB565 full-decode) bakes the palette
   // into the pixel data, so converting + flushing + GX_LoadTlut'ing here on
@@ -5988,7 +6154,7 @@ static void SetTextureParams(PolyParam *mod, bool caller_sets_op)
       u32 *ptex = (u32*)&params.vram[orig_tex_addr];
       cache_valid = (*ptex == 0xDEADBEEF)
                    && (pbuff->addr == orig_tex_addr)
-                   && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
+                   && !stride_dyn; // same test, PAL_STRIDE_FIX() applied
     }
   }
   else if (CACHE_EXTRA())
@@ -6009,7 +6175,7 @@ static void SetTextureParams(PolyParam *mod, bool caller_sets_op)
       u32 *ptex = (u32*)&params.vram[orig_tex_addr];
       cache_valid = (*ptex == 0xDEADBEEF)
                    && (pbuff->addr == orig_tex_addr)
-                   && !(mod->tcw.NO_PAL.StrideSel && mod->tcw.NO_PAL.ScanOrder);
+                   && !stride_dyn; // same test, PAL_STRIDE_FIX() applied
     }
   }
   // CACHE_EXTRA_DEBUG: cache_valid stays false, always re-decode.
@@ -6027,6 +6193,15 @@ static void SetTextureParams(PolyParam *mod, bool caller_sets_op)
     // either side of it decode nothing at all and look perfectly healthy.
     FP_T0(_fp_tex0);
     const u64 _tet_dec0 = TET_TICKS(); // [TET] decode time + count, see s_tet_dec
+    // [P4] why this is a miss (same attribution as the [TEXC] block below, but
+    // always on and taken BEFORE pbuff->addr is overwritten further down).
+    u32 p4_why = 0;
+    if (p4_k >= 0)
+      p4_why = stride_dyn ? 4u
+             : (pbuff->addr != tex_addr && pbuff->addr != orig_tex_addr) ? 0u
+             : np_dirty ? 3u
+             : (np_fpmiss || (!np && !is_vq && *ptex_skmp != 0xDEADBEEF)) ? 1u
+             : 2u;
     if (DEBUG_MESSAGE())
     {
       g_texc_decodes++; // see tex_frame_reset()
@@ -7093,6 +7268,10 @@ static void SetTextureParams(PolyParam *mod, bool caller_sets_op)
     FP_BUMP(n_tex);
     s_tet_dec_t += TET_TICKS() - _tet_dec0;
     s_tet_dec++;
+    if (p4_k >= 0) // [P4] tex_addr here is the ADVANCED one for a mipmapped texture
+      p4_decoded(p4_k, orig_tex_addr, tex_addr, w, h, mod->tcw.NO_PAL.MipMapped != 0,
+                 p4_k ? (u32)(mod->tcw.PAL.PalSelect >> 4) : (u32)mod->tcw.PAL.PalSelect,
+                 PAL_RAM_CTRL & 3, p4_why, TET_TICKS() - _tet_dec0);
   }
 
   // TEX_CLAMP_FIX(): Clamp/Flip are per-POLYGON TSP bits, but the GXTexObj keeps
@@ -8880,6 +9059,7 @@ void DoRender()
   // TLUT_FIX(): read once per render, never mid-render - the palette mirror's
   // "unchanged inside a render" promise is tied to the epoch just advanced.
   g_tlut_fix_cached = TLUT_FIX();
+  g_pal_stride_fix_cached = PAL_STRIDE_FIX(); // stride_dyn in SetTextureParams()
 
   /* commented to help prevent FIFO */
   /*
@@ -15057,6 +15237,18 @@ bool InitRenderer()
     fflush(stdout);
   }
 #endif
+  // [P4] palette-texture decode census (Super Puzzle Fighter: 4bpp_optimized /
+  // ci4_fast collapse the FPS, i4_stub is fine). OFF (2026-11-13): answered, see
+  // the [P4] header above SetTextureParams() -> PAL_STRIDE_FIX(). Flip with
+  // p4_render_tick(), p4_bind() and p4_decoded().
+  if (0)
+  {
+    printf("[P4] palette-texture census ARMED ([P4] 4bpp/8bpp window every %d renders when a palette "
+           "texture was bound; [P4D] per decode: first %d per kind, then every 100th; "
+           "4bpp=%d 8bpp=%d tex_cache=%d)\n",
+           P4_WINDOW, P4_DETAIL, get_4bpp_preset(), get_8bpp_preset(), get_texture_cache_preset());
+    fflush(stdout);
+  }
   // [TET] Sega Tetris slowdown probe: if this line is missing from ndclog.txt
   // the build did not pick it up. Off with tet_census_pass() (if(0)); flip both together.
   if (0)

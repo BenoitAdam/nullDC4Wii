@@ -856,6 +856,13 @@ int g_tex_clamp_fix_preset = 0;
 // speed). 1 = on (default): a per-render copy of the palette RAM that never
 // changes while the GPU can still read it. See tlut_mirror_get() in gxRend.cpp.
 int g_tlut_fix_preset = 1;
+// 0 = off (legacy: the texture cache reads TCW bits 25/26 as StrideSel+ScanOrder
+// on palette textures too, where they are PalSelect bits 4/5 - every 4BPP texture
+// on palette bank 48-63 (8BPP: bank 3) counts as a redrawn stride surface and is
+// re-decoded on every bind: Super Puzzle Fighter II X's background, 104 decodes
+// per render, 7 FPS under ci4_fast/4bpp_optimized). 1 = on (default): palette
+// textures are never stride surfaces. See PAL_STRIDE_FIX() in gxRend.cpp.
+int g_pal_stride_fix_preset = 1;
 // 0 = off (legacy: every textured strip is texture x vertex colour, Decal
 // included). 1 = on (default): TSP.ShadInstr 0 (Decal) draws the texture as-is,
 // ignoring the vertex colour, like the PVR and Flycast. Soldier of Fortune sends
@@ -915,6 +922,7 @@ extern "C" {
   int get_strip_dedup_preset() { return g_strip_dedup_preset; }
   int get_tex_clamp_fix_preset() { return g_tex_clamp_fix_preset; }
   int get_tlut_fix_preset() { return g_tlut_fix_preset; }
+  int get_pal_stride_fix_preset() { return g_pal_stride_fix_preset; }
   int get_decal_fix_preset() { return g_decal_fix_preset; }
   int get_ta_arena_fix_preset() { return g_ta_arena_fix_preset; }
   int get_ta_ctx_fix_preset() { return g_ta_ctx_fix_preset; }
@@ -3238,6 +3246,7 @@ void checkBiosFiles()
 #define OPT_SCENE_LOG   154  // Page 8 (LOGS), under DISC CENSUS
 #define OPT_AICA_DMA_READ 155 // Page 4 (AUDIO), under AICA RACE FIX (page 9 is full)
 #define OPT_MMIO64_FIX  156  // Page 5 (CORE), under IDLE X3 BACK (page 9 is full)
+#define OPT_PAL_STRIDE_FIX 157 // Page 6 (EXPERIMENTAL), under TEX WRAP GUARD (page 9 is full)
 #define OPT_EXIT_FIX    90   // shown on Page 6 (EXPERIMENTAL), first row
 #define OPT_ROW_COUNT   66
 
@@ -3374,6 +3383,7 @@ static const int OPT_PAGE5_ROWS[] = {
   OPT_LAUNCH,
   OPT_MIPMAP,
   OPT_TEX_WRAP_GUARD,
+  OPT_PAL_STRIDE_FIX,
   OPT_SCHED,
   OPT_EXIT_FIX,
   OPT_FLASH_CHIP,
@@ -4484,6 +4494,15 @@ bool displayOptionsMenu()
     printf(" stop tex corruption in full cache");
     printf("\n");
 
+    // --- Row: PAL STRIDE FIX - palette textures are never stride surfaces ---
+    printf("%s PAL STRIDE FIX : ", (selectedRow == OPT_PAL_STRIDE_FIX) ? MENU_CURSOR : MENU_NOCURSOR);
+    switch (g_pal_stride_fix_preset) {
+      case 0: printf("[< OFF (LEGACY)      >]"); break;
+      case 1: printf("[< ON (DEFAULT)      >]"); break;
+    }
+    printf(" 4bpp/8bpp slow: Puzzle Fighter");
+    printf("\n");
+
 
 
 
@@ -5255,6 +5274,7 @@ bool displayOptionsMenu()
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
         case OPT_TLUT_FIX:       g_tlut_fix_preset        = (g_tlut_fix_preset        + 1) % 2; break;
+        case OPT_PAL_STRIDE_FIX: g_pal_stride_fix_preset  = (g_pal_stride_fix_preset  + 1) % 2; break;
         case OPT_DECAL_FIX:      g_decal_fix_preset       = (g_decal_fix_preset       + 1) % 2; break;
         case OPT_TA_ARENA_FIX:   g_ta_arena_fix_preset    = (g_ta_arena_fix_preset    + 1) % 2; break;
         case OPT_TA_CTX_FIX:     g_ta_ctx_fix_preset      = (g_ta_ctx_fix_preset      + 1) % 2; break;
@@ -5425,6 +5445,7 @@ bool displayOptionsMenu()
         case OPT_SCHED:          g_sched_preset           = (g_sched_preset           + 1) % 2; break;
         case OPT_TEX_WRAP_GUARD: g_tex_wrap_guard_preset  = (g_tex_wrap_guard_preset  + 1) % 2; break;
         case OPT_TLUT_FIX:       g_tlut_fix_preset        = (g_tlut_fix_preset        + 1) % 2; break;
+        case OPT_PAL_STRIDE_FIX: g_pal_stride_fix_preset  = (g_pal_stride_fix_preset  + 1) % 2; break;
         case OPT_DECAL_FIX:      g_decal_fix_preset       = (g_decal_fix_preset       + 1) % 2; break;
         case OPT_TA_ARENA_FIX:   g_ta_arena_fix_preset    = (g_ta_arena_fix_preset    + 1) % 2; break;
         case OPT_TA_CTX_FIX:     g_ta_ctx_fix_preset      = (g_ta_ctx_fix_preset      + 1) % 2; break;
@@ -6368,6 +6389,7 @@ int main(int argc, wchar *argv[])
     printf("Sched (order)  : %s\n", g_sched_preset ? "ON (DEADLINE)" : "OFF (CASCADE)");
     printf("Tex wrap guard : %s\n", g_tex_wrap_guard_preset ? "ON (SAFE WRAP)" : "OFF (LEGACY)");
     printf("TLUT fix       : %s\n", g_tlut_fix_preset ? "ON (PER-RENDER COPY)" : "OFF (RING)");
+    printf("Pal stride fix : %s\n", g_pal_stride_fix_preset ? "ON (PALETTE NOT STRIDE)" : "OFF (LEGACY)");
     printf("Decal fix      : %s\n", g_decal_fix_preset ? "ON (TEXTURE ONLY)" : "OFF (MODULATE)");
     printf("TA arena fix   : %s\n", g_ta_arena_fix_preset ? "ON (BOUNDED + CARRY)" : "OFF (LEGACY)");
     printf("TA ctx fix     : %s\n", g_ta_ctx_fix_preset ? "ON (SPLIT AT LIST INIT)" : "OFF (LEGACY)");
