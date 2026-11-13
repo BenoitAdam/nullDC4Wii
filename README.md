@@ -52,7 +52,7 @@ Check nullDC.cfg at root
 
 ### Controls
 
-| Dreamcast | Wiimote | Wiimote (ChuChu Rocket!) | Gamecube | Gamecube (ChuChu Rocket!) |
+| Dreamcast | Wiimote + Nunchuck | Wiimote (ChuChu Rocket!) | Gamecube | Gamecube (ChuChu Rocket!) |
 | --------- | ------- | ------------------------ | -------- | ------------------------- |
 | A         | A       | down & A                 | A        | A                         |
 | B         | B       | right & B                | B        | X                         |
@@ -64,6 +64,23 @@ Check nullDC.cfg at root
 | L         | - (and Nunchuck Z) | - (and Nunchuck Z) | L    | L                         |
 | R         | +       | +                        | R        | R                         |
 | To Exit   | - and + | - and +                  | R + L + Z | R + L + Z                |
+
+**Wiimote alone (no Nunchuck / Classic): horizontal mode.** Hold the Wiimote
+sideways (D-Pad on the left, 1 and 2 under the right thumb):
+
+| Dreamcast | Wiimote (sideways) |
+| --------- | ------------------ |
+| A         | 1                  |
+| B         | 2                  |
+| X         | A                  |
+| Y         | B                  |
+| START     | Home               |
+| D-PAD     | D-PAD (rotated with the Wiimote: physical up = DC left, right = up, down = right, left = down) |
+| L / R     | - / +              |
+| To Exit   | - and +            |
+
+With the **WIIMOTE ANALOG** special layout the sideways D-Pad drives the left
+analog stick instead of the DC D-Pad (same rotation); everything else is identical.
 
 Exit :  
 Press - and + (wiimote) or Press L + R + Z (or L + R + Start)  
@@ -80,8 +97,9 @@ it goes back to OFF on every boot, like every other menu setting.
 | CHUCHU ROCKET | The ChuChu Rocket columns of the table above |
 | DDR SELECT | Dance Dance Revolution Club Mix / 2nd Mix: holding the Gamecube Z button reads as "analog stick pushed fully down", which is how those games take a Select input (dancer / arrow skin / sequence type, and the Left, Right and Shuffle option codes) |
 | USER CFG | The whole mapping comes from `user_controls.cfg` instead - see below |
+| WIIMOTE ANALOG | A Wiimote with nothing plugged in (held sideways) drives the analog stick with its D-Pad instead of the DC D-Pad |
 
-A game preset can set this row for you with `layout=off|chuchu|ddr_select|user_cfg`
+A game preset can set this row for you with `layout=off|chuchu|ddr_select|user_cfg|wiimote_analog`
 in `game_presets.cfg`. `[default]` sets `layout=off`, which is what resets the row
 between game selections - do not delete that line, or a layout set by one game
 stays active for every game you launch afterwards in the same session.

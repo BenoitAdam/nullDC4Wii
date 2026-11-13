@@ -39,6 +39,7 @@ extern "C" int get_special_layout_preset(void);
 #define SPECIAL_LAYOUT_CHUCHU     1
 #define SPECIAL_LAYOUT_DDR_SELECT 2
 #define SPECIAL_LAYOUT_USER_CFG   3
+#define SPECIAL_LAYOUT_WIIMOTE_ANALOG 4
 
 #include "plugs/drkMapleDevices/dc_pad_bits.h" // Dreamcast controller button definitions
 #include "wii/user_controls.h" // USER CFG special layout (fully user-remappable)
@@ -111,8 +112,12 @@ static s32 ScaleClassicStick(s32 pos, s32 min, s32 center, s32 max)
  * @param gcButtons GameCube controller button state
  * @param nunchuckButtons Nunchuck button state
  * @param classicButtons Classic Controller button state (WPAD_CLASSIC_BUTTON_* bits, 0 if not attached)
+ * @param wiimoteAlone true when this port's Wiimote has no expansion plugged in
+ *        (no Nunchuk, no Classic Controller): the Wiimote is then held sideways
+ *        ("horizontal mode", D-Pad on the left, 1/2 under the right thumb)
  */
-static void MapButtons(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButtons, u32 classicButtons)
+static void MapButtons(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButtons, u32 classicButtons,
+                       bool wiimoteAlone)
 {
     // Initialize to all buttons released (bits set = released in Dreamcast format)
     kcode[port] = 0xFFFF;
@@ -164,6 +169,23 @@ static void MapButtons(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButt
         if (gcButtons & PAD_BUTTON_Y)
             kcode[port] &= ~key_CONT_Y;
     }
+    else if (wiimoteAlone)
+    {
+        // Horizontal mode (Wiimote alone, held sideways): 1 = A, 2 = B,
+        // Wiimote A = X, Wiimote B = Y. GameCube face buttons keep their
+        // normal mapping.
+        if (wiiButtons & WPAD_BUTTON_1 || gcButtons & PAD_BUTTON_A)
+            kcode[port] &= ~key_CONT_A;
+
+        if (wiiButtons & WPAD_BUTTON_2 || gcButtons & PAD_BUTTON_B)
+            kcode[port] &= ~key_CONT_B;
+
+        if (wiiButtons & WPAD_BUTTON_A || gcButtons & PAD_BUTTON_X)
+            kcode[port] &= ~key_CONT_X;
+
+        if (wiiButtons & WPAD_BUTTON_B || gcButtons & PAD_BUTTON_Y)
+            kcode[port] &= ~key_CONT_Y;
+    }
     else
     {
         // Face buttons - A/B/X/Y (legacy/default mapping)
@@ -197,8 +219,28 @@ static void MapButtons(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButt
 
     // D-Pad mapping - Wii Remote D-Pad. Unassigned under the ChuChu Rocket
     // layout, where these same physical presses drive the face buttons above
-    // instead (see specialLayout branch).
-    if (specialLayout != SPECIAL_LAYOUT_CHUCHU)
+    // instead (see specialLayout branch). Also unassigned for a lone Wiimote
+    // under the WIIMOTE ANALOG layout, where it drives the analog stick
+    // instead (see WiimoteDpadToStick()).
+    if (wiimoteAlone && specialLayout != SPECIAL_LAYOUT_CHUCHU
+        && specialLayout != SPECIAL_LAYOUT_WIIMOTE_ANALOG)
+    {
+        // Horizontal mode: the Wiimote is rotated 90 degrees counter-clockwise
+        // (pointer end to the left), so each physical D-Pad arrow points one
+        // quarter-turn round: UP->left, RIGHT->up, DOWN->right, LEFT->down.
+        if (wiiButtons & WPAD_BUTTON_RIGHT)
+            kcode[port] &= ~key_CONT_DPAD_UP;
+
+        if (wiiButtons & WPAD_BUTTON_LEFT)
+            kcode[port] &= ~key_CONT_DPAD_DOWN;
+
+        if (wiiButtons & WPAD_BUTTON_UP)
+            kcode[port] &= ~key_CONT_DPAD_LEFT;
+
+        if (wiiButtons & WPAD_BUTTON_DOWN)
+            kcode[port] &= ~key_CONT_DPAD_RIGHT;
+    }
+    else if (!wiimoteAlone && specialLayout != SPECIAL_LAYOUT_CHUCHU)
     {
         if (wiiButtons & WPAD_BUTTON_UP)
             kcode[port] &= ~key_CONT_DPAD_UP;
@@ -238,6 +280,28 @@ static void MapButtons(u32 port, u32 wiiButtons, u32 gcButtons, u32 nunchuckButt
 
     if (classicButtons & WPAD_CLASSIC_BUTTON_RIGHT)
         kcode[port] &= ~key_CONT_DPAD_RIGHT;
+}
+
+/**
+ * WIIMOTE ANALOG layout: turns the D-Pad of a lone, sideways-held Wiimote into
+ * a stick deflection (same rotation as the digital horizontal mode: physical
+ * UP->left, RIGHT->up, DOWN->right, LEFT->down). Output uses the Nunchuck
+ * convention MapAnalogStick() expects (positive Y = up). Diagonals are scaled
+ * to ~0.707 so a pressed corner has the magnitude of a real stick at full tilt,
+ * not 1.41x of it.
+ */
+static void WiimoteDpadToStick(u32 wiiButtons, s32 *x, s32 *y)
+{
+    s32 dx = 0, dy = 0;
+
+    if (wiiButtons & WPAD_BUTTON_UP)    dx -= 1;  // -> stick left
+    if (wiiButtons & WPAD_BUTTON_DOWN)  dx += 1;  // -> stick right
+    if (wiiButtons & WPAD_BUTTON_RIGHT) dy += 1;  // -> stick up
+    if (wiiButtons & WPAD_BUTTON_LEFT)  dy -= 1;  // -> stick down
+
+    s32 mag = (dx != 0 && dy != 0) ? 90 : 127;
+    *x = dx * mag;
+    *y = dy * mag;
 }
 
 /**
@@ -704,6 +768,20 @@ void UpdateInputState(u32 port)
         }
     }
 
+    // A Wiimote with nothing plugged into it is held sideways ("horizontal
+    // mode", see MapButtons()). Anything else (Nunchuk, Classic) keeps the
+    // legacy upright mapping.
+    bool wiimoteAlone = (wpadData && wpadData->exp.type == WPAD_EXP_NONE);
+
+    // WIIMOTE ANALOG layout: the lone Wiimote's D-Pad is the analog stick.
+    // Lowest priority, like the other expansion sticks: only used when no
+    // GamePad/Sixaxis stick is deflected.
+    if (wiimoteAlone && get_special_layout_preset() == SPECIAL_LAYOUT_WIIMOTE_ANALOG
+        && expStickX == 0 && expStickY == 0)
+    {
+        WiimoteDpadToStick(wiiButtons, &expStickX, &expStickY);
+    }
+
     // Read GameCube analog stick position (main stick + C-stick, the latter
     // only consumed by the USER CFG layout below as extra digital sources)
     s32 stickX = PAD_StickX(port);
@@ -733,7 +811,7 @@ void UpdateInputState(u32 port)
     }
 
     // Map all inputs to Dreamcast controller format
-    MapButtons(port, wiiButtons, gcButtons, nunchuckButtons, classicButtons);
+    MapButtons(port, wiiButtons, gcButtons, nunchuckButtons, classicButtons, wiimoteAlone);
     MapAnalogStick(port, stickX, stickY, expStickX, expStickY);
     MapTriggers(port, wiiButtons, gcButtons, nunchuckButtons, classicButtons);
 

@@ -1270,10 +1270,14 @@
                                 between passes and presents ONE assembled frame.
                                 both: a game doing per-poly tile clips inside
                                 multi-pass renders.
-        layout=off          <- off/chuchu/ddr_select/user_cfg, the generic
-                                spelling of the special controller layout
-                                slot the two keys below also write (see
-                                main.cpp SPECIAL_LAYOUT_*). [default] sets
+        layout=off          <- off/chuchu/ddr_select/user_cfg/wiimote_analog,
+                                the generic spelling of the special
+                                controller layout slot the two keys below
+                                also write (see main.cpp SPECIAL_LAYOUT_*).
+                                wiimote_analog: a Wiimote with no expansion
+                                (held sideways) drives the analog stick with
+                                its D-Pad instead of the DC D-Pad; off keeps
+                                the D-Pad digital. [default] sets
                                 layout=off so the slot is reset on every game
                                 selection -- every other preset field is reset
                                 the same way. Without it a layout set by one
@@ -1927,6 +1931,7 @@ static int parse_layout(const char* v)
     if (key_eq(v, "chuchu")     || key_eq(v, "chuchu_rocket") || strcmp(v, "1") == 0) return 1;
     if (key_eq(v, "ddr_select") || key_eq(v, "ddr")           || strcmp(v, "2") == 0) return 2;
     if (key_eq(v, "user_cfg")   || key_eq(v, "user")          || strcmp(v, "3") == 0) return 3;
+    if (key_eq(v, "wiimote_analog") || key_eq(v, "analog")    || strcmp(v, "4") == 0) return 4;
     if (key_eq(v, "off") || key_eq(v, "no") || key_eq(v, "false") || strcmp(v, "0") == 0) return 0;
     return -1;
 }

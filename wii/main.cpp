@@ -403,10 +403,11 @@ extern "C" {
 // a "Select" input), or hand the whole mapping to a user-edited file
 // (USER CFG, see user_controls.cfg / wii/user_controls.cpp). Consumed by
 // drkMapleDevices.cpp MapButtons() / UpdateInputState(). 0=off (legacy
-// per-button mapping), 1=CHUCHU, 2=DDR SELECT, 3=USER CFG (see
+// per-button mapping), 1=CHUCHU, 2=DDR SELECT, 3=USER CFG, 4=WIIMOTE ANALOG
+// (lone sideways Wiimote: D-Pad drives the analog stick; see
 // kSpecialLayoutNames below).
-enum { SPECIAL_LAYOUT_OFF = 0, SPECIAL_LAYOUT_CHUCHU = 1, SPECIAL_LAYOUT_DDR_SELECT = 2, SPECIAL_LAYOUT_USER_CFG = 3, SPECIAL_LAYOUT_COUNT };
-static const char *kSpecialLayoutNames[SPECIAL_LAYOUT_COUNT] = { "OFF", "CHUCHU ROCKET", "DDR SELECT", "USER CFG" };
+enum { SPECIAL_LAYOUT_OFF = 0, SPECIAL_LAYOUT_CHUCHU = 1, SPECIAL_LAYOUT_DDR_SELECT = 2, SPECIAL_LAYOUT_USER_CFG = 3, SPECIAL_LAYOUT_WIIMOTE_ANALOG = 4, SPECIAL_LAYOUT_COUNT };
+static const char *kSpecialLayoutNames[SPECIAL_LAYOUT_COUNT] = { "OFF", "CHUCHU ROCKET", "DDR SELECT", "USER CFG", "WIIMOTE ANALOG" };
 int g_special_layout_preset = SPECIAL_LAYOUT_OFF;
 
 extern "C" {
@@ -5721,6 +5722,8 @@ bool displayControlsMenu()
     if (g_special_layout_preset == SPECIAL_LAYOUT_USER_CFG)
         printf("%s", user_controls_loaded() ? " (user_controls.cfg LOADED)"
                                             : " (user_controls.cfg NOT FOUND)");
+    else if (g_special_layout_preset == SPECIAL_LAYOUT_WIIMOTE_ANALOG)
+        printf(" (D-pad = stick)"); // lone sideways Wiimote only; row stays < 77 chars
     printf("\n");
 
     // --- Row 8: Wii U GamePad status (display only) ---
