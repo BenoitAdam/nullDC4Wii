@@ -40,3 +40,10 @@ wii/boot_logfix.zip
 wii/boot_q3fix.dol
 wii/boot_q3fix.zip
 a-gxRend.ii
+
+# Wii U build outputs (wiiu/build/ is covered by build/ above) and the
+# optional local CafeGLSL copy used by wiiu/build.cmd
+wiiu/nulldc4wiiu.elf
+wiiu/nulldc4wiiu.rpx
+wiiu/nulldc4wiiu.wuhb
+wiiu/tools/

@@ -18,8 +18,15 @@
 #include <string.h>
 #include <ctype.h>
 
+// The block also holds a few static helpers that only the Wii options menu
+// uses (tex_cache_step, kSpecialLayoutNames, kControllerTypeNames): unused
+// here by design, so their warnings are switched off for this include only.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-variable"
 #define NDC_PRESETS_ONLY 1
 #include "wii/main.cpp"
+#pragma GCC diagnostic pop
 
 #include "wiiu/wiiu_presets.h"
 

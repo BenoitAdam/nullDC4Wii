@@ -13,7 +13,9 @@
 #     binaries the renderer embeds (https://github.com/Exzap/CafeGLSL releases).
 #     Put it on PATH or pass CAFEGLSL=/path/to/glslcompiler.exe.
 #
-# Run from wiiu/ (wiiu_build.bat does that), like wii/vs_make.bat for the Wii.
+# From a Windows prompt: wiiu\build.cmd (sets up the devkitPro paths, finds
+# CafeGLSL, runs make). From the devkitPro MSYS2 shell: make, or wiiu_build.bat,
+# like wii/vs_make.bat for the Wii.
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 
@@ -101,7 +103,9 @@ CXXFLAGS := $(CFLAGS) -fno-exceptions -fno-rtti -O3
 ASFLAGS  := -g $(MACHDEP)
 LDFLAGS   = -g $(MACHDEP) $(RPXSPECS) -Wl,-Map,$(notdir $*.map)
 
-LIBS     := -lwhb -lgfd -lwut -lm
+# libwhb (WHBGfx*, WHBProc*) and libgfd (GFD*) are inside the installed
+# libwut.a; there is no separate -lwhb / -lgfd in the wiiu-dev package.
+LIBS     := -lwut -lm
 LIBDIRS  := $(PORTLIBS) $(WUT_ROOT)
 
 #---------------------------------------------------------------------------------
@@ -176,11 +180,24 @@ $(OFILES_SRC) : $(HFILES_BIN)
 #---------------------------------------------------------------------------------
 %.gsh : $(SHADERDIR)/%.vert $(SHADERDIR)/%.frag
 	@echo shader $(notdir $@)
-	$(SILENTCMD)$(CAFEGLSL) -vs $(SHADERDIR)/$*.vert -ps $(SHADERDIR)/$*.frag --uniform-mode register -o $@
+	$(SILENTCMD)"$(CAFEGLSL)" -vs $(SHADERDIR)/$*.vert -ps $(SHADERDIR)/$*.frag --uniform-mode register -o $@
 
 %.gsh.o %_gsh.h : %.gsh
 	@echo $(notdir $<)
 	@$(bin2o)
+
+# One CafeGLSL at a time. Under -j, two copies of glslcompiler.exe started at
+# the same moment failed on Windows with "Permission denied" (error 126) on the
+# second one - most likely the antivirus holding a freshly unzipped exe while
+# it scans the first launch. Chaining the shaders makes them run in turn
+# (order-only: blit is not rebuilt just because pvr was). Add new shaders to
+# the chain.
+blit.gsh : | pvr.gsh
+
+# Keep the .gsh files. They are intermediates of the bin2o rule above, so make
+# deletes them after use ("rm pvr.gsh" in the log) and recompiles them every
+# build; build.cmd also checks for them to allow building without CafeGLSL.
+.SECONDARY: $(SHADERFILES)
 
 -include $(DEPENDS)
 
