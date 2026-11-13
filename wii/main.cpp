@@ -3549,7 +3549,7 @@ static void printOptionsFooter(void)
   int cols, rows;
   CON_GetMetrics(&cols, &rows);
   printf("\033[%d;1H" MENU_BTN("1-Y") ": Previous | " MENU_BTN("2+X")
-         ": Next | alpha 0.804", rows);
+         ": Next | alpha 0.805", rows);
 }
 
 // Options page to open on the next displayOptionsMenu() call. main() resets it
@@ -3793,7 +3793,7 @@ bool displayOptionsMenu()
       case 2: printf("[< MULTI-PASS (2P)   >]"); break;
       case 3: printf("[< BOTH              >]"); break;
     }
-    printf(" 2P viewports, Racing Games");
+    printf(" For 2P/3P/4P. OFF if just 1P");
     printf("\n\n");
 
     printOptionsFooter();
@@ -5892,7 +5892,7 @@ int displayMenuAndSelectFile()
   while (true)
   {
     printf("\033[2J\033[H");
-    printf("\nNullDC4Wii - alpha 0.804   ");
+    printf("\nNullDC4Wii - alpha 0.805   ");
     printf("Current directory: %s\n", currentPath);
 
     printf("Select a game file: (GDI/CDI/BIN/CUE works)\n\n");
