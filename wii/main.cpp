@@ -3541,10 +3541,16 @@ static void printOptionsFooter(void)
          ": Next | alpha 0.804", rows);
 }
 
+// Options page to open on the next displayOptionsMenu() call. main() resets it
+// to 0 when a new game is picked; it is kept as-is when B on the controls menu
+// comes back here, so the user lands on the page they left.
+static int g_options_resume_page = 0;
+
 bool displayOptionsMenu()
 {
   int selectedRow = OPT_LAUNCH;
-  int optionsPage = 0;
+  int optionsPage = g_options_resume_page;
+  if (optionsPage < 0 || optionsPage >= OPT_PAGE_COUNT) optionsPage = 0;
 
   // Debounce: the A press used to select the file in the browser can
   // otherwise bleed through as a fresh "A down" event on the very first
@@ -3700,6 +3706,7 @@ bool displayOptionsMenu()
       case 3: printf("[< AUTO              >]"); break;
       case 4: printf("[< AUTO MAX          >]"); break;
     }
+    printf(" AUTO = Lower FPS but 100%% speed");
     printf("\n");
 
     // --- Row: 2D Framebuffer ---
@@ -3717,6 +3724,7 @@ bool displayOptionsMenu()
       case 0: printf("[< NO                >]"); break;
       case 1: printf("[< YES (DEFAULT)     >]"); break;
     }
+    printf(" Alpha = Transparency");
     printf("\n");
 
     // --- Row: Blend Mode ---
@@ -4074,8 +4082,6 @@ bool displayOptionsMenu()
       case 1: printf("[< ON (OPAQUE FIRST) >]"); break;
     }
     printf(" if bg covers the game (Puyo Puyo)");
-    printf("\n");
-
     printf("\n");
 
     // --- Row: PVR horizontal X-Scaler ---
@@ -5482,11 +5488,13 @@ bool displayOptionsMenu()
     else if ((pressed & (WPAD_BUTTON_1 | WPAD_BUTTON_MINUS)) || classicPrevPage)
     {
       optionsPage = (optionsPage - 1 + OPT_PAGE_COUNT) % OPT_PAGE_COUNT;
+      g_options_resume_page = optionsPage;
       selectedRow = OPT_LAUNCH;
     }
     else if ((pressed & (WPAD_BUTTON_2 | WPAD_BUTTON_PLUS)) || classicNextPage)
     {
       optionsPage = (optionsPage + 1) % OPT_PAGE_COUNT;
+      g_options_resume_page = optionsPage;
       selectedRow = OPT_LAUNCH;
     }
     else if (pressed & WPAD_BUTTON_B)
@@ -5850,7 +5858,8 @@ static void printFileBrowserFooter(int page, int totalPages)
   CON_GetMetrics(&cols, &rows);
   printf("\033[%d;1H", rows - FILE_BROWSER_FOOTER_LINES + 1);
 
-  printf("--- Page %02d/%02d ---\n\n", page + 1, totalPages);
+  printf("--- Page %02d/%02d ---  " MENU_BTN("(-)") ": Prev page | "
+         MENU_BTN("(+)") ": Next page\n\n", page + 1, totalPages);
   printf("Console detected : %s\n", g_is_wiiu ? "Wii U" : "Wii");
   printf("Contact : xalegamingchannel@gmail.com\n");
   printf("HELP ME ON THE COMPATIBILITY LIST !!\n");
@@ -5905,6 +5914,12 @@ int displayMenuAndSelectFile()
     if (gcPressed & PAD_BUTTON_B)     pressed |= WPAD_BUTTON_B;
     if (gcPressed & PAD_BUTTON_Y)     pressed |= WPAD_BUTTON_1;
     if (gcPressed & PAD_BUTTON_X)     pressed |= WPAD_BUTTON_2;
+
+    // (-)+(+) held together = exit; (-)/(+) alone = previous/next page, so the
+    // page keys must stand down while both are down.
+    u32 heldAll = WPAD_ButtonsHeld(0);
+    heldAll |= CLASSIC_ToWPAD(heldAll) | DRC_ButtonsHeldWPAD() | SS_ButtonsHeldWPAD();
+    bool exitCombo = (heldAll & WPAD_BUTTON_PLUS) && (heldAll & WPAD_BUTTON_MINUS);
 
     if (pressed & WPAD_BUTTON_1)
       return -2; // Boot to BIOS
@@ -5962,16 +5977,18 @@ int displayMenuAndSelectFile()
         if (selectedIndex >= endIndex) currentPage++;
       }
     }
-    else if (pressed & WPAD_BUTTON_LEFT)
+    else if ((pressed & (WPAD_BUTTON_LEFT | WPAD_BUTTON_MINUS)) && !exitCombo)
     {
+      // LEFT and (-) both go to the previous page
       if (currentPage > 0)
       {
         currentPage--;
         selectedIndex = currentPage * ITEMS_PER_PAGE;
       }
     }
-    else if (pressed & WPAD_BUTTON_RIGHT)
+    else if ((pressed & (WPAD_BUTTON_RIGHT | WPAD_BUTTON_PLUS)) && !exitCombo)
     {
+      // RIGHT and (+) both go to the next page
       if (currentPage < totalPages - 1)
       {
         currentPage++;
@@ -6011,10 +6028,7 @@ int displayMenuAndSelectFile()
         currentPage = 0;
       }
     }
-    else if (((WPAD_ButtonsHeld(0) | CLASSIC_ToWPAD(WPAD_ButtonsHeld(0))
-               | DRC_ButtonsHeldWPAD() | SS_ButtonsHeldWPAD()) & WPAD_BUTTON_PLUS) &&
-             ((WPAD_ButtonsHeld(0) | CLASSIC_ToWPAD(WPAD_ButtonsHeld(0))
-               | DRC_ButtonsHeldWPAD() | SS_ButtonsHeldWPAD()) & WPAD_BUTTON_MINUS))
+    else if (exitCombo)
     {
       return -1; // Exit
     }
@@ -6193,15 +6207,24 @@ int main(int argc, wchar *argv[])
         // sees the recommended values and can still tweak them manually.
         game_presets_apply(selectedFilePath);
 
-        if (!displayOptionsMenu())
-          continue; // B pressed — back to file list
+        // Options -> (WinCE warning) -> Controls. B on the controls menu goes
+        // back to the options menu (on the page it was left on); B on the
+        // options menu or the WinCE warning goes back to the file list.
+        g_options_resume_page = 0;
+        bool backToFileList = false;
+        while (true)
+        {
+          if (!displayOptionsMenu()) { backToFileList = true; break; }
 
-        if (g_wince_preset && !displayWinCEWarning())
-          continue; // B pressed — back to file list
+          if (g_wince_preset && !displayWinCEWarning())
+          { backToFileList = true; break; }
 
-        launchGame = displayControlsMenu();
-        if (!launchGame)
-          continue; // B pressed — back to options menu
+          launchGame = displayControlsMenu();
+          if (launchGame) break;
+          // B pressed on controls — loop back to the options menu
+        }
+        if (backToFileList)
+          continue;
       }
     }
 
