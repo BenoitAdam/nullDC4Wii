@@ -1,0 +1,4 @@
+<!-- apps/apps/nulldc4wiiu/meta.xml
+     Wii U homebrew package metadata (app name, version, author). Not implemented yet.
+     Icon and boot textures (icon.png, bootTvTex.png, bootDrcTex.png) go in this folder
+     too; they are binary, so they are not created here. -->
