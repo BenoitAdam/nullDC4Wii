@@ -180,6 +180,8 @@ BINFILES    := $(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
 # Exclude old nullAICA mem.cpp — superseded by aica_mem.cpp
 CPPFILES    := $(filter-out mem.cpp,$(CPPFILES))
+# Exclude Wii U GX2 renderer — plugs/drkPvr/ is wildcarded above; gx2Rend.cpp is Wii U only
+CPPFILES    := $(filter-out gx2Rend.cpp,$(CPPFILES))
 
 #---------------------------------------------------------------------------------
 # use CXX for linking C++ projects, CC for standard C

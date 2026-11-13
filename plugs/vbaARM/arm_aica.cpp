@@ -9,7 +9,9 @@
 extern u64 ArmTicks;
 extern u64 AicaTicks;
 
-#if HOST_OS == OS_WII
+// OS_WIIU: wiiu/compat/ogc/lwp_watchdog.h provides gettime()/TB_TIMER_CLOCK
+// on the Cafe OS time base.
+#if HOST_OS == OS_WII || HOST_OS == OS_WIIU
 // config.h poisons BIG_ENDIAN/LITTLE_ENDIAN; libogc defines them. Same dance
 // as arm7.cpp.
 #ifdef BIG_ENDIAN

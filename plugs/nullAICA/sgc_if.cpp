@@ -9,7 +9,8 @@ extern u64 AicaVoxTicks;
 extern u32 AicaVoiceSum;
 extern u32 AicaSampleCount;
 
-#if HOST_OS == OS_WII
+// OS_WIIU: gettime() from wiiu/compat/ogc/lwp_watchdog.h (Cafe OS time base).
+#if HOST_OS == OS_WII || HOST_OS == OS_WIIU
 // config.h poisons BIG_ENDIAN/LITTLE_ENDIAN; libogc defines them.
 #ifdef BIG_ENDIAN
 #  undef BIG_ENDIAN

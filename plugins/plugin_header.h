@@ -37,6 +37,25 @@
 	#define fastcall
 	inline void __debugbreak() {}
 	#define ALIGN(x) __attribute__((aligned(x)))
+#elif HOST_OS==OS_WIIU
+	// <gccore.h> here is NOT libogc: wiiu/Makefile puts wiiu/compat/ first on
+	// the include path, and its gccore.h maps the few libogc calls the shared
+	// core makes (arena, IRQ, cache, time base) onto Cafe OS / wut.
+	#include <gccore.h>
+	#include <stdint.h>
+	#include <cstddef>
+	typedef int8_t   s8;
+	typedef int16_t  s16;
+	typedef int32_t  s32;
+	typedef int64_t  s64;
+	typedef uint8_t  u8;
+	typedef uint16_t u16;
+	typedef uint32_t u32;
+	typedef uint64_t u64;
+	#define FASTCALL
+	#define fastcall
+	inline void __debugbreak() {}
+	#define ALIGN(x) __attribute__((aligned(x)))
 #elif HOST_OS==OS_PS3
 	#include "linux/typedefs.h"
 #elif HOST_OS==OS_WINDOWS
