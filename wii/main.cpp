@@ -1,4 +1,10 @@
 #include "types.h"
+// NDC_PRESETS_ONLY: defined by wiiu/wiiu_presets.cpp, which #includes this file
+// to compile ONLY the "GLOBAL EMULATOR PRESETS" block below (every g_*_preset
+// global and get_*() getter), so the Wii U build shares the exact same defaults
+// with no copy to drift. Never defined on the Wii build: the two guards (here,
+// and from "FILE BROWSER STATE" to the end of the file) change nothing there.
+#ifndef NDC_PRESETS_ONLY
 #include <unistd.h>
 #include "iso.h"
 #include <fat.h>
@@ -34,6 +40,7 @@ void SS_PollConnections(void);
 u32 SS_GetClassicButtonsHeld(void);
 int SS_ConnectedCount(void);
 int SS_IsEnabled(void);
+#endif // NDC_PRESETS_ONLY (platform includes)
 
 // *** GAME PRESETS ***
 #include "wii/game_presets.h"
@@ -2060,6 +2067,10 @@ int g_wince_preset = 0;
 // the pass WOULD have taken and says so. Self-quieting (see FB2D_LOG_BURST).
 int g_debug_fb2d = 0;
 extern "C" { int get_debug_fb2d()    { return g_debug_fb2d;    } }
+
+// End of the shared preset block: everything below is Wii-only (menu, file
+// browser, boot flow, platform callbacks). See NDC_PRESETS_ONLY at the top.
+#ifndef NDC_PRESETS_ONLY
 
 // ============================================================================
 // FILE BROWSER STATE
@@ -6621,3 +6632,5 @@ int os_msgbox(const wchar *text, unsigned int type)
   printf("OS_MSGBOX: %s\n", text);
   return 0;
 }
+
+#endif // NDC_PRESETS_ONLY (Wii-only menu / boot / platform code)

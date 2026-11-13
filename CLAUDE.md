@@ -20,6 +20,11 @@ hardware knowledge (GX, memory layout, endianness, cache coherency, build flags)
 - `wii/` — Wii platform glue: `main.cpp` (menu system, all `OPT_*` option rows, boot
   flow), `game_presets.cpp`/`.h` (per-game cfg parser), `wii_audio.cpp`, `wii_exit.cpp`,
   `wii_fastmem.cpp`. Also holds the Wii build scripts (`vs_make.bat`, `Makefile`).
+- `wiiu/` — native Wii U (Cafe OS, wut) build: `main.cpp` (boot + OSScreen game picker),
+  `wiiu_*.cpp` platform layer (AX audio, VPAD/KPAD input, ProcUI exit, SD paths, memory
+  arena), `compat/` (libogc-named shim headers, Wii U include path only), `shaders/` (GLSL,
+  compiled to .gsh by CafeGLSL at build time), `Makefile`/`wiiu_build.bat`. Renderer is
+  `plugs/drkPvr/gx2Rend.cpp`. Interpreter only (`_WIIU` -> `USE_INTERP`), no fastmem.
 - `apps/discs/game_presets.cfg` — the shipped, documented per-game preset file (this is
   the reference for the cfg key format/comments — read it before adding a new key).
 - `SKILL.md` — general Nintendo Wii homebrew hardware/SDK knowledge (not project
@@ -49,6 +54,25 @@ Add `-Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers` to als
 surface warnings the real build would print. Report this honestly as
 "syntax-checked, not built or tested" — it is not a substitute for the user's own
 build/flash/test cycle.
+
+### Wii U build (`wiiu/`)
+
+Shares the whole core with the Wii build; only `wii/`, `plugs/drkMapleDevices/`,
+`plugs/libwiidrc/`, `plugs/libsicksaxis/` and `gxRend.cpp` are swapped out. Rules that
+keep both builds compiling:
+
+- **`wii/main.cpp`'s "GLOBAL EMULATOR PRESETS" block is compiled by the Wii U build too**
+  (`wiiu/wiiu_presets.cpp` includes it with `NDC_PRESETS_ONLY`). Keep that block plain
+  C++: no libogc calls/types in it. New presets added there reach the Wii U for free.
+- Shared code reaches libogc only through `<gccore.h>` / `<ogc/lwp_watchdog.h>`; on Wii U
+  those resolve to `wiiu/compat/`. A new libogc call in shared code needs a shim there,
+  or an `HOST_OS == OS_WII` gate.
+- Any `.cpp` added to a shared directory is compiled by both Makefiles (wildcards);
+  platform-only files need a `filter-out` in the other Makefile.
+- Syntax-check Wii U files with `-D_WIIU -D__WIIU__ -D__WUT__ -DESPRESSO` and
+  `-Iwiiu/compat -I. -I<wut>/include` (plus `<wut>/libraries/libwhb/include` when using a
+  wut source checkout). wut is not installed in this devkitPro; a checkout is enough for
+  `-fsyntax-only`.
 
 ## The preset system (how every fix/hack ships)
 

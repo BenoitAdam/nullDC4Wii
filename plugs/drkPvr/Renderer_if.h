@@ -68,7 +68,9 @@ extern u64 AicaVoxTicks;
 extern u32 AicaVoiceSum;
 extern u32 AicaSampleCount;
 
-#if HOST_OS == OS_WII
+// OS_WIIU: wiiu/compat/ogc/lwp_watchdog.h maps gettime()/PPCMftb() onto the
+// Cafe OS time base (bus/4 = 62.16 MHz), so the same brackets work there.
+#if HOST_OS == OS_WII || HOST_OS == OS_WIIU
 #include <ogc/lwp_watchdog.h>
 #define PERF_TICKS() gettime()
 #define PERF_TICKS_US(t) ((double)ticks_to_microsecs(t))

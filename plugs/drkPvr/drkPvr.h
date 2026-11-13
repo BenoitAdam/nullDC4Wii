@@ -62,8 +62,10 @@ void SaveSettings();
     #define REND_NAME "WIIgx DHA"
 #elif REND_API == REND_PS2
     #define REND_NAME "PS2gs DHA"
+#elif REND_API == REND_WIIU
+    #define REND_NAME "WiiU gx2 DHA"
 #else
-    #error "Invalid REND_API configuration. Must be one of: REND_PSP/REND_GLES2/REND_SOFT/REND_WII/REND_PS2"
+    #error "Invalid REND_API configuration. Must be one of: REND_PSP/REND_GLES2/REND_SOFT/REND_WII/REND_PS2/REND_WIIU"
 #endif
 
 /**

@@ -14,6 +14,7 @@
 #define OS_XBOX     6
 #define OS_PS2      7
 #define OS_PS3      8
+#define OS_WIIU     9   // native Wii U (Cafe OS, wut). vWii runs the OS_WII build.
 
 //Architectures (generic)
 #define ARCH_ARM 1
@@ -30,6 +31,7 @@
 #define CPU_PPC_BROADWAY 5	//wii
 #define CPU_PPC_CELL 6		//ps3
 #define CPU_ARMV5	7	//For android testing, for now
+#define CPU_PPC_ESPRESSO 8	//wii u (native). Not BROADWAY on purpose: no SH4/ARM7 JIT yet -> USE_INTERP below
 
 //host hardware
 #define SYS_PC			1	//PC (win/linux)
@@ -39,6 +41,7 @@
 #define SYS_WII			5
 #define SYS_PS3			6
 #define SYS_PS2			7
+#define SYS_WIIU		8
 
 //host endian
 #define ENDIAN_LITTLE	1
@@ -58,6 +61,7 @@
 #define REND_SOFT   3   // Or .. something [ null atm ]
 #define REND_WII	4
 #define REND_PS2	5
+#define REND_WIIU	6   // plugs/drkPvr/gx2Rend.cpp
 
 
 // Add defs to IDE/makefile whatever as _cpuname, _osname
@@ -113,12 +117,28 @@
 	#define VER_TARGET "linux86"
 #endif
 
+#if defined(_WII) && defined(_WIIU)
+	#error "_WII and _WIIU are separate builds (wii/Makefile vs wiiu/Makefile); define only one"
+#endif
+
 #ifdef _WII
 	#define _PPC
 	#define HOST_CPU CPU_PPC_BROADWAY
 	#define HOST_SYS SYS_WII
 	#define REND_API REND_WII
 	#define VER_TARGET "wii"
+#endif
+
+// Native Wii U (wiiu/Makefile). Same big-endian PowerPC as the Wii, so the core
+// is shared as-is; HOST_CPU is deliberately not BROADWAY, which makes the
+// "ARCH_PPC && !BROADWAY" rule below define USE_INTERP: the SH4 recompiler
+// needs executable memory, which Cafe OS does not hand out like the Wii does.
+#ifdef _WIIU
+	#define _PPC
+	#define HOST_CPU CPU_PPC_ESPRESSO
+	#define HOST_SYS SYS_WIIU
+	#define REND_API REND_WIIU
+	#define VER_TARGET "wiiu"
 #endif
 
 #ifdef _PSP
@@ -198,6 +218,10 @@
 
 #ifdef _WII
 #define HOST_OS OS_WII
+#endif
+
+#ifdef _WIIU
+#define HOST_OS OS_WIIU
 #endif
 
 #ifdef _XBOX

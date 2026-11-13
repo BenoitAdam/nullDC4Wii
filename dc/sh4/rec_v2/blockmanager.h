@@ -6,7 +6,9 @@
 #include "types.h"
 #pragma once
 
-#if HOST_OS==OS_LINUX || HOST_OS==OS_WII
+// OS_WIIU: same C linkage as the Wii, so nullDC.cpp's bm_Reset() reference
+// resolves against the no-JIT stub in wiiu/wiiu_nojit.cpp.
+#if HOST_OS==OS_LINUX || HOST_OS==OS_WII || HOST_OS==OS_WIIU
 extern "C" {
 #endif
 
@@ -75,6 +77,6 @@ void bm_GetStats(u32* hits, u32* misses, u32* cache_hits, u32* total_blocks);
 void bm_ResetStats();
 #endif
 
-#if HOST_OS==OS_LINUX || HOST_OS==OS_WII
+#if HOST_OS==OS_LINUX || HOST_OS==OS_WII || HOST_OS==OS_WIIU
 }
 #endif
