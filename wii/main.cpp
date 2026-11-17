@@ -1657,7 +1657,7 @@ extern "C" {
 // PSO v2. Untested on hardware: Spider-Man can point hook 7 at a task switch.
 // Logs "[IDLE] Kamui vsync wait form N at ADDR" (first 16 matches). Read when
 // a block is COMPILED. Wii-untested. 0=off (legacy), 1=on (default).
-int g_idle_kamui_preset = 1;
+int g_idle_kamui_preset = 0;
 
 extern "C" {
   int get_idle_kamui_preset() { return g_idle_kamui_preset; }
