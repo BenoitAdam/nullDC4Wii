@@ -374,6 +374,9 @@ https://www.programmez.com/actualites/programmez-numero-gaming-et-developpement-
 Italy :  
 https://www.biteyourconsole.net/2026/05/13/nulldc4wii-alpha-v0-22-porta-il-dreamcast-su-wii-con-supporto-usb-multiplayer-e-miglioramenti-prestazionali/
 
+Japan :
+https://retro-gamer.jp/?p=51097
+
 ## Credits
 
 - skmp (original NullDC creator)
