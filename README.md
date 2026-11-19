@@ -228,15 +228,15 @@ Please check the compatiblity Wiki : https://wiibrew.org/wiki/NullDC4Wii/Compati
 
 ### Does it work on Wii U ?
 
-We have a Wii U fowarder that also use the speed boot of the Wii U (overclock). A native port for Wii U could be done if someone wants to do port it.
+Yes, we have a Wii U fowarder that also use the speed boot of the Wii U (overclock). A native port for Wii U is currently in testing and looks promising.
 
 ### Does it support Atomiswave ?
 
 Not yet, this could ask between 0.03 and 0.5Mb of RAM. Doable yes, maybe not really worth the effort. But you can use Atomiswave hacks for dreamcast, lots of them do work.
 
-### Will it support NAOMI ?
+### Will it support NAOMI 1/2 ?
 
-Definitly not, the recent Dynarec/JIT (= fps boost) and ARM7 cache ask for more RAM, we have no more place to add 16Mb for NAOMI Ram
+Definitly not, the recent Dynarec/JIT (= fps boost) and ARM7 cache ask for more RAM, we have no more place to add 16Mb for NAOMI Ram. But It could be bypassed with per-games emulation like it has been proved with Initial D3 for wii : https://github.com/BenoitAdam/InitialD3-wii
 
 ### Controls are messy / this doesn't work / My Propad isn't recognize etc...
 
@@ -267,7 +267,7 @@ Also, it's suggested we build a custom Dolphin-Emulator with some tools to help 
 
 ### Is 100% speed of the emulator achievable on Wii U?
 
-Probably ! Wii U has the additional CPU power we need. Test the overlocked fowarder !
+Probably ! Wii U has the additional CPU power we need ! Test the overlocked fowarder ! There is also a promising port for Wii U in the work, and that one use the 3 cores of the CPU !
 
 ### Can it read Original games (GD-Rom) ?
 
